@@ -1,0 +1,1 @@
+import { AppShell } from "@/components/layout/app-shell"; import JobCosting from "@/components/shared/job-costing"; export default function Page(){ return <AppShell title="Job Costing" subtitle="Compare quoted revenue against actual labor cost, profit, and margin across linked jobs."><JobCosting /></AppShell>; }

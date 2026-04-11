@@ -1,0 +1,1 @@
+import { AppShell } from "@/components/layout/app-shell"; import EmployeeDirectory from "@/components/shared/employee-directory"; export default function Page(){ return <AppShell title="Employee Directory" subtitle="Search, import, edit, delete, and profile your national crew directory."><EmployeeDirectory /></AppShell>; }

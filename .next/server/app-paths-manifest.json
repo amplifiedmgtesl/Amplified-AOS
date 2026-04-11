@@ -1,0 +1,8 @@
+{
+  "/quote-builder/page": "app/quote-builder/page.js",
+  "/job-sheets/page": "app/job-sheets/page.js",
+  "/timekeeping/page": "app/timekeeping/page.js",
+  "/employee-directory/page": "app/employee-directory/page.js",
+  "/rate-card/page": "app/rate-card/page.js",
+  "/invoices/page": "app/invoices/page.js"
+}

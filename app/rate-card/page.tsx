@@ -1,0 +1,1 @@
+import { AppShell } from "@/components/layout/app-shell"; import RateCardEditor from "@/components/shared/rate-card-editor"; export default function Page(){ return <AppShell title="Client Rate Card" subtitle="Bigger terms section, tight print layout, OT trigger 10 through 15."><RateCardEditor /></AppShell>; }

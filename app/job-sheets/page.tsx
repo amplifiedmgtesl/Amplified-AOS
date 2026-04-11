@@ -1,0 +1,1 @@
+import { AppShell } from "@/components/layout/app-shell"; import JobSheets from "@/components/shared/job-sheets"; export default function Page(){ return <AppShell title="Job Sheets" subtitle="Open job profiles, manage workers, notes, drawings, and linked timekeeping."><JobSheets /></AppShell>; }

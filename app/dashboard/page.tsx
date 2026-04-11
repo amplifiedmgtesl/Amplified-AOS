@@ -1,0 +1,1 @@
+import { AppShell } from "@/components/layout/app-shell"; import DashboardCards from "@/components/shared/dashboard"; export default function DashboardPage() { return <AppShell title="Dashboard" subtitle="Cleaner operations dashboard with calendar, quotes, invoices, labor, and employee management."><DashboardCards /></AppShell>; }

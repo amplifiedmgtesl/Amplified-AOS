@@ -1,0 +1,1 @@
+import { AppShell } from "@/components/layout/app-shell"; import Timekeeping from "@/components/shared/timekeeping"; export default function Page(){ return <AppShell title="Timekeeping" subtitle="Grid-style labor tracking linked to job sheets and invoice detail."><Timekeeping /></AppShell>; }

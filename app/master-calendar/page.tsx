@@ -1,0 +1,1 @@
+import { AppShell } from "@/components/layout/app-shell"; import MasterCalendar from "@/components/shared/master-calendar"; export default function Page(){ return <AppShell title="Master Calendar" subtitle="Schedule with previous-data dropdowns, hover detail windows, deletion, and click-through job profiles."><MasterCalendar /></AppShell>; }
