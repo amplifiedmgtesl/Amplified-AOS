@@ -22,16 +22,16 @@ export default function LoginPage() {
       return;
     }
 
-    // Block staff-role users — they must use the Staff Portal
+    // Only allow users with role='admin' in their profile
     const { data: profileData } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", data.user.id)
       .single();
 
-    if (profileData?.role === "staff") {
+    if (!profileData || profileData.role !== "admin") {
       await supabase.auth.signOut();
-      setError("Staff members must sign in at the Staff Portal, not here.");
+      setError("Access denied. Staff members must use the Staff Portal.");
       setLoading(false);
       return;
     }
