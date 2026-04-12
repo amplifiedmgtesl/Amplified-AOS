@@ -1,4 +1,4 @@
-// File: C:\Users\cayde\Downloads\Amplified_JOB_COSTING_MATCHES_QUOTE_FIXED\amplified-operations-suite\app\layout.tsx
+// File: C:\aos-sb\app\layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

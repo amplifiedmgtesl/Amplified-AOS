@@ -1,4 +1,4 @@
-// File: C:\Users\cayde\Downloads\Amplified_JOB_COSTING_MATCHES_QUOTE_FIXED\amplified-operations-suite\app\dashboard\page.tsx
+// File: C:\aos-sb\app\dashboard\page.tsx
 import * as entry from '../../../../app/dashboard/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

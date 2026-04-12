@@ -1,4 +1,13 @@
 export type TriggerOption = "10" | "11" | "12" | "13" | "14" | "15";
+
+export type RateCardProfile = {
+  id: string;
+  clientName: string;
+  rows: RateRow[];
+  terms: string;
+  createdAt: string;
+  updatedAt: string;
+};
 export type RateRow = {
   group: string;
   position: string;

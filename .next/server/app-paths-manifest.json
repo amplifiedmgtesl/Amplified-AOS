@@ -1,6 +1,9 @@
 {
-  "/(auth)/login/page": "app/(auth)/login/page.js",
+  "/invoices/page": "app/invoices/page.js",
+  "/master-calendar/page": "app/master-calendar/page.js",
   "/quote-builder/page": "app/quote-builder/page.js",
+  "/job-requests/page": "app/job-requests/page.js",
+  "/(auth)/login/page": "app/(auth)/login/page.js",
   "/dashboard/page": "app/dashboard/page.js",
-  "/employee-directory/page": "app/employee-directory/page.js"
+  "/rate-card/page": "app/rate-card/page.js"
 }

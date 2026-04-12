@@ -1,4 +1,4 @@
-// File: C:\Users\cayde\Downloads\Amplified_JOB_COSTING_MATCHES_QUOTE_FIXED\amplified-operations-suite\app\quote-builder\page.tsx
+// File: C:\aos-sb\app\quote-builder\page.tsx
 import * as entry from '../../../../app/quote-builder/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

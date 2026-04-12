@@ -1,6 +1,6 @@
 import "./globals.css";
 import type { ReactNode } from "react";
-import { SupabaseBootstrap } from "@/components/shared/supabase-bootstrap";
+import { StoreProvider } from "../components/layout/store-provider";
 
 export const metadata = { title: "Amplified Operations Suite", description: "Stable operations rebuild" };
 
@@ -8,8 +8,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <SupabaseBootstrap />
-        {children}
+        <StoreProvider>{children}</StoreProvider>
       </body>
     </html>
   );

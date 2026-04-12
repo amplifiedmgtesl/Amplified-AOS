@@ -225,6 +225,13 @@ export type JobCostingLine = {
   manualDtOverride?: boolean;
 };
 
+export type QuoteDraftWorkspace = {
+  id: string;
+  name: string;
+  updatedAt: string;
+  data: any;
+};
+
 export type JobCostingDraft = {
   id: string;
   title: string;
