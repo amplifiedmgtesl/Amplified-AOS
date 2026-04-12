@@ -14,14 +14,29 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) {
-      setError(error.message);
+    if (signInError || !data.user) {
+      setError(signInError?.message ?? "Sign in failed.");
       setLoading(false);
-    } else {
-      window.location.href = "/dashboard";
+      return;
     }
+
+    // Block staff-role users — they must use the Staff Portal
+    const { data: profileData } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", data.user.id)
+      .single();
+
+    if (profileData?.role === "staff") {
+      await supabase.auth.signOut();
+      setError("Staff members must sign in at the Staff Portal, not here.");
+      setLoading(false);
+      return;
+    }
+
+    window.location.href = "/dashboard";
   }
 
   return (
