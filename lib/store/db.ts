@@ -9,7 +9,7 @@
  *  - Call initStore() once on app startup (see components/layout/store-provider.tsx).
  */
 
-import { supabase } from "../supabase";
+import { supabase } from "../supabase/client";
 import type {
   CalendarEvent,
   QuoteDraft,
@@ -84,6 +84,13 @@ export function initStore(): Promise<void> {
 }
 
 async function _loadAll() {
+  const { data: { user } } = await supabase.auth.getUser();
+  console.log("[db] loading as user:", user?.email ?? "NULL (unauthenticated)");
+  if (!user) {
+    console.warn("[db] No authenticated user — all queries will return empty due to RLS.");
+    _cache.initialized = true;
+    return;
+  }
   const [
     eventsRes,
     quotesRes,

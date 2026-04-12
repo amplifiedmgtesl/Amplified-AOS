@@ -1,8 +1,8 @@
-
 "use client";
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { supabase } from "@/lib/supabase/client";
 
 const nav = [
   ["/dashboard", "🏠", "Dashboard"],
@@ -27,6 +27,11 @@ export function AppShell({
   subtitle?: string;
   children: ReactNode;
 }) {
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  }
+
   return (
     <div className="layout">
       <aside className="sidebar">
@@ -43,6 +48,15 @@ export function AppShell({
             {label}
           </Link>
         ))}
+
+        <div style={{ marginTop: "auto", paddingTop: 24 }}>
+          <button
+            onClick={handleSignOut}
+            style={{ width: "100%", background: "transparent", border: "1px solid #555", color: "#999", borderRadius: 6, padding: "8px 12px", cursor: "pointer", fontSize: 13 }}
+          >
+            Sign out
+          </button>
+        </div>
       </aside>
 
       <main className="main">
