@@ -98,6 +98,7 @@ async function _loadAll() {
     invoicesRes,
     jobRequestsRes,
     jobSheetsRes,
+    jobSheetWorkersRes,
     timesheetsRes,
     entriesRes,
     employeesRes,
@@ -111,6 +112,7 @@ async function _loadAll() {
     supabase.from("invoices").select("*"),
     supabase.from("job_requests").select("*"),
     supabase.from("job_sheets").select("*"),
+    supabase.from("job_sheet_workers").select("*").order("sort_order"),
     supabase.from("timesheets").select("id, job_sheet_id, title, hide_pay_columns"),
     supabase.from("timesheet_entries").select("*").not("timesheet_id", "is", null),
     supabase.from("employees").select("*"),
@@ -136,7 +138,14 @@ async function _loadAll() {
   _cache.quoteDraftWorkspaces = (workspacesRes.data ?? []).map(rowToWorkspace);
   _cache.invoiceDrafts = (invoicesRes.data ?? []).map(rowToInvoice);
   _cache.jobRequests = (jobRequestsRes.data ?? []).map(rowToJobRequest);
-  _cache.jobSheets = (jobSheetsRes.data ?? []).map(rowToJobSheet);
+  // Group workers by job_sheet_id and attach
+  const workersByJobSheetId = new Map<string, any[]>();
+  for (const w of (jobSheetWorkersRes.data ?? [])) {
+    const jsid = w.job_sheet_id;
+    if (!workersByJobSheetId.has(jsid)) workersByJobSheetId.set(jsid, []);
+    workersByJobSheetId.get(jsid)!.push(w);
+  }
+  _cache.jobSheets = (jobSheetsRes.data ?? []).map((r: any) => rowToJobSheet(r, workersByJobSheetId.get(r.id) ?? []));
   // Group entries by timesheet_id and attach as rows
   const entriesByTimesheetId = new Map<string, any[]>();
   for (const e of (entriesRes.data ?? [])) {
@@ -290,12 +299,34 @@ export function getJobSheets() { return _cache.jobSheets; }
 
 export function setJobSheets(rows: JobSheet[]) {
   _cache.jobSheets = rows;
-  for (const r of rows) sync("job_sheets", jobSheetToRow(r));
+  for (const r of rows) syncJobSheet(r);
 }
 
 export function upsertJobSheet(row: JobSheet) {
   _cache.jobSheets = [..._cache.jobSheets.filter((r) => r.id !== row.id), row];
-  sync("job_sheets", jobSheetToRow(row));
+  syncJobSheet(row);
+}
+
+function syncJobSheet(j: JobSheet) {
+  // Upsert the header row (no workers column)
+  supabase
+    .from("job_sheets")
+    .upsert(jobSheetToRow(j))
+    .then(({ error }) => { if (error) console.error("[db] syncJobSheet header error:", error); });
+  // Replace all workers for this job sheet
+  supabase
+    .from("job_sheet_workers")
+    .delete()
+    .eq("job_sheet_id", j.id)
+    .then(({ error }) => {
+      if (error) { console.error("[db] syncJobSheet delete workers error:", error); return; }
+      if (j.workers.length === 0) return;
+      const workerRows = j.workers.map((w, idx) => jobSheetWorkerToRow(w, j.id, idx));
+      supabase
+        .from("job_sheet_workers")
+        .insert(workerRows)
+        .then(({ error: insertError }) => { if (insertError) console.error("[db] syncJobSheet insert workers error:", insertError); });
+    });
 }
 
 // ─── Timesheets ───────────────────────────────────────────────────────────────
@@ -515,7 +546,7 @@ function rowToJobRequest(r: any): JobRequest {
   };
 }
 
-function rowToJobSheet(r: any): JobSheet {
+function rowToJobSheet(r: any, workerRows: any[] = []): JobSheet {
   return {
     id: r.id,
     sourceEventId: r.source_event_id ?? undefined,
@@ -532,7 +563,37 @@ function rowToJobSheet(r: any): JobSheet {
     callTime: r.call_time ?? "",
     notes: r.notes ?? "",
     attachmentNames: r.attachment_names ?? [],
-    workers: r.workers ?? [],
+    workers: workerRows.map(rowToJobSheetWorker),
+  };
+}
+
+function rowToJobSheetWorker(r: any): import("./types").JobSheetWorker {
+  return {
+    employeeKey: r.employee_key ?? "",
+    fullName: r.full_name ?? "",
+    firstName: r.first_name ?? "",
+    lastName: r.last_name ?? "",
+    stateCode: r.state_code ?? "",
+    phone: r.phone ?? "",
+    email: r.email ?? "",
+    role: r.role ?? "",
+    confirmed: r.confirmed ?? false,
+  };
+}
+
+function jobSheetWorkerToRow(w: import("./types").JobSheetWorker, jobSheetId: string, sortOrder: number) {
+  return {
+    job_sheet_id: jobSheetId,
+    employee_key: w.employeeKey,
+    full_name: w.fullName,
+    first_name: w.firstName,
+    last_name: w.lastName,
+    state_code: w.stateCode,
+    phone: w.phone,
+    email: w.email,
+    role: w.role,
+    confirmed: w.confirmed,
+    sort_order: sortOrder,
   };
 }
 
@@ -810,7 +871,7 @@ function jobSheetToRow(j: JobSheet) {
     call_time: j.callTime,
     notes: j.notes,
     attachment_names: j.attachmentNames,
-    workers: j.workers,
+    // workers is now in the job_sheet_workers table — see syncJobSheet()
   };
 }
 
