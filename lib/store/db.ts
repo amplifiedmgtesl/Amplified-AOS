@@ -99,6 +99,7 @@ async function _loadAll() {
     jobRequestsRes,
     jobSheetsRes,
     timesheetsRes,
+    entriesRes,
     employeesRes,
     jobCostingRes,
     rateProfilesRes,
@@ -110,7 +111,8 @@ async function _loadAll() {
     supabase.from("invoices").select("*"),
     supabase.from("job_requests").select("*"),
     supabase.from("job_sheets").select("*"),
-    supabase.from("timesheets").select("*"),
+    supabase.from("timesheets").select("id, job_sheet_id, title, hide_pay_columns"),
+    supabase.from("timesheet_entries").select("*").not("timesheet_id", "is", null),
     supabase.from("employees").select("*"),
     supabase.from("job_costing_drafts").select("*"),
     supabase.from("rate_card_profiles").select("*"),
@@ -135,7 +137,14 @@ async function _loadAll() {
   _cache.invoiceDrafts = (invoicesRes.data ?? []).map(rowToInvoice);
   _cache.jobRequests = (jobRequestsRes.data ?? []).map(rowToJobRequest);
   _cache.jobSheets = (jobSheetsRes.data ?? []).map(rowToJobSheet);
-  _cache.timesheets = (timesheetsRes.data ?? []).map(rowToTimesheet);
+  // Group entries by timesheet_id and attach as rows
+  const entriesByTimesheetId = new Map<string, any[]>();
+  for (const e of (entriesRes.data ?? [])) {
+    const tid = e.timesheet_id;
+    if (!entriesByTimesheetId.has(tid)) entriesByTimesheetId.set(tid, []);
+    entriesByTimesheetId.get(tid)!.push(e);
+  }
+  _cache.timesheets = (timesheetsRes.data ?? []).map((r: any) => rowToTimesheet(r, entriesByTimesheetId.get(r.id) ?? []));
 
   const emps = employeesRes.data ?? [];
   _cache.employees = emps.filter((r: any) => !r.is_deleted).map(rowToEmployee);
@@ -295,12 +304,34 @@ export function getTimesheets() { return _cache.timesheets; }
 
 export function setTimesheets(rows: Timesheet[]) {
   _cache.timesheets = rows;
-  for (const r of rows) sync("timesheets", timesheetToRow(r));
+  for (const r of rows) syncTimesheet(r);
 }
 
 export function upsertTimesheet(row: Timesheet) {
   _cache.timesheets = [..._cache.timesheets.filter((r) => r.id !== row.id), row];
-  sync("timesheets", timesheetToRow(row));
+  syncTimesheet(row);
+}
+
+function syncTimesheet(t: Timesheet) {
+  // Upsert header (no rows column)
+  supabase
+    .from("timesheets")
+    .upsert({ id: t.id, job_sheet_id: t.jobSheetId, title: t.title, hide_pay_columns: t.hidePayColumns })
+    .then(({ error }) => { if (error) console.error("[db] syncTimesheet header error:", error); });
+  // Replace all entries for this timesheet
+  supabase
+    .from("timesheet_entries")
+    .delete()
+    .eq("timesheet_id", t.id)
+    .then(({ error }) => {
+      if (error) { console.error("[db] syncTimesheet delete entries error:", error); return; }
+      if (t.rows.length === 0) return;
+      const entryRows = t.rows.map((r, idx) => timesheetEntryToRow(r, t.id, t.jobSheetId, idx));
+      supabase
+        .from("timesheet_entries")
+        .insert(entryRows)
+        .then(({ error: insertError }) => { if (insertError) console.error("[db] syncTimesheet insert entries error:", insertError); });
+    });
 }
 
 // ─── Employees ────────────────────────────────────────────────────────────────
@@ -505,13 +536,70 @@ function rowToJobSheet(r: any): JobSheet {
   };
 }
 
-function rowToTimesheet(r: any): Timesheet {
+function rowToTimesheet(r: any, entries: any[]): Timesheet {
   return {
     id: r.id,
     jobSheetId: r.job_sheet_id ?? "",
     title: r.title ?? "",
     hidePayColumns: r.hide_pay_columns ?? false,
-    rows: r.rows ?? [],
+    rows: entries
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map(rowToTimeEntry),
+  };
+}
+
+function rowToTimeEntry(r: any): import("./types").TimeEntry {
+  return {
+    id: r.id,
+    position: r.position ?? "",
+    firstName: r.first_name ?? "",
+    lastName: r.last_name ?? "",
+    phone: r.phone ?? "",
+    email: r.email ?? "",
+    timeIn1: r.time_in1 ?? "",
+    timeOut1: r.time_out1 ?? "",
+    lunchMinutes: r.lunch_minutes ?? 30,
+    timeIn2: r.time_in2 ?? "",
+    timeOut2: r.time_out2 ?? "",
+    stdHours: r.std_hours ?? 0,
+    otHours: r.ot_hours ?? 0,
+    dtHours: r.dt_hours ?? 0,
+    totalHours: r.total_hours ?? 0,
+    stdRate: r.std_rate ?? 35,
+    otRate: r.ot_rate ?? 52,
+    dtRate: r.dt_rate ?? 70,
+    totalPay: r.total_pay ?? 0,
+    userId: r.user_id ?? null,
+    sortOrder: r.sort_order ?? 0,
+  };
+}
+
+function timesheetEntryToRow(e: import("./types").TimeEntry, timesheetId: string, jobSheetId: string, sortOrder: number) {
+  return {
+    id: e.id,
+    timesheet_id: timesheetId,
+    job_sheet_id: jobSheetId,
+    user_id: e.userId ?? null,
+    position: e.position,
+    first_name: e.firstName,
+    last_name: e.lastName,
+    phone: e.phone,
+    email: e.email,
+    time_in1: e.timeIn1,
+    time_out1: e.timeOut1,
+    lunch_minutes: e.lunchMinutes,
+    time_in2: e.timeIn2,
+    time_out2: e.timeOut2,
+    std_hours: e.stdHours,
+    ot_hours: e.otHours,
+    dt_hours: e.dtHours,
+    total_hours: e.totalHours,
+    std_rate: e.stdRate,
+    ot_rate: e.otRate,
+    dt_rate: e.dtRate,
+    total_pay: e.totalPay,
+    sort_order: sortOrder,
+    updated_at: new Date().toISOString(),
   };
 }
 
@@ -726,15 +814,7 @@ function jobSheetToRow(j: JobSheet) {
   };
 }
 
-function timesheetToRow(t: Timesheet) {
-  return {
-    id: t.id,
-    job_sheet_id: t.jobSheetId,
-    title: t.title,
-    hide_pay_columns: t.hidePayColumns,
-    rows: t.rows,
-  };
-}
+// timesheetToRow is no longer used — replaced by syncTimesheet()
 
 function employeeToRow(e: EmployeeRecord, isDeleted: boolean) {
   return {

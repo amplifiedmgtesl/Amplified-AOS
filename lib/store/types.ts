@@ -54,6 +54,8 @@ export type TimeEntry = {
   otRate: number;
   dtRate: number;
   totalPay: number;
+  userId?: string | null; // set for staff-submitted entries
+  sortOrder?: number;
 };
 
 export type Timesheet = {
