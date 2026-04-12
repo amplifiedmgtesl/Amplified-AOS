@@ -1,87 +1,65 @@
-
 import { loadJSON, saveJSON } from "./local";
+import { STORAGE_KEYS } from "./storage-config";
 import type { CalendarEvent, QuoteDraft, InvoiceDraft, JobRequest, JobSheet, Timesheet, EmployeeRecord, JobCostingDraft } from "./types";
 
-const KEYS = {
-  manualEvents: "aes_manual_events_v2",
-  deletedEventIds: "aes_deleted_event_ids_v1",
-  eventProfiles: "aes_event_profiles_v1",
-  quotes: "aes_quotes_v2",
-  invoiceDrafts: "aes_invoice_drafts_v2",
-  activeInvoice: "aes_active_invoice_v2",
-  quoteSeed: "aes_quote_seed_v2",
-  activeQuote: "aes_active_quote_v1",
-  quoteDrafts: "aes_quote_drafts_v1",
-  activeQuoteDraft: "aes_active_quote_draft_v1",
-  jobRequests: "aes_job_requests_v2",
-  jobSheets: "aes_job_sheets_v2",
-  activeJobSheet: "aes_active_job_sheet_v2",
-  timesheets: "aes_timesheets_v1",
-  employees: "aes_employees_v1",
-  activeEmployee: "aes_active_employee_v1",
-  deletedEmployeeKeys: "aes_deleted_employee_keys_v1",
-  jobCostingDrafts: "aes_job_costing_drafts_v1",
-  activeJobCosting: "aes_active_job_costing_v1"
-};
-
-export function loadManualEvents(): CalendarEvent[] { return loadJSON(KEYS.manualEvents, []); }
-export function saveManualEvents(rows: CalendarEvent[]) { saveJSON(KEYS.manualEvents, rows); }
+export function loadManualEvents(): CalendarEvent[] { return loadJSON(STORAGE_KEYS.manualEvents, []); }
+export function saveManualEvents(rows: CalendarEvent[]) { saveJSON(STORAGE_KEYS.manualEvents, rows); }
 export function upsertManualEvent(row: CalendarEvent) {
   const rows = loadManualEvents();
   saveManualEvents([...rows.filter(r => r.id !== row.id), row]);
 }
-export function loadDeletedEventIds(): string[] { return loadJSON(KEYS.deletedEventIds, []); }
+export function loadDeletedEventIds(): string[] { return loadJSON(STORAGE_KEYS.deletedEventIds, []); }
 export function deleteEventById(id: string) {
   const ids = loadDeletedEventIds();
-  if (!ids.includes(id)) saveJSON(KEYS.deletedEventIds, [...ids, id]);
+  if (!ids.includes(id)) saveJSON(STORAGE_KEYS.deletedEventIds, [...ids, id]);
   saveManualEvents(loadManualEvents().filter(e => e.id !== id));
 }
-export function undeleteAllEvents() { saveJSON(KEYS.deletedEventIds, []); }
+export function undeleteAllEvents() { saveJSON(STORAGE_KEYS.deletedEventIds, []); }
 
-export function loadEventProfiles(): Record<string, {notes:string; attachmentNames:string[]}> { return loadJSON(KEYS.eventProfiles, {}); }
+export function loadEventProfiles(): Record<string, {notes:string; attachmentNames:string[]}> { return loadJSON(STORAGE_KEYS.eventProfiles, {}); }
 export function saveEventProfile(eventId: string, data: {notes:string; attachmentNames:string[]}) {
   const all = loadEventProfiles();
   all[eventId] = data;
-  saveJSON(KEYS.eventProfiles, all);
+  saveJSON(STORAGE_KEYS.eventProfiles, all);
 }
 
-export function loadQuotes(): QuoteDraft[] { return loadJSON(KEYS.quotes, []); }
-export function saveQuotes(rows: QuoteDraft[]) { saveJSON(KEYS.quotes, rows); }
+export function loadQuotes(): QuoteDraft[] { return loadJSON(STORAGE_KEYS.quotes, []); }
+export function saveQuotes(rows: QuoteDraft[]) { saveJSON(STORAGE_KEYS.quotes, rows); }
 export function upsertQuote(row: QuoteDraft) {
   const rows = loadQuotes();
   saveQuotes([...rows.filter(r => r.id !== row.id), row]);
 }
 
-export function loadInvoiceDrafts(): InvoiceDraft[] { return loadJSON(KEYS.invoiceDrafts, []); }
-export function saveInvoiceDrafts(rows: InvoiceDraft[]) { saveJSON(KEYS.invoiceDrafts, rows); }
+export function loadInvoiceDrafts(): InvoiceDraft[] { return loadJSON(STORAGE_KEYS.invoiceDrafts, []); }
+export function saveInvoiceDrafts(rows: InvoiceDraft[]) { saveJSON(STORAGE_KEYS.invoiceDrafts, rows); }
 export function upsertInvoiceDraft(row: InvoiceDraft) {
   const rows = loadInvoiceDrafts();
   saveInvoiceDrafts([...rows.filter(r => r.id !== row.id), row]);
 }
-export function setActiveInvoice(id: string) { saveJSON(KEYS.activeInvoice, id); }
-export function getActiveInvoice(): string | null { return loadJSON<string | null>(KEYS.activeInvoice, null); }
+export function setActiveInvoice(id: string) { saveJSON(STORAGE_KEYS.activeInvoice, id); }
+export function getActiveInvoice(): string | null { return loadJSON<string | null>(STORAGE_KEYS.activeInvoice, null); }
 
-export function setQuoteSeed(seed: Partial<QuoteDraft> | null) { saveJSON(KEYS.quoteSeed, seed); }
-export function getQuoteSeed(): Partial<QuoteDraft> | null { return loadJSON<Partial<QuoteDraft> | null>(KEYS.quoteSeed, null); }
+export function setQuoteSeed(seed: Partial<QuoteDraft> | null) { saveJSON(STORAGE_KEYS.quoteSeed, seed); }
+export function getQuoteSeed(): Partial<QuoteDraft> | null { return loadJSON<Partial<QuoteDraft> | null>(STORAGE_KEYS.quoteSeed, null); }
 
-export function loadJobRequests(): JobRequest[] { return loadJSON(KEYS.jobRequests, []); }
-export function saveJobRequests(rows: JobRequest[]) { saveJSON(KEYS.jobRequests, rows); }
+export function loadJobRequests(): JobRequest[] { return loadJSON(STORAGE_KEYS.jobRequests, []); }
+export function saveJobRequests(rows: JobRequest[]) { saveJSON(STORAGE_KEYS.jobRequests, rows); }
 export function upsertJobRequest(row: JobRequest) {
   const rows = loadJobRequests();
   saveJobRequests([...rows.filter(r => r.id !== row.id), row]);
 }
 
-export function loadJobSheets(): JobSheet[] { return loadJSON(KEYS.jobSheets, []); }
-export function saveJobSheets(rows: JobSheet[]) { saveJSON(KEYS.jobSheets, rows); }
+export function loadJobSheets(): JobSheet[] { return loadJSON(STORAGE_KEYS.jobSheets, []); }
+export function saveJobSheets(rows: JobSheet[]) { saveJSON(STORAGE_KEYS.jobSheets, rows); }
 export function upsertJobSheet(row: JobSheet) {
   const rows = loadJobSheets();
   saveJobSheets([...rows.filter(r => r.id !== row.id), row]);
 }
-export function setActiveJobSheet(id: string) { saveJSON(KEYS.activeJobSheet, id); }
-export function getActiveJobSheet(): string | null { return loadJSON<string | null>(KEYS.activeJobSheet, null); }
+export function setActiveJobSheet(id: string) { saveJSON(STORAGE_KEYS.activeJobSheet, id); }
+export function getActiveJobSheet(): string | null { return loadJSON<string | null>(STORAGE_KEYS.activeJobSheet, null); }
 
-export function loadTimesheets(): Timesheet[] { return loadJSON(KEYS.timesheets, []); }
-export function saveTimesheets(rows: Timesheet[]) { saveJSON(KEYS.timesheets, rows); }
+export function loadTimesheets(): Timesheet[] { return loadJSON(STORAGE_KEYS.timesheets, []); }
+export function saveTimesheets(rows: Timesheet[]) { saveJSON(STORAGE_KEYS.timesheets, rows); }
 export function upsertTimesheet(row: Timesheet) {
   const rows = loadTimesheets();
   saveTimesheets([...rows.filter(r => r.id !== row.id), row]);
@@ -90,8 +68,8 @@ export function getTimesheetByJobSheetId(jobSheetId: string): Timesheet | null {
   return loadTimesheets().find(t => t.jobSheetId === jobSheetId) || null;
 }
 
-export function loadEmployees(): EmployeeRecord[] { return loadJSON(KEYS.employees, []); }
-export function saveEmployees(rows: EmployeeRecord[]) { saveJSON(KEYS.employees, rows); }
+export function loadEmployees(): EmployeeRecord[] { return loadJSON(STORAGE_KEYS.employees, []); }
+export function saveEmployees(rows: EmployeeRecord[]) { saveJSON(STORAGE_KEYS.employees, rows); }
 export function upsertEmployee(row: EmployeeRecord) {
   const rows = loadEmployees();
   saveEmployees([...rows.filter(r => r.employeeKey !== row.employeeKey), row]);
@@ -99,17 +77,15 @@ export function upsertEmployee(row: EmployeeRecord) {
 export function deleteEmployee(employeeKey: string) {
   markEmployeeDeleted(employeeKey);
 }
-export function setActiveEmployee(employeeKey: string | null) { saveJSON(KEYS.activeEmployee, employeeKey); }
-export function getActiveEmployee(): string | null { return loadJSON<string | null>(KEYS.activeEmployee, null); }
+export function setActiveEmployee(employeeKey: string | null) { saveJSON(STORAGE_KEYS.activeEmployee, employeeKey); }
+export function getActiveEmployee(): string | null { return loadJSON<string | null>(STORAGE_KEYS.activeEmployee, null); }
 
-
-export function loadDeletedEmployeeKeys(): string[] { return loadJSON(KEYS.deletedEmployeeKeys, []); }
+export function loadDeletedEmployeeKeys(): string[] { return loadJSON(STORAGE_KEYS.deletedEmployeeKeys, []); }
 export function markEmployeeDeleted(employeeKey: string) {
   const keys = loadDeletedEmployeeKeys();
-  if (!keys.includes(employeeKey)) saveJSON(KEYS.deletedEmployeeKeys, [...keys, employeeKey]);
+  if (!keys.includes(employeeKey)) saveJSON(STORAGE_KEYS.deletedEmployeeKeys, [...keys, employeeKey]);
   saveEmployees(loadEmployees().filter(e => e.employeeKey !== employeeKey));
 }
-
 
 import { blankTimeEntry, computeTimeEntry } from "./timekeeping";
 import type { JobSheetWorker } from "./types";
@@ -130,10 +106,8 @@ export function addWorkerToTimesheet(jobSheetId: string, worker: JobSheetWorker)
   upsertTimesheet({ ...base, rows: [...base.rows, row] });
 }
 
-
-export function setActiveQuote(id: string) { saveJSON(KEYS.activeQuote, id); }
-export function getActiveQuote(): string | null { return loadJSON<string | null>(KEYS.activeQuote, null); }
-
+export function setActiveQuote(id: string) { saveJSON(STORAGE_KEYS.activeQuote, id); }
+export function getActiveQuote(): string | null { return loadJSON<string | null>(STORAGE_KEYS.activeQuote, null); }
 
 export type QuoteDraftWorkspace = {
   id: string;
@@ -143,25 +117,24 @@ export type QuoteDraftWorkspace = {
 };
 
 export function loadQuoteDraftWorkspaces(): QuoteDraftWorkspace[] {
-  return loadJSON(KEYS.quoteDrafts, []);
+  return loadJSON(STORAGE_KEYS.quoteDrafts, []);
 }
 export function saveQuoteDraftWorkspaces(rows: QuoteDraftWorkspace[]) {
-  saveJSON(KEYS.quoteDrafts, rows);
+  saveJSON(STORAGE_KEYS.quoteDrafts, rows);
 }
 export function upsertQuoteDraftWorkspace(row: QuoteDraftWorkspace) {
   const rows = loadQuoteDraftWorkspaces();
   const next = [row, ...rows.filter((r) => r.id !== row.id)].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   saveQuoteDraftWorkspaces(next);
 }
-export function setActiveQuoteDraft(id: string) { saveJSON(KEYS.activeQuoteDraft, id); }
-export function getActiveQuoteDraft(): string | null { return loadJSON<string | null>(KEYS.activeQuoteDraft, null); }
+export function setActiveQuoteDraft(id: string) { saveJSON(STORAGE_KEYS.activeQuoteDraft, id); }
+export function getActiveQuoteDraft(): string | null { return loadJSON<string | null>(STORAGE_KEYS.activeQuoteDraft, null); }
 
-
-export function loadJobCostingDrafts(): JobCostingDraft[] { return loadJSON(KEYS.jobCostingDrafts, []); }
-export function saveJobCostingDrafts(rows: JobCostingDraft[]) { saveJSON(KEYS.jobCostingDrafts, rows); }
+export function loadJobCostingDrafts(): JobCostingDraft[] { return loadJSON(STORAGE_KEYS.jobCostingDrafts, []); }
+export function saveJobCostingDrafts(rows: JobCostingDraft[]) { saveJSON(STORAGE_KEYS.jobCostingDrafts, rows); }
 export function upsertJobCostingDraft(row: JobCostingDraft) {
   const rows = loadJobCostingDrafts();
   saveJobCostingDrafts([...rows.filter(r => r.id !== row.id), row]);
 }
-export function setActiveJobCosting(id: string) { saveJSON(KEYS.activeJobCosting, id); }
-export function getActiveJobCosting(): string | null { return loadJSON<string | null>(KEYS.activeJobCosting, null); }
+export function setActiveJobCosting(id: string) { saveJSON(STORAGE_KEYS.activeJobCosting, id); }
+export function getActiveJobCosting(): string | null { return loadJSON<string | null>(STORAGE_KEYS.activeJobCosting, null); }
