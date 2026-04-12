@@ -1,16 +1,25 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { initStore } from "../../lib/store/db";
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const isLoginPage = pathname === "/login";
+
   const [status, setStatus] = useState<"checking" | "ready" | "error" | "unauthenticated">("checking");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Login page needs no auth check or store init
+    if (isLoginPage) {
+      setStatus("ready");
+      return;
+    }
+
     async function init() {
-      // Check for an active session first
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         setStatus("unauthenticated");
@@ -29,7 +38,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
     init();
 
-    // Redirect to login when the user signs out
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") {
         window.location.href = "/login";
@@ -37,7 +45,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [isLoginPage]);
+
+  // Always render the login page immediately — no redirect loop
+  if (isLoginPage) return <>{children}</>;
 
   if (status === "unauthenticated") {
     if (typeof window !== "undefined") window.location.href = "/login";
