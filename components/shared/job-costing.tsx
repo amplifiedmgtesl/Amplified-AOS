@@ -645,8 +645,8 @@ export default function JobCosting() {
             <thead>
               <tr>
                 <th>Role</th>
-                <th>Worker Pay Rate</th>
                 <th>Bill Mode</th>
+                <th>Worker Pay Rate</th>
                 <th>Quoted Crew Count</th>
                 <th>Quoted ST Hours</th>
                 <th>Quoted OT Hours</th>
@@ -740,10 +740,12 @@ export default function JobCosting() {
                   <td>${line.quotedSTRevenue.toFixed(2)}</td>
                   <td>${line.quotedOTRevenue.toFixed(2)}</td>
                   <td>${line.quotedDTRevenue.toFixed(2)}</td>
+                  <td>${line.quotedExpenses.toFixed(2)}</td>
                   <td>${line.lineRevenueTotal.toFixed(2)}</td>
                   <td>${line.lineActualSTCost.toFixed(2)}</td>
                   <td>${line.lineActualOTCost.toFixed(2)}</td>
                   <td>${line.lineActualDTCost.toFixed(2)}</td>
+                  <td>${line.actualExpensesUsed.toFixed(2)}</td>
                   <td>${line.lineActualTotalCost.toFixed(2)}</td>
                   <td>${line.lineProfit.toFixed(2)}</td>
                   <td>{(line.lineMargin * 100).toFixed(2)}%</td>
