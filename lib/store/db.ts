@@ -83,6 +83,24 @@ export function initStore(): Promise<void> {
   return _initPromise;
 }
 
+// Supabase caps queries at 1000 rows by default — page through all employees.
+async function fetchAllEmployees(): Promise<{ data: any[] | null; error: any }> {
+  const PAGE = 1000;
+  let all: any[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("employees")
+      .select("*")
+      .range(from, from + PAGE - 1);
+    if (error) return { data: null, error };
+    all = all.concat(data ?? []);
+    if (!data || data.length < PAGE) break;
+    from += PAGE;
+  }
+  return { data: all, error: null };
+}
+
 async function _loadAll() {
   const { data: { user } } = await supabase.auth.getUser();
   console.log("[db] loading as user:", user?.email ?? "NULL (unauthenticated)");
@@ -115,7 +133,7 @@ async function _loadAll() {
     supabase.from("job_sheet_workers").select("*").order("sort_order"),
     supabase.from("timesheets").select("id, job_sheet_id, title, hide_pay_columns"),
     supabase.from("timesheet_entries").select("*").not("timesheet_id", "is", null),
-    supabase.from("employees").select("*"),
+    fetchAllEmployees(),
     supabase.from("job_costing_drafts").select("*"),
     supabase.from("rate_card_profiles").select("*"),
     supabase.from("app_rate_state").select("*"),
@@ -405,7 +423,7 @@ export async function bulkUpsertEmployees(rows: EmployeeRecord[]): Promise<{ ins
     }
   }
   // Reload cache from Supabase so the UI reflects the full set
-  const { data } = await supabase.from("employees").select("*");
+  const { data } = await fetchAllEmployees();
   if (data) {
     _cache.employees = data.filter((r: any) => !r.is_deleted).map(rowToEmployee);
     _cache.deletedEmployeeKeys = data.filter((r: any) => r.is_deleted).map((r: any) => r.employee_key);
