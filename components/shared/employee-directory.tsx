@@ -101,7 +101,7 @@ export default function EmployeeDirectory() {
         && (!stateFilter || (e.stateCode || e.state || "") === stateFilter)
         && (!cityFilter || (e.city || "") === cityFilter)
         && (!statusFilter || (e.status || "") === statusFilter)
-        && (!typeFilter || (e.employmentType || "") === typeFilter)
+        && (!typeFilter || (typeFilter === "__blank__" ? !e.employmentType : (e.employmentType || "") === typeFilter))
         && (workerTypeFilter === "all" || e.type === workerTypeFilter);
     });
     rows.sort((a,b) => {
@@ -252,7 +252,7 @@ function addToCurrentTimesheet(employee: Employee) {
           <div><small>City</small><select value={cityFilter} onChange={(e)=>setCityFilter(e.target.value)}><option value="">All cities</option>{cities.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>State</small><select value={stateFilter} onChange={(e)=>setStateFilter(e.target.value)}><option value="">All states</option>{states.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>Status</small><select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)}><option value="">All status</option>{statuses.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
-          <div><small>Employment Type</small><select value={typeFilter} onChange={(e)=>setTypeFilter(e.target.value)}><option value="">All types</option>{types.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
+          <div><small>Employment Type</small><select value={typeFilter} onChange={(e)=>setTypeFilter(e.target.value)}><option value="">All types</option>{types.map((s)=><option key={s} value={s}>{s}</option>)}<option value="__blank__">— Not set —</option></select></div>
           <div><small>Name Sort</small><select value={sortAZ} onChange={(e)=>setSortAZ(e.target.value as "A-Z"|"Z-A")}><option value="A-Z">A-Z</option><option value="Z-A">Z-A</option></select></div>
           <div><small>Role to assign</small><input value={role} onChange={(e)=>setRole(e.target.value)} /></div>
           <div className="list-card"><strong>Current Job Sheet</strong><div className="muted">{activeSheet ? activeSheet.title : "No active job sheet selected"}</div></div>
