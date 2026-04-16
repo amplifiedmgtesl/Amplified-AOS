@@ -19,18 +19,26 @@ alter table employees
 --   update employees set type = 'staff' where employee_key = 'AES-XXXXX';
 
 -- ─── timesheet_entries: add employee_key column ───────────────────────────────
+-- Added without FK constraint for now — employees must be migrated to Supabase
+-- first before the constraint can be enforced. Run step 2 below after migration.
 alter table timesheet_entries
-  add column if not exists employee_key text references employees(employee_key);
+  add column if not exists employee_key text;
 
--- Backfill employee_key from job_sheet_workers where email matches:
-update timesheet_entries te
-set employee_key = jsw.employee_key
-from job_sheet_workers jsw
-where te.job_sheet_id = jsw.job_sheet_id
-  and lower(te.email) = lower(jsw.email)
-  and te.employee_key is null
-  and jsw.employee_key is not null
-  and jsw.employee_key <> '';
+-- ── STEP 2 (run AFTER employee migration is complete) ────────────────────────
+-- Backfill employee_key from job_sheet_workers where email matches, then add FK:
+--
+-- update timesheet_entries te
+-- set employee_key = jsw.employee_key
+-- from job_sheet_workers jsw
+-- where te.job_sheet_id = jsw.job_sheet_id
+--   and lower(te.email) = lower(jsw.email)
+--   and te.employee_key is null
+--   and jsw.employee_key is not null
+--   and jsw.employee_key <> '';
+--
+-- alter table timesheet_entries
+--   add constraint timesheet_entries_employee_key_fkey
+--   foreign key (employee_key) references employees(employee_key);
 
 -- ─── job_sheet_workers: create if not exists + RLS ───────────────────────────
 create table if not exists job_sheet_workers (
