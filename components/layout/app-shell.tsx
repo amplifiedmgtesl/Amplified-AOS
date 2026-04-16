@@ -16,8 +16,7 @@ const nav = [
   ["/employee-directory", "👥", "Employee Directory"],
   ["/job-requests", "📨", "Job Requests"],
   ["/call-sheets", "📞", "Call Sheets"],
-  ["/user-management", "🔐", "User Management"],
-  ["/position-maintenance", "🏷️", "Positions"],
+  ["/maintenance", "⚙️", "Maintenance"],
 ] as const;
 
 export function AppShell({
