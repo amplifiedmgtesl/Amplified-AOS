@@ -208,10 +208,7 @@ export type Profile = {
   employeeKey: string | null;
   fullName: string;
   email: string;
-  phone: string;
-  address: string;
-  city: string;
-  state: string;
+  // contact info (phone, address, city, state) lives on the employee record
 };
 
 export type UserWithProfile = {

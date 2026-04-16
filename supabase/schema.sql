@@ -156,11 +156,8 @@ create table if not exists profiles (
   role         text    not null default 'staff',
   employee_key text    references employees(employee_key),
   full_name    text,
-  email        text,
-  phone        text,
-  address      text,
-  city         text,
-  state        text
+  email        text
+  -- contact info (phone, address, city, state) is on the employee record
 );
 
 -- ─── Job Sheets ───────────────────────────────────────────────────────────────

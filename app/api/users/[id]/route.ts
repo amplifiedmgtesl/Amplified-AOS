@@ -40,7 +40,7 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { email, password, role, fullName, employeeKey, phone, address, city, state } = body;
+  const { email, password, role, fullName, employeeKey } = body;
 
   // Update auth user (only if email or password provided)
   if (email || password) {
@@ -60,10 +60,6 @@ export async function PATCH(
   if (fullName !== undefined) profileUpdate.full_name = fullName;
   if (employeeKey !== undefined) profileUpdate.employee_key = employeeKey || null;
   if (email !== undefined) profileUpdate.email = email;
-  if (phone !== undefined) profileUpdate.phone = phone || null;
-  if (address !== undefined) profileUpdate.address = address || null;
-  if (city !== undefined) profileUpdate.city = city || null;
-  if (state !== undefined) profileUpdate.state = state || null;
 
   const { error: profileError } = await supabaseAdmin
     .from("profiles")
