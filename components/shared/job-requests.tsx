@@ -5,7 +5,11 @@ import { useMemo, useState } from "react";
 import { setQuoteSeed, upsertJobRequest } from "@/lib/store/app-store";
 import { googleCalendarLink } from "@/lib/store/calendar";
 import { loadJobRequests } from "@/lib/store/app-store";
+import { timeOptions } from "@/lib/store/timekeeping";
+import { US_STATES, JOB_REQUEST_STATUSES } from "@/lib/constants";
 import type { JobRequest } from "@/lib/store/types";
+
+const TIMES = timeOptions();
 
 export default function JobRequests() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -134,13 +138,13 @@ export default function JobRequests() {
           <div><small>Venue</small><input value={form.venue} onChange={(e)=>setForm({ ...form, venue:e.target.value })} /></div>
           <div><small>Venue Address</small><input value={form.venueAddress} onChange={(e)=>setForm({ ...form, venueAddress:e.target.value })} /></div>
           <div><small>City</small><input value={form.city} onChange={(e)=>setForm({ ...form, city:e.target.value })} /></div>
-          <div><small>State</small><input value={form.state} onChange={(e)=>setForm({ ...form, state:e.target.value })} /></div>
+          <div><small>State</small><select value={form.state} onChange={(e)=>setForm({ ...form, state:e.target.value })}><option value="">— Select —</option>{US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>Google Maps Link</small><input value={form.googleMapsLink} onChange={(e)=>setForm({ ...form, googleMapsLink:e.target.value })} /></div>
-          <div><small>Status</small><select value={form.status} onChange={(e)=>setForm({ ...form, status:e.target.value })}><option value="lead">lead</option><option value="quoted">quoted</option><option value="booked">booked</option><option value="lost">lost</option></select></div>
+          <div><small>Status</small><select value={form.status} onChange={(e)=>setForm({ ...form, status:e.target.value })}>{JOB_REQUEST_STATUSES.map((s)=><option key={s.value} value={s.value}>{s.label}</option>)}</select></div>
           <div><small>Start Date</small><input type="date" value={form.requestDate} onChange={(e)=>setForm({ ...form, requestDate:e.target.value })} /></div>
           <div><small>End Date</small><input type="date" value={form.endDate || ""} onChange={(e)=>setForm({ ...form, endDate:e.target.value })} /></div>
-          <div><small>Start Time</small><input value={form.startTime} onChange={(e)=>setForm({ ...form, startTime:e.target.value })} /></div>
-          <div><small>End Time</small><input value={form.endTime} onChange={(e)=>setForm({ ...form, endTime:e.target.value })} /></div>
+          <div><small>Start Time</small><select value={form.startTime} onChange={(e)=>setForm({ ...form, startTime:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}</select></div>
+          <div><small>End Time</small><select value={form.endTime} onChange={(e)=>setForm({ ...form, endTime:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}</select></div>
           <div><small>Expected Hours / Day</small><input type="number" value={form.expectedHours || 10} onChange={(e)=>setForm({ ...form, expectedHours:Number(e.target.value || 0) })} /></div>
           <div><small>Add to Calendar</small><select value={String(form.addToCalendar)} onChange={(e)=>setForm({ ...form, addToCalendar:e.target.value === "true" })}><option value="true">Yes</option><option value="false">No</option></select></div>
           <div><small>Add to Google Calendar on Save</small><select value={String(syncToGoogleOnSave)} onChange={(e)=>setSyncToGoogleOnSave(e.target.value === "true")}><option value="true">Yes</option><option value="false">No</option></select></div>
@@ -171,7 +175,7 @@ export default function JobRequests() {
                     <td>{r.requestDate}{r.endDate ? ` to ${r.endDate}` : ""}</td>
                     <td>{r.startTime} {r.endTime ? `to ${r.endTime}` : ""}</td>
                     <td>{r.expectedHours || "-"}</td>
-                    <td>{r.status}</td>
+                    <td>{JOB_REQUEST_STATUSES.find((s)=>s.value===r.status)?.label ?? r.status}</td>
                     <td><button className="secondary" onClick={() => { setQuoteSeed({ linkedJobRequestId: r.id, client: r.client, eventName: r.eventName, venue: r.venue, cityState: r.cityState, startDate: r.requestDate, endDate: r.endDate || r.requestDate, startTime: r.startTime, endTime: r.endTime, expectedHoursPerDay: r.expectedHours || 10 }); window.location.href="/quote-builder"; }}>Build Quote</button></td>
                   </tr>
                 ))}

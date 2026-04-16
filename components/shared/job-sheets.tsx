@@ -4,7 +4,11 @@
 import { useMemo, useState } from "react";
 import { combinedCalendarEvents } from "@/lib/store/calendar";
 import { addWorkerToTimesheet, getActiveJobSheet, getTimesheetByJobSheetId, loadEmployees, loadJobSheets, setActiveJobSheet, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
+import { timeOptions, POSITIONS } from "@/lib/store/timekeeping";
+import { US_STATES } from "@/lib/constants";
 import type { EmployeeRecord, JobSheet, JobSheetWorker } from "@/lib/store/types";
+
+const TIMES = timeOptions();
 
 export default function JobSheets() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -201,10 +205,10 @@ function addWorkerToLinkedTimesheet(worker: JobSheetWorker) {
           <div><small>Venue</small><input value={manual.venue} onChange={(e)=>setManual({ ...manual, venue:e.target.value })} /></div>
           <div><small>Venue Address</small><input value={manual.venueAddress} onChange={(e)=>setManual({ ...manual, venueAddress:e.target.value })} /></div>
           <div><small>City</small><input value={manual.city} onChange={(e)=>setManual({ ...manual, city:e.target.value })} /></div>
-          <div><small>State</small><input value={manual.state} onChange={(e)=>setManual({ ...manual, state:e.target.value })} /></div>
+          <div><small>State</small><select value={manual.state} onChange={(e)=>setManual({ ...manual, state:e.target.value })}><option value="">— Select —</option>{US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>Google Maps Link</small><input value={manual.googleMapsLink} onChange={(e)=>setManual({ ...manual, googleMapsLink:e.target.value })} /></div>
           <div><small>Date</small><input type="date" value={manual.date} onChange={(e)=>setManual({ ...manual, date:e.target.value })} /></div>
-          <div><small>Call Time</small><input value={manual.callTime} onChange={(e)=>setManual({ ...manual, callTime:e.target.value })} /></div>
+          <div><small>Call Time</small><select value={manual.callTime} onChange={(e)=>setManual({ ...manual, callTime:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}</select></div>
         </div>
         <div style={{ marginTop: 12 }}>
           <small>Notes</small>
@@ -270,7 +274,7 @@ function addWorkerToLinkedTimesheet(worker: JobSheetWorker) {
                   <div><small>Last Name</small><input value={manualWorker.lastName} onChange={(e)=>setManualWorker({ ...manualWorker, lastName:e.target.value })} /></div>
                   <div><small>Phone</small><input value={manualWorker.phone} onChange={(e)=>setManualWorker({ ...manualWorker, phone:e.target.value })} /></div>
                   <div><small>Email</small><input value={manualWorker.email} onChange={(e)=>setManualWorker({ ...manualWorker, email:e.target.value })} /></div>
-                  <div><small>Role</small><input value={manualWorker.role} onChange={(e)=>setManualWorker({ ...manualWorker, role:e.target.value })} /></div>
+                  <div><small>Role</small><select value={manualWorker.role} onChange={(e)=>setManualWorker({ ...manualWorker, role:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select></div>
                 </div>
 
                 {/* Live match indicator */}

@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { IMPORTED_EMPLOYEES } from "@/lib/data/employees";
 import { addWorkerToTimesheet, bulkUpsertEmployees, deleteEmployee, getActiveEmployee, getActiveJobSheet, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, loadTimesheets, setActiveEmployee, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
+import { US_STATES } from "@/lib/constants";
 import type { EmployeeDocument, EmployeeRecord } from "@/lib/store/types";
 
 type Employee = EmployeeRecord;
@@ -259,7 +260,7 @@ function addToCurrentTimesheet(employee: Employee) {
             <div><small>Phone</small><input value={form.phone || ""} onChange={(e)=>setForm({ ...form, phone:e.target.value })} /></div>
             <div><small>Email</small><input value={form.email || ""} onChange={(e)=>setForm({ ...form, email:e.target.value })} /></div>
             <div><small>City</small><input value={form.city || ""} onChange={(e)=>setForm({ ...form, city:e.target.value })} /></div>
-            <div><small>State Code</small><input value={form.stateCode || ""} onChange={(e)=>setForm({ ...form, stateCode:e.target.value })} /></div>
+            <div><small>State</small><select value={form.stateCode || ""} onChange={(e)=>setForm({ ...form, stateCode:e.target.value })}><option value="">— Select —</option>{US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
             <div><small>Status</small><input value={form.status || ""} onChange={(e)=>setForm({ ...form, status:e.target.value })} /></div>
             <div><small>Employment Type</small><input value={form.employmentType || ""} onChange={(e)=>setForm({ ...form, employmentType:e.target.value })} /></div>
             <div style={{ gridColumn: "1 / -1" }}><small>Address</small><input value={form.address || ""} onChange={(e)=>setForm({ ...form, address:e.target.value })} /></div>
