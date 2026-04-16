@@ -40,10 +40,6 @@ const blankForm = () => ({
   role: "staff",
   fullName: "",
   employeeKey: "",
-  phone: "",
-  address: "",
-  city: "",
-  state: "",
 });
 
 type FormState = ReturnType<typeof blankForm>;
@@ -113,10 +109,6 @@ export function UserManagement() {
       role: u.profile?.role ?? "staff",
       fullName: u.profile?.fullName ?? "",
       employeeKey: u.profile?.employeeKey ?? "",
-      phone: u.profile?.phone ?? "",
-      address: u.profile?.address ?? "",
-      city: u.profile?.city ?? "",
-      state: u.profile?.state ?? "",
     });
     setFormError(null);
     setEditingId(u.id);
@@ -213,7 +205,7 @@ export function UserManagement() {
           <table>
             <thead>
               <tr>
-                <th>Name</th>
+                <th>Display Name</th>
                 <th>Email</th>
                 <th>Role</th>
                 <th>Linked Employee</th>
@@ -319,7 +311,12 @@ export function UserManagement() {
 
               <div>
                 <small>Phone</small>
-                <input value={form.phone} onChange={(e) => setField("phone", e.target.value)} placeholder="(555) 555-5555" />
+                {(() => {
+                  const linked = employees.find((e) => e.employeeKey === form.employeeKey);
+                  return linked?.phone
+                    ? <input value={linked.phone} readOnly style={{ background: "var(--accent-soft)", color: "var(--muted)", cursor: "default" }} title="From linked employee record" />
+                    : <input value="" readOnly placeholder="Link an employee record to show phone" style={{ color: "var(--muted)", cursor: "default" }} />;
+                })()}
               </div>
 
               <div style={{ gridColumn: "1 / -1" }}>
@@ -334,21 +331,6 @@ export function UserManagement() {
                       </option>
                     ))}
                 </select>
-              </div>
-
-              <div style={{ gridColumn: "1 / -1" }}>
-                <small>Address</small>
-                <input value={form.address} onChange={(e) => setField("address", e.target.value)} placeholder="123 Main St" />
-              </div>
-
-              <div>
-                <small>City</small>
-                <input value={form.city} onChange={(e) => setField("city", e.target.value)} placeholder="Nashville" />
-              </div>
-
-              <div>
-                <small>State</small>
-                <input value={form.state} onChange={(e) => setField("state", e.target.value)} placeholder="TN" maxLength={2} />
               </div>
             </div>
 
