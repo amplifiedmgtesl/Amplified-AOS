@@ -20,6 +20,7 @@ import type {
   Timesheet,
   EmployeeRecord,
   JobCostingDraft,
+  Position,
 } from "./types";
 import { DEFAULT_RATE_ROWS, DEFAULT_TERMS, type RateCardProfile, type RateRow } from "../rates/defaults";
 
@@ -43,6 +44,7 @@ interface Cache {
   terms: string;
   clientName: string;
   rateCardProfiles: RateCardProfile[];
+  positions: Position[];
 }
 
 const _cache: Cache = {
@@ -63,6 +65,7 @@ const _cache: Cache = {
   terms: DEFAULT_TERMS,
   clientName: "",
   rateCardProfiles: [],
+  positions: [],
 };
 
 export function isInitialized(): boolean {
@@ -123,6 +126,7 @@ async function _loadAll() {
     jobCostingRes,
     rateProfilesRes,
     rateStateRes,
+    positionsRes,
   ] = await Promise.all([
     supabase.from("calendar_events").select("*"),
     supabase.from("quotes").select("*"),
@@ -137,6 +141,7 @@ async function _loadAll() {
     supabase.from("job_costing_drafts").select("*"),
     supabase.from("rate_card_profiles").select("*"),
     supabase.from("app_rate_state").select("*"),
+    supabase.from("positions").select("*").eq("is_active", true).order("sort_order"),
   ]);
 
   const events = eventsRes.data ?? [];
@@ -185,6 +190,8 @@ async function _loadAll() {
   if (rateStateMap["rate_rows"]) _cache.rateRows = rateStateMap["rate_rows"];
   if (rateStateMap["terms"]) _cache.terms = rateStateMap["terms"];
   if (rateStateMap["client_name"]) _cache.clientName = rateStateMap["client_name"];
+
+  _cache.positions = (positionsRes.data ?? []).map(rowToPosition);
 
   _cache.initialized = true;
 }
@@ -995,4 +1002,45 @@ function rateCardProfileToRow(p: RateCardProfile) {
     created_at: p.createdAt,
     updated_at: p.updatedAt,
   };
+}
+
+// ─── Positions ────────────────────────────────────────────────────────────────
+
+function rowToPosition(r: any): Position {
+  return {
+    id: r.id,
+    name: r.name ?? "",
+    sortOrder: r.sort_order ?? 0,
+    isActive: r.is_active ?? true,
+  };
+}
+
+export function getPositions(): Position[] {
+  return _cache.positions;
+}
+
+export function upsertPosition(position: Position): void {
+  const idx = _cache.positions.findIndex((p) => p.id === position.id);
+  if (idx >= 0) _cache.positions[idx] = position;
+  else _cache.positions = [..._cache.positions, position].sort((a, b) => a.sortOrder - b.sortOrder);
+  sync("positions", {
+    id: position.id,
+    name: position.name,
+    sort_order: position.sortOrder,
+    is_active: position.isActive,
+  });
+}
+
+export function deletePosition(id: string): void {
+  // Soft-delete: mark inactive so existing records keep their position label
+  const pos = _cache.positions.find((p) => p.id === id);
+  if (!pos) return;
+  const updated = { ...pos, isActive: false };
+  _cache.positions = _cache.positions.filter((p) => p.id !== id);
+  sync("positions", {
+    id: updated.id,
+    name: updated.name,
+    sort_order: updated.sortOrder,
+    is_active: false,
+  });
 }

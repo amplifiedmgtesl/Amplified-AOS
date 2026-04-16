@@ -161,3 +161,22 @@ export function setActiveJobCosting(id: string) { saveJSON("aes_active_job_costi
 export function getActiveJobCosting(): string | null {
   return loadJSON<string | null>("aes_active_job_costing_v1", null);
 }
+
+// ─── Positions ────────────────────────────────────────────────────────────────
+
+import type { Position } from "./types";
+
+export function loadPositions(): Position[] { return db.getPositions(); }
+export function upsertPosition(row: Position) { db.upsertPosition(row); }
+export function deletePosition(id: string) { db.deletePosition(id); }
+
+/** Returns active position names as a flat string array — drop-in for old POSITIONS constant. */
+export function positionNames(): string[] {
+  const names = db.getPositions().map((p) => p.name);
+  return names.length > 0 ? names : [
+    "Stagehand","Stagehand Lead","Rigger","Head Rigger",
+    "Audio Technician","Lighting Technician","Video Technician",
+    "Forklift Operator","Camera Operator","Operations",
+    "Lead","Heavy Equipment Op","Aerial Lift Operator","General Labor","Other",
+  ];
+}

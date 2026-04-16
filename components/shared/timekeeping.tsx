@@ -2,12 +2,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet } from "@/lib/store/app-store";
-import { POSITIONS, blankTimeEntry, computeTimeEntry, lunchOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
+import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames } from "@/lib/store/app-store";
+import { blankTimeEntry, computeTimeEntry, lunchOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
 import type { TimeEntry, Timesheet } from "@/lib/store/types";
 
 const TIMES = timeOptions();
 const RATES = rateOptions();
+// POSITIONS is loaded from the store at render time so it stays live
 
 function splitName(fullName: string) {
   const parts = fullName.trim().split(" ");
@@ -15,6 +16,7 @@ function splitName(fullName: string) {
 }
 
 export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?: boolean }) {
+  const POSITIONS = positionNames();
   const [refreshKey, setRefreshKey] = useState(0);
   const sheets = useMemo(() => loadJobSheets(), [refreshKey]);
   const activeSheetId = getActiveJobSheet() || sheets[0]?.id || "";

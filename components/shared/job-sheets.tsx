@@ -4,13 +4,16 @@
 import { useMemo, useState } from "react";
 import { combinedCalendarEvents } from "@/lib/store/calendar";
 import { addWorkerToTimesheet, getActiveJobSheet, getTimesheetByJobSheetId, loadEmployees, loadJobSheets, setActiveJobSheet, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
-import { timeOptions, POSITIONS } from "@/lib/store/timekeeping";
+import { timeOptions } from "@/lib/store/timekeeping";
+import { positionNames } from "@/lib/store/app-store";
 import { US_STATES } from "@/lib/constants";
 import type { EmployeeRecord, JobSheet, JobSheetWorker } from "@/lib/store/types";
 
 const TIMES = timeOptions();
+// POSITIONS loaded from store inside component
 
 export default function JobSheets() {
+  const POSITIONS = positionNames();
   const [refreshKey, setRefreshKey] = useState(0);
   const sheets = useMemo(() => loadJobSheets(), [refreshKey]);
   const events = useMemo(() => combinedCalendarEvents(), [refreshKey]);

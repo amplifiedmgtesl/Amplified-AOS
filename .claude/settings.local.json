@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(grep -iE \"infrastructure|design|amplified|architecture\" find \"/c/Users/johnobrien/OneDrive - SynergyPro Ltd\" -name \"*.pdf\")",
+      "Bash(grep -iE \"infrastructure|design|amplified|architecture\" find /c/amplified -name \"*.pdf\")",
+      "Bash(python -c \"import reportlab; print\\(reportlab.Version\\)\")",
+      "Bash(pip install:*)",
+      "Bash(python \"C:/amplified/build_infrastructure_pdf.py\")",
+      "Bash(python -c ':*)",
+      "Bash(python \"C:\\\\amplified\\\\build_infrastructure_pdf.py\")"
+    ]
+  }
+}

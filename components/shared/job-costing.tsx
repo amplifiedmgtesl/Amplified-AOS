@@ -13,26 +13,10 @@ import {
   loadTimesheets,
   setActiveJobCosting,
   upsertJobCostingDraft,
+  positionNames,
 } from "@/lib/store/app-store";
 import type { JobCostingDraft, JobCostingLine, JobRequest, JobSheet, QuoteDraft, TimeEntry, Timesheet } from "@/lib/store/types";
-
-const ROLES = [
-  "Stagehand",
-  "Stagehand Lead",
-  "Rigger",
-  "Head Rigger",
-  "Audio Tech A1",
-  "Audio Tech A2",
-  "Lighting Tech L1",
-  "Lighting Tech L2",
-  "Video Tech V1",
-  "Video Tech V2",
-  "Forklift Operator",
-  "Heavy Equipment Operator",
-  "Aerial Lift Operator",
-  "Site Operations",
-  "General Labor",
-];
+// ROLES loaded from positions store inside component
 
 const GLOBAL_DEFAULTS = {
   payrollBurden: 0.15,
@@ -258,6 +242,7 @@ function roleRateSeed(role: string) {
 }
 
 export default function JobCosting() {
+  const ROLES = positionNames();
   const [drafts, setDrafts] = useState<JobCostingDraft[]>([]);
   const [draft, setDraft] = useState<JobCostingDraft>(defaultDraft());
   const [statusMsg, setStatusMsg] = useState("");
