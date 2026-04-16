@@ -202,6 +202,26 @@ export type EmployeeRecord = {
 };
 
 
+export type Profile = {
+  id: string;          // matches auth.users.id (uuid)
+  role: string;        // "admin" | "staff"
+  employeeKey: string | null;
+  fullName: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+};
+
+export type UserWithProfile = {
+  id: string;
+  email: string;
+  createdAt: string;
+  lastSignInAt: string | null;
+  profile: Profile | null;
+};
+
 export type JobCostingLine = {
   id: string;
   role: string;
