@@ -296,7 +296,7 @@ function addToCurrentTimesheet(employee: Employee) {
               <thead>
                 <tr>
                   <th>Employee Key</th><th>Full Name</th><th>First Name</th><th>Last Name</th><th>Phone</th><th>Email</th>
-                  <th>City</th><th>State</th><th>Status</th><th>Staff/Contractor</th><th>Employment Type</th><th>Action</th>
+                  <th>City</th><th>State</th><th>Status</th><th>Employment Type</th><th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -311,8 +311,11 @@ function addToCurrentTimesheet(employee: Employee) {
                     <td>{e.city}</td>
                     <td>{e.stateCode || e.state}</td>
                     <td>{e.status}</td>
-                    <td><span className={`badge ${e.type === "staff" ? "" : "secondary"}`}>{e.type === "staff" ? "Staff" : "Contractor"}</span></td>
-                    <td>{e.employmentType}</td>
+                    <td>
+                      {e.employmentType
+                        ? <span className={`badge ${e.type === "staff" ? "" : "secondary"}`}>{e.employmentType}</span>
+                        : <span className="muted">—</span>}
+                    </td>
                     <td>
                       <div className="action-row">
                         <button className="secondary" onClick={() => { setActiveEmployee(e.employeeKey); setRefreshKey((x)=>x+1); }}>Open Profile</button>
