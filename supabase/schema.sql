@@ -148,8 +148,9 @@ create table if not exists employees (
 
 -- ─── Profiles ─────────────────────────────────────────────────────────────────
 -- Supabase auth user profiles. Shared by Amplified-AOS and amplified-staff.
--- role = 'staff'  → can submit timesheets via the staff portal
--- role = 'admin'  → full access to Amplified-AOS
+-- role = 'staff'        → can submit timesheets via the staff portal
+-- role = 'admin'        → full access to Amplified-AOS
+-- role = 'crew_leader'  → access to /lead/job-sheets and /lead/timekeeping (no pay/pricing)
 -- employee_key links to employees table (required for staff portal users).
 create table if not exists profiles (
   id           uuid    primary key,  -- matches auth.users.id

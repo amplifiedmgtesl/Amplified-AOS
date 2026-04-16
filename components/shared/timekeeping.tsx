@@ -14,7 +14,7 @@ function splitName(fullName: string) {
   return { firstName: parts[0] || "", lastName: parts.slice(1).join(" ") || "" };
 }
 
-export default function Timekeeping() {
+export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?: boolean }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const sheets = useMemo(() => loadJobSheets(), [refreshKey]);
   const activeSheetId = getActiveJobSheet() || sheets[0]?.id || "";
@@ -101,18 +101,22 @@ export default function Timekeeping() {
               {sheets.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
             </select>
           </div>
-          <div className="list-card">
-            <strong>Linked Invoice / Quote Detail</strong>
-            <div className="muted">Use this page to generate time-based labor breakdowns that feed quote and invoice detail.</div>
-          </div>
-          <div className="list-card">
-            <strong>Hide Pay Columns</strong>
-            <div className="action-row" style={{ marginTop: 8 }}>
-              <button className="secondary" onClick={() => timesheet && persist({ ...timesheet, hidePayColumns: !timesheet.hidePayColumns })}>
-                {timesheet?.hidePayColumns ? "Show Pay Columns" : "Hide Pay Columns"}
-              </button>
+          {!hidePayAlways && (
+            <div className="list-card">
+              <strong>Linked Invoice / Quote Detail</strong>
+              <div className="muted">Use this page to generate time-based labor breakdowns that feed quote and invoice detail.</div>
             </div>
-          </div>
+          )}
+          {!hidePayAlways && (
+            <div className="list-card">
+              <strong>Hide Pay Columns</strong>
+              <div className="action-row" style={{ marginTop: 8 }}>
+                <button className="secondary" onClick={() => timesheet && persist({ ...timesheet, hidePayColumns: !hidePayAlways && !timesheet.hidePayColumns })}>
+                  {timesheet?.hidePayColumns ? "Show Pay Columns" : "Hide Pay Columns"}
+                </button>
+              </div>
+            </div>
+          )}
           <div className="action-row" style={{ alignItems: "end" }}>
             <button onClick={() => window.print()}>Download / Print PDF</button>
           </div>
@@ -146,7 +150,7 @@ export default function Timekeeping() {
                     <th>Position</th><th>First Name</th><th>Last Name</th><th>Phone</th><th>Email</th>
                     <th>Time IN</th><th>Time OUT</th><th>Lunch</th><th>Time IN</th><th>Time OUT</th>
                     <th>STD HOURS</th><th>OT HOURS</th><th>DT HOURS</th><th>TOTAL HOURS</th>
-                    {!timesheet.hidePayColumns ? <><th>STD RATE</th><th>OT RATE</th><th>DT RATE</th><th>TOTAL PAY</th></> : null}
+                    {!hidePayAlways && !timesheet.hidePayColumns ? <><th>STD RATE</th><th>OT RATE</th><th>DT RATE</th><th>TOTAL PAY</th></> : null}
                     <th className="hide-print">Action</th>
                   </tr>
                 </thead>
@@ -167,7 +171,7 @@ export default function Timekeeping() {
                       <td>{row.otHours.toFixed(2)}</td>
                       <td>{row.dtHours.toFixed(2)}</td>
                       <td>{row.totalHours.toFixed(2)}</td>
-                      {!timesheet.hidePayColumns ? (
+                      {!hidePayAlways && !timesheet.hidePayColumns ? (
                         <>
                           <td style={{ minWidth: 110 }}><select className="input-tight" style={{ minWidth: 100 }} value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
                           <td style={{ minWidth: 110 }}><select className="input-tight" style={{ minWidth: 100 }} value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
@@ -186,7 +190,7 @@ export default function Timekeeping() {
                     <th>{totals.otHours.toFixed(2)}</th>
                     <th>{totals.dtHours.toFixed(2)}</th>
                     <th>{totals.totalHours.toFixed(2)}</th>
-                    {!timesheet.hidePayColumns ? <><th></th><th></th><th></th><th>${totals.totalPay.toFixed(2)}</th></> : null}
+                    {!hidePayAlways && !timesheet.hidePayColumns ? <><th></th><th></th><th></th><th>${totals.totalPay.toFixed(2)}</th></> : null}
                     <th className="hide-print"></th>
                   </tr>
                 </tfoot>
@@ -197,7 +201,7 @@ export default function Timekeeping() {
               <h3 className="section-title">Labor Summary for Quotes / Invoices</h3>
               <div style={{ overflowX: "auto" }}>
                 <table>
-                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th><th>Total Pay</th></tr></thead>
+                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hidePayAlways && <th>Total Pay</th>}</tr></thead>
                   <tbody>
                     {summary.map((r) => (
                       <tr key={r.position}>
@@ -207,7 +211,7 @@ export default function Timekeeping() {
                         <td>{r.otHours.toFixed(2)}</td>
                         <td>{r.dtHours.toFixed(2)}</td>
                         <td>{r.totalHours.toFixed(2)}</td>
-                        <td>${r.totalPay.toFixed(2)}</td>
+                        {!hidePayAlways && <td>${r.totalPay.toFixed(2)}</td>}
                       </tr>
                     ))}
                   </tbody>

@@ -29,14 +29,14 @@ export default function LoginPage() {
       .eq("id", data.user.id)
       .single();
 
-    if (!profileData || profileData.role !== "admin") {
+    if (!profileData || !["admin", "crew_leader"].includes(profileData.role)) {
       await supabase.auth.signOut();
       setError("Access denied. Staff members must use the Staff Portal.");
       setLoading(false);
       return;
     }
 
-    window.location.href = "/dashboard";
+    window.location.href = profileData.role === "crew_leader" ? "/lead/job-sheets" : "/dashboard";
   }
 
   return (

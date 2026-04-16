@@ -204,7 +204,7 @@ export type EmployeeRecord = {
 
 export type Profile = {
   id: string;          // matches auth.users.id (uuid)
-  role: string;        // "admin" | "staff"
+  role: string;        // "admin" | "staff" | "crew_leader"
   employeeKey: string | null;
   fullName: string;
   email: string;
