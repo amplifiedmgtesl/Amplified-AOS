@@ -3,8 +3,8 @@
 
 import { useMemo, useState } from "react";
 import { combinedCalendarEvents } from "@/lib/store/calendar";
-import { addWorkerToTimesheet, getActiveJobSheet, getTimesheetByJobSheetId, loadJobSheets, setActiveJobSheet, upsertJobSheet } from "@/lib/store/app-store";
-import type { JobSheet, JobSheetWorker } from "@/lib/store/types";
+import { addWorkerToTimesheet, getActiveJobSheet, getTimesheetByJobSheetId, loadEmployees, loadJobSheets, setActiveJobSheet, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
+import type { EmployeeRecord, JobSheet, JobSheetWorker } from "@/lib/store/types";
 
 export default function JobSheets() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -29,6 +29,23 @@ export default function JobSheets() {
     notes: ""
   });
   const [manualWorker, setManualWorker] = useState({ firstName:"", lastName:"", phone:"", email:"", role:"Crew" });
+  const [addStatus, setAddStatus] = useState<{ type: "found" | "created"; name: string } | null>(null);
+
+  // Live employee lookup — match by email first, then by full name
+  const employees = loadEmployees();
+  const matchedEmployee = useMemo<EmployeeRecord | null>(() => {
+    const email = manualWorker.email.trim().toLowerCase();
+    const fullName = `${manualWorker.firstName} ${manualWorker.lastName}`.trim().toLowerCase();
+    if (email) {
+      const byEmail = employees.find((e) => e.email?.toLowerCase() === email);
+      if (byEmail) return byEmail;
+    }
+    if (fullName.length > 2) {
+      const byName = employees.find((e) => e.fullName.toLowerCase() === fullName);
+      if (byName) return byName;
+    }
+    return null;
+  }, [manualWorker.email, manualWorker.firstName, manualWorker.lastName, employees]);
 
   function chooseSheet(id: string) {
     setActiveJobSheet(id);
@@ -86,21 +103,51 @@ export default function JobSheets() {
 
   function addManualWorker() {
     if (!active) return;
+    const fullName = `${manualWorker.firstName} ${manualWorker.lastName}`.trim();
+    if (!fullName) return;
+
+    let employeeKey: string;
+    let statusType: "found" | "created";
+
+    if (matchedEmployee) {
+      // Use existing employee record
+      employeeKey = matchedEmployee.employeeKey;
+      statusType = "found";
+    } else {
+      // Create a new employee record
+      employeeKey = `AES-${Date.now().toString().slice(-5)}`;
+      const newEmp: EmployeeRecord = {
+        employeeKey,
+        fullName,
+        firstName: manualWorker.firstName,
+        lastName: manualWorker.lastName,
+        email: manualWorker.email || undefined,
+        phone: manualWorker.phone || undefined,
+        type: "contractor",
+        source: "manual",
+      };
+      upsertEmployee(newEmp);
+      statusType = "created";
+    }
+
     const worker: JobSheetWorker = {
-      employeeKey: `manual-${Date.now()}`,
-      fullName: `${manualWorker.firstName} ${manualWorker.lastName}`.trim(),
-      firstName: manualWorker.firstName,
-      lastName: manualWorker.lastName,
-      stateCode: active.state || "",
-      phone: manualWorker.phone,
-      email: manualWorker.email,
+      employeeKey,
+      fullName: matchedEmployee?.fullName || fullName,
+      firstName: matchedEmployee?.firstName || manualWorker.firstName,
+      lastName: matchedEmployee?.lastName || manualWorker.lastName,
+      stateCode: matchedEmployee?.stateCode || active.state || "",
+      phone: matchedEmployee?.phone || manualWorker.phone,
+      email: matchedEmployee?.email || manualWorker.email,
       role: manualWorker.role,
-      confirmed: false
+      confirmed: false,
     };
+
     upsertJobSheet({ ...active, workers: [...active.workers, worker] });
     addWorkerToTimesheet(active.id, worker);
+    setAddStatus({ type: statusType, name: worker.fullName });
     setManualWorker({ firstName:"", lastName:"", phone:"", email:"", role:"Crew" });
     setRefreshKey((x) => x + 1);
+    setTimeout(() => setAddStatus(null), 4000);
   }
 
 
@@ -217,7 +264,7 @@ function addWorkerToLinkedTimesheet(worker: JobSheetWorker) {
               </div>
 
               <div style={{ marginTop: 16 }}>
-                <h3 className="section-title">Manual Add Crew to Job Sheet</h3>
+                <h3 className="section-title">Add Crew to Job Sheet</h3>
                 <div className="grid4">
                   <div><small>First Name</small><input value={manualWorker.firstName} onChange={(e)=>setManualWorker({ ...manualWorker, firstName:e.target.value })} /></div>
                   <div><small>Last Name</small><input value={manualWorker.lastName} onChange={(e)=>setManualWorker({ ...manualWorker, lastName:e.target.value })} /></div>
@@ -225,8 +272,26 @@ function addWorkerToLinkedTimesheet(worker: JobSheetWorker) {
                   <div><small>Email</small><input value={manualWorker.email} onChange={(e)=>setManualWorker({ ...manualWorker, email:e.target.value })} /></div>
                   <div><small>Role</small><input value={manualWorker.role} onChange={(e)=>setManualWorker({ ...manualWorker, role:e.target.value })} /></div>
                 </div>
+
+                {/* Live match indicator */}
+                {matchedEmployee && (
+                  <div style={{ marginTop: 8, padding: "8px 12px", background: "#eef8ef", border: "1px solid #cfe7d1", borderRadius: 8, fontSize: 13, color: "#2a5a31" }}>
+                    ✓ Found existing employee: <strong>{matchedEmployee.fullName}</strong> ({matchedEmployee.employeeKey})
+                    {matchedEmployee.phone && <> — {matchedEmployee.phone}</>}
+                  </div>
+                )}
+
                 <div className="action-row" style={{ marginTop: 10 }}>
-                  <button onClick={addManualWorker}>Add Manual Crew</button>
+                  <button onClick={addManualWorker}>
+                    {matchedEmployee ? "Add to Job Sheet" : "Add & Create Employee Record"}
+                  </button>
+                  {addStatus && (
+                    <span style={{ fontSize: 13, color: addStatus.type === "found" ? "#2a5a31" : "#6b4c00" }}>
+                      {addStatus.type === "found"
+                        ? `✓ Linked to existing employee: ${addStatus.name}`
+                        : `✓ Created new employee record: ${addStatus.name}`}
+                    </span>
+                  )}
                 </div>
               </div>
 
