@@ -437,23 +437,32 @@ function addToCurrentTimesheet(employee: Employee) {
                 .filter((js) => js.workers.some((w) => w.employeeKey === activeEmployee.employeeKey))
                 .sort((a, b) => b.date.localeCompare(a.date));
               return (
-                <table>
-                  <thead><tr><th>Date</th><th>Job</th><th>Client</th><th>Venue</th><th>Role</th></tr></thead>
-                  <tbody>
-                    {jobHistory.map((js) => {
-                      const w = js.workers.find((w) => w.employeeKey === activeEmployee.employeeKey);
-                      return (
-                        <tr key={js.id}>
-                          <td>{js.date}</td>
-                          <td>{js.title || js.eventName}</td>
-                          <td>{js.client}</td>
-                          <td>{js.venue}</td>
-                          <td>{w?.role || "—"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <div style={{ position: "relative", paddingLeft: 28 }}>
+                  {/* timeline spine */}
+                  <div style={{ position: "absolute", left: 9, top: 8, bottom: 8, width: 2, background: "var(--line)" }} />
+                  {jobHistory.map((js) => {
+                    const w = js.workers.find((w) => w.employeeKey === activeEmployee.employeeKey);
+                    return (
+                      <div key={js.id} style={{ position: "relative", marginBottom: 14 }}>
+                        {/* dot */}
+                        <div style={{ position: "absolute", left: -23, top: 14, width: 10, height: 10, borderRadius: "50%", background: "var(--gold)", border: "2px solid var(--gold-dark)" }} />
+                        <div className="list-card" style={{ padding: "12px 16px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>{js.title || js.eventName}</div>
+                              <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 2 }}>{js.client} · {js.venue}</div>
+                              {js.cityState && <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 1 }}>{js.cityState}</div>}
+                            </div>
+                            <div style={{ textAlign: "right", flexShrink: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: "var(--gold-dark)" }}>{js.date}</div>
+                              {w?.role && <span className="badge" style={{ marginTop: 4, display: "inline-block" }}>{w.role}</span>}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               );
             })()}
 
