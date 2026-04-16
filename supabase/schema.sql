@@ -132,7 +132,7 @@ create table if not exists employees (
   worker_category text,
   position_status text,
   employment_type text,
-  type            text    not null default 'contractor',
+  -- type (staff/contractor) is derived from employment_type in application code
   city            text,
   state           text,
   state_code      text,

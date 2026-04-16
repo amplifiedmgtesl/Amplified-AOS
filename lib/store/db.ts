@@ -702,7 +702,7 @@ function rowToEmployee(r: any): EmployeeRecord {
     workerCategory: r.worker_category ?? undefined,
     positionStatus: r.position_status ?? undefined,
     employmentType: r.employment_type ?? undefined,
-    type: r.type === "staff" ? "staff" : "contractor",
+    type: r.employment_type === "Employee" ? "staff" : "contractor",
     city: r.city ?? undefined,
     state: r.state ?? undefined,
     stateCode: r.state_code ?? undefined,
@@ -916,7 +916,7 @@ function employeeToRow(e: EmployeeRecord, isDeleted: boolean) {
     worker_category: e.workerCategory ?? null,
     position_status: e.positionStatus ?? null,
     employment_type: e.employmentType ?? null,
-    type: e.type ?? "contractor",
+    // type is derived from employment_type — not stored separately
     city: e.city ?? null,
     state: e.state ?? null,
     state_code: e.stateCode ?? null,
