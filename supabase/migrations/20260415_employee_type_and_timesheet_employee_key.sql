@@ -5,7 +5,7 @@
 -- - Add job_sheet_workers table if not already created
 -- - Add timesheet_entries table if not already created
 -- - Add profiles table if not already created
--- - Remove legacy JSONB columns from job_sheets and timesheets
+-- - Enable RLS + open policies on all tables (matching existing pattern)
 --
 -- Run in: Supabase Dashboard → SQL Editor → New Query
 -- ============================================================================
@@ -32,7 +32,7 @@ where te.job_sheet_id = jsw.job_sheet_id
   and jsw.employee_key is not null
   and jsw.employee_key <> '';
 
--- ─── job_sheet_workers: create if not exists ─────────────────────────────────
+-- ─── job_sheet_workers: create if not exists + RLS ───────────────────────────
 create table if not exists job_sheet_workers (
   id           bigserial primary key,
   job_sheet_id text    not null references job_sheets(id) on delete cascade,
@@ -48,7 +48,16 @@ create table if not exists job_sheet_workers (
   sort_order   integer not null default 0
 );
 
--- ─── timesheet_entries: create if not exists ─────────────────────────────────
+alter table job_sheet_workers enable row level security;
+
+drop policy if exists "job_sheet_workers_full_access" on job_sheet_workers;
+create policy "job_sheet_workers_full_access"
+  on job_sheet_workers for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+-- ─── timesheet_entries: create if not exists + RLS ───────────────────────────
 create table if not exists timesheet_entries (
   id            text        primary key,
   timesheet_id  text        references timesheets(id) on delete cascade,
@@ -77,11 +86,20 @@ create table if not exists timesheet_entries (
   updated_at    timestamptz not null default now()
 );
 
--- ─── profiles: create if not exists ──────────────────────────────────────────
+alter table timesheet_entries enable row level security;
+
+drop policy if exists "timesheet_entries_full_access" on timesheet_entries;
+create policy "timesheet_entries_full_access"
+  on timesheet_entries for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+-- ─── profiles: create if not exists + RLS ────────────────────────────────────
 create table if not exists profiles (
-  id           uuid    primary key,
-  role         text    not null default 'staff',
-  employee_key text    references employees(employee_key),
+  id           uuid primary key,
+  role         text not null default 'staff',
+  employee_key text references employees(employee_key),
   full_name    text,
   email        text,
   phone        text,
@@ -89,6 +107,25 @@ create table if not exists profiles (
   city         text,
   state        text
 );
+
+alter table profiles enable row level security;
+
+drop policy if exists "profiles_full_access" on profiles;
+create policy "profiles_full_access"
+  on profiles for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+-- ─── employees: ensure RLS is enabled ────────────────────────────────────────
+alter table employees enable row level security;
+
+drop policy if exists "employees_full_access" on employees;
+create policy "employees_full_access"
+  on employees for all
+  to anon, authenticated
+  using (true)
+  with check (true);
 
 -- ─── job_sheets: drop legacy workers JSONB column ────────────────────────────
 -- Workers are now stored in job_sheet_workers. Safe to drop once confirmed.
