@@ -257,10 +257,10 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
 
   function fillLineFromRateCard(index: number, position: string) {
     if (!invoice) return;
-    const row = rateRows.find((r) => `${r.group} | ${r.specialty}` === position);
+    const row = rateRows.find((r) => `${r.department} | ${r.specialty}` === position);
     if (!row) return;
     const existing = invoice.lines[index];
-    const meta = { ...parseLineMeta(existing), department: row.group, position };
+    const meta = { ...parseLineMeta(existing), department: row.department, position };
     patchLine(index, {
       baseHourly: row.hourly,
       baseDay: row.day,
@@ -374,7 +374,7 @@ function createDepositInvoiceDraft() {
   const activeQuote = useMemo(() => quotes.find((q) => q.id === sourceQuoteId), [quotes, sourceQuoteId]);
   const activeJobRequest = useMemo(() => jobRequests.find((r) => r.id === sourceJobRequestId), [jobRequests, sourceJobRequestId]);
   const dateOptions = useMemo(() => buildDateOptions(activeQuote, activeJobRequest), [activeQuote, activeJobRequest]);
-  const positionOptions = useMemo(() => rateRows.map((r) => `${r.group} | ${r.specialty}`), [rateRows]);
+  const positionOptions = useMemo(() => rateRows.map((r) => `${r.department} | ${r.specialty}`), [rateRows]);
   const balance = useMemo(() => !invoice ? 0 : Math.max(0, Number(invoice.amountDue || 0) - Number(invoice.paidAmount || 0)), [invoice]);
 
   if (!invoice) {

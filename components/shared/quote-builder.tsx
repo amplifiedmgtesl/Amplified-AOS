@@ -64,7 +64,7 @@ type DraftState = {
   dayDetails:DayDetail[];
 };
 
-function rowKey(row: RateRow) { return `${row.group} | ${row.specialty}`; }
+function rowKey(row: RateRow) { return `${row.department} | ${row.specialty}`; }
 
 function parseMinutes(value: string) {
   if (!value) return null;
@@ -175,8 +175,8 @@ export default function QuoteBuilder() {
   const rateCardProfiles = loadRateCardProfiles();
   const linkedTimesheet = linkedJobSheetId ? getTimesheetByJobSheetId(linkedJobSheetId) : null;
   const timeSummary = useMemo(() => summarizeTimesheet(linkedTimesheet), [linkedJobSheetId, linkedTimesheet?.rows?.length]);
-  const departments = useMemo(() => Array.from(new Set(rows.map((r) => r.group))).sort(), [rows]);
-  const positionsForDepartment = (department: string) => rows.filter((r) => r.group === department).map((r) => rowKey(r));
+  const departments = useMemo(() => Array.from(new Set(rows.map((r) => r.department))).sort(), [rows]);
+  const positionsForDepartment = (department: string) => rows.filter((r) => r.department === department).map((r) => rowKey(r));
   const draftWorkspaces = loadQuoteDraftWorkspaces();
   const QTY_OPTIONS = useMemo(() => Array.from({ length: 50 }, (_, i) => i + 1), []);
   const TIME_OPTIONS = useMemo(() => timeOptions(), []);
@@ -185,7 +185,7 @@ export default function QuoteBuilder() {
     const first = rateRows[0] ?? DEFAULT_RATE_ROWS[0];
     return {
       id: 1,
-      department: first.group,
+      department: first.department,
       position: rowKey(first),
       quoteDate: "",
       shiftLabel: "Shift 1",
@@ -337,7 +337,7 @@ export default function QuoteBuilder() {
       ...lines,
       {
         id: Date.now(),
-        department: first.group,
+        department: first.department,
         position: rowKey(first),
         quoteDate: firstDate,
         shiftLabel: `Shift ${lines.length + 1}`,
@@ -385,7 +385,7 @@ export default function QuoteBuilder() {
     const map = new Map<string, Map<string, typeof computed>>();
     computed.forEach((item) => {
       const dateKey = item.line.quoteDate || "No Date";
-      const depKey = item.line.department || item.row.group || "Unassigned";
+      const depKey = item.line.department || item.row.department || "Unassigned";
       if (!map.has(dateKey)) map.set(dateKey, new Map());
       const depMap = map.get(dateKey)!;
       if (!depMap.has(depKey)) depMap.set(depKey, []);
@@ -683,7 +683,7 @@ export default function QuoteBuilder() {
                         <select value={line.position} onChange={(e)=>{
                           const pos = e.target.value;
                           const row = rows.find((r)=>rowKey(r)===pos);
-                          updateLine(line.id, { position: pos, department: row?.group || line.department, travel: row?.travel ?? 0 });
+                          updateLine(line.id, { position: pos, department: row?.department || line.department, travel: row?.travel ?? 0 });
                         }}>
                           {positionsForDepartment(line.department).map((p)=><option key={p} value={p}>{p}</option>)}
                         </select>

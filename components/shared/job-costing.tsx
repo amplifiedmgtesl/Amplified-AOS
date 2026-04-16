@@ -235,7 +235,7 @@ function roleRateSeed(role: string) {
   ];
   const profile = profiles.find((p) => p.match === role);
   const row = rows.find((r) => {
-    const hay = `${r.group} | ${r.position} | ${r.specialty}`.toLowerCase();
+    const hay = `${r.department} | ${r.position} | ${r.specialty}`.toLowerCase();
     return profile ? profile.keys.some((k) => hay.includes(k)) : false;
   }) || rows[0];
   return row;

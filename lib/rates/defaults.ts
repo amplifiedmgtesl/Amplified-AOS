@@ -9,7 +9,7 @@ export type RateCardProfile = {
   updatedAt: string;
 };
 export type RateRow = {
-  group: string;
+  department: string;
   position: string;
   specialty: string;
   hourly: number;
@@ -20,8 +20,8 @@ export type RateRow = {
   travel: number;
   show: boolean;
 };
-const makeRow = (group:string, position:string, specialty:string, hourly:number, day:number): RateRow => ({
-  group, position, specialty, hourly, day,
+const makeRow = (department:string, position:string, specialty:string, hourly:number, day:number): RateRow => ({
+  department, position, specialty, hourly, day,
   otRate: Number((hourly * 1.5).toFixed(2)),
   dtRate: Number((hourly * 2.0).toFixed(2)),
   dtAfter: "10",

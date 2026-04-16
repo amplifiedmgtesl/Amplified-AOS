@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_RATE_ROWS, type TriggerOption, type RateRow } from "@/lib/rates/defaults";
+import { positionNames } from "@/lib/store/app-store";
 import {
   getActiveRateCardProfileId,
   loadClientName,
@@ -26,6 +27,7 @@ function blankProfileName() {
 }
 
 export default function RateCardEditor() {
+  const POSITIONS = positionNames();
   const [clientName, setClientName] = useState("");
   const [rows, setRows] = useState<RateRow[]>(DEFAULT_RATE_ROWS);
   const [terms, setTerms] = useState("");
@@ -60,9 +62,9 @@ export default function RateCardEditor() {
     setRows([
       ...rows,
       {
-        group: "Operations",
-        position: "Custom",
-        specialty: "New Position",
+        department: "Operations",
+        position: POSITIONS[0] || "Custom",
+        specialty: "New Specialty",
         hourly: 35,
         day: 350,
         otRate: 52.5,
@@ -150,15 +152,19 @@ export default function RateCardEditor() {
           <table>
             <thead>
               <tr>
-                <th>Show</th><th>Group</th><th>Position</th><th>Specialty</th><th>Hourly</th><th>Day</th><th>OT Rate</th><th>DT Rate</th><th>OT Trigger</th><th>Travel</th>
+                <th>Show</th><th>Department</th><th>Position</th><th>Specialty</th><th>Hourly</th><th>Day</th><th>OT Rate</th><th>DT Rate</th><th>OT Trigger</th><th>Travel</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((row, index) => (
                 <tr key={index}>
                   <td><input type="checkbox" checked={row.show} onChange={(e) => updateRow(index, { show: e.target.checked })} /></td>
-                  <td><input value={row.group} onChange={(e) => updateRow(index, { group: e.target.value })} /></td>
-                  <td><input value={row.position} onChange={(e) => updateRow(index, { position: e.target.value })} /></td>
+                  <td><input value={row.department} onChange={(e) => updateRow(index, { department: e.target.value })} /></td>
+                  <td>
+                    <select value={row.position} onChange={(e) => updateRow(index, { position: e.target.value })}>
+                      {POSITIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </td>
                   <td><input value={row.specialty} onChange={(e) => updateRow(index, { specialty: e.target.value })} /></td>
                   <td><input type="number" value={row.hourly} onChange={(e) => updateRow(index, { hourly: Number(e.target.value || 0) })} /></td>
                   <td><input type="number" value={row.day} onChange={(e) => updateRow(index, { day: Number(e.target.value || 0) })} /></td>
@@ -199,7 +205,7 @@ export default function RateCardEditor() {
             <tbody>
               {visibleRows.map((row, idx) => (
                 <tr key={idx}>
-                  <td>{row.group}</td><td>{row.position}</td><td>{row.specialty}</td><td>${row.hourly.toFixed(2)}</td><td>${row.day.toFixed(2)}</td><td>${row.otRate.toFixed(2)}</td><td>${row.dtRate.toFixed(2)}</td><td>{triggerLabel(row.dtAfter)}</td><td>{row.travel ? `$${row.travel.toFixed(2)}` : "-"}</td>
+                  <td>{row.department}</td><td>{row.position}</td><td>{row.specialty}</td><td>${row.hourly.toFixed(2)}</td><td>${row.day.toFixed(2)}</td><td>${row.otRate.toFixed(2)}</td><td>${row.dtRate.toFixed(2)}</td><td>{triggerLabel(row.dtAfter)}</td><td>{row.travel ? `$${row.travel.toFixed(2)}` : "-"}</td>
                 </tr>
               ))}
             </tbody>
