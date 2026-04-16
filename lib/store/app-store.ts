@@ -142,6 +142,7 @@ export function upsertEmployee(row: EmployeeRecord) { db.upsertEmployee(row); }
 export function deleteEmployee(employeeKey: string) { markEmployeeDeleted(employeeKey); }
 export function loadDeletedEmployeeKeys(): string[] { return db.getDeletedEmployeeKeys(); }
 export function markEmployeeDeleted(employeeKey: string) { db.markEmployeeDeleted(employeeKey); }
+export async function bulkUpsertEmployees(rows: EmployeeRecord[]) { return db.bulkUpsertEmployees(rows); }
 
 export function setActiveEmployee(employeeKey: string | null) {
   saveJSON("aes_active_employee_v1", employeeKey);

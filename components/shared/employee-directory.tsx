@@ -3,17 +3,24 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { IMPORTED_EMPLOYEES } from "@/lib/data/employees";
-import { addWorkerToTimesheet, deleteEmployee, getActiveEmployee, getActiveJobSheet, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, setActiveEmployee, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
+import { addWorkerToTimesheet, bulkUpsertEmployees, deleteEmployee, getActiveEmployee, getActiveJobSheet, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, setActiveEmployee, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
 import type { EmployeeDocument, EmployeeRecord } from "@/lib/store/types";
 
 type Employee = EmployeeRecord;
 
+// Returns employees from Supabase cache. Falls back to including the hardcoded
+// import list until the one-time migration to Supabase has been completed.
 function mergedEmployees() {
   const deleted = new Set(loadDeletedEmployeeKeys());
-  const imported = (IMPORTED_EMPLOYEES as unknown as EmployeeRecord[]).map((e) => ({ ...e, source: "imported" })).filter((e) => !deleted.has(e.employeeKey));
-  const local = loadEmployees().filter((e) => !deleted.has(e.employeeKey));
+  const fromDb = loadEmployees().filter((e) => !deleted.has(e.employeeKey));
+  // If Supabase already has records, use only those (migration done).
+  if (fromDb.length > 0) return fromDb;
+  // Pre-migration fallback: blend hardcoded list with any local additions.
+  const imported = (IMPORTED_EMPLOYEES as unknown as EmployeeRecord[])
+    .map((e) => ({ ...e, type: "contractor" as const, source: "imported" }))
+    .filter((e) => !deleted.has(e.employeeKey));
   const map = new Map<string, EmployeeRecord>();
-  [...imported, ...local].forEach((e) => map.set(e.employeeKey, e));
+  imported.forEach((e) => map.set(e.employeeKey, e));
   return Array.from(map.values());
 }
 
@@ -31,10 +38,13 @@ export default function EmployeeDirectory() {
   const [cityFilter, setCityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [workerTypeFilter, setWorkerTypeFilter] = useState<"all" | "staff" | "contractor">("all");
   const [sortAZ, setSortAZ] = useState<"A-Z"|"Z-A">("A-Z");
   const [refreshKey, setRefreshKey] = useState(0);
   const [role, setRole] = useState("Crew");
   const [csvText, setCsvText] = useState("");
+  const [migrating, setMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState<{ inserted: number; errors: number } | null>(null);
   const [form, setForm] = useState<EmployeeRecord>({
     employeeKey: "",
     fullName: "",
@@ -47,6 +57,7 @@ export default function EmployeeDirectory() {
     city: "",
     address: "",
     employmentType: "",
+    type: "contractor",
     notes: "",
     documents: [],
     source: "local"
@@ -66,6 +77,22 @@ export default function EmployeeDirectory() {
   const statuses = useMemo(() => Array.from(new Set(employees.map((e) => e.status || "").filter(Boolean))).sort(), [employees]);
   const types = useMemo(() => Array.from(new Set(employees.map((e) => e.employmentType || "").filter(Boolean))).sort(), [employees]);
 
+  async function handleMigrateToDatabase() {
+    setMigrating(true);
+    setMigrateResult(null);
+    const toMigrate = (IMPORTED_EMPLOYEES as unknown as EmployeeRecord[]).map((e) => ({
+      ...e,
+      type: "contractor" as const,
+      source: "imported",
+    }));
+    const result = await bulkUpsertEmployees(toMigrate);
+    setMigrateResult(result);
+    setMigrating(false);
+    setRefreshKey((x) => x + 1);
+  }
+
+  const isMigrated = loadEmployees().length > 0;
+
   const filtered = useMemo(() => {
     const rows = employees.filter((e) => {
       const hay = `${e.employeeKey || ""} ${e.fullName || ""} ${e.firstName || ""} ${e.lastName || ""} ${e.email || ""} ${e.phone || ""} ${e.stateCode || e.state || ""} ${e.city || ""} ${e.status || ""} ${e.employmentType || ""}`.toLowerCase();
@@ -74,7 +101,8 @@ export default function EmployeeDirectory() {
         && (!stateFilter || (e.stateCode || e.state || "") === stateFilter)
         && (!cityFilter || (e.city || "") === cityFilter)
         && (!statusFilter || (e.status || "") === statusFilter)
-        && (!typeFilter || (e.employmentType || "") === typeFilter);
+        && (!typeFilter || (e.employmentType || "") === typeFilter)
+        && (workerTypeFilter === "all" || e.type === workerTypeFilter);
     });
     rows.sort((a,b) => {
       const av = (a.fullName || "").toLowerCase();
@@ -82,7 +110,7 @@ export default function EmployeeDirectory() {
       return sortAZ === "A-Z" ? av.localeCompare(bv) : bv.localeCompare(av);
     });
     return rows;
-  }, [query, stateFilter, cityFilter, statusFilter, typeFilter, sortAZ, employees]);
+  }, [query, stateFilter, cityFilter, statusFilter, typeFilter, workerTypeFilter, sortAZ, employees]);
 
   function addToCurrentJob(employee: Employee) {
     if (!activeSheet) return;
@@ -129,10 +157,10 @@ function addToCurrentTimesheet(employee: Employee) {
   function saveManualEmployee() {
     const key = form.employeeKey || `emp-${Date.now()}`;
     const fullName = form.fullName || `${form.firstName} ${form.lastName}`.trim();
-    upsertEmployee({ ...form, employeeKey: key, fullName, source: "local" });
+    upsertEmployee({ ...form, employeeKey: key, fullName, type: form.type || "contractor", source: "local" });
     setForm({
       employeeKey: "", fullName: "", firstName: "", lastName: "", phone: "", email: "",
-      stateCode: "", state: "", city: "", address: "", employmentType: "", notes: "", documents: [], source: "local"
+      stateCode: "", state: "", city: "", address: "", employmentType: "", type: "contractor", notes: "", documents: [], source: "local"
     });
     setRefreshKey((x) => x + 1);
   }
@@ -155,6 +183,7 @@ function addToCurrentTimesheet(employee: Employee) {
         state: get("state"), city: get("city"),
         address: get("address"), employmentType: get("employment type"),
         status: get("status"),
+        type: get("type") === "staff" ? "staff" : "contractor",
         source: "local", documents: []
       });
     });
@@ -190,12 +219,40 @@ function addToCurrentTimesheet(employee: Employee) {
     <div className="grid">
       <div className="card hide-print">
         <h2 className="section-title">National Employee Directory</h2>
+
+        {/* ── Migration banner (shown until records are in Supabase) ── */}
+        {!isMigrated && (
+          <div className="badge" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
+            <span>⚠️ The 2,473 imported contacts are stored in a local file and have not been migrated to the database yet.</span>
+            <button type="button" onClick={handleMigrateToDatabase} disabled={migrating}>
+              {migrating ? "Migrating…" : "Migrate to Database"}
+            </button>
+          </div>
+        )}
+        {migrateResult && (
+          <div className="badge" style={{ marginBottom: 12 }}>
+            ✅ Migration complete — {migrateResult.inserted} records saved{migrateResult.errors > 0 ? `, ${migrateResult.errors} errors` : ""}.
+          </div>
+        )}
+
+        {/* ── Staff / Contractor filter tabs ── */}
+        <div className="action-row" style={{ marginBottom: 10 }}>
+          {(["all", "staff", "contractor"] as const).map((t) => (
+            <button key={t} type="button"
+              className={workerTypeFilter === t ? "" : "secondary"}
+              onClick={() => setWorkerTypeFilter(t)}
+              style={{ textTransform: "capitalize" }}>
+              {t === "all" ? "All" : t === "staff" ? "Staff" : "Contractors"}
+            </button>
+          ))}
+        </div>
+
         <div className="grid4">
           <div><small>Search</small><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Name, key, phone, email..." /></div>
           <div><small>City</small><select value={cityFilter} onChange={(e)=>setCityFilter(e.target.value)}><option value="">All cities</option>{cities.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>State</small><select value={stateFilter} onChange={(e)=>setStateFilter(e.target.value)}><option value="">All states</option>{states.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>Status</small><select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)}><option value="">All status</option>{statuses.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
-          <div><small>Type</small><select value={typeFilter} onChange={(e)=>setTypeFilter(e.target.value)}><option value="">All types</option>{types.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
+          <div><small>Employment Type</small><select value={typeFilter} onChange={(e)=>setTypeFilter(e.target.value)}><option value="">All types</option>{types.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>Name Sort</small><select value={sortAZ} onChange={(e)=>setSortAZ(e.target.value as "A-Z"|"Z-A")}><option value="A-Z">A-Z</option><option value="Z-A">Z-A</option></select></div>
           <div><small>Role to assign</small><input value={role} onChange={(e)=>setRole(e.target.value)} /></div>
           <div className="list-card"><strong>Current Job Sheet</strong><div className="muted">{activeSheet ? activeSheet.title : "No active job sheet selected"}</div></div>
@@ -239,7 +296,7 @@ function addToCurrentTimesheet(employee: Employee) {
               <thead>
                 <tr>
                   <th>Employee Key</th><th>Full Name</th><th>First Name</th><th>Last Name</th><th>Phone</th><th>Email</th>
-                  <th>City</th><th>State</th><th>Status</th><th>Type</th><th>Address</th><th>Source</th><th>Action</th>
+                  <th>City</th><th>State</th><th>Status</th><th>Staff/Contractor</th><th>Employment Type</th><th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -254,9 +311,8 @@ function addToCurrentTimesheet(employee: Employee) {
                     <td>{e.city}</td>
                     <td>{e.stateCode || e.state}</td>
                     <td>{e.status}</td>
+                    <td><span className={`badge ${e.type === "staff" ? "" : "secondary"}`}>{e.type === "staff" ? "Staff" : "Contractor"}</span></td>
                     <td>{e.employmentType}</td>
-                    <td>{e.address}</td>
-                    <td>{e.source}</td>
                     <td>
                       <div className="action-row">
                         <button className="secondary" onClick={() => { setActiveEmployee(e.employeeKey); setRefreshKey((x)=>x+1); }}>Open Profile</button>

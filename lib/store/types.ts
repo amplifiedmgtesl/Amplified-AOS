@@ -54,7 +54,8 @@ export type TimeEntry = {
   otRate: number;
   dtRate: number;
   totalPay: number;
-  userId?: string | null; // set for staff-submitted entries
+  employeeKey?: string | null; // links to employees table
+  userId?: string | null;      // set for staff-submitted entries
   sortOrder?: number;
 };
 
@@ -187,6 +188,7 @@ export type EmployeeRecord = {
   workerCategory?: string;
   positionStatus?: string;
   employmentType?: string;
+  type: "staff" | "contractor";  // staff = internal employee; contractor = labor pool
   city?: string;
   state?: string;
   stateCode?: string;

@@ -390,6 +390,29 @@ export function markEmployeeDeleted(employeeKey: string) {
     .then(({ error }) => { if (error) console.error("[db] markEmployeeDeleted error:", error); });
 }
 
+export async function bulkUpsertEmployees(rows: EmployeeRecord[]): Promise<{ inserted: number; errors: number }> {
+  const BATCH = 100;
+  let inserted = 0;
+  let errors = 0;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const batch = rows.slice(i, i + BATCH).map((r) => employeeToRow(r, false));
+    const { error, data } = await supabase.from("employees").upsert(batch, { onConflict: "employee_key" }).select("employee_key");
+    if (error) {
+      console.error("[db] bulkUpsertEmployees batch error:", error);
+      errors += batch.length;
+    } else {
+      inserted += data?.length ?? batch.length;
+    }
+  }
+  // Reload cache from Supabase so the UI reflects the full set
+  const { data } = await supabase.from("employees").select("*");
+  if (data) {
+    _cache.employees = data.filter((r: any) => !r.is_deleted).map(rowToEmployee);
+    _cache.deletedEmployeeKeys = data.filter((r: any) => r.is_deleted).map((r: any) => r.employee_key);
+  }
+  return { inserted, errors };
+}
+
 // ─── Job Costing ──────────────────────────────────────────────────────────────
 
 export function getJobCostingDrafts() { return _cache.jobCostingDrafts; }
@@ -630,6 +653,7 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     otRate: r.ot_rate ?? 52,
     dtRate: r.dt_rate ?? 70,
     totalPay: r.total_pay ?? 0,
+    employeeKey: r.employee_key ?? null,
     userId: r.user_id ?? null,
     sortOrder: r.sort_order ?? 0,
   };
@@ -640,6 +664,7 @@ function timesheetEntryToRow(e: import("./types").TimeEntry, timesheetId: string
     id: e.id,
     timesheet_id: timesheetId,
     job_sheet_id: jobSheetId,
+    employee_key: e.employeeKey ?? null,
     user_id: e.userId ?? null,
     position: e.position,
     first_name: e.firstName,
@@ -677,6 +702,7 @@ function rowToEmployee(r: any): EmployeeRecord {
     workerCategory: r.worker_category ?? undefined,
     positionStatus: r.position_status ?? undefined,
     employmentType: r.employment_type ?? undefined,
+    type: r.type === "staff" ? "staff" : "contractor",
     city: r.city ?? undefined,
     state: r.state ?? undefined,
     stateCode: r.state_code ?? undefined,
@@ -890,6 +916,7 @@ function employeeToRow(e: EmployeeRecord, isDeleted: boolean) {
     worker_category: e.workerCategory ?? null,
     position_status: e.positionStatus ?? null,
     employment_type: e.employmentType ?? null,
+    type: e.type ?? "contractor",
     city: e.city ?? null,
     state: e.state ?? null,
     state_code: e.stateCode ?? null,
