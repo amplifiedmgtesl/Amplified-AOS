@@ -1,53 +1,72 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { loadPositions, upsertPosition, deletePosition } from "@/lib/store/app-store";
+import { useEffect, useState } from "react";
+import { upsertPosition, deletePosition } from "@/lib/store/app-store";
+import { supabase } from "@/lib/supabase/client";
 import type { Position } from "@/lib/store/types";
 
+async function fetchPositions(): Promise<Position[]> {
+  const { data, error } = await supabase
+    .from("positions")
+    .select("*")
+    .eq("is_active", true)
+    .order("sort_order");
+  if (error) { console.error("[positions]", error); return []; }
+  return (data ?? []).map((r: any) => ({
+    id: r.id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active,
+  }));
+}
+
 export default function PositionMaintenance() {
-  const [refreshKey, setRefreshKey] = useState(0);
-  const positions = useMemo(() => loadPositions(), [refreshKey]);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  async function reload() {
+    setLoading(true);
+    setPositions(await fetchPositions());
+    setLoading(false);
+  }
+
+  useEffect(() => { reload(); }, []);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [newName, setNewName] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  function refresh() { setRefreshKey((k) => k + 1); }
-
   function startEdit(p: Position) {
     setEditingId(p.id);
     setEditName(p.name);
   }
 
-  function saveEdit(p: Position) {
+  async function saveEdit(p: Position) {
     if (!editName.trim()) return;
     upsertPosition({ ...p, name: editName.trim() });
     setEditingId(null);
-    refresh();
+    await reload();
   }
 
-  function moveUp(p: Position) {
+  async function moveUp(p: Position) {
     const sorted = [...positions].sort((a, b) => a.sortOrder - b.sortOrder);
     const idx = sorted.findIndex((x) => x.id === p.id);
     if (idx <= 0) return;
     const prev = sorted[idx - 1];
     upsertPosition({ ...p,    sortOrder: prev.sortOrder });
     upsertPosition({ ...prev, sortOrder: p.sortOrder   });
-    refresh();
+    await reload();
   }
 
-  function moveDown(p: Position) {
+  async function moveDown(p: Position) {
     const sorted = [...positions].sort((a, b) => a.sortOrder - b.sortOrder);
     const idx = sorted.findIndex((x) => x.id === p.id);
     if (idx >= sorted.length - 1) return;
     const next = sorted[idx + 1];
     upsertPosition({ ...p,    sortOrder: next.sortOrder });
     upsertPosition({ ...next, sortOrder: p.sortOrder    });
-    refresh();
+    await reload();
   }
 
-  function addPosition() {
+  async function addPosition() {
     if (!newName.trim()) return;
     const maxOrder = positions.reduce((m, p) => Math.max(m, p.sortOrder), 0);
     upsertPosition({
@@ -57,7 +76,7 @@ export default function PositionMaintenance() {
       isActive: true,
     });
     setNewName("");
-    refresh();
+    await reload();
   }
 
   const sorted = [...positions].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -65,7 +84,7 @@ export default function PositionMaintenance() {
   return (
     <div className="grid">
       <div className="card">
-        <h2 className="section-title">Positions</h2>
+        <h2 className="section-title">{loading ? "Loading…" : `${positions.length} Position${positions.length !== 1 ? "s" : ""}`}</h2>
         <p className="muted" style={{ marginBottom: 16, fontSize: 13 }}>
           This list drives the position dropdowns in Timekeeping, Job Sheets, Job Costing,
           and the Staff Portal. Changes take effect immediately for new entries.
@@ -127,7 +146,7 @@ export default function PositionMaintenance() {
                           {confirmDeleteId === p.id ? (
                             <>
                               <button
-                                onClick={() => { deletePosition(p.id); setConfirmDeleteId(null); refresh(); }}
+                                onClick={async () => { deletePosition(p.id); setConfirmDeleteId(null); await reload(); }}
                                 style={{ background: "linear-gradient(180deg,#e05,#b00)", color: "#fff" }}
                               >Confirm</button>
                               <button className="secondary" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
