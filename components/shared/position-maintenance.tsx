@@ -5,25 +5,31 @@ import { upsertPosition, deletePosition } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
 import type { Position } from "@/lib/store/types";
 
-async function fetchPositions(): Promise<Position[]> {
+async function fetchPositions(): Promise<{ positions: Position[]; error: string | null }> {
   const { data, error } = await supabase
     .from("positions")
     .select("*")
-    .eq("is_active", true)
     .order("sort_order");
-  if (error) { console.error("[positions]", error); return []; }
-  return (data ?? []).map((r: any) => ({
-    id: r.id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active,
-  }));
+  if (error) return { positions: [], error: error.message };
+  const positions = (data ?? [])
+    .filter((r: any) => r.is_active !== false)
+    .map((r: any) => ({
+      id: r.id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active,
+    }));
+  return { positions, error: null };
 }
 
 export default function PositionMaintenance() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   async function reload() {
     setLoading(true);
-    setPositions(await fetchPositions());
+    setFetchError(null);
+    const { positions, error } = await fetchPositions();
+    setPositions(positions);
+    setFetchError(error);
     setLoading(false);
   }
 
@@ -89,6 +95,18 @@ export default function PositionMaintenance() {
           This list drives the position dropdowns in Timekeeping, Job Sheets, Job Costing,
           and the Staff Portal. Changes take effect immediately for new entries.
         </p>
+
+        {fetchError && (
+          <div style={{ background: "#fff3f3", border: "1px solid #e0a0a0", borderRadius: 8, padding: "10px 14px", color: "#a00", marginBottom: 16, fontSize: 13 }}>
+            <strong>Error loading positions:</strong> {fetchError}
+          </div>
+        )}
+
+        {!loading && !fetchError && positions.length === 0 && (
+          <div style={{ background: "#fffbea", border: "1px solid #e0d080", borderRadius: 8, padding: "10px 14px", color: "#7a6000", marginBottom: 16, fontSize: 13 }}>
+            No positions found. The <code>positions</code> table may be empty — run the migration SQL in Supabase to seed the initial list.
+          </div>
+        )}
 
         <div style={{ overflowX: "auto" }}>
           <table>
