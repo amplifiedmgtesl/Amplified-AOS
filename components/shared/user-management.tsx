@@ -229,10 +229,13 @@ export function UserManagement() {
                     <td><strong>{u.profile?.fullName || <span className="muted">—</span>}</strong></td>
                     <td>{u.email}</td>
                     <td>
-                      <span className="badge" style={u.profile?.role === "admin"
-                        ? { background: "linear-gradient(180deg,#e8f0fb,#cfddf5)", borderColor: "#a0bbdf", color: "#1a3a6a" }
-                        : {}}>
-                        {u.profile?.role ?? "staff"}
+                      <span className="badge" style={
+                        u.profile?.role === "admin"
+                          ? { background: "linear-gradient(180deg,#e8f0fb,#cfddf5)", borderColor: "#a0bbdf", color: "#1a3a6a" }
+                          : u.profile?.role === "crew_leader"
+                          ? { background: "linear-gradient(180deg,#edf7ed,#d0ecd0)", borderColor: "#90c890", color: "#1a4a1a" }
+                          : {}}>
+                        {u.profile?.role === "crew_leader" ? "Crew Leader" : (u.profile?.role ?? "staff")}
                       </span>
                     </td>
                     <td>
@@ -305,6 +308,7 @@ export function UserManagement() {
                 <small>Role</small>
                 <select value={form.role} onChange={(e) => setField("role", e.target.value)}>
                   <option value="staff">Staff</option>
+                  <option value="crew_leader">Crew Leader</option>
                   <option value="admin">Admin</option>
                 </select>
               </div>
