@@ -38,7 +38,6 @@ export default function EmployeeDirectory() {
   const [cityFilter, setCityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
-  const [workerTypeFilter, setWorkerTypeFilter] = useState<"all" | "staff" | "contractor">("all");
   const [sortAZ, setSortAZ] = useState<"A-Z"|"Z-A">("A-Z");
   const [refreshKey, setRefreshKey] = useState(0);
   const [role, setRole] = useState("Crew");
@@ -102,7 +101,7 @@ export default function EmployeeDirectory() {
         && (!cityFilter || (e.city || "") === cityFilter)
         && (!statusFilter || (e.status || "") === statusFilter)
         && (!typeFilter || (typeFilter === "__blank__" ? !e.employmentType : (e.employmentType || "") === typeFilter))
-        && (workerTypeFilter === "all" || e.type === workerTypeFilter);
+;
     });
     rows.sort((a,b) => {
       const av = (a.fullName || "").toLowerCase();
@@ -110,7 +109,7 @@ export default function EmployeeDirectory() {
       return sortAZ === "A-Z" ? av.localeCompare(bv) : bv.localeCompare(av);
     });
     return rows;
-  }, [query, stateFilter, cityFilter, statusFilter, typeFilter, workerTypeFilter, sortAZ, employees]);
+  }, [query, stateFilter, cityFilter, statusFilter, typeFilter, sortAZ, employees]);
 
   function addToCurrentJob(employee: Employee) {
     if (!activeSheet) return;
@@ -235,17 +234,6 @@ function addToCurrentTimesheet(employee: Employee) {
           </div>
         )}
 
-        {/* ── Staff / Contractor filter tabs ── */}
-        <div className="action-row" style={{ marginBottom: 10 }}>
-          {(["all", "staff", "contractor"] as const).map((t) => (
-            <button key={t} type="button"
-              className={workerTypeFilter === t ? "" : "secondary"}
-              onClick={() => setWorkerTypeFilter(t)}
-              style={{ textTransform: "capitalize" }}>
-              {t === "all" ? "All" : t === "staff" ? "Staff" : "Contractors"}
-            </button>
-          ))}
-        </div>
 
         <div className="grid4">
           <div><small>Search</small><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Name, key, phone, email..." /></div>
