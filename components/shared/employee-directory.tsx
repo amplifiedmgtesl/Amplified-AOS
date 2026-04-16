@@ -42,6 +42,7 @@ export default function EmployeeDirectory() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [role, setRole] = useState("Crew");
   const [csvText, setCsvText] = useState("");
+  const [historyModal, setHistoryModal] = useState<"jobs" | "timesheets" | null>(null);
   const [migrating, setMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState<{ inserted: number; errors: number } | null>(null);
   const [form, setForm] = useState<EmployeeRecord>({
@@ -364,85 +365,55 @@ function addToCurrentTimesheet(employee: Employee) {
                 </div>
               </div>
 
-              {/* ── Job History ── */}
+              {/* ── Job History summary ── */}
               {(() => {
                 const jobHistory = loadJobSheets()
-                  .filter((js) => js.workers.some((w) => w.employeeKey === activeEmployee.employeeKey))
-                  .sort((a, b) => b.date.localeCompare(a.date));
+                  .filter((js) => js.workers.some((w) => w.employeeKey === activeEmployee.employeeKey));
                 return (
                   <div style={{ marginTop: 16 }}>
-                    <h3 className="section-title">Job History ({jobHistory.length})</h3>
-                    {jobHistory.length === 0 ? (
-                      <div className="muted">No job sheets found for this employee.</div>
-                    ) : (
-                      <table>
-                        <thead>
-                          <tr><th>Date</th><th>Job</th><th>Client</th><th>Role</th></tr>
-                        </thead>
-                        <tbody>
-                          {jobHistory.map((js) => {
-                            const workerEntry = js.workers.find((w) => w.employeeKey === activeEmployee.employeeKey);
-                            return (
-                              <tr key={js.id}>
-                                <td>{js.date}</td>
-                                <td>{js.title || js.eventName}</td>
-                                <td>{js.client}</td>
-                                <td>{workerEntry?.role || "—"}</td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    )}
+                    <div className="action-row" style={{ marginBottom: 8 }}>
+                      <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Job History</h3>
+                      {jobHistory.length > 0 && (
+                        <button className="secondary" onClick={() => setHistoryModal("jobs")}>
+                          View All ({jobHistory.length})
+                        </button>
+                      )}
+                    </div>
+                    {jobHistory.length === 0
+                      ? <div className="muted">No job sheets found for this employee.</div>
+                      : <div className="muted">{jobHistory.length} job{jobHistory.length !== 1 ? "s" : ""} assigned — most recent: <strong>{jobHistory.sort((a,b) => b.date.localeCompare(a.date))[0]?.date}</strong></div>
+                    }
                   </div>
                 );
               })()}
 
-              {/* ── Timesheet History ── */}
+              {/* ── Timesheet History summary ── */}
               {(() => {
-                const allTimesheets = loadTimesheets();
-                const tsWithEntries = allTimesheets
-                  .map((ts) => ({
-                    ts,
-                    entries: ts.rows.filter((r) => r.employeeKey === activeEmployee.employeeKey),
-                  }))
-                  .filter((x) => x.entries.length > 0)
-                  .sort((a, b) => b.ts.id.localeCompare(a.ts.id));
+                const tsWithEntries = loadTimesheets()
+                  .map((ts) => ({ ts, entries: ts.rows.filter((r) => r.employeeKey === activeEmployee.employeeKey) }))
+                  .filter((x) => x.entries.length > 0);
                 const totalHours = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalHours, 0), 0);
                 const totalPay = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalPay, 0), 0);
                 return (
                   <div style={{ marginTop: 16 }}>
-                    <h3 className="section-title">Timesheet History ({tsWithEntries.length})</h3>
-                    {tsWithEntries.length === 0 ? (
-                      <div className="muted">No timesheet entries found for this employee.</div>
-                    ) : (
-                      <>
-                        <div className="grid3" style={{ marginBottom: 12 }}>
-                          <div className="metric-card"><div className="metric-label">Jobs w/ Timesheets</div><div className="metric-value">{tsWithEntries.length}</div></div>
+                    <div className="action-row" style={{ marginBottom: 8 }}>
+                      <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Timesheet History</h3>
+                      {tsWithEntries.length > 0 && (
+                        <button className="secondary" onClick={() => setHistoryModal("timesheets")}>
+                          View All ({tsWithEntries.length})
+                        </button>
+                      )}
+                    </div>
+                    {tsWithEntries.length === 0
+                      ? <div className="muted">No timesheet entries found for this employee.</div>
+                      : (
+                        <div className="grid3">
+                          <div className="metric-card"><div className="metric-label">Timesheets</div><div className="metric-value">{tsWithEntries.length}</div></div>
                           <div className="metric-card"><div className="metric-label">Total Hours</div><div className="metric-value">{totalHours.toFixed(1)}</div></div>
                           <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
                         </div>
-                        <table>
-                          <thead>
-                            <tr><th>Timesheet</th><th>Position</th><th>Std Hrs</th><th>OT Hrs</th><th>Total Hrs</th><th>Total Pay</th></tr>
-                          </thead>
-                          <tbody>
-                            {tsWithEntries.map(({ ts, entries }) =>
-                              entries.map((r) => (
-                                <tr key={r.id}>
-                                  <td>{ts.title}</td>
-                                  <td>{r.position || "—"}</td>
-                                  <td>{r.stdHours.toFixed(1)}</td>
-                                  <td>{r.otHours.toFixed(1)}</td>
-                                  <td>{r.totalHours.toFixed(1)}</td>
-                                  <td>${r.totalPay.toFixed(2)}</td>
-                                </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
-                      </>
-                    )}
+                      )
+                    }
                   </div>
                 );
               })()}
@@ -450,6 +421,80 @@ function addToCurrentTimesheet(employee: Employee) {
           )}
         </div>
       </div>
+      {/* ── History modal ── */}
+      {historyModal && activeEmployee && (
+        <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) setHistoryModal(null); }}>
+          <div className="modal-panel">
+            <div className="action-row" style={{ marginBottom: 16 }}>
+              <h2 className="section-title" style={{ margin: 0, flex: 1 }}>
+                {historyModal === "jobs" ? "Job History" : "Timesheet History"} — {activeEmployee.fullName}
+              </h2>
+              <button className="secondary" onClick={() => setHistoryModal(null)}>Close</button>
+            </div>
+
+            {historyModal === "jobs" && (() => {
+              const jobHistory = loadJobSheets()
+                .filter((js) => js.workers.some((w) => w.employeeKey === activeEmployee.employeeKey))
+                .sort((a, b) => b.date.localeCompare(a.date));
+              return (
+                <table>
+                  <thead><tr><th>Date</th><th>Job</th><th>Client</th><th>Venue</th><th>Role</th></tr></thead>
+                  <tbody>
+                    {jobHistory.map((js) => {
+                      const w = js.workers.find((w) => w.employeeKey === activeEmployee.employeeKey);
+                      return (
+                        <tr key={js.id}>
+                          <td>{js.date}</td>
+                          <td>{js.title || js.eventName}</td>
+                          <td>{js.client}</td>
+                          <td>{js.venue}</td>
+                          <td>{w?.role || "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              );
+            })()}
+
+            {historyModal === "timesheets" && (() => {
+              const tsWithEntries = loadTimesheets()
+                .map((ts) => ({ ts, entries: ts.rows.filter((r) => r.employeeKey === activeEmployee.employeeKey) }))
+                .filter((x) => x.entries.length > 0)
+                .sort((a, b) => b.ts.id.localeCompare(a.ts.id));
+              const totalHours = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalHours, 0), 0);
+              const totalPay   = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalPay, 0), 0);
+              return (
+                <>
+                  <div className="grid3" style={{ marginBottom: 16 }}>
+                    <div className="metric-card"><div className="metric-label">Timesheets</div><div className="metric-value">{tsWithEntries.length}</div></div>
+                    <div className="metric-card"><div className="metric-label">Total Hours</div><div className="metric-value">{totalHours.toFixed(1)}</div></div>
+                    <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
+                  </div>
+                  <table>
+                    <thead><tr><th>Timesheet</th><th>Position</th><th>Std Hrs</th><th>OT Hrs</th><th>DT Hrs</th><th>Total Hrs</th><th>Total Pay</th></tr></thead>
+                    <tbody>
+                      {tsWithEntries.map(({ ts, entries }) =>
+                        entries.map((r) => (
+                          <tr key={r.id}>
+                            <td>{ts.title}</td>
+                            <td>{r.position || "—"}</td>
+                            <td>{r.stdHours.toFixed(1)}</td>
+                            <td>{r.otHours.toFixed(1)}</td>
+                            <td>{r.dtHours.toFixed(1)}</td>
+                            <td>{r.totalHours.toFixed(1)}</td>
+                            <td>${r.totalPay.toFixed(2)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
