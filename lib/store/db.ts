@@ -398,6 +398,14 @@ export async function rejectStaffEntry(entryId: string): Promise<void> {
   if (error) console.error("[db] rejectStaffEntry:", error);
 }
 
+export async function setEntryApproved(entryId: string): Promise<void> {
+  const { error } = await supabase
+    .from("timesheet_entries")
+    .update({ status: "approved", updated_at: new Date().toISOString() })
+    .eq("id", entryId);
+  if (error) console.error("[db] setEntryApproved:", error);
+}
+
 function syncTimesheet(t: Timesheet) {
   // Upsert header (no rows column)
   supabase

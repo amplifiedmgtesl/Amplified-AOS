@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames, loadEmployees, getPendingStaffEntries, approveStaffEntry, rejectStaffEntry } from "@/lib/store/app-store";
+import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames, loadEmployees, getPendingStaffEntries, approveStaffEntry, rejectStaffEntry, setEntryApproved } from "@/lib/store/app-store";
 import { blankTimeEntry, computeTimeEntry, lunchOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
 import type { EmployeeRecord, TimeEntry, Timesheet } from "@/lib/store/types";
 
@@ -150,6 +150,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
         phone: w.phone || "",
         email: w.email || "",
         employeeKey: w.employeeKey || null,
+        status: w.employeeKey ? "submitted" : null,
       }));
     });
     persist({ ...timesheet, rows: nextRows });
@@ -171,6 +172,13 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     setPendingEntries((prev) => prev.filter((e) => e.id !== entry.id));
     // Also add to in-memory timesheet so it appears in the grid immediately
     persist({ ...timesheet, rows: [...timesheet.rows, { ...entry, status: "approved" }] });
+  }
+
+  async function handleApproveRow(row: import("@/lib/store/types").TimeEntry) {
+    if (!timesheet) return;
+    await setEntryApproved(row.id);
+    // Update in-memory status so the badge reflects immediately
+    persist({ ...timesheet, rows: timesheet.rows.map((r) => r.id === row.id ? { ...r, status: "approved" } : r) });
   }
 
   async function handleReject(entryId: string) {
@@ -266,6 +274,8 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                             lastName: emp.lastName || emp.fullName.split(" ").slice(1).join(" ") || "",
                             phone: emp.phone || "",
                             email: emp.email || "",
+                            // Link to employee → needs approval before it's locked
+                            status: row.status === "approved" ? "approved" : "submitted",
                           })}
                         />
                       </td>
@@ -290,7 +300,20 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                           <td>${row.totalPay.toFixed(2)}</td>
                         </>
                       ) : null}
-                      <td className="hide-print"><button className="secondary" onClick={() => removeRow(row.id)}>Delete</button></td>
+                      <td className="hide-print">
+                        <div className="action-row">
+                          {row.employeeKey && row.status === "submitted" && !hidePayAlways && (
+                            <button onClick={() => handleApproveRow(row)}>✓ Approve</button>
+                          )}
+                          {row.employeeKey && row.status === "approved" && (
+                            <span className="badge pill-green" style={{ fontSize: 11 }}>Approved</span>
+                          )}
+                          {row.employeeKey && row.status === "submitted" && (
+                            <span className="badge" style={{ fontSize: 11, background: "#e8f0fe", color: "#1a56c4" }}>Pending</span>
+                          )}
+                          <button className="secondary" onClick={() => removeRow(row.id)}>Delete</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
