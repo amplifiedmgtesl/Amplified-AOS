@@ -105,8 +105,13 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     const linked = getTimesheetByJobSheetId(jobSheetId);
     const sheet = sheets.find((s) => s.id === jobSheetId);
     if (linked) {
+      console.log("[timekeeping] loaded rows:", linked.rows.map(r => ({
+        id: r.id, stdHours: r.stdHours, timeIn1: r.timeIn1, timeOut1: r.timeOut1,
+        stdHoursType: typeof r.stdHours,
+      })));
       setTimesheet(linked);
     } else if (sheet) {
+      console.log("[timekeeping] no timesheet found for jobSheetId:", jobSheetId);
       setTimesheet({ id: `timesheet-${sheet.id}`, jobSheetId: sheet.id, title: sheet.title, hidePayColumns: false, rows: [] });
     }
   }, [jobSheetId, refreshKey]);
