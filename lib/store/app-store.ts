@@ -130,6 +130,7 @@ export function addWorkerToTimesheet(jobSheetId: string, worker: JobSheetWorker)
     lastName: worker.lastName || worker.fullName.split(" ").slice(1).join(" "),
     phone: worker.phone || "",
     email: worker.email || "",
+    employeeKey: worker.employeeKey || null,
   });
   upsertTimesheet({ ...base, rows: [...base.rows, row] });
 }

@@ -2,9 +2,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames } from "@/lib/store/app-store";
+import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames, loadEmployees } from "@/lib/store/app-store";
 import { blankTimeEntry, computeTimeEntry, lunchOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
-import type { TimeEntry, Timesheet } from "@/lib/store/types";
+import type { EmployeeRecord, TimeEntry, Timesheet } from "@/lib/store/types";
 
 const TIMES = timeOptions();
 const RATES = rateOptions();
@@ -15,10 +15,86 @@ function splitName(fullName: string) {
   return { firstName: parts[0] || "", lastName: parts.slice(1).join(" ") || "" };
 }
 
+function EmployeeAutoFill({
+  employeeKey,
+  employees,
+  onSelect,
+}: {
+  employeeKey?: string | null;
+  employees: EmployeeRecord[];
+  onSelect: (emp: EmployeeRecord) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const linked = employeeKey ? employees.find((e) => e.employeeKey === employeeKey) : null;
+
+  const results = useMemo(() => {
+    if (!query || query.length < 2) return [];
+    const q = query.toLowerCase();
+    return employees
+      .filter(
+        (e) =>
+          e.fullName.toLowerCase().includes(q) ||
+          (e.email?.toLowerCase() || "").includes(q) ||
+          e.employeeKey.toLowerCase().includes(q)
+      )
+      .slice(0, 8);
+  }, [query, employees]);
+
+  return (
+    <div style={{ position: "relative", minWidth: 170 }}>
+      {linked && !query && (
+        <div style={{ fontSize: 11, color: "#2a5a31", marginBottom: 2, whiteSpace: "nowrap" }}>
+          ✓ {linked.employeeKey}
+        </div>
+      )}
+      <input
+        className="input-tight"
+        style={{ minWidth: 160 }}
+        placeholder={linked ? linked.fullName : "Search employee…"}
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && results.length > 0 && (
+        <div style={{
+          position: "absolute",
+          top: "100%",
+          left: 0,
+          zIndex: 200,
+          background: "#fff",
+          border: "1px solid #d7c6aa",
+          borderRadius: 8,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.13)",
+          minWidth: 270,
+          maxHeight: 240,
+          overflowY: "auto",
+        }}>
+          {results.map((emp) => (
+            <div
+              key={emp.employeeKey}
+              style={{ padding: "8px 12px", cursor: "pointer", borderBottom: "1px solid #f0e9e0" }}
+              onMouseDown={() => { onSelect(emp); setQuery(""); setOpen(false); }}
+            >
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.fullName}</div>
+              <div style={{ fontSize: 11, color: "#888" }}>
+                {emp.employeeKey}{emp.email ? ` · ${emp.email}` : ""}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?: boolean }) {
   const POSITIONS = positionNames();
   const [refreshKey, setRefreshKey] = useState(0);
   const sheets = useMemo(() => loadJobSheets(), [refreshKey]);
+  const employees = useMemo(() => loadEmployees(), [refreshKey]);
   const activeSheetId = getActiveJobSheet() || sheets[0]?.id || "";
   const [jobSheetId, setJobSheetId] = useState(activeSheetId);
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
@@ -67,6 +143,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
         lastName: parts.lastName,
         phone: w.phone || "",
         email: w.email || "",
+        employeeKey: w.employeeKey || null,
       }));
     });
     persist({ ...timesheet, rows: nextRows });
@@ -149,7 +226,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               <table className="timesheet-grid">
                 <thead>
                   <tr>
-                    <th>Position</th><th>First Name</th><th>Last Name</th><th>Phone</th><th>Email</th>
+                    <th>Position</th><th>Employee</th><th>First Name</th><th>Last Name</th><th>Phone</th><th>Email</th>
                     <th>Time IN</th><th>Time OUT</th><th>Lunch</th><th>Time IN</th><th>Time OUT</th>
                     <th>STD HOURS</th><th>OT HOURS</th><th>DT HOURS</th><th>TOTAL HOURS</th>
                     {!hidePayAlways && !timesheet.hidePayColumns ? <><th>STD RATE</th><th>OT RATE</th><th>DT RATE</th><th>TOTAL PAY</th></> : null}
@@ -160,6 +237,19 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                   {timesheet.rows.map((row) => (
                     <tr key={row.id}>
                       <td style={{ minWidth: 150 }}><select className="input-tight" style={{ minWidth: 140 }} value={row.position} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select></td>
+                      <td style={{ minWidth: 180 }}>
+                        <EmployeeAutoFill
+                          employeeKey={row.employeeKey}
+                          employees={employees}
+                          onSelect={(emp) => updateRow(row.id, {
+                            employeeKey: emp.employeeKey,
+                            firstName: emp.firstName || emp.fullName.split(" ")[0] || "",
+                            lastName: emp.lastName || emp.fullName.split(" ").slice(1).join(" ") || "",
+                            phone: emp.phone || "",
+                            email: emp.email || "",
+                          })}
+                        />
+                      </td>
                       <td style={{ minWidth: 140 }}><input className="input-tight" style={{ minWidth: 130 }} value={row.firstName} onChange={(e)=>updateRow(row.id, { firstName:e.target.value })} /></td>
                       <td style={{ minWidth: 160 }}><input className="input-tight" style={{ minWidth: 150 }} value={row.lastName} onChange={(e)=>updateRow(row.id, { lastName:e.target.value })} /></td>
                       <td><input className="input-tight" value={row.phone} onChange={(e)=>updateRow(row.id, { phone:e.target.value })} /></td>
@@ -187,7 +277,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                 </tbody>
                 <tfoot>
                   <tr>
-                    <th colSpan={10}>Totals</th>
+                    <th colSpan={11}>Totals</th>
                     <th>{totals.stdHours.toFixed(2)}</th>
                     <th>{totals.otHours.toFixed(2)}</th>
                     <th>{totals.dtHours.toFixed(2)}</th>
