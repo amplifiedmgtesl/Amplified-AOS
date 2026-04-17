@@ -186,6 +186,13 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     setPendingEntries((prev) => prev.filter((e) => e.id !== entryId));
   }
 
+  async function handleRejectRow(entryId: string) {
+    if (!timesheet) return;
+    await rejectStaffEntry(entryId);
+    // Update in-memory status so the badge reflects immediately
+    persist({ ...timesheet, rows: timesheet.rows.map((r) => r.id === entryId ? { ...r, status: "rejected" } : r) });
+  }
+
   const totals = useMemo(() => {
     const rows = timesheet?.rows || [];
     return rows.reduce((acc, r) => {
@@ -303,10 +310,16 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       <td className="hide-print">
                         <div className="action-row">
                           {row.employeeKey && row.status === "submitted" && !hidePayAlways && (
-                            <button onClick={() => handleApproveRow(row)}>✓ Approve</button>
+                            <>
+                              <button onClick={() => handleApproveRow(row)}>✓ Approve</button>
+                              <button className="danger" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => handleRejectRow(row.id)}>✗ Reject</button>
+                            </>
                           )}
                           {row.employeeKey && row.status === "approved" && (
                             <span className="badge pill-green" style={{ fontSize: 11 }}>Approved</span>
+                          )}
+                          {row.employeeKey && row.status === "rejected" && (
+                            <span className="badge" style={{ fontSize: 11, background: "#fde8e8", color: "#c0392b" }}>Rejected</span>
                           )}
                           {row.employeeKey && row.status === "submitted" && (
                             <span className="badge" style={{ fontSize: 11, background: "#e8f0fe", color: "#1a56c4" }}>Pending</span>
