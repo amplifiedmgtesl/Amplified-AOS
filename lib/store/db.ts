@@ -10,7 +10,6 @@
  */
 
 import { supabase } from "../supabase/client";
-import { computeTimeEntry } from "./timekeeping";
 import type {
   CalendarEvent,
   QuoteDraft,
@@ -380,7 +379,7 @@ export async function getPendingStaffEntries(jobSheetId: string): Promise<import
     .eq("status", "submitted")
     .order("updated_at");
   if (error) { console.error("[db] getPendingStaffEntries:", error); return []; }
-  return (data ?? []).map((r) => computeTimeEntry(rowToTimeEntry(r)));
+  return (data ?? []).map(rowToTimeEntry);
 }
 
 export async function approveStaffEntry(entryId: string, timesheetId: string): Promise<void> {
@@ -703,7 +702,7 @@ function rowToTimesheet(r: any, entries: any[]): Timesheet {
     hidePayColumns: r.hide_pay_columns ?? false,
     rows: entries
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-      .map((e) => computeTimeEntry(rowToTimeEntry(e))),
+      .map(rowToTimeEntry),
   };
 }
 
