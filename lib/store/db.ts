@@ -424,26 +424,7 @@ function syncTimesheet(t: Timesheet) {
     supabase
       .from("timesheet_entries")
       .upsert(entryRows, { onConflict: "id" })
-      .then(({ error }) => {
-        if (error) { console.error("[db] syncTimesheet upsert entries error:", error); return; }
-        // Only after a successful upsert, delete rows that are no longer in the timesheet
-        const currentIds = aosManagedRows.map((r) => r.id);
-        supabase
-          .from("timesheet_entries")
-          .delete()
-          .eq("timesheet_id", t.id)
-          .is("user_id", null)
-          .not("id", "in", `(${currentIds.join(",")})`)
-          .then(({ error: delErr }) => { if (delErr) console.error("[db] syncTimesheet delete stale error:", delErr); });
-      });
-  } else {
-    // No rows left — delete all AOS-managed entries for this timesheet
-    supabase
-      .from("timesheet_entries")
-      .delete()
-      .eq("timesheet_id", t.id)
-      .is("user_id", null)
-      .then(({ error }) => { if (error) console.error("[db] syncTimesheet delete all error:", error); });
+      .then(({ error }) => { if (error) console.error("[db] syncTimesheet upsert entries error:", error); });
   }
 }
 
