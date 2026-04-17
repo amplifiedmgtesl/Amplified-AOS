@@ -179,25 +179,6 @@ Every `timesheet_entry` row that is linked to an employee must be approved by an
 ### Employee autocomplete in Timekeeping
 When adding a worker row directly in AOS Timekeeping, start typing a name or email in the **Employee** column search box. Selecting a match auto-fills the name, contact info, and employee key. Once linked, the entry becomes visible to that employee in the Staff Portal with `status = "submitted"`.
 
----
-
-## Backfilling Employee Links on Existing Entries
-
-For entries created before the employee-linking feature was added, run the backfill SQL script in the Supabase SQL Editor.
-
-**File:** `supabase/migrations/20260417b_backfill_employee_keys.sql`
-
-**Steps:**
-1. Open the Supabase project → **SQL Editor**
-2. Paste and run the **preview SELECT** (commented at the top of the file) to verify what will be matched
-3. If the matches look correct, paste and run the two **UPDATE** statements in the same file
-4. Refresh the AOS Timekeeping page — linked entries will now have a `submitted` status
-
-**Match priority:**
-1. **Email** — exact match (case-insensitive) between `timesheet_entries.email` and `employees.email`
-2. **Full name** — `first_name + ' ' + last_name` matches `employees.full_name` (only runs on rows not matched by email)
-
-Any entries that cannot be matched automatically must be updated manually via a direct SQL UPDATE using the employee's `employee_key`.
 
 ---
 
