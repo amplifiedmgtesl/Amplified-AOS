@@ -104,6 +104,10 @@ export function loadTimesheets(): Timesheet[] { return db.getTimesheets(); }
 export function saveTimesheets(rows: Timesheet[]) { db.setTimesheets(rows); }
 export function upsertTimesheet(row: Timesheet) { db.upsertTimesheet(row); }
 
+export async function getPendingStaffEntries(jobSheetId: string) { return db.getPendingStaffEntries(jobSheetId); }
+export async function approveStaffEntry(entryId: string, timesheetId: string) { return db.approveStaffEntry(entryId, timesheetId); }
+export async function rejectStaffEntry(entryId: string) { return db.rejectStaffEntry(entryId); }
+
 export function getTimesheetByJobSheetId(jobSheetId: string): Timesheet | null {
   return db.getTimesheets().find((t) => t.jobSheetId === jobSheetId) || null;
 }

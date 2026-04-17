@@ -368,21 +368,55 @@ export function upsertTimesheet(row: Timesheet) {
   syncTimesheet(row);
 }
 
+// ─── Staff timesheet submission review ────────────────────────────────────────
+
+export async function getPendingStaffEntries(jobSheetId: string): Promise<import("./types").TimeEntry[]> {
+  const { data, error } = await supabase
+    .from("timesheet_entries")
+    .select("*")
+    .eq("job_sheet_id", jobSheetId)
+    .is("timesheet_id", null)
+    .eq("status", "submitted")
+    .order("updated_at");
+  if (error) { console.error("[db] getPendingStaffEntries:", error); return []; }
+  return (data ?? []).map(rowToTimeEntry);
+}
+
+export async function approveStaffEntry(entryId: string, timesheetId: string): Promise<void> {
+  const { error } = await supabase
+    .from("timesheet_entries")
+    .update({ timesheet_id: timesheetId, status: "approved", updated_at: new Date().toISOString() })
+    .eq("id", entryId);
+  if (error) console.error("[db] approveStaffEntry:", error);
+}
+
+export async function rejectStaffEntry(entryId: string): Promise<void> {
+  const { error } = await supabase
+    .from("timesheet_entries")
+    .update({ status: "rejected", updated_at: new Date().toISOString() })
+    .eq("id", entryId);
+  if (error) console.error("[db] rejectStaffEntry:", error);
+}
+
 function syncTimesheet(t: Timesheet) {
   // Upsert header (no rows column)
   supabase
     .from("timesheets")
     .upsert({ id: t.id, job_sheet_id: t.jobSheetId, title: t.title, hide_pay_columns: t.hidePayColumns })
     .then(({ error }) => { if (error) console.error("[db] syncTimesheet header error:", error); });
-  // Replace all entries for this timesheet
+  // Replace only AOS-managed entries (user_id IS NULL).
+  // Staff-submitted entries (user_id set) are managed by their own approval flow
+  // and must not be overwritten by admin syncs.
   supabase
     .from("timesheet_entries")
     .delete()
     .eq("timesheet_id", t.id)
+    .is("user_id", null)
     .then(({ error }) => {
       if (error) { console.error("[db] syncTimesheet delete entries error:", error); return; }
-      if (t.rows.length === 0) return;
-      const entryRows = t.rows.map((r, idx) => timesheetEntryToRow(r, t.id, t.jobSheetId, idx));
+      const aosManagedRows = t.rows.filter((r) => !r.userId);
+      if (aosManagedRows.length === 0) return;
+      const entryRows = aosManagedRows.map((r, idx) => timesheetEntryToRow(r, t.id, t.jobSheetId, idx));
       supabase
         .from("timesheet_entries")
         .insert(entryRows)
@@ -680,6 +714,7 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     totalPay: r.total_pay ?? 0,
     employeeKey: r.employee_key ?? null,
     userId: r.user_id ?? null,
+    status: r.status ?? null,
     sortOrder: r.sort_order ?? 0,
   };
 }
@@ -710,6 +745,7 @@ function timesheetEntryToRow(e: import("./types").TimeEntry, timesheetId: string
     dt_rate: e.dtRate,
     total_pay: e.totalPay,
     sort_order: sortOrder,
+    status: e.status ?? null,
     updated_at: new Date().toISOString(),
   };
 }

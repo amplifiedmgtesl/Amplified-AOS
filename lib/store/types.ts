@@ -56,6 +56,7 @@ export type TimeEntry = {
   totalPay: number;
   employeeKey?: string | null; // links to employees table
   userId?: string | null;      // set for staff-submitted entries
+  status?: string | null;      // null=admin-created, submitted|approved|rejected for staff entries
   sortOrder?: number;
 };
 

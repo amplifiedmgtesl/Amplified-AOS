@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames, loadEmployees } from "@/lib/store/app-store";
+import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames, loadEmployees, getPendingStaffEntries, approveStaffEntry, rejectStaffEntry } from "@/lib/store/app-store";
 import { blankTimeEntry, computeTimeEntry, lunchOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
 import type { EmployeeRecord, TimeEntry, Timesheet } from "@/lib/store/types";
 
@@ -95,6 +95,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   const [refreshKey, setRefreshKey] = useState(0);
   const sheets = useMemo(() => loadJobSheets(), [refreshKey]);
   const employees = useMemo(() => loadEmployees(), [refreshKey]);
+  const [pendingEntries, setPendingEntries] = useState<import("@/lib/store/types").TimeEntry[]>([]);
   const activeSheetId = getActiveJobSheet() || sheets[0]?.id || "";
   const [jobSheetId, setJobSheetId] = useState(activeSheetId);
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
@@ -107,6 +108,11 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     else if (sheet) {
       setTimesheet({ id: `timesheet-${sheet.id}`, jobSheetId: sheet.id, title: sheet.title, hidePayColumns: false, rows: [] });
     }
+  }, [jobSheetId, refreshKey]);
+
+  useEffect(() => {
+    if (!jobSheetId) { setPendingEntries([]); return; }
+    getPendingStaffEntries(jobSheetId).then(setPendingEntries);
   }, [jobSheetId, refreshKey]);
 
   const currentSheet = sheets.find((s) => s.id === jobSheetId) || null;
@@ -157,6 +163,19 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   function removeRow(id: string) {
     if (!timesheet) return;
     persist({ ...timesheet, rows: timesheet.rows.filter((r) => r.id !== id) });
+  }
+
+  async function handleApprove(entry: import("@/lib/store/types").TimeEntry) {
+    if (!timesheet) return;
+    await approveStaffEntry(entry.id, timesheet.id);
+    setPendingEntries((prev) => prev.filter((e) => e.id !== entry.id));
+    // Also add to in-memory timesheet so it appears in the grid immediately
+    persist({ ...timesheet, rows: [...timesheet.rows, { ...entry, status: "approved" }] });
+  }
+
+  async function handleReject(entryId: string) {
+    await rejectStaffEntry(entryId);
+    setPendingEntries((prev) => prev.filter((e) => e.id !== entryId));
   }
 
   const totals = useMemo(() => {
@@ -313,6 +332,44 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
           </>
         )}
       </div>
+
+      {!hidePayAlways && pendingEntries.length > 0 && (
+        <div className="card hide-print">
+          <h3 className="section-title">⏳ Staff Submissions Pending Review ({pendingEntries.length})</h3>
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th><th>Position</th><th>Work Date</th><th>Time In</th><th>Time Out</th>
+                  <th>Lunch</th><th>STD</th><th>OT</th><th>DT</th><th>Total Hrs</th><th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingEntries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{entry.firstName} {entry.lastName}</td>
+                    <td>{entry.position}</td>
+                    <td>{(entry as any).workDate || "—"}</td>
+                    <td>{entry.timeIn1 || "—"}</td>
+                    <td>{entry.timeOut1 || "—"}</td>
+                    <td>{entry.lunchMinutes}m</td>
+                    <td>{entry.stdHours.toFixed(2)}</td>
+                    <td>{entry.otHours.toFixed(2)}</td>
+                    <td>{entry.dtHours.toFixed(2)}</td>
+                    <td><strong>{entry.totalHours.toFixed(2)}</strong></td>
+                    <td>
+                      <div className="action-row">
+                        <button onClick={() => handleApprove(entry)}>✓ Approve</button>
+                        <button className="secondary" onClick={() => handleReject(entry.id)}>✗ Reject</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
