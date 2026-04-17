@@ -413,24 +413,31 @@ function syncTimesheet(t: Timesheet) {
     .from("timesheets")
     .upsert({ id: t.id, job_sheet_id: t.jobSheetId, title: t.title, hide_pay_columns: t.hidePayColumns })
     .then(({ error }) => { if (error) console.error("[db] syncTimesheet header error:", error); });
-  // Replace only AOS-managed entries (user_id IS NULL).
-  // Staff-submitted entries (user_id set) are managed by their own approval flow
-  // and must not be overwritten by admin syncs.
+
+  // Sync only AOS-managed entries (user_id IS NULL).
+  // Staff-submitted entries (user_id set) are managed by their own approval flow.
+  //
+  // Strategy: UPSERT current rows first, then delete any that were removed.
+  // This avoids the delete-then-insert pattern where a failed insert would wipe data.
+  const aosManagedRows = t.rows.filter((r) => !r.userId);
+  const currentIds = aosManagedRows.map((r) => r.id);
+
+  if (aosManagedRows.length > 0) {
+    const entryRows = aosManagedRows.map((r, idx) => timesheetEntryToRow(r, t.id, t.jobSheetId, idx));
+    supabase
+      .from("timesheet_entries")
+      .upsert(entryRows, { onConflict: "id" })
+      .then(({ error }) => { if (error) console.error("[db] syncTimesheet upsert entries error:", error); });
+  }
+
+  // Delete AOS-managed rows that are no longer in the timesheet
   supabase
     .from("timesheet_entries")
     .delete()
     .eq("timesheet_id", t.id)
     .is("user_id", null)
-    .then(({ error }) => {
-      if (error) { console.error("[db] syncTimesheet delete entries error:", error); return; }
-      const aosManagedRows = t.rows.filter((r) => !r.userId);
-      if (aosManagedRows.length === 0) return;
-      const entryRows = aosManagedRows.map((r, idx) => timesheetEntryToRow(r, t.id, t.jobSheetId, idx));
-      supabase
-        .from("timesheet_entries")
-        .insert(entryRows)
-        .then(({ error: insertError }) => { if (insertError) console.error("[db] syncTimesheet insert entries error:", insertError); });
-    });
+    .not("id", "in", `(${currentIds.length > 0 ? currentIds.map((id) => `"${id}"`).join(",") : '""'})`)
+    .then(({ error }) => { if (error) console.error("[db] syncTimesheet delete stale entries error:", error); });
 }
 
 // ─── Employees ────────────────────────────────────────────────────────────────

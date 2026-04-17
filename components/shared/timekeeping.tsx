@@ -105,18 +105,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     const linked = getTimesheetByJobSheetId(jobSheetId);
     const sheet = sheets.find((s) => s.id === jobSheetId);
     if (linked) {
-      // Recompute every row from its stored time fields. If any calculated value
-      // differs from what's in the DB, write the corrected version back immediately
-      // so the DB stays in sync with what the UI displays.
-      const recomputed = { ...linked, rows: linked.rows.map(computeTimeEntry) };
-      const stale = linked.rows.some((r, i) => {
-        const c = recomputed.rows[i];
-        return r.stdHours !== c.stdHours || r.otHours !== c.otHours ||
-               r.dtHours !== c.dtHours || r.totalHours !== c.totalHours ||
-               r.totalPay !== c.totalPay;
-      });
-      if (stale) upsertTimesheet(recomputed); // write corrected values back to DB
-      setTimesheet(recomputed);
+      setTimesheet(linked);
     } else if (sheet) {
       setTimesheet({ id: `timesheet-${sheet.id}`, jobSheetId: sheet.id, title: sheet.title, hidePayColumns: false, rows: [] });
     }
