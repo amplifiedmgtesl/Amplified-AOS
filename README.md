@@ -91,7 +91,9 @@ Staff Portal only. Cannot log into AOS (blocked at login with *"Access denied. S
 | Job Requests | ✓ | | |
 | Call Sheets | ✓ | | |
 | Maintenance (Users + Positions) | ✓ | | |
+| Approve / Reject Staff Timesheets | ✓ | | |
 | Submit Timesheet (Staff Portal) | | | ✓ |
+| Edit Submitted Timesheet (Staff Portal) | | | ✓ |
 | View My Schedule (Staff Portal) | | | ✓ |
 | My Profile (Staff Portal) | | | ✓ |
 | View Pay Rates / Pricing | ✓ | | |
@@ -146,6 +148,56 @@ Positions are the controlled vocabulary used in Timekeeping, Job Sheets, Job Cos
 Changes take effect immediately for new entries across all dropdowns in the system.
 
 > ℹ️ Deleting a position does not remove it from any existing timesheet entries, job sheets, or rate card rows — it only removes it from future dropdown selections.
+
+---
+
+## Timesheet Approval Workflow
+
+Every `timesheet_entry` row that is linked to an employee must be approved by an admin before it is considered final.
+
+### How it works
+
+| Status | Meaning |
+|--------|---------|
+| `null` | Entry has no linked employee — typically an AOS-entered row for an unlinked worker. No approval needed. |
+| `submitted` | Linked to an employee (either staff-submitted or AOS-entered for a known employee). Editable by the employee; pending admin review. |
+| `approved` | Admin approved. Locked — neither the employee nor AOS can modify it. |
+| `rejected` | Admin rejected. Locked. |
+
+### Staff Portal — submitting & editing
+- Staff members submit timesheets at **Staff Portal → Timesheets → Submit New**
+- The entry is created with `status = "submitted"` and is immediately visible to the linked admin in AOS Timekeeping
+- The staff member can **edit** any `submitted` entry until an admin approves or rejects it
+- AOS-entered entries for a linked employee also appear in the staff portal (the employee can see and edit them until approved)
+
+### AOS — approving submissions
+- Open a job sheet and navigate to the **Timekeeping** tab
+- Staff-submitted entries appear in a **"Staff Submissions Pending Review"** panel at the bottom of the page
+- Click **Approve** to accept — the entry moves into the main timesheet and is locked
+- Click **Reject** to decline — the entry is locked with `status = "rejected"` and remains visible to the staff member
+
+### Employee autocomplete in Timekeeping
+When adding a worker row directly in AOS Timekeeping, start typing a name or email in the **Employee** column search box. Selecting a match auto-fills the name, contact info, and employee key. Once linked, the entry becomes visible to that employee in the Staff Portal with `status = "submitted"`.
+
+---
+
+## Backfilling Employee Links on Existing Entries
+
+For entries created before the employee-linking feature was added, run the backfill SQL script in the Supabase SQL Editor.
+
+**File:** `supabase/migrations/20260417b_backfill_employee_keys.sql`
+
+**Steps:**
+1. Open the Supabase project → **SQL Editor**
+2. Paste and run the **preview SELECT** (commented at the top of the file) to verify what will be matched
+3. If the matches look correct, paste and run the two **UPDATE** statements in the same file
+4. Refresh the AOS Timekeeping page — linked entries will now have a `submitted` status
+
+**Match priority:**
+1. **Email** — exact match (case-insensitive) between `timesheet_entries.email` and `employees.email`
+2. **Full name** — `first_name + ' ' + last_name` matches `employees.full_name` (only runs on rows not matched by email)
+
+Any entries that cannot be matched automatically must be updated manually via a direct SQL UPDATE using the employee's `employee_key`.
 
 ---
 
@@ -216,8 +268,10 @@ Controlled vocabulary for worker roles. Single source of truth — feeds positio
 A user profile can optionally be linked to an employee record via `employee_key`. This link:
 - Displays the employee's phone number (read-only) in the AOS User Management screen
 - Shows the staff member's full contact info (read-only) on their Staff Portal profile page
-- Is **required** for staff portal users to see their contact details
+- Is **required** for staff portal users to see their contact details and for the timesheet approval workflow to function
 - Is **optional** for `admin` and `crew_leader` users
+
+When a staff user's `employee_key` matches an `employee_key` on a `timesheet_entry`, that entry becomes visible to the staff member in the Staff Portal — regardless of whether the entry was submitted through the portal or entered directly in AOS Timekeeping.
 
 ### `calendar_events`
 Master calendar entries. Each row represents a show, event, or gig. Fields include client, venue, address, dates, times, status, crew lead, and hands count. Also stores event profile notes and attachment filenames. Soft-deleted via `is_deleted`.
@@ -235,7 +289,27 @@ Normalized worker roster — one row per worker per job sheet. Stores name, cont
 Timesheet header record linked to a job sheet. Stores the `hide_pay_columns` flag (used by the crew leader view). Individual time entries are stored in `timesheet_entries`.
 
 ### `timesheet_entries`
-One row per worker per timesheet. Stores clock-in/out times, lunch break, standard/OT/DT hours and pay rates, total hours, and total pay. Links to both `timesheets` and `employees`. `user_id` is set when the entry was submitted via the Staff Portal.
+One row per worker per timesheet. Stores clock-in/out times, lunch break, standard/OT/DT hours and pay rates, total hours, and total pay. Links to both `timesheets` and `employees`.
+
+| Column | Description |
+|--------|-------------|
+| `timesheet_id` | FK → `timesheets.id` (nullable — null until approved for staff-submitted rows) |
+| `employee_key` | FK → `employees.employee_key` (nullable) |
+| `user_id` | Supabase auth user ID — set when submitted via the Staff Portal |
+| `job_sheet_id` | FK → `job_sheets.id` |
+| `job_name` | Denormalized job label for display in the Staff Portal |
+| `work_date` | The specific date worked |
+| `first_name`, `last_name`, `email`, `phone` | Denormalized worker contact info |
+| `position` | Position/role for this entry |
+| `time_in1`, `time_out1` | First shift in/out |
+| `time_in2`, `time_out2` | Second shift in/out (optional) |
+| `lunch_minutes` | Lunch deduction in minutes |
+| `std_hours`, `ot_hours`, `dt_hours`, `total_hours` | Calculated hour buckets |
+| `std_rate`, `ot_rate`, `dt_rate`, `total_pay` | Pay rates and computed total |
+| `notes` | Worker notes |
+| `status` | `null` = no linked employee; `submitted` = pending approval; `approved` = locked; `rejected` = locked |
+
+> `status` controls the approval workflow. Entries where `status` is `null` have no linked employee and require no approval. Entries with `status = "submitted"` are visible and editable by the linked employee in the Staff Portal until an admin approves or rejects them.
 
 ### `quotes`
 Saved quote documents built in Quote Builder. Stores all event details, line items (as JSONB), totals, deposit, terms, and signature info. Linked to a job request and/or job sheet. Referenced by invoices.
@@ -272,4 +346,4 @@ Simple single-row-per-key state store. Used for global flags and settings (e.g. 
 
 ---
 
-*Last updated: April 2026 — positions maintenance added; all DB tables documented*
+*Last updated: April 2026 — positions maintenance; full DB documentation; timesheet approval workflow; staff portal edit + AOS visibility; employee autocomplete in timekeeping; backfill SQL script*
