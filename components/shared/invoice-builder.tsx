@@ -7,6 +7,7 @@ import {
   loadInvoiceDrafts,
   loadJobRequests,
   loadQuotes,
+  pullApprovedTimesheetSummary,
   setActiveInvoice,
   upsertInvoiceDraft,
 } from "@/lib/store/app-store";
@@ -170,6 +171,7 @@ export default function InvoiceBuilder() {
   const [sourceJobRequestId, setSourceJobRequestId] = useState<string>("");
   const [linkedRateCardProfileId, setLinkedRateCardProfileId] = useState<string>("");
   const [statusMsg, setStatusMsg] = useState("");
+  const [syncingTimesheet, setSyncingTimesheet] = useState(false);
   const [invoiceLabel, setInvoiceLabel] = useState("");
   const [depositInvoiceMode, setDepositInvoiceMode] = useState(false);
   const rateRows = useMemo(() => loadRateRows(), []);
@@ -331,6 +333,21 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
     setLinkedRateCardProfileId(rateCardProfileId);
   }
 
+  async function syncLaborActuals() {
+    if (!invoice) return;
+    const jobSheetId = invoice.linkedJobSheetId;
+    if (!jobSheetId) { setStatusMsg("No linked job sheet — sync a quote first."); return; }
+    setSyncingTimesheet(true);
+    setStatusMsg("");
+    const summary = await pullApprovedTimesheetSummary(jobSheetId);
+    setSyncingTimesheet(false);
+    if (summary.length === 0) {
+      setStatusMsg("No approved timesheet entries found for this job sheet.");
+      return;
+    }
+    persist({ ...invoice, timesheetSummary: summary }, `Labor actuals pulled — ${summary.length} position${summary.length !== 1 ? "s" : ""} from approved entries.`);
+  }
+
   function saveInvoiceDraftNow() {
     if (!invoice) return;
     persist({ ...invoice, invoiceNo: invoice.invoiceNo || invoiceLabel || invoice.invoiceNo }, "Invoice draft saved.");
@@ -430,6 +447,20 @@ function createDepositInvoiceDraft() {
           </div>
           <div className="action-row" style={{ alignItems: "end" }}>
             <button type="button" className="secondary" onClick={() => syncFromJobRequest(sourceJobRequestId)}>Sync From Job Request</button>
+          </div>
+          <div className="action-row" style={{ alignItems: "end", gridColumn: "span 2" }}>
+            <button
+              type="button"
+              className="secondary"
+              onClick={syncLaborActuals}
+              disabled={syncingTimesheet || !invoice?.linkedJobSheetId}
+              title={invoice?.linkedJobSheetId ? "Pull approved timesheet entries grouped by position" : "Link a quote with a job sheet first"}
+            >
+              {syncingTimesheet ? "Pulling…" : "⟳ Pull Labor Actuals from Timesheet"}
+            </button>
+            {invoice?.linkedJobSheetId && (
+              <span className="muted" style={{ fontSize: 11 }}>Job sheet: {invoice.linkedJobSheetId}</span>
+            )}
           </div>
 
           <div><small>Status</small><select value={invoice.status} onChange={(e) => patch({ status: e.target.value })}><option value="draft">draft</option><option value="sent">sent</option><option value="partial">partial</option><option value="paid">paid</option></select></div>

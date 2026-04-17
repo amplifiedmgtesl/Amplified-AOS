@@ -406,6 +406,63 @@ export async function setEntryApproved(entryId: string): Promise<void> {
   if (error) console.error("[db] setEntryApproved:", error);
 }
 
+export async function pullApprovedTimesheetSummary(jobSheetId: string): Promise<Array<{
+  position: string;
+  workers: number;
+  stdHours: number;
+  otHours: number;
+  dtHours: number;
+  totalHours: number;
+  totalPay: number;
+}>> {
+  const { data, error } = await supabase
+    .from("timesheet_entries")
+    .select("position, employee_key, std_hours, ot_hours, dt_hours, total_hours, total_pay")
+    .eq("job_sheet_id", jobSheetId)
+    .eq("status", "approved");
+  if (error) { console.error("[db] pullApprovedTimesheetSummary:", error); return []; }
+  if (!data || data.length === 0) return [];
+
+  // Group by position, summing hours/pay and counting distinct workers
+  const map = new Map<string, {
+    linkedKeys: Set<string>;
+    unlinkedCount: number;
+    stdHours: number;
+    otHours: number;
+    dtHours: number;
+    totalHours: number;
+    totalPay: number;
+  }>();
+
+  for (const row of data) {
+    const pos = (row.position as string) || "Unknown";
+    if (!map.has(pos)) {
+      map.set(pos, { linkedKeys: new Set(), unlinkedCount: 0, stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, totalPay: 0 });
+    }
+    const entry = map.get(pos)!;
+    if (row.employee_key) {
+      entry.linkedKeys.add(row.employee_key as string);
+    } else {
+      entry.unlinkedCount++;
+    }
+    entry.stdHours   += Number(row.std_hours   ?? 0);
+    entry.otHours    += Number(row.ot_hours    ?? 0);
+    entry.dtHours    += Number(row.dt_hours    ?? 0);
+    entry.totalHours += Number(row.total_hours ?? 0);
+    entry.totalPay   += Number(row.total_pay   ?? 0);
+  }
+
+  return Array.from(map.entries()).map(([position, v]) => ({
+    position,
+    workers: v.linkedKeys.size + v.unlinkedCount,
+    stdHours:   Number(v.stdHours.toFixed(2)),
+    otHours:    Number(v.otHours.toFixed(2)),
+    dtHours:    Number(v.dtHours.toFixed(2)),
+    totalHours: Number(v.totalHours.toFixed(2)),
+    totalPay:   Number(v.totalPay.toFixed(2)),
+  }));
+}
+
 function syncTimesheet(t: Timesheet) {
   // Upsert header (no rows column)
   supabase

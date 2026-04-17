@@ -108,6 +108,7 @@ export async function getPendingStaffEntries(jobSheetId: string) { return db.get
 export async function approveStaffEntry(entryId: string, timesheetId: string) { return db.approveStaffEntry(entryId, timesheetId); }
 export async function rejectStaffEntry(entryId: string) { return db.rejectStaffEntry(entryId); }
 export async function setEntryApproved(entryId: string) { return db.setEntryApproved(entryId); }
+export async function pullApprovedTimesheetSummary(jobSheetId: string) { return db.pullApprovedTimesheetSummary(jobSheetId); }
 
 export function getTimesheetByJobSheetId(jobSheetId: string): Timesheet | null {
   return db.getTimesheets().find((t) => t.jobSheetId === jobSheetId) || null;
