@@ -121,7 +121,9 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   function persist(next: Timesheet) {
     setTimesheet(next);
     upsertTimesheet(next);
-    setRefreshKey((x) => x + 1);
+    // NOTE: do NOT setRefreshKey here — that would trigger a useEffect that
+    // reloads the timesheet from cache, potentially racing with the state update.
+    // refreshKey is only incremented by explicit user actions (job sheet change).
   }
 
   function updateRow(id: string, patch: Partial<TimeEntry>) {
@@ -196,8 +198,9 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   const totals = useMemo(() => {
     const rows = timesheet?.rows || [];
     return rows.reduce((acc, r) => {
-      acc.stdHours += r.stdHours; acc.otHours += r.otHours; acc.dtHours += r.dtHours;
-      acc.totalHours += r.totalHours; acc.totalPay += r.totalPay;
+      const calc = computeTimeEntry(r);
+      acc.stdHours += calc.stdHours; acc.otHours += calc.otHours; acc.dtHours += calc.dtHours;
+      acc.totalHours += calc.totalHours; acc.totalPay += calc.totalPay;
       return acc;
     }, { stdHours:0, otHours:0, dtHours:0, totalHours:0, totalPay:0 });
   }, [timesheet]);
@@ -295,18 +298,25 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       <td><select className="input-tight" value={row.lunchMinutes} onChange={(e)=>updateRow(row.id, { lunchMinutes:Number(e.target.value) })}>{lunchOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
                       <td style={{ minWidth: 115 }}><select className="input-tight" style={{ minWidth: 105 }} value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
                       <td style={{ minWidth: 115 }}><select className="input-tight" style={{ minWidth: 105 }} value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
-                      <td>{row.stdHours.toFixed(2)}</td>
-                      <td>{row.otHours.toFixed(2)}</td>
-                      <td>{row.dtHours.toFixed(2)}</td>
-                      <td>{row.totalHours.toFixed(2)}</td>
-                      {!hidePayAlways && !timesheet.hidePayColumns ? (
-                        <>
-                          <td style={{ minWidth: 110 }}><select className="input-tight" style={{ minWidth: 100 }} value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td style={{ minWidth: 110 }}><select className="input-tight" style={{ minWidth: 100 }} value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td style={{ minWidth: 110 }}><select className="input-tight" style={{ minWidth: 100 }} value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td>${row.totalPay.toFixed(2)}</td>
-                        </>
-                      ) : null}
+                      {(() => {
+                        const calc = computeTimeEntry(row);
+                        return (
+                          <>
+                            <td>{calc.stdHours.toFixed(2)}</td>
+                            <td>{calc.otHours.toFixed(2)}</td>
+                            <td>{calc.dtHours.toFixed(2)}</td>
+                            <td>{calc.totalHours.toFixed(2)}</td>
+                            {!hidePayAlways && !timesheet.hidePayColumns ? (
+                              <>
+                                <td style={{ minWidth: 110 }}><select className="input-tight" style={{ minWidth: 100 }} value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                                <td style={{ minWidth: 110 }}><select className="input-tight" style={{ minWidth: 100 }} value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                                <td style={{ minWidth: 110 }}><select className="input-tight" style={{ minWidth: 100 }} value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                                <td>${calc.totalPay.toFixed(2)}</td>
+                              </>
+                            ) : null}
+                          </>
+                        );
+                      })()}
                       <td className="hide-print">
                         <div className="action-row">
                           {row.employeeKey && row.status === "submitted" && !hidePayAlways && (
