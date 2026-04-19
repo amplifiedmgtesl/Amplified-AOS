@@ -32,6 +32,14 @@ export type QuoteLine = {
   dtRate: number;
   rule: string;
   total: number;
+  // Discrete UI columns (populated from quote_lines / invoice_lines table)
+  department?: string;
+  specialty?: string;
+  shiftLabel?: string;
+  quoteDate?: string;
+  startTime?: string;
+  endTime?: string;
+  rateMode?: string;
 };
 
 export type TimeEntry = {

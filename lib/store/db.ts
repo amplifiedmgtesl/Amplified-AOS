@@ -952,6 +952,13 @@ function rowToQuoteLine(r: any): import("./types").QuoteLine {
     dtRate:       r.dt_rate      ?? 0,
     rule:         r.rule         ?? "",
     total:        r.total        ?? 0,
+    department:   r.department   ?? undefined,
+    specialty:    r.specialty    ?? undefined,
+    shiftLabel:   r.shift_label  ?? undefined,
+    quoteDate:    r.quote_date   ?? undefined,
+    startTime:    r.start_time   ?? undefined,
+    endTime:      r.end_time     ?? undefined,
+    rateMode:     r.rate_mode    ?? undefined,
   };
 }
 
@@ -975,6 +982,13 @@ function quoteLineToRow(quoteId: string, l: import("./types").QuoteLine, index: 
     dt_rate:       l.dtRate,
     rule:          l.rule,
     total:         l.total,
+    department:    l.department  ?? null,
+    specialty:     l.specialty   ?? null,
+    shift_label:   l.shiftLabel  ?? null,
+    quote_date:    l.quoteDate   ?? null,
+    start_time:    l.startTime   ?? null,
+    end_time:      l.endTime     ?? null,
+    rate_mode:     l.rateMode    ?? null,
   };
 }
 
@@ -994,6 +1008,13 @@ function invoiceLineToRow(invoiceId: string, l: import("./types").QuoteLine, ind
     dt_rate:       l.dtRate,
     rule:          l.rule,
     total:         l.total,
+    department:    l.department  ?? null,
+    specialty:     l.specialty   ?? null,
+    shift_label:   l.shiftLabel  ?? null,
+    quote_date:    l.quoteDate   ?? null,
+    start_time:    l.startTime   ?? null,
+    end_time:      l.endTime     ?? null,
+    rate_mode:     l.rateMode    ?? null,
   };
 }
 

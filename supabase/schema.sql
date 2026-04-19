@@ -74,7 +74,14 @@ create table if not exists quote_lines (
   ot_rate       numeric,
   dt_rate       numeric,
   rule          text,
-  total         numeric
+  total         numeric,
+  department    text,
+  specialty     text,
+  shift_label   text,
+  quote_date    text,
+  start_time    text,
+  end_time      text,
+  rate_mode     text
 );
 
 create index if not exists quote_lines_quote_id_idx on quote_lines(quote_id);
@@ -128,7 +135,14 @@ create table if not exists invoice_lines (
   ot_rate       numeric,
   dt_rate       numeric,
   rule          text,
-  total         numeric
+  total         numeric,
+  department    text,
+  specialty     text,
+  shift_label   text,
+  quote_date    text,
+  start_time    text,
+  end_time      text,
+  rate_mode     text
 );
 
 create index if not exists invoice_lines_invoice_id_idx on invoice_lines(invoice_id);

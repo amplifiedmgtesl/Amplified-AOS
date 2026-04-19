@@ -421,7 +421,14 @@ export default function QuoteBuilder() {
           otRate: item.row.otRate,
           dtRate: item.row.dtRate,
           rule: `${item.line.startTime || "-"} to ${item.line.endTime || "-"} | ${item.line.rateMode === "hourly" ? "Hourly" : "Day Rate"} | OT after ${item.row.dtAfter} / DT after 15`,
-          total: item.total
+          total: item.total,
+          department: dep.department,
+          specialty: item.row.specialty,
+          shiftLabel: item.line.shiftLabel,
+          quoteDate: group.date,
+          startTime: item.line.startTime,
+          endTime: item.line.endTime,
+          rateMode: item.line.rateMode
         }))
       )
     );
@@ -476,37 +483,41 @@ export default function QuoteBuilder() {
     setSignedAt(q.signedAt || "");
     setTerms(q.terms);
     setActiveRateCardProfileIdState(q.rateCardProfileId || "");
-    // Load the rate card rows for this quote so dropdown options match
-    const quoteProfile = q.rateCardProfileId
-      ? rateCardProfiles.find((p) => p.id === q.rateCardProfileId)
-      : null;
-    const quoteRows = quoteProfile ? quoteProfile.rows : loadRateRows();
-    setRows(quoteRows);
     setLines(q.lines.map((l, i) => {
-      const parts = l.serviceKey.split(" | ");
-      let date = "", department = "", position = l.serviceKey, shiftLabel = `Shift ${i + 1}`, rateMode: RateMode = "hourly";
-      if (parts.length >= 6) {
-        // New format: "date | department | dep | specialty | shiftLabel | rateMode"
-        // position = rowKey = "dep | specialty" spans parts[2] and parts[3]
-        date = parts[0];
-        department = parts[1];
-        position = `${parts[2]} | ${parts[3]}`;
-        shiftLabel = parts[4] || shiftLabel;
-        rateMode = parts[5] === "day" ? "day" : "hourly";
-      } else if (parts.length === 2) {
-        // Old format: serviceKey was just the rowKey "department | specialty"
-        department = parts[0];
-        position = l.serviceKey;
+      // Use discrete columns if available, fall back to parsing serviceKey/rule
+      let department = l.department || "";
+      let specialty = l.specialty || "";
+      let shiftLabel = l.shiftLabel || `Shift ${i + 1}`;
+      let quoteDate = l.quoteDate || "";
+      let startTime = l.startTime || "";
+      let endTime = l.endTime || "";
+      let rateMode: RateMode = (l.rateMode === "day" ? "day" : "hourly");
+
+      if (!department) {
+        const parts = l.serviceKey.split(" | ");
+        if (parts.length >= 6) {
+          quoteDate   = parts[0];
+          department  = parts[1];
+          specialty   = parts[3];
+          shiftLabel  = parts[4] || shiftLabel;
+          rateMode    = parts[5] === "day" ? "day" : "hourly";
+        } else if (parts.length === 2) {
+          department = parts[0];
+          specialty  = parts[1];
+        }
+        const ruleParts = (l.rule || "").split(" | ")[0].split(" to ");
+        startTime = ruleParts[0] || "";
+        endTime   = ruleParts[1] || "";
       }
-      const ruleParts = (l.rule || "").split(" | ")[0].split(" to ");
+
       return {
         id: Date.now() + i,
         department,
-        position,
-        quoteDate: date,
+        position: department && specialty ? `${department} | ${specialty}` : l.serviceKey,
+        quoteDate,
         shiftLabel,
-        startTime: ruleParts[0] || "",
-        endTime: ruleParts[1] || "",
+        startTime,
+        endTime,
         qty: l.qty,
         rateMode,
         holidayHours: l.holidayHours,
