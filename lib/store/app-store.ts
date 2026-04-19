@@ -174,11 +174,18 @@ export function getActiveJobCosting(): string | null {
 
 // ─── Positions ────────────────────────────────────────────────────────────────
 
-import type { Position } from "./types";
+import type { Position, Specialty } from "./types";
 
 export function loadPositions(): Position[] { return db.getPositions(); }
 export function upsertPosition(row: Position) { db.upsertPosition(row); }
 export function deletePosition(id: string) { db.deletePosition(id); }
+
+// ─── Specialties ──────────────────────────────────────────────────────────────
+
+export function loadSpecialties(): Specialty[] { return db.getSpecialties(); }
+export function getSpecialtiesByPosition(positionId: string): Specialty[] { return db.getSpecialtiesByPosition(positionId); }
+export function upsertSpecialty(row: Specialty) { db.upsertSpecialty(row); }
+export function deleteSpecialty(id: string) { db.deleteSpecialty(id); }
 
 /** Returns active position names as a flat string array — drop-in for old POSITIONS constant. */
 export function positionNames(): string[] {

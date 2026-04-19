@@ -201,6 +201,44 @@ insert into positions (id, name, sort_order) values
   ('pos-15', 'Other',                 15)
 on conflict (id) do nothing;
 
+-- ─── Specialties ──────────────────────────────────────────────────────────────
+-- Child records of positions. Each position has one or more specialties.
+-- Rate card rows, quote lines, and invoice lines reference specialty_id.
+create table if not exists specialties (
+  id          text    primary key,
+  position_id text    not null references positions(id),
+  name        text    not null,
+  sort_order  integer not null default 0,
+  is_active   boolean not null default true
+);
+
+create index if not exists specialties_position_id_idx on specialties(position_id);
+
+insert into specialties (id, position_id, name, sort_order) values
+  ('spc-01-01','pos-01','Labor',1), ('spc-01-02','pos-01','Show Call',2),
+  ('spc-01-03','pos-01','AVL',3), ('spc-01-04','pos-01','Stage',4),
+  ('spc-01-05','pos-01','Scaffolding',5), ('spc-01-06','pos-01','Loader',6),
+  ('spc-02-01','pos-02','Stagehand Lead',1),
+  ('spc-03-01','pos-03','Climber',1), ('spc-03-02','pos-03','Operator',2),
+  ('spc-03-03','pos-03','Up',3), ('spc-03-04','pos-03','Down',4),
+  ('spc-04-01','pos-04','Head Rigger',1), ('spc-04-02','pos-04','High Steel',2),
+  ('spc-04-03','pos-04','Rope Access',3),
+  ('spc-05-01','pos-05','A1',1), ('spc-05-02','pos-05','A2',2),
+  ('spc-06-01','pos-06','L1',1), ('spc-06-02','pos-06','L2',2),
+  ('spc-07-01','pos-07','V1',1), ('spc-07-02','pos-07','V2',2),
+  ('spc-08-01','pos-08','Shop',1), ('spc-08-02','pos-08','Telendler',2),
+  ('spc-08-03','pos-08','Large Fork',3),
+  ('spc-09-01','pos-09','Tripod',1), ('spc-09-02','pos-09','Mobile',2),
+  ('spc-10-01','pos-10','Prod. Runner',1), ('spc-10-02','pos-10','Prod. Assist',2),
+  ('spc-10-03','pos-10','Services',3), ('spc-10-04','pos-10','Steward',4),
+  ('spc-10-05','pos-10','Crew Chief',5),
+  ('spc-11-01','pos-11','Lead',1),
+  ('spc-12-01','pos-12','Heavy Equipment Op',1),
+  ('spc-13-01','pos-13','Aerial Lift Operator',1),
+  ('spc-14-01','pos-14','General Labor',1),
+  ('spc-15-01','pos-15','Other',1)
+on conflict (id) do nothing;
+
 -- ─── Employees ────────────────────────────────────────────────────────────────
 -- Unified people table for both internal staff and contractors / labor pool.
 -- type = 'staff'      → internal employee; may have a staff portal login

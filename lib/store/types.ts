@@ -218,6 +218,14 @@ export type Position = {
   isActive: boolean;
 };
 
+export type Specialty = {
+  id: string;
+  positionId: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
 export type Profile = {
   id: string;          // matches auth.users.id (uuid)
   role: string;        // "admin" | "staff" | "crew_leader"

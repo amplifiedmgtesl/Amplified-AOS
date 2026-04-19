@@ -21,6 +21,7 @@ import type {
   EmployeeRecord,
   JobCostingDraft,
   Position,
+  Specialty,
 } from "./types";
 import { DEFAULT_RATE_ROWS, DEFAULT_TERMS, type RateCardProfile, type RateRow } from "../rates/defaults";
 
@@ -45,6 +46,7 @@ interface Cache {
   clientName: string;
   rateCardProfiles: RateCardProfile[];
   positions: Position[];
+  specialties: Specialty[];
 }
 
 const _cache: Cache = {
@@ -66,6 +68,7 @@ const _cache: Cache = {
   clientName: "",
   rateCardProfiles: [],
   positions: [],
+  specialties: [],
 };
 
 export function isInitialized(): boolean {
@@ -129,6 +132,7 @@ async function _loadAll() {
     rateProfilesRes,
     rateStateRes,
     positionsRes,
+    specialtiesRes,
   ] = await Promise.all([
     supabase.from("calendar_events").select("*"),
     supabase.from("quotes").select("*"),
@@ -146,6 +150,7 @@ async function _loadAll() {
     supabase.from("rate_card_profiles").select("*"),
     supabase.from("app_rate_state").select("*"),
     supabase.from("positions").select("*").eq("is_active", true).order("sort_order"),
+    supabase.from("specialties").select("*").eq("is_active", true).order("sort_order"),
   ]);
 
   const events = eventsRes.data ?? [];
@@ -208,6 +213,7 @@ async function _loadAll() {
   if (rateStateMap["client_name"]) _cache.clientName = rateStateMap["client_name"];
 
   _cache.positions = (positionsRes.data ?? []).map(rowToPosition);
+  _cache.specialties = (specialtiesRes.data ?? []).map(rowToSpecialty);
 
   _cache.initialized = true;
 }
@@ -1275,6 +1281,54 @@ export function deletePosition(id: string): void {
     id: updated.id,
     name: updated.name,
     sort_order: updated.sortOrder,
+    is_active: false,
+  });
+}
+
+// ─── Specialties ──────────────────────────────────────────────────────────────
+
+function rowToSpecialty(r: any): Specialty {
+  return {
+    id: r.id,
+    positionId: r.position_id,
+    name: r.name ?? "",
+    sortOrder: r.sort_order ?? 0,
+    isActive: r.is_active ?? true,
+  };
+}
+
+export function getSpecialties(): Specialty[] {
+  return _cache.specialties;
+}
+
+export function getSpecialtiesByPosition(positionId: string): Specialty[] {
+  return _cache.specialties
+    .filter((s) => s.positionId === positionId)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+export function upsertSpecialty(specialty: Specialty): void {
+  const idx = _cache.specialties.findIndex((s) => s.id === specialty.id);
+  if (idx >= 0) _cache.specialties[idx] = specialty;
+  else _cache.specialties = [..._cache.specialties, specialty].sort((a, b) => a.sortOrder - b.sortOrder);
+  sync("specialties", {
+    id: specialty.id,
+    position_id: specialty.positionId,
+    name: specialty.name,
+    sort_order: specialty.sortOrder,
+    is_active: specialty.isActive,
+  });
+}
+
+export function deleteSpecialty(id: string): void {
+  const s = _cache.specialties.find((x) => x.id === id);
+  if (!s) return;
+  _cache.specialties = _cache.specialties.filter((x) => x.id !== id);
+  sync("specialties", {
+    id: s.id,
+    position_id: s.positionId,
+    name: s.name,
+    sort_order: s.sortOrder,
     is_active: false,
   });
 }
