@@ -754,7 +754,7 @@ export default function QuoteBuilder() {
                       <td>{item.line.quoteDate || "-"}</td>
                       <td>{item.line.department}</td>
                       <td>{item.line.shiftLabel}</td>
-                      <td>{item.line.position}</td>
+                      <td>{item.row.specialty}</td>
                       <td>{item.line.rateMode === "hourly" ? "Hourly" : "Day Rate"}</td>
                       <td>{item.line.qty}</td>
                       <td>{item.line.startTime || "-"}</td>
@@ -790,7 +790,7 @@ export default function QuoteBuilder() {
                             <td>{group.date}</td>
                             <td>{dep.department}</td>
                             <td>{item.line.shiftLabel}</td>
-                            <td>{item.line.position}</td>
+                            <td>{item.row.specialty}</td>
                             <td>{item.line.rateMode === "hourly" ? "Hourly" : "Day Rate"}</td>
                             <td>{item.line.qty}</td>
                             <td>{item.line.startTime || "-"}</td>
