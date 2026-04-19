@@ -117,6 +117,8 @@ async function _loadAll() {
     quotesRes,
     workspacesRes,
     invoicesRes,
+    quoteLinesRes,
+    invoiceLinesRes,
     jobRequestsRes,
     jobSheetsRes,
     jobSheetWorkersRes,
@@ -132,6 +134,8 @@ async function _loadAll() {
     supabase.from("quotes").select("*"),
     supabase.from("quote_draft_workspaces").select("*"),
     supabase.from("invoices").select("*"),
+    supabase.from("quote_lines").select("*").order("sort_order"),
+    supabase.from("invoice_lines").select("*").order("sort_order"),
     supabase.from("job_requests").select("*"),
     supabase.from("job_sheets").select("*"),
     supabase.from("job_sheet_workers").select("*").order("sort_order"),
@@ -157,9 +161,21 @@ async function _loadAll() {
     }
   }
 
-  _cache.quotes = (quotesRes.data ?? []).map(rowToQuote);
+  const quoteLinesByQuoteId = new Map<string, any[]>();
+  for (const l of (quoteLinesRes.data ?? [])) {
+    if (!quoteLinesByQuoteId.has(l.quote_id)) quoteLinesByQuoteId.set(l.quote_id, []);
+    quoteLinesByQuoteId.get(l.quote_id)!.push(l);
+  }
+  _cache.quotes = (quotesRes.data ?? []).map((r) => rowToQuote(r, quoteLinesByQuoteId.get(r.id) ?? []));
+
   _cache.quoteDraftWorkspaces = (workspacesRes.data ?? []).map(rowToWorkspace);
-  _cache.invoiceDrafts = (invoicesRes.data ?? []).map(rowToInvoice);
+
+  const invoiceLinesByInvoiceId = new Map<string, any[]>();
+  for (const l of (invoiceLinesRes.data ?? [])) {
+    if (!invoiceLinesByInvoiceId.has(l.invoice_id)) invoiceLinesByInvoiceId.set(l.invoice_id, []);
+    invoiceLinesByInvoiceId.get(l.invoice_id)!.push(l);
+  }
+  _cache.invoiceDrafts = (invoicesRes.data ?? []).map((r) => rowToInvoice(r, invoiceLinesByInvoiceId.get(r.id) ?? []));
   _cache.jobRequests = (jobRequestsRes.data ?? []).map(rowToJobRequest);
   // Group workers by job_sheet_id and attach
   const workersByJobSheetId = new Map<string, any[]>();
@@ -265,12 +281,16 @@ export function getQuotes() { return _cache.quotes; }
 
 export function setQuotes(rows: QuoteDraft[]) {
   _cache.quotes = rows;
-  for (const r of rows) sync("quotes", quoteToRow(r));
+  for (const r of rows) {
+    sync("quotes", quoteToRow(r));
+    syncQuoteLines(r.id, r.lines);
+  }
 }
 
 export function upsertQuote(row: QuoteDraft) {
   _cache.quotes = [..._cache.quotes.filter((r) => r.id !== row.id), row];
   sync("quotes", quoteToRow(row));
+  syncQuoteLines(row.id, row.lines);
 }
 
 // ─── Quote Draft Workspaces ───────────────────────────────────────────────────
@@ -296,12 +316,16 @@ export function getInvoiceDrafts() { return _cache.invoiceDrafts; }
 
 export function setInvoiceDrafts(rows: InvoiceDraft[]) {
   _cache.invoiceDrafts = rows;
-  for (const r of rows) sync("invoices", invoiceToRow(r));
+  for (const r of rows) {
+    sync("invoices", invoiceToRow(r));
+    syncInvoiceLines(r.id, r.lines);
+  }
 }
 
 export function upsertInvoiceDraft(row: InvoiceDraft) {
   _cache.invoiceDrafts = [..._cache.invoiceDrafts.filter((r) => r.id !== row.id), row];
   sync("invoices", invoiceToRow(row));
+  syncInvoiceLines(row.id, row.lines);
 }
 
 // ─── Job Requests ─────────────────────────────────────────────────────────────
@@ -602,7 +626,7 @@ function rowToCalendarEvent(r: any): CalendarEvent {
   };
 }
 
-function rowToQuote(r: any): QuoteDraft {
+function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
   return {
     id: r.id,
     client: r.client ?? "",
@@ -618,7 +642,7 @@ function rowToQuote(r: any): QuoteDraft {
     deposit: r.deposit ?? 0,
     status: r.status ?? "draft",
     notes: r.notes ?? "",
-    lines: r.lines ?? [],
+    lines: lineRows.length > 0 ? lineRows.map(rowToQuoteLine) : (r.lines ?? []),
     terms: r.terms ?? "",
     linkedJobRequestId: r.linked_job_request_id ?? undefined,
     linkedJobSheetId: r.linked_job_sheet_id ?? undefined,
@@ -638,7 +662,7 @@ function rowToWorkspace(r: any): QuoteDraftWorkspace {
   };
 }
 
-function rowToInvoice(r: any): InvoiceDraft {
+function rowToInvoice(r: any, lineRows: any[] = []): InvoiceDraft {
   return {
     id: r.id,
     quoteId: r.quote_id ?? "",
@@ -651,7 +675,7 @@ function rowToInvoice(r: any): InvoiceDraft {
     eventName: r.event_name ?? "",
     venue: r.venue ?? "",
     cityState: r.city_state ?? "",
-    lines: r.lines ?? [],
+    lines: lineRows.length > 0 ? lineRows.map(rowToInvoiceLine) : (r.lines ?? []),
     subtotal: r.subtotal ?? 0,
     deposit: r.deposit ?? 0,
     amountDue: r.amount_due ?? 0,
@@ -913,6 +937,98 @@ function calendarEventToRow(e: CalendarEvent, isDeleted: boolean) {
     profile_notes: profile?.notes ?? null,
     profile_attachment_names: profile?.attachmentNames ?? [],
   };
+}
+
+function rowToQuoteLine(r: any): import("./types").QuoteLine {
+  return {
+    serviceKey:   r.service_key  ?? "",
+    qty:          r.qty          ?? 0,
+    hours:        r.hours        ?? 0,
+    holidayHours: r.holiday_hours ?? 0,
+    travel:       r.travel       ?? 0,
+    baseHourly:   r.base_hourly  ?? 0,
+    baseDay:      r.base_day     ?? 0,
+    otRate:       r.ot_rate      ?? 0,
+    dtRate:       r.dt_rate      ?? 0,
+    rule:         r.rule         ?? "",
+    total:        r.total        ?? 0,
+  };
+}
+
+function rowToInvoiceLine(r: any): import("./types").QuoteLine {
+  return rowToQuoteLine(r);
+}
+
+function quoteLineToRow(quoteId: string, l: import("./types").QuoteLine, index: number) {
+  return {
+    id:            `${quoteId}_${index}`,
+    quote_id:      quoteId,
+    sort_order:    index,
+    service_key:   l.serviceKey,
+    qty:           l.qty,
+    hours:         l.hours,
+    holiday_hours: l.holidayHours,
+    travel:        l.travel,
+    base_hourly:   l.baseHourly,
+    base_day:      l.baseDay,
+    ot_rate:       l.otRate,
+    dt_rate:       l.dtRate,
+    rule:          l.rule,
+    total:         l.total,
+  };
+}
+
+function invoiceLineToRow(invoiceId: string, l: import("./types").QuoteLine, index: number) {
+  return {
+    id:            `${invoiceId}_${index}`,
+    invoice_id:    invoiceId,
+    sort_order:    index,
+    service_key:   l.serviceKey,
+    qty:           l.qty,
+    hours:         l.hours,
+    holiday_hours: l.holidayHours,
+    travel:        l.travel,
+    base_hourly:   l.baseHourly,
+    base_day:      l.baseDay,
+    ot_rate:       l.otRate,
+    dt_rate:       l.dtRate,
+    rule:          l.rule,
+    total:         l.total,
+  };
+}
+
+function syncQuoteLines(quoteId: string, lines: import("./types").QuoteLine[]) {
+  supabase
+    .from("quote_lines")
+    .delete()
+    .eq("quote_id", quoteId)
+    .then(({ error }) => {
+      if (error) { console.error("[db] delete quote_lines error:", error); return; }
+      if (lines.length === 0) return;
+      supabase
+        .from("quote_lines")
+        .insert(lines.map((l, i) => quoteLineToRow(quoteId, l, i)))
+        .then(({ error: e2 }) => {
+          if (e2) console.error("[db] insert quote_lines error:", e2);
+        });
+    });
+}
+
+function syncInvoiceLines(invoiceId: string, lines: import("./types").QuoteLine[]) {
+  supabase
+    .from("invoice_lines")
+    .delete()
+    .eq("invoice_id", invoiceId)
+    .then(({ error }) => {
+      if (error) { console.error("[db] delete invoice_lines error:", error); return; }
+      if (lines.length === 0) return;
+      supabase
+        .from("invoice_lines")
+        .insert(lines.map((l, i) => invoiceLineToRow(invoiceId, l, i)))
+        .then(({ error: e2 }) => {
+          if (e2) console.error("[db] insert invoice_lines error:", e2);
+        });
+    });
 }
 
 function quoteToRow(q: QuoteDraft) {
