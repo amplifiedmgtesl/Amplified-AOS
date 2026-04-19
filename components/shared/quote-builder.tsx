@@ -216,7 +216,30 @@ export default function QuoteBuilder() {
     setSignatureName(state.signatureName || "");
     setSignedAt(state.signedAt || "");
     setActiveRateCardProfileIdState(state.activeRateCardProfileId || getActiveRateCardProfileId());
-    setLines(state.lines && state.lines.length ? state.lines : [emptyLine(rows)]);
+    // Repair lines from old broken drafts where position was stored as just the
+    // department ("Stagehand") instead of the full rowKey ("Stagehand | Labor").
+    // Cross-reference against the saved quote's DB lines which now have discrete columns.
+    const savedQ = savedQuotes.find((q) => q.id === (state.quoteId || ""));
+    const repairedLines = (state.lines || []).map((l, i) => {
+      const needsRepair = !l.position?.includes(" | ");
+      if (needsRepair && savedQ?.lines[i]) {
+        const sl = savedQ.lines[i];
+        const dep = sl.department || l.department || l.position || "";
+        const spec = sl.specialty || "";
+        return {
+          ...l,
+          department:  dep,
+          position:    dep && spec ? `${dep} | ${spec}` : l.position,
+          shiftLabel:  sl.shiftLabel || l.shiftLabel,
+          quoteDate:   sl.quoteDate  || l.quoteDate,
+          startTime:   sl.startTime  || l.startTime,
+          endTime:     sl.endTime    || l.endTime,
+          rateMode:    (sl.rateMode  || l.rateMode) as RateMode,
+        };
+      }
+      return l;
+    });
+    setLines(repairedLines.length ? repairedLines : [emptyLine(rows)]);
     setDayDetails(state.dayDetails || []);
   }
 
