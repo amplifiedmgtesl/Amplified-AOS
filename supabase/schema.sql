@@ -59,6 +59,26 @@ create table if not exists quotes (
   rate_card_profile_id   text
 );
 
+-- ─── Quote Lines ─────────────────────────────────────────────────────────────
+create table if not exists quote_lines (
+  id            text    primary key,
+  quote_id      text    not null references quotes(id) on delete cascade,
+  sort_order    int     not null,
+  service_key   text,
+  qty           numeric,
+  hours         numeric,
+  holiday_hours numeric,
+  travel        numeric,
+  base_hourly   numeric,
+  base_day      numeric,
+  ot_rate       numeric,
+  dt_rate       numeric,
+  rule          text,
+  total         numeric
+);
+
+create index if not exists quote_lines_quote_id_idx on quote_lines(quote_id);
+
 -- ─── Quote Draft Workspaces ───────────────────────────────────────────────────
 create table if not exists quote_draft_workspaces (
   id         text primary key,
@@ -92,6 +112,26 @@ create table if not exists invoices (
   linked_job_sheet_id  text,
   timesheet_summary    jsonb
 );
+
+-- ─── Invoice Lines ────────────────────────────────────────────────────────────
+create table if not exists invoice_lines (
+  id            text    primary key,
+  invoice_id    text    not null references invoices(id) on delete cascade,
+  sort_order    int     not null,
+  service_key   text,
+  qty           numeric,
+  hours         numeric,
+  holiday_hours numeric,
+  travel        numeric,
+  base_hourly   numeric,
+  base_day      numeric,
+  ot_rate       numeric,
+  dt_rate       numeric,
+  rule          text,
+  total         numeric
+);
+
+create index if not exists invoice_lines_invoice_id_idx on invoice_lines(invoice_id);
 
 -- ─── Job Requests ─────────────────────────────────────────────────────────────
 create table if not exists job_requests (
