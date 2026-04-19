@@ -476,6 +476,12 @@ export default function QuoteBuilder() {
     setSignedAt(q.signedAt || "");
     setTerms(q.terms);
     setActiveRateCardProfileIdState(q.rateCardProfileId || "");
+    // Load the rate card rows for this quote so dropdown options match
+    const quoteProfile = q.rateCardProfileId
+      ? rateCardProfiles.find((p) => p.id === q.rateCardProfileId)
+      : null;
+    const quoteRows = quoteProfile ? quoteProfile.rows : loadRateRows();
+    setRows(quoteRows);
     setLines(q.lines.map((l, i) => {
       const parts = l.serviceKey.split(" | ");
       let date = "", department = "", position = l.serviceKey, shiftLabel = `Shift ${i + 1}`, rateMode: RateMode = "hourly";
