@@ -478,12 +478,21 @@ export default function QuoteBuilder() {
     setActiveRateCardProfileIdState(q.rateCardProfileId || "");
     setLines(q.lines.map((l, i) => {
       const parts = l.serviceKey.split(" | ");
-      const date = parts[0] || "";
-      const department = parts[1] || "";
-      const position = parts[2] || l.serviceKey;
-      const shiftLabel = parts[3] || `Shift ${i+1}`;
-      const rateMode = (parts[4] === "day" ? "day" : "hourly") as RateMode;
-      const ruleParts = l.rule.split(" | ")[0].split(" to ");
+      let date = "", department = "", position = l.serviceKey, shiftLabel = `Shift ${i + 1}`, rateMode: RateMode = "hourly";
+      if (parts.length >= 6) {
+        // New format: "date | department | dep | specialty | shiftLabel | rateMode"
+        // position = rowKey = "dep | specialty" spans parts[2] and parts[3]
+        date = parts[0];
+        department = parts[1];
+        position = `${parts[2]} | ${parts[3]}`;
+        shiftLabel = parts[4] || shiftLabel;
+        rateMode = parts[5] === "day" ? "day" : "hourly";
+      } else if (parts.length === 2) {
+        // Old format: serviceKey was just the rowKey "department | specialty"
+        department = parts[0];
+        position = l.serviceKey;
+      }
+      const ruleParts = (l.rule || "").split(" | ")[0].split(" to ");
       return {
         id: Date.now() + i,
         department,
