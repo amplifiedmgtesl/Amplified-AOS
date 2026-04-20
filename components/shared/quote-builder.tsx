@@ -265,7 +265,19 @@ export default function QuoteBuilder() {
 
   useEffect(() => {
     supabase.from("clients").select("id, name").eq("is_active", true).order("name")
-      .then(({ data }) => setClientsList((data ?? []).map((r: any) => ({ id: r.id, name: r.name }))));
+      .then(({ data }) => {
+        const list = (data ?? []).map((r: any) => ({ id: r.id, name: r.name }));
+        setClientsList(list);
+        // Re-resolve clientId now that the list is available
+        const activeQuoteId = getActiveQuote();
+        if (activeQuoteId) {
+          const q = loadQuotes().find((x) => x.id === activeQuoteId);
+          if (q) {
+            const resolved = q.clientId || list.find((c) => c.name.toLowerCase() === (q.client || "").toLowerCase())?.id || "";
+            setClientId(resolved);
+          }
+        }
+      });
 
     const latestRows = loadRateRows();
     setRows(latestRows);
@@ -479,11 +491,17 @@ export default function QuoteBuilder() {
     return quote;
   }
 
+  function resolveClientId(cId?: string, cName?: string): string {
+    if (cId) return cId;
+    if (!cName) return "";
+    return clientsList.find((c) => c.name.toLowerCase() === cName.toLowerCase())?.id ?? "";
+  }
+
   function loadSavedQuote(id: string) {
     const q = savedQuotes.find((x) => x.id === id);
     if (!q) return;
     setQuoteId(q.id);
-    setClientId(q.clientId || "");
+    setClientId(resolveClientId(q.clientId, q.client));
     setClient(q.client);
     setEventName(q.eventName);
     setVenue(q.venue);
