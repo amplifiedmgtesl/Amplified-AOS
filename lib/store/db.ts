@@ -729,6 +729,7 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
 function rowToWorkspace(r: any): QuoteDraftWorkspace {
   return {
     id: r.id,
+    clientId: r.client_id ?? undefined,
     name: r.name ?? "",
     updatedAt: r.updated_at ?? "",
     data: r.data ?? {},
@@ -1185,6 +1186,7 @@ function quoteToRow(q: QuoteDraft) {
 function workspaceToRow(w: QuoteDraftWorkspace) {
   return {
     id: w.id,
+    client_id: w.clientId ?? null,
     name: w.name,
     updated_at: w.updatedAt,
     data: w.data,
@@ -1492,6 +1494,7 @@ export async function mergeClients(sourceId: string, targetId: string): Promise<
   await supabase.from("job_requests").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("rate_card_profiles").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("quotes").update({ client_id: target.id }).eq("client_id", source.id);
+  await supabase.from("quote_draft_workspaces").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("calendar_events").update({ client_id: target.id }).eq("client_id", source.id);
   for (const t of ["quotes", "invoices"] as const) {
     const key = t === "quotes" ? "quotes" : "invoiceDrafts";

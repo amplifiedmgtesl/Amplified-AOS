@@ -40,6 +40,7 @@ export default function ClientMaintenance() {
   const [tabData, setTabData] = useState<{
     jobRequests: any[];
     quotes: any[];
+    quoteDraftCount: number;
     rateCards: any[];
     calendarEvents: any[];
   } | null>(null);
@@ -66,6 +67,8 @@ export default function ClientMaintenance() {
       supabase.from("quotes")
         .select("id, event_name, start_date, end_date, status, total")
         .eq("client_id", selectedId).order("start_date", { ascending: false }),
+      supabase.from("quote_draft_workspaces").select("id", { count: "exact", head: true })
+        .eq("client_id", selectedId),
       supabase.from("rate_card_profiles")
         .select("id, name, updated_at")
         .eq("client_id", selectedId).order("name"),
@@ -73,10 +76,11 @@ export default function ClientMaintenance() {
         .select("id, event_name, start_date, start_time, end_date, status")
         .eq("client_id", selectedId).eq("is_deleted", false)
         .order("start_date", { ascending: false }),
-    ]).then(([jrRes, quotesRes, rcRes, calRes]) => {
+    ]).then(([jrRes, quotesRes, draftRes, rcRes, calRes]) => {
       setTabData({
         jobRequests: jrRes.data ?? [],
         quotes: quotesRes.data ?? [],
+        quoteDraftCount: draftRes.count ?? 0,
         rateCards: rcRes.data ?? [],
         calendarEvents: calRes.data ?? [],
       });
@@ -112,11 +116,13 @@ export default function ClientMaintenance() {
     if (!form) return;
     const jrCount = tabData?.jobRequests.length ?? 0;
     const qCount = tabData?.quotes.length ?? 0;
+    const qdCount = tabData?.quoteDraftCount ?? 0;
     const rcCount = tabData?.rateCards.length ?? 0;
     const calCount = tabData?.calendarEvents.length ?? 0;
     const msgs: string[] = [];
     if (jrCount > 0) msgs.push(`${jrCount} job request${jrCount !== 1 ? "s" : ""}`);
     if (qCount > 0) msgs.push(`${qCount} quote${qCount !== 1 ? "s" : ""}`);
+    if (qdCount > 0) msgs.push(`${qdCount} quote draft${qdCount !== 1 ? "s" : ""}`);
     if (rcCount > 0) msgs.push(`${rcCount} rate card${rcCount !== 1 ? "s" : ""}`);
     if (calCount > 0) msgs.push(`${calCount} calendar event${calCount !== 1 ? "s" : ""}`);
     if (msgs.length > 0) {
