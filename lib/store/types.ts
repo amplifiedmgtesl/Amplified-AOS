@@ -2,6 +2,7 @@
 export type CalendarEvent = {
   id: string;
   source: string;
+  clientId?: string;
   client: string;
   eventName: string;
   venue: string;
@@ -18,6 +19,7 @@ export type CalendarEvent = {
   status: string;
   lead?: string;
   hands?: string;
+  linkedJobRequestId?: string;
 };
 
 export type QuoteLine = {
