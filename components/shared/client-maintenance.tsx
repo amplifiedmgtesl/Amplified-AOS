@@ -79,7 +79,7 @@ export default function ClientMaintenance() {
         .eq("client_id", selectedId).eq("is_deleted", false)
         .order("start_date", { ascending: false }),
       supabase.from("invoices")
-        .select("id, invoice_no, issue_date, event_name, amount_due, paid_amount, status")
+        .select("id, invoice_no, issue_date, event_name, subtotal, amount_due, paid_amount, status")
         .eq("client_id", selectedId).order("issue_date", { ascending: false }),
     ]).then(([jrRes, quotesRes, draftRes, rcRes, calRes, invRes]) => {
       setTabData({
@@ -612,10 +612,32 @@ export default function ClientMaintenance() {
                     </table>
               )}
 
-              {activeTab === "invoices" && (
-                tabData.invoices.length === 0
-                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No invoices.</div>
-                  : <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+              {activeTab === "invoices" && (() => {
+                if (tabData.invoices.length === 0) return <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No invoices.</div>;
+                const currentYear = new Date().getFullYear().toString();
+                const totalCount = tabData.invoices.length;
+                const totalBilled = tabData.invoices.reduce((s, r) => s + Number(r.subtotal || 0), 0);
+                const ytd = tabData.invoices.filter((r) => (r.issue_date ?? "").startsWith(currentYear));
+                const ytdCount = ytd.length;
+                const ytdBilled = ytd.reduce((s, r) => s + Number(r.subtotal || 0), 0);
+                const outstanding = tabData.invoices.reduce((s, r) => s + Math.max(0, Number(r.amount_due || 0) - Number(r.paid_amount || 0)), 0);
+                const fmt = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                const statBox = (label: string, value: string) => (
+                  <div style={{ background: "#f9fafb", border: "1px solid var(--border, #e5e7eb)", borderRadius: 6, padding: "8px 10px" }}>
+                    <div style={{ fontSize: 10, textTransform: "uppercase", color: "#888", letterSpacing: 0.4 }}>{label}</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2 }}>{value}</div>
+                  </div>
+                );
+                return (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 12 }}>
+                      {statBox("Total Invoices", String(totalCount))}
+                      {statBox("Total Billed", fmt(totalBilled))}
+                      {statBox("YTD Invoices", String(ytdCount))}
+                      {statBox("YTD Billed", fmt(ytdBilled))}
+                      {statBox("Outstanding", fmt(outstanding))}
+                    </div>
+                    <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                       <thead>
                         <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
                           <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Invoice #</th>
@@ -645,7 +667,9 @@ export default function ClientMaintenance() {
                         ))}
                       </tbody>
                     </table>
-              )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}
