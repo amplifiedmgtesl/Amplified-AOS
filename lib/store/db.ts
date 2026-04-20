@@ -315,6 +315,13 @@ export function upsertQuote(row: QuoteDraft) {
   _cache.quotes = [..._cache.quotes.filter((r) => r.id !== row.id), row];
   sync("quotes", quoteToRow(row));
   syncQuoteLines(row.id, row.lines);
+  // Write reverse link back to job request
+  if (row.linkedJobRequestId) {
+    supabase.from("job_requests").update({ linked_quote_id: row.id }).eq("id", row.linkedJobRequestId).then(() => {});
+    _cache.jobRequests = _cache.jobRequests.map((r) =>
+      r.id === row.linkedJobRequestId ? { ...r, linkedQuoteId: row.id } : r
+    );
+  }
 }
 
 // ─── Quote Draft Workspaces ───────────────────────────────────────────────────
@@ -746,6 +753,7 @@ function rowToInvoice(r: any, lineRows: any[] = []): InvoiceDraft {
 function rowToJobRequest(r: any): JobRequest {
   return {
     id: r.id,
+    clientId: r.client_id ?? undefined,
     client: r.client ?? "",
     eventName: r.event_name ?? "",
     venue: r.venue ?? "",
@@ -764,6 +772,7 @@ function rowToJobRequest(r: any): JobRequest {
     notes: r.notes ?? "",
     attachmentNames: r.attachment_names ?? [],
     packetNotes: r.packet_notes ?? "",
+    linkedQuoteId: r.linked_quote_id ?? undefined,
   };
 }
 
@@ -1193,6 +1202,7 @@ function invoiceToRow(inv: InvoiceDraft) {
 function jobRequestToRow(j: JobRequest) {
   return {
     id: j.id,
+    client_id: j.clientId ?? null,
     client: j.client,
     event_name: j.eventName,
     venue: j.venue,
@@ -1211,6 +1221,7 @@ function jobRequestToRow(j: JobRequest) {
     notes: j.notes,
     attachment_names: j.attachmentNames,
     packet_notes: j.packetNotes,
+    linked_quote_id: j.linkedQuoteId ?? null,
   };
 }
 
