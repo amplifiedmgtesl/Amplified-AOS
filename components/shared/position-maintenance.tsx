@@ -29,15 +29,12 @@ export default function PositionMaintenance() {
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Position edit state
   const [editingPosId, setEditingPosId] = useState<string | null>(null);
   const [editPosName, setEditPosName] = useState("");
   const [newPosName, setNewPosName] = useState("");
   const [confirmDeletePosId, setConfirmDeletePosId] = useState<string | null>(null);
 
-  // Specialty edit state
   const [editingSpcId, setEditingSpcId] = useState<string | null>(null);
   const [editSpcName, setEditSpcName] = useState("");
   const [newSpcNames, setNewSpcNames] = useState<Record<string, string>>({});
@@ -56,6 +53,10 @@ export default function PositionMaintenance() {
   useEffect(() => { reload(); }, []);
 
   const sorted = [...positions].sort((a, b) => a.sortOrder - b.sortOrder);
+
+  function spcForPosition(posId: string) {
+    return specialties.filter((s) => s.positionId === posId).sort((a, b) => a.sortOrder - b.sortOrder);
+  }
 
   // ─── Position actions ──────────────────────────────────────────────────────
 
@@ -94,10 +95,6 @@ export default function PositionMaintenance() {
 
   // ─── Specialty actions ─────────────────────────────────────────────────────
 
-  function spcForPosition(posId: string) {
-    return specialties.filter((s) => s.positionId === posId).sort((a, b) => a.sortOrder - b.sortOrder);
-  }
-
   async function saveSpcEdit(s: Specialty) {
     if (!editSpcName.trim()) return;
     upsertSpecialty({ ...s, name: editSpcName.trim() });
@@ -135,173 +132,127 @@ export default function PositionMaintenance() {
     await reload();
   }
 
+  if (loading) return <div className="card"><p className="muted">Loading…</p></div>;
+
   return (
     <div className="grid">
-      <div className="card">
-        <h2 className="section-title">
-          {loading ? "Loading…" : `${positions.length} Position${positions.length !== 1 ? "s" : ""}`}
-        </h2>
-        <p className="muted" style={{ marginBottom: 16, fontSize: 13 }}>
-          Positions and their specialties drive all dropdowns in Timekeeping, Job Sheets,
-          Rate Cards, and the Staff Portal. Click a position row to manage its specialties.
-        </p>
+      {fetchError && (
+        <div className="card" style={{ background: "#fff3f3", border: "1px solid #e0a0a0" }}>
+          <strong style={{ color: "#a00" }}>Error:</strong> {fetchError}
+        </div>
+      )}
 
-        {fetchError && (
-          <div style={{ background: "#fff3f3", border: "1px solid #e0a0a0", borderRadius: 8, padding: "10px 14px", color: "#a00", marginBottom: 16, fontSize: 13 }}>
-            <strong>Error:</strong> {fetchError}
-          </div>
-        )}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+        {sorted.map((p, idx) => {
+          const spcs = spcForPosition(p.id);
+          return (
+            <div key={p.id} className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 
-        <div style={{ overflowX: "auto" }}>
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: 48 }}>Order</th>
-                <th>Position Name</th>
-                <th style={{ width: 120 }}>Specialties</th>
-                <th style={{ width: 220 }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((p, idx) => {
-                const spcs = spcForPosition(p.id);
-                const isExpanded = expandedId === p.id;
-                return (
-                  <>
-                    <tr key={p.id}>
-                      <td style={{ textAlign: "center" }}>
-                        <div className="action-row" style={{ justifyContent: "center", gap: 2 }}>
-                          <button className="secondary" style={{ padding: "2px 7px", fontSize: 12 }} onClick={() => movePosUp(p)} disabled={idx === 0} title="Move up">▲</button>
-                          <button className="secondary" style={{ padding: "2px 7px", fontSize: 12 }} onClick={() => movePosDown(p)} disabled={idx === sorted.length - 1} title="Move down">▼</button>
-                        </div>
-                      </td>
-                      <td>
-                        {editingPosId === p.id ? (
-                          <input
-                            value={editPosName}
-                            onChange={(e) => setEditPosName(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === "Enter") savePosEdit(p); if (e.key === "Escape") setEditingPosId(null); }}
-                            autoFocus
-                            style={{ width: "100%" }}
-                          />
-                        ) : (
-                          <span>{p.name}</span>
-                        )}
-                      </td>
-                      <td>
-                        <button
-                          className="secondary"
-                          style={{ fontSize: 12 }}
-                          onClick={() => setExpandedId(isExpanded ? null : p.id)}
-                        >
-                          {spcs.length} {isExpanded ? "▲" : "▼"}
-                        </button>
-                      </td>
-                      <td>
-                        <div className="action-row">
-                          {editingPosId === p.id ? (
+              {/* Position header */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                  <button className="secondary" style={{ padding: "1px 6px", fontSize: 11 }} onClick={() => movePosUp(p)} disabled={idx === 0}>▲</button>
+                  <button className="secondary" style={{ padding: "1px 6px", fontSize: 11 }} onClick={() => movePosDown(p)} disabled={idx === sorted.length - 1}>▼</button>
+                </div>
+                <div style={{ flex: 1 }}>
+                  {editingPosId === p.id ? (
+                    <input
+                      value={editPosName}
+                      onChange={(e) => setEditPosName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") savePosEdit(p); if (e.key === "Escape") setEditingPosId(null); }}
+                      autoFocus
+                      style={{ width: "100%", fontWeight: 600 }}
+                    />
+                  ) : (
+                    <strong style={{ fontSize: 15 }}>{p.name}</strong>
+                  )}
+                </div>
+                <div className="action-row" style={{ gap: 4 }}>
+                  {editingPosId === p.id ? (
+                    <>
+                      <button style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => savePosEdit(p)}>Save</button>
+                      <button className="secondary" style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => setEditingPosId(null)}>✕</button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="secondary" style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => { setEditingPosId(p.id); setEditPosName(p.name); }}>Edit</button>
+                      {confirmDeletePosId === p.id ? (
+                        <>
+                          <button style={{ padding: "3px 10px", fontSize: 12, background: "linear-gradient(180deg,#e05,#b00)", color: "#fff" }} onClick={async () => { deletePosition(p.id); setConfirmDeletePosId(null); await reload(); }}>Confirm</button>
+                          <button className="secondary" style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => setConfirmDeletePosId(null)}>✕</button>
+                        </>
+                      ) : (
+                        <button className="secondary" style={{ padding: "3px 10px", fontSize: 12, color: "#a00", borderColor: "#e0a0a0" }} onClick={() => setConfirmDeletePosId(p.id)}>Delete</button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <hr style={{ margin: 0, borderColor: "#e8dfd0" }} />
+
+              {/* Specialties list */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {spcs.map((s, si) => (
+                  <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                      <button className="secondary" style={{ padding: "1px 5px", fontSize: 10 }} onClick={() => moveSpcUp(s)} disabled={si === 0}>▲</button>
+                      <button className="secondary" style={{ padding: "1px 5px", fontSize: 10 }} onClick={() => moveSpcDown(s)} disabled={si === spcs.length - 1}>▼</button>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      {editingSpcId === s.id ? (
+                        <input
+                          value={editSpcName}
+                          onChange={(e) => setEditSpcName(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") saveSpcEdit(s); if (e.key === "Escape") setEditingSpcId(null); }}
+                          autoFocus
+                          style={{ width: "100%" }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 13 }}>{s.name}</span>
+                      )}
+                    </div>
+                    <div className="action-row" style={{ gap: 4 }}>
+                      {editingSpcId === s.id ? (
+                        <>
+                          <button style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => saveSpcEdit(s)}>Save</button>
+                          <button className="secondary" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => setEditingSpcId(null)}>✕</button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="secondary" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => { setEditingSpcId(s.id); setEditSpcName(s.name); }}>Edit</button>
+                          {confirmDeleteSpcId === s.id ? (
                             <>
-                              <button onClick={() => savePosEdit(p)}>Save</button>
-                              <button className="secondary" onClick={() => setEditingPosId(null)}>Cancel</button>
+                              <button style={{ padding: "2px 8px", fontSize: 11, background: "linear-gradient(180deg,#e05,#b00)", color: "#fff" }} onClick={async () => { deleteSpecialty(s.id); setConfirmDeleteSpcId(null); await reload(); }}>Confirm</button>
+                              <button className="secondary" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => setConfirmDeleteSpcId(null)}>✕</button>
                             </>
                           ) : (
-                            <>
-                              <button className="secondary" onClick={() => { setEditingPosId(p.id); setEditPosName(p.name); }}>Edit</button>
-                              {confirmDeletePosId === p.id ? (
-                                <>
-                                  <button onClick={async () => { deletePosition(p.id); setConfirmDeletePosId(null); await reload(); }} style={{ background: "linear-gradient(180deg,#e05,#b00)", color: "#fff" }}>Confirm</button>
-                                  <button className="secondary" onClick={() => setConfirmDeletePosId(null)}>Cancel</button>
-                                </>
-                              ) : (
-                                <button className="secondary" style={{ color: "#a00", borderColor: "#e0a0a0" }} onClick={() => setConfirmDeletePosId(p.id)}>Delete</button>
-                              )}
-                            </>
+                            <button className="secondary" style={{ padding: "2px 8px", fontSize: 11, color: "#a00", borderColor: "#e0a0a0" }} onClick={() => setConfirmDeleteSpcId(s.id)}>Delete</button>
                           )}
-                        </div>
-                      </td>
-                    </tr>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-                    {isExpanded && (
-                      <tr key={`${p.id}-specialties`}>
-                        <td colSpan={4} style={{ background: "#f8f5f0", padding: "12px 20px" }}>
-                          <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13 }}>Specialties for {p.name}</div>
-                          <table style={{ marginBottom: 10 }}>
-                            <thead>
-                              <tr>
-                                <th style={{ width: 48 }}>Order</th>
-                                <th>Specialty Name</th>
-                                <th style={{ width: 220 }}>Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {spcs.map((s, si) => (
-                                <tr key={s.id}>
-                                  <td style={{ textAlign: "center" }}>
-                                    <div className="action-row" style={{ justifyContent: "center", gap: 2 }}>
-                                      <button className="secondary" style={{ padding: "2px 7px", fontSize: 12 }} onClick={() => moveSpcUp(s)} disabled={si === 0}>▲</button>
-                                      <button className="secondary" style={{ padding: "2px 7px", fontSize: 12 }} onClick={() => moveSpcDown(s)} disabled={si === spcs.length - 1}>▼</button>
-                                    </div>
-                                  </td>
-                                  <td>
-                                    {editingSpcId === s.id ? (
-                                      <input
-                                        value={editSpcName}
-                                        onChange={(e) => setEditSpcName(e.target.value)}
-                                        onKeyDown={(e) => { if (e.key === "Enter") saveSpcEdit(s); if (e.key === "Escape") setEditingSpcId(null); }}
-                                        autoFocus
-                                        style={{ width: "100%" }}
-                                      />
-                                    ) : (
-                                      <span>{s.name}</span>
-                                    )}
-                                  </td>
-                                  <td>
-                                    <div className="action-row">
-                                      {editingSpcId === s.id ? (
-                                        <>
-                                          <button onClick={() => saveSpcEdit(s)}>Save</button>
-                                          <button className="secondary" onClick={() => setEditingSpcId(null)}>Cancel</button>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <button className="secondary" onClick={() => { setEditingSpcId(s.id); setEditSpcName(s.name); }}>Edit</button>
-                                          {confirmDeleteSpcId === s.id ? (
-                                            <>
-                                              <button onClick={async () => { deleteSpecialty(s.id); setConfirmDeleteSpcId(null); await reload(); }} style={{ background: "linear-gradient(180deg,#e05,#b00)", color: "#fff" }}>Confirm</button>
-                                              <button className="secondary" onClick={() => setConfirmDeleteSpcId(null)}>Cancel</button>
-                                            </>
-                                          ) : (
-                                            <button className="secondary" style={{ color: "#a00", borderColor: "#e0a0a0" }} onClick={() => setConfirmDeleteSpcId(s.id)}>Delete</button>
-                                          )}
-                                        </>
-                                      )}
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          <div className="action-row">
-                            <input
-                              value={newSpcNames[p.id] ?? ""}
-                              onChange={(e) => setNewSpcNames((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                              onKeyDown={(e) => { if (e.key === "Enter") addSpecialty(p.id); }}
-                              placeholder="New specialty name…"
-                              style={{ flex: 1 }}
-                            />
-                            <button onClick={() => addSpecialty(p.id)} disabled={!(newSpcNames[p.id] ?? "").trim()}>Add Specialty</button>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+              {/* Add specialty */}
+              <div className="action-row" style={{ gap: 6, marginTop: 4 }}>
+                <input
+                  value={newSpcNames[p.id] ?? ""}
+                  onChange={(e) => setNewSpcNames((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") addSpecialty(p.id); }}
+                  placeholder="Add specialty…"
+                  style={{ flex: 1, fontSize: 12 }}
+                />
+                <button style={{ padding: "4px 12px", fontSize: 12 }} onClick={() => addSpecialty(p.id)} disabled={!(newSpcNames[p.id] ?? "").trim()}>Add</button>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
+      {/* Add position */}
       <div className="card">
         <h2 className="section-title">Add Position</h2>
         <div className="action-row">
