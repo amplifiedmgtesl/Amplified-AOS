@@ -128,7 +128,8 @@ export type InvoiceDraft = {
 
 export type JobRequest = {
   id: string;
-  client: string;
+  clientId?: string;       // FK to clients table
+  client: string;          // denormalized name; kept for downstream compat, drop later
   eventName: string;
   venue: string;
   venueAddress: string;
@@ -146,6 +147,7 @@ export type JobRequest = {
   notes: string;
   attachmentNames: string[];
   packetNotes: string;
+  linkedQuoteId?: string;  // set when a quote is built from this request
 };
 
 export type JobSheetWorker = {

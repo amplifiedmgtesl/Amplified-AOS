@@ -150,7 +150,8 @@ create index if not exists invoice_lines_invoice_id_idx on invoice_lines(invoice
 -- ─── Job Requests ─────────────────────────────────────────────────────────────
 create table if not exists job_requests (
   id               text primary key,
-  client           text,
+  client_id        text,             -- FK to clients; drop client text col once all rows migrated
+  client           text,             -- denormalized name; kept for downstream compat
   event_name       text,
   venue            text,
   venue_address    text,
@@ -167,7 +168,8 @@ create table if not exists job_requests (
   status           text,
   notes            text,
   attachment_names jsonb not null default '[]',
-  packet_notes     text
+  packet_notes     text,
+  linked_quote_id  text              -- set when a quote is built from this request
 );
 
 -- ─── Positions ────────────────────────────────────────────────────────────────
