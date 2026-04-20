@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   getActiveInvoice,
+  loadClients,
   loadInvoiceDrafts,
   loadJobRequests,
   loadQuotes,
@@ -12,7 +13,7 @@ import {
   upsertInvoiceDraft,
 } from "@/lib/store/app-store";
 import { getActiveRateCardProfileId, loadRateCardProfiles, loadRateRows } from "@/lib/rates/storage";
-import type { InvoiceDraft, JobRequest, QuoteDraft, QuoteLine } from "@/lib/store/types";
+import type { Client, InvoiceDraft, JobRequest, QuoteDraft, QuoteLine } from "@/lib/store/types";
 
 type RateMode = "hourly" | "day";
 
@@ -165,6 +166,7 @@ export default function InvoiceBuilder() {
   const [drafts, setDrafts] = useState<InvoiceDraft[]>([]);
   const [quotes, setQuotes] = useState<QuoteDraft[]>([]);
   const [jobRequests, setJobRequests] = useState<JobRequest[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [activeId, setActiveIdState] = useState<string>("");
   const [invoice, setInvoice] = useState<InvoiceDraft | null>(null);
   const [sourceQuoteId, setSourceQuoteId] = useState<string>("");
@@ -184,6 +186,7 @@ export default function InvoiceBuilder() {
     setDrafts(invoiceRows);
     setQuotes(quoteRows);
     setJobRequests(requestRows);
+    setClients(loadClients().filter((c) => c.isActive).sort((a, b) => a.name.localeCompare(b.name)));
 
     const active = getActiveInvoice() || invoiceRows[0]?.id || "";
     const found = invoiceRows.find((r) => r.id === active) || invoiceRows[0] || null;
@@ -283,6 +286,7 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
       ...invoice,
       quoteId: quote.id,
       billTo: quote.client,
+      clientId: quote.clientId,
       client: quote.client,
       eventName: quote.eventName,
       venue: quote.venue,
@@ -317,6 +321,7 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
     const next: InvoiceDraft = {
       ...invoice,
       billTo: req.client,
+      clientId: req.clientId,
       client: req.client,
       eventName: req.eventName,
       venue: req.venue,
@@ -476,7 +481,21 @@ function createDepositInvoiceDraft() {
           </div>
 
           <div><small>Bill To</small><input value={invoice.billTo} onChange={(e) => patch({ billTo: e.target.value })} /></div>
-          <div><small>Client</small><input value={invoice.client} onChange={(e) => patch({ client: e.target.value })} /></div>
+          <div>
+            <small>Client</small>
+            <select
+              value={invoice.clientId ?? ""}
+              onChange={(e) => {
+                const c = clients.find((x) => x.id === e.target.value);
+                patch({ clientId: c?.id, client: c?.name ?? "" });
+              }}
+            >
+              <option value="">— select client —</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>{c.code ? `[${c.code}] ${c.name}` : c.name}</option>
+              ))}
+            </select>
+          </div>
           <div><small>Event Name</small><input value={invoice.eventName} onChange={(e) => patch({ eventName: e.target.value })} /></div>
           <div><small>Venue</small><input value={invoice.venue} onChange={(e) => patch({ venue: e.target.value })} /></div>
 

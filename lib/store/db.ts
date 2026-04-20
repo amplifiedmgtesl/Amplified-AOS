@@ -746,6 +746,7 @@ function rowToInvoice(r: any, lineRows: any[] = []): InvoiceDraft {
     dueDate: r.due_date ?? "",
     poNo: r.po_no ?? "",
     billTo: r.bill_to ?? "",
+    clientId: r.client_id ?? undefined,
     client: r.client ?? "",
     eventName: r.event_name ?? "",
     venue: r.venue ?? "",
@@ -1203,6 +1204,7 @@ function invoiceToRow(inv: InvoiceDraft) {
     due_date: inv.dueDate,
     po_no: inv.poNo,
     bill_to: inv.billTo,
+    client_id: inv.clientId ?? null,
     client: inv.client,
     event_name: inv.eventName,
     venue: inv.venue,
@@ -1530,6 +1532,7 @@ export async function mergeClients(sourceId: string, targetId: string): Promise<
   await supabase.from("quotes").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("quote_draft_workspaces").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("calendar_events").update({ client_id: target.id }).eq("client_id", source.id);
+  await supabase.from("invoices").update({ client_id: target.id }).eq("client_id", source.id);
   for (const t of ["quotes", "invoices"] as const) {
     const key = t === "quotes" ? "quotes" : "invoiceDrafts";
     (_cache as any)[key] = (_cache as any)[key].map((r: any) =>

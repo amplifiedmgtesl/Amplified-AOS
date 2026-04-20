@@ -112,6 +112,7 @@ export type InvoiceDraft = {
   dueDate: string;
   poNo: string;
   billTo: string;
+  clientId?: string;
   client: string;
   eventName: string;
   venue: string;
