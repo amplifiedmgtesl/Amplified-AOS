@@ -998,7 +998,9 @@ function rowToRateCardProfile(r: any, profileRows: any[]): RateCardProfile {
     : (r.rows ?? []);   // fallback to JSONB for profiles not yet migrated
   return {
     id: r.id,
+    clientId: r.client_id ?? undefined,
     clientName: r.client_name ?? "",
+    name: r.name ?? "Standard",
     rows,
     terms: r.terms ?? "",
     createdAt: r.created_at ?? new Date().toISOString(),
@@ -1330,7 +1332,9 @@ function jobCostingToRow(j: JobCostingDraft) {
 function rateCardProfileToRow(p: RateCardProfile) {
   return {
     id: p.id,
+    client_id: p.clientId ?? null,
     client_name: p.clientName,
+    name: p.name ?? "Standard",
     rows: p.rows,
     terms: p.terms,
     created_at: p.createdAt,
@@ -1479,6 +1483,9 @@ export async function mergeClients(sourceId: string, targetId: string): Promise<
     const { error } = await supabase.from(table).update({ [col]: target.name }).eq(col, source.name);
     if (error) return `Failed updating ${table}: ${error.message}`;
   }
+  // Also reassign client_id on normalized tables
+  await supabase.from("job_requests").update({ client_id: target.id }).eq("client_id", source.id);
+  await supabase.from("rate_card_profiles").update({ client_id: target.id }).eq("client_id", source.id);
   for (const t of ["quotes", "invoices"] as const) {
     const key = t === "quotes" ? "quotes" : "invoiceDrafts";
     (_cache as any)[key] = (_cache as any)[key].map((r: any) =>
