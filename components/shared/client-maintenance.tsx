@@ -36,6 +36,7 @@ export default function ClientMaintenance() {
   const [statusMsg, setStatusMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [showMerge, setShowMerge] = useState(false);
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null);
+  const [activity, setActivity] = useState<{ ytd: number; pending: number } | null>(null);
   const [mergeSourceId, setMergeSourceId] = useState("");
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [merging, setMerging] = useState(false);
@@ -49,6 +50,19 @@ export default function ClientMaintenance() {
   }
 
   useEffect(() => { reload(); }, []);
+
+  useEffect(() => {
+    if (!selectedId) { setActivity(null); return; }
+    const year = new Date().getFullYear().toString();
+    Promise.all([
+      supabase.from("job_requests").select("id", { count: "exact", head: true })
+        .eq("client_id", selectedId).like("request_date", `${year}%`),
+      supabase.from("job_requests").select("id", { count: "exact", head: true })
+        .eq("client_id", selectedId).is("linked_quote_id", null),
+    ]).then(([ytdRes, pendingRes]) => {
+      setActivity({ ytd: ytdRes.count ?? 0, pending: pendingRes.count ?? 0 });
+    });
+  }, [selectedId]);
 
   const active = clients.filter((c) => c.isActive);
   const filtered = active.filter((c) =>
@@ -405,6 +419,29 @@ export default function ClientMaintenance() {
         ) : (
           <div className="card" style={{ color: "#888", textAlign: "center", padding: "40px 20px" }}>
             Select a client from the list, or click <strong>+ New</strong> to add one.
+          </div>
+        )}
+
+        {activity && (
+          <div className="card" style={{ marginTop: 16 }}>
+            <h2 className="section-title" style={{ marginBottom: 16 }}>Activity</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div style={{
+                background: "var(--surface2, #f9fafb)", border: "1px solid var(--border, #e5e7eb)",
+                borderRadius: 8, padding: "16px 20px", textAlign: "center",
+              }}>
+                <div style={{ fontSize: 32, fontWeight: 700, lineHeight: 1 }}>{activity.ytd}</div>
+                <div style={{ fontSize: 12, color: "#888", marginTop: 6 }}>YTD Job Requests</div>
+              </div>
+              <div style={{
+                background: activity.pending > 0 ? "#fff8e1" : "var(--surface2, #f9fafb)",
+                border: `1px solid ${activity.pending > 0 ? "#e0c840" : "var(--border, #e5e7eb)"}`,
+                borderRadius: 8, padding: "16px 20px", textAlign: "center",
+              }}>
+                <div style={{ fontSize: 32, fontWeight: 700, lineHeight: 1, color: activity.pending > 0 ? "#7a5f00" : "inherit" }}>{activity.pending}</div>
+                <div style={{ fontSize: 12, color: "#888", marginTop: 6 }}>Pending (no quote yet)</div>
+              </div>
+            </div>
           </div>
         )}
       </div>
