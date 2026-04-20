@@ -1445,6 +1445,7 @@ function rowToClient(r: any): Client {
   return {
     id: r.id,
     name: r.name ?? "",
+    code: r.code ?? undefined,
     contactName: r.contact_name ?? undefined,
     billTo: r.bill_to ?? undefined,
     email: r.email ?? undefined,
@@ -1471,7 +1472,8 @@ export function upsertClient(c: Client): void {
   if (idx >= 0) _cache.clients[idx] = c;
   else _cache.clients = [..._cache.clients, c].sort((a, b) => a.name.localeCompare(b.name));
   sync("clients", {
-    id: c.id, name: c.name, contact_name: c.contactName ?? null, bill_to: c.billTo ?? null,
+    id: c.id, name: c.name, code: c.code ?? null,
+    contact_name: c.contactName ?? null, bill_to: c.billTo ?? null,
     email: c.email ?? null, phone: c.phone ?? null,
     address: c.address ?? null, city: c.city ?? null, state: c.state ?? null,
     zip: c.zip ?? null, notes: c.notes ?? null, is_active: c.isActive,

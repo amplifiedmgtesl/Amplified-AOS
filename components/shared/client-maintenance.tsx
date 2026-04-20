@@ -6,7 +6,7 @@ import { upsertClient, mergeClients } from "@/lib/store/app-store";
 import type { Client } from "@/lib/store/types";
 
 const EMPTY_CLIENT: Omit<Client, "id"> = {
-  name: "", contactName: "", billTo: "", email: "", phone: "",
+  name: "", code: "", contactName: "", billTo: "", email: "", phone: "",
   address: "", city: "", state: "", zip: "", notes: "", isActive: true,
 };
 
@@ -14,7 +14,8 @@ async function fetchClients(): Promise<{ clients: Client[]; error: string | null
   const { data, error } = await supabase.from("clients").select("*").order("name");
   if (error) return { clients: [], error: error.message };
   const clients = (data ?? []).map((r: any) => ({
-    id: r.id, name: r.name ?? "", contactName: r.contact_name ?? "",
+    id: r.id, name: r.name ?? "", code: r.code ?? "",
+    contactName: r.contact_name ?? "",
     billTo: r.bill_to ?? "", email: r.email ?? "", phone: r.phone ?? "",
     address: r.address ?? "", city: r.city ?? "", state: r.state ?? "",
     zip: r.zip ?? "", notes: r.notes ?? "", isActive: r.is_active,
@@ -227,7 +228,10 @@ export default function ClientMaintenance() {
                   fontSize: 13,
                 }}
               >
-                <div style={{ fontWeight: 600 }}>{c.name}</div>
+                <div style={{ fontWeight: 600 }}>
+                  {c.code && <span style={{ fontFamily: "monospace", fontSize: 11, opacity: 0.7, marginRight: 6 }}>[{c.code}]</span>}
+                  {c.name}
+                </div>
                 {c.contactName && <div style={{ fontSize: 12, opacity: 0.8 }}>{c.contactName}</div>}
               </button>
             ))
@@ -315,13 +319,23 @@ export default function ClientMaintenance() {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <div style={{ gridColumn: "1 / -1" }}>
+              <div>
                 <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Client Name *</label>
                 <input
                   value={selectedClient.name}
                   onChange={(e) => updateField("name", e.target.value)}
                   placeholder="Client / Company name"
                   style={{ width: "100%" }}
+                />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Client Code</label>
+                <input
+                  value={selectedClient.code ?? ""}
+                  onChange={(e) => updateField("code", e.target.value.toUpperCase())}
+                  placeholder="e.g. JAY"
+                  maxLength={10}
+                  style={{ width: "100%", textTransform: "uppercase" }}
                 />
               </div>
 

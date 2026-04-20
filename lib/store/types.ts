@@ -221,6 +221,7 @@ export type EmployeeRecord = {
 export type Client = {
   id: string;
   name: string;
+  code?: string;
   contactName?: string;
   billTo?: string;
   email?: string;
