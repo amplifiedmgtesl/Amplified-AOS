@@ -7,13 +7,16 @@ import {
   loadClients,
   loadInvoiceDrafts,
   loadJobRequests,
+  loadPositions,
   loadQuotes,
+  loadSpecialties,
   pullApprovedTimesheetSummary,
   setActiveInvoice,
   upsertInvoiceDraft,
 } from "@/lib/store/app-store";
 import { getActiveRateCardProfileId, loadRateCardProfiles, loadRateRows } from "@/lib/rates/storage";
-import type { Client, InvoiceDraft, JobRequest, QuoteDraft, QuoteLine } from "@/lib/store/types";
+import type { Client, InvoiceDraft, JobRequest, Position, QuoteDraft, QuoteLine, Specialty } from "@/lib/store/types";
+import type { RateRow } from "@/lib/rates/defaults";
 
 type RateMode = "hourly" | "day";
 
@@ -136,9 +139,15 @@ function buildDateOptions(quote: QuoteDraft | undefined, jobRequest: JobRequest 
   return out;
 }
 
-function findBestRateCardProfileId(client: string, preferredId?: string) {
+function findBestRateCardProfileId(clientId: string | undefined, client: string, preferredId?: string) {
   const profiles = loadRateCardProfiles();
   if (preferredId && profiles.find((p) => p.id === preferredId)) return preferredId;
+  // Prefer match by clientId (FK) if available
+  if (clientId) {
+    const byClientId = profiles.find((p) => p.clientId === clientId);
+    if (byClientId) return byClientId.id;
+  }
+  // Fall back to name match for legacy data
   const byClient = profiles.find((p) => p.clientName.trim().toLowerCase() === (client || "").trim().toLowerCase());
   if (byClient) return byClient.id;
   return getActiveRateCardProfileId() || profiles[0]?.id || "";
@@ -167,6 +176,8 @@ export default function InvoiceBuilder() {
   const [quotes, setQuotes] = useState<QuoteDraft[]>([]);
   const [jobRequests, setJobRequests] = useState<JobRequest[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [activeId, setActiveIdState] = useState<string>("");
   const [invoice, setInvoice] = useState<InvoiceDraft | null>(null);
   const [sourceQuoteId, setSourceQuoteId] = useState<string>("");
@@ -187,6 +198,8 @@ export default function InvoiceBuilder() {
     setQuotes(quoteRows);
     setJobRequests(requestRows);
     setClients(loadClients().filter((c) => c.isActive).sort((a, b) => a.name.localeCompare(b.name)));
+    setPositions(loadPositions());
+    setSpecialties(loadSpecialties());
 
     const active = getActiveInvoice() || invoiceRows[0]?.id || "";
     const found = invoiceRows.find((r) => r.id === active) || invoiceRows[0] || null;
@@ -198,7 +211,7 @@ export default function InvoiceBuilder() {
       setSourceQuoteId(found.quoteId || "");
       const linkedQuote = quoteRows.find((q) => q.id === found.quoteId);
       setSourceJobRequestId(linkedQuote?.linkedJobRequestId || "");
-      setLinkedRateCardProfileId(found.rateCardProfileId || linkedQuote?.rateCardProfileId || findBestRateCardProfileId(found.client, linkedQuote?.rateCardProfileId));
+      setLinkedRateCardProfileId(found.rateCardProfileId || linkedQuote?.rateCardProfileId || findBestRateCardProfileId(found.clientId, found.client, linkedQuote?.rateCardProfileId));
       setActiveInvoice(found.id);
       setDepositInvoiceMode((found.invoiceNo || "").endsWith("-DEP"));
     }
@@ -208,7 +221,7 @@ export default function InvoiceBuilder() {
 
 function syncTermsFromLinkedRateCard(profileId?: string) {
   if (!invoice) return;
-  const id = profileId || linkedRateCardProfileId || findBestRateCardProfileId(invoice.client, invoice.rateCardProfileId);
+  const id = profileId || linkedRateCardProfileId || findBestRateCardProfileId(invoice.clientId, invoice.client, invoice.rateCardProfileId);
   const terms = getRateCardTerms(id);
   if (!terms) return;
   const next = { ...invoice, rateCardProfileId: id, terms };
@@ -237,8 +250,7 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
     const quote = loadQuotes().find((q) => q.id === (found?.quoteId || ""));
     setSourceQuoteId(found?.quoteId || "");
     setSourceJobRequestId(quote?.linkedJobRequestId || "");
-    setLinkedRateCardProfileId((found as any)?.rateCardProfileId || quote?.rateCardProfileId || findBestRateCardProfileId(found?.client || "", quote?.rateCardProfileId));
-    setLinkedRateCardProfileId(found?.rateCardProfileId || quote?.rateCardProfileId || findBestRateCardProfileId(found?.client || "", quote?.rateCardProfileId));
+    setLinkedRateCardProfileId(found?.rateCardProfileId || quote?.rateCardProfileId || findBestRateCardProfileId(found?.clientId, found?.client || "", quote?.rateCardProfileId));
   }
 
   function patch(p: Partial<InvoiceDraft>) {
@@ -275,12 +287,62 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
     }, meta);
   }
 
+  // Pick position: set positionId + default first specialty (FK-driven path)
+  function setLinePosition(index: number, newPositionId: string) {
+    if (!invoice) return;
+    const pos = positions.find((p) => p.id === newPositionId);
+    const firstSpc = specialtiesForPositionId(newPositionId)[0];
+    const row = rateRows.find((r) => r.specialtyId === firstSpc?.id);
+    const existing = invoice.lines[index];
+    const meta = {
+      ...parseLineMeta(existing),
+      department: pos?.name ?? "",
+      position: firstSpc ? `${pos?.name ?? ""} | ${firstSpc.name}` : pos?.name ?? "",
+    };
+    patchLine(index, {
+      positionId: newPositionId,
+      specialtyId: firstSpc?.id ?? undefined,
+      department: pos?.name ?? "",
+      specialty: firstSpc?.name ?? "",
+      baseHourly: row?.hourly ?? existing.baseHourly,
+      baseDay:    row?.day    ?? existing.baseDay,
+      otRate:     row?.otRate ?? existing.otRate,
+      dtRate:     row?.dtRate ?? existing.dtRate,
+      travel:     row?.travel ?? existing.travel,
+      serviceKey: buildServiceKey(meta),
+    }, meta);
+  }
+
+  function setLineSpecialty(index: number, newSpecialtyId: string) {
+    if (!invoice) return;
+    const spc = specialties.find((s) => s.id === newSpecialtyId);
+    const pos = spc ? positions.find((p) => p.id === spc.positionId) : undefined;
+    const row = rateRows.find((r) => r.specialtyId === newSpecialtyId);
+    const existing = invoice.lines[index];
+    const existingMeta = parseLineMeta(existing);
+    const meta = {
+      ...existingMeta,
+      department: pos?.name ?? existing.department ?? "",
+      position: pos && spc ? `${pos.name} | ${spc.name}` : existingMeta.position,
+    };
+    patchLine(index, {
+      specialtyId: newSpecialtyId,
+      specialty: spc?.name ?? "",
+      baseHourly: row?.hourly ?? existing.baseHourly,
+      baseDay:    row?.day    ?? existing.baseDay,
+      otRate:     row?.otRate ?? existing.otRate,
+      dtRate:     row?.dtRate ?? existing.dtRate,
+      travel:     row?.travel ?? existing.travel,
+      serviceKey: buildServiceKey(meta),
+    }, meta);
+  }
+
   function syncFromQuote(quoteId: string) {
     if (!invoice || !quoteId) return;
     const quote = quotes.find((q) => q.id === quoteId);
     if (!quote) return;
     const req = jobRequests.find((r) => r.id === quote.linkedJobRequestId);
-    const rateCardProfileId = findBestRateCardProfileId(quote.client, quote.rateCardProfileId);
+    const rateCardProfileId = findBestRateCardProfileId(quote.clientId, quote.client, quote.rateCardProfileId);
     const syncedTerms = getRateCardTerms(rateCardProfileId) || quote.terms;
     const next: InvoiceDraft = {
       ...invoice,
@@ -316,7 +378,7 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
     if (!invoice || !jobRequestId) return;
     const req = jobRequests.find((r) => r.id === jobRequestId);
     if (!req) return;
-    const rateCardProfileId = findBestRateCardProfileId(req.client);
+    const rateCardProfileId = findBestRateCardProfileId(req.clientId, req.client);
     const syncedTerms = getRateCardTerms(rateCardProfileId) || invoice.terms;
     const next: InvoiceDraft = {
       ...invoice,
@@ -397,6 +459,43 @@ function createDepositInvoiceDraft() {
   const activeJobRequest = useMemo(() => jobRequests.find((r) => r.id === sourceJobRequestId), [jobRequests, sourceJobRequestId]);
   const dateOptions = useMemo(() => buildDateOptions(activeQuote, activeJobRequest), [activeQuote, activeJobRequest]);
   const positionOptions = useMemo(() => rateRows.map((r) => `${r.department} | ${r.specialty}`), [rateRows]);
+
+  // Positions that the current rate card actually has rates for.
+  const availablePositions = useMemo(() => {
+    const posIds = new Set<string>();
+    for (const row of rateRows) {
+      const pos = positions.find((p) => p.name === row.position);
+      if (pos) posIds.add(pos.id);
+    }
+    return positions.filter((p) => posIds.has(p.id)).sort((a, b) => a.sortOrder - b.sortOrder);
+  }, [rateRows, positions]);
+
+  const specialtiesForPositionId = (positionId: string): Specialty[] => {
+    if (!positionId) return [];
+    const rateSpecialtyIds = new Set(rateRows.map((r) => r.specialtyId).filter(Boolean) as string[]);
+    return specialties
+      .filter((s) => s.positionId === positionId && rateSpecialtyIds.has(s.id))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  };
+
+  // Resolve IDs for a line (fallback for pre-migration rows saved with only text).
+  const resolveLineIds = (line: QuoteLine): { positionId: string; specialtyId: string; positionName: string; specialtyName: string } => {
+    let positionId = line.positionId || "";
+    let specialtyId = line.specialtyId || "";
+    const deptText = (line.department || "").trim().toLowerCase();
+    const spcText = (line.specialty || "").trim().toLowerCase();
+    if (!positionId && deptText) {
+      const pos = positions.find((p) => p.name.toLowerCase().trim() === deptText);
+      if (pos) positionId = pos.id;
+    }
+    if (!specialtyId && positionId && spcText) {
+      const spc = specialties.find((s) => s.positionId === positionId && s.name.toLowerCase().trim() === spcText);
+      if (spc) specialtyId = spc.id;
+    }
+    const posName = positions.find((p) => p.id === positionId)?.name ?? line.department ?? "";
+    const spcName = specialties.find((s) => s.id === specialtyId)?.name ?? line.specialty ?? "";
+    return { positionId, specialtyId, positionName: posName, specialtyName: spcName };
+  };
   const balance = useMemo(() => !invoice ? 0 : Math.max(0, Number(invoice.amountDue || 0) - Number(invoice.paidAmount || 0)), [invoice]);
 
   if (!invoice) {
@@ -593,8 +692,8 @@ function createDepositInvoiceDraft() {
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Department</th>
                 <th>Position</th>
+                <th>Specialty</th>
                 <th>Shift</th>
                 <th>Mode</th>
                 <th>Start</th>
@@ -610,6 +709,7 @@ function createDepositInvoiceDraft() {
             <tbody>
               {invoice.lines.map((line, idx) => {
                 const meta = parseLineMeta(line);
+                const ids = resolveLineIds(line);
                 return (
                   <tr key={idx}>
                     <td>
@@ -622,17 +722,22 @@ function createDepositInvoiceDraft() {
                       <div className="print-terms">{meta.date || "-"}</div>
                     </td>
                     <td>
-                      <div className="hide-print"><input value={meta.department} onChange={(e) => patchLine(idx, {}, { ...meta, department: e.target.value })} /></div>
-                      <div className="print-terms">{meta.department || "-"}</div>
+                      <div className="hide-print">
+                        <select value={ids.positionId} onChange={(e) => setLinePosition(idx, e.target.value)}>
+                          <option value="">— Select Position —</option>
+                          {availablePositions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      </div>
+                      <div className="print-terms">{ids.positionName || "-"}</div>
                     </td>
                     <td>
                       <div className="hide-print">
-                        <select value={meta.position} onChange={(e) => fillLineFromRateCard(idx, e.target.value)}>
-                          <option value={meta.position}>{meta.position || "Select Position"}</option>
-                          {positionOptions.filter((p) => p !== meta.position).map((p) => <option key={p} value={p}>{p}</option>)}
+                        <select value={ids.specialtyId} onChange={(e) => setLineSpecialty(idx, e.target.value)}>
+                          <option value="">— Select Specialty —</option>
+                          {specialtiesForPositionId(ids.positionId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
                       </div>
-                      <div className="print-terms">{meta.position}</div>
+                      <div className="print-terms">{ids.specialtyName || "-"}</div>
                     </td>
                     <td>
                       <div className="hide-print"><input value={meta.shiftLabel} onChange={(e) => patchLine(idx, {}, { ...meta, shiftLabel: e.target.value })} /></div>
