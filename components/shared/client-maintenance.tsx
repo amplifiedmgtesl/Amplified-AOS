@@ -37,6 +37,7 @@ export default function ClientMaintenance() {
   const [showMerge, setShowMerge] = useState(false);
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null);
   const [activity, setActivity] = useState<{ ytd: number; pending: number } | null>(null);
+  const [rateCardCount, setRateCardCount] = useState<number | null>(null);
   const [mergeSourceId, setMergeSourceId] = useState("");
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [merging, setMerging] = useState(false);
@@ -52,15 +53,18 @@ export default function ClientMaintenance() {
   useEffect(() => { reload(); }, []);
 
   useEffect(() => {
-    if (!selectedId) { setActivity(null); return; }
+    if (!selectedId) { setActivity(null); setRateCardCount(null); return; }
     const year = new Date().getFullYear().toString();
     Promise.all([
       supabase.from("job_requests").select("id", { count: "exact", head: true })
         .eq("client_id", selectedId).like("received_date", `${year}%`),
       supabase.from("job_requests").select("id", { count: "exact", head: true })
         .eq("client_id", selectedId).is("linked_quote_id", null),
-    ]).then(([ytdRes, pendingRes]) => {
+      supabase.from("rate_card_profiles").select("id", { count: "exact", head: true })
+        .eq("client_id", selectedId),
+    ]).then(([ytdRes, pendingRes, rcRes]) => {
       setActivity({ ytd: ytdRes.count ?? 0, pending: pendingRes.count ?? 0 });
+      setRateCardCount(rcRes.count ?? 0);
     });
   }, [selectedId]);
 
@@ -424,6 +428,19 @@ export default function ClientMaintenance() {
         ) : (
           <div className="card" style={{ color: "#888", textAlign: "center", padding: "40px 20px" }}>
             Select a client from the list, or click <strong>+ New</strong> to add one.
+          </div>
+        )}
+
+        {rateCardCount !== null && (
+          <div className="card" style={{ marginTop: 16, padding: "12px 16px" }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#888", marginBottom: 10 }}>Rate Cards</div>
+            <div style={{
+              background: "var(--surface2, #f9fafb)", border: "1px solid var(--border, #e5e7eb)",
+              borderRadius: 6, padding: "8px 12px", textAlign: "center",
+            }}>
+              <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1 }}>{rateCardCount}</div>
+              <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Total</div>
+            </div>
           </div>
         )}
 
