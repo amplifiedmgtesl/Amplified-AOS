@@ -11,8 +11,10 @@ import {
   getQuoteSeed,
   loadJobRequests,
   loadJobSheets,
+  loadPositions,
   loadQuoteDraftWorkspaces,
   loadQuotes,
+  loadSpecialties,
   getTimesheetByJobSheetId,
   setActiveInvoice,
   setActiveQuote,
@@ -23,14 +25,18 @@ import {
   upsertQuoteDraftWorkspace,
 } from "@/lib/store/app-store";
 import { summarizeTimesheet } from "@/lib/store/timekeeping";
-import type { InvoiceDraft, QuoteDraft, QuoteLine } from "@/lib/store/types";
+import type { InvoiceDraft, Position, QuoteDraft, QuoteLine, Specialty } from "@/lib/store/types";
 
 type RateMode = "hourly" | "day";
 
 type Line = {
   id:number;
+  positionId:string;
+  specialtyId:string;
+  // Legacy snapshot fields — populated on save for DB, not used for primary UI lookup anymore.
   department:string;
   position:string;
+  specialty:string;
   quoteDate:string;
   shiftLabel:string;
   startTime:string;
@@ -177,20 +183,72 @@ export default function QuoteBuilder() {
   const jobRequests = loadJobRequests();
   const savedQuotes = loadQuotes();
   const rateCardProfiles = loadRateCardProfiles();
+  const positions = loadPositions();
+  const specialties = loadSpecialties();
   const linkedTimesheet = linkedJobSheetId ? getTimesheetByJobSheetId(linkedJobSheetId) : null;
   const timeSummary = useMemo(() => summarizeTimesheet(linkedTimesheet), [linkedJobSheetId, linkedTimesheet?.rows?.length]);
-  const departments = useMemo(() => Array.from(new Set(rows.map((r) => r.department))).sort(), [rows]);
-  const positionsForDepartment = (department: string) => rows.filter((r) => r.department === department).map((r) => rowKey(r));
+
+  // Positions that the current rate card actually has rates for.
+  const availablePositions = useMemo(() => {
+    const posIds = new Set<string>();
+    for (const row of rows) {
+      const pos = positions.find((p) => p.name === row.position);
+      if (pos) posIds.add(pos.id);
+    }
+    return positions.filter((p) => posIds.has(p.id)).sort((a, b) => a.sortOrder - b.sortOrder);
+  }, [rows, positions]);
+
+  const specialtiesForPositionId = (positionId: string): Specialty[] => {
+    if (!positionId) return [];
+    const rateSpecialtyIds = new Set(rows.map((r) => r.specialtyId).filter(Boolean) as string[]);
+    return specialties
+      .filter((s) => s.positionId === positionId && rateSpecialtyIds.has(s.id))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  };
+
+  // Resolve position/specialty IDs for a line when missing (pre-migration saved quotes).
+  const resolveIdsForLine = (line: { positionId?: string; specialtyId?: string; department?: string; specialty?: string; position?: string }): { positionId: string; specialtyId: string } => {
+    let positionId = line.positionId || "";
+    let specialtyId = line.specialtyId || "";
+    if (!positionId && line.department) {
+      const pos = positions.find((p) => p.name.toLowerCase().trim() === (line.department ?? "").toLowerCase().trim());
+      if (pos) positionId = pos.id;
+    }
+    if (!specialtyId && positionId && line.specialty) {
+      const spc = specialties.find((s) => s.positionId === positionId && s.name.toLowerCase().trim() === (line.specialty ?? "").toLowerCase().trim());
+      if (spc) specialtyId = spc.id;
+    }
+    return { positionId, specialtyId };
+  };
+
+  // Find the rate row for a line (by specialtyId preferred, then by name match).
+  const findRateRowForLine = (line: { specialtyId?: string; position?: string; specialty?: string }): RateRow => {
+    if (line.specialtyId) {
+      const byId = rows.find((r) => r.specialtyId === line.specialtyId);
+      if (byId) return byId;
+    }
+    if (line.position && line.specialty) {
+      const byName = rows.find((r) => r.position === line.position && r.specialty === line.specialty);
+      if (byName) return byName;
+    }
+    return rows[0] ?? DEFAULT_RATE_ROWS[0];
+  };
+
   const draftWorkspaces = loadQuoteDraftWorkspaces();
   const QTY_OPTIONS = useMemo(() => Array.from({ length: 50 }, (_, i) => i + 1), []);
   const TIME_OPTIONS = useMemo(() => timeOptions(), []);
 
-  function emptyLine(rateRows: RateRow[]) {
+  function emptyLine(rateRows: RateRow[]): Line {
     const first = rateRows[0] ?? DEFAULT_RATE_ROWS[0];
+    const pos = positions.find((p) => p.name === first.position);
+    const spc = specialties.find((s) => s.id === first.specialtyId) ?? specialties.find((s) => s.positionId === pos?.id && s.name === first.specialty);
     return {
       id: 1,
-      department: first.department,
-      position: rowKey(first),
+      positionId: pos?.id ?? "",
+      specialtyId: spc?.id ?? first.specialtyId ?? "",
+      department: first.position,
+      position: first.position,
+      specialty: first.specialty,
       quoteDate: "",
       shiftLabel: "Shift 1",
       startTime: "",
@@ -199,7 +257,7 @@ export default function QuoteBuilder() {
       rateMode: "hourly" as RateMode,
       holidayHours: 0,
       travel: first.travel
-    };
+    } as Line;
   }
 
   function applyDraftState(state: Partial<DraftState>) {
@@ -350,12 +408,17 @@ export default function QuoteBuilder() {
   function addLine() {
     const first = rows[0] ?? DEFAULT_RATE_ROWS[0];
     const firstDate = dayDetails[0]?.date || "";
+    const pos = positions.find((p) => p.name === first.position);
+    const spc = specialties.find((s) => s.id === first.specialtyId) ?? specialties.find((s) => s.positionId === pos?.id && s.name === first.specialty);
     setLines([
       ...lines,
       {
         id: Date.now(),
-        department: first.department,
-        position: rowKey(first),
+        positionId: pos?.id ?? "",
+        specialtyId: spc?.id ?? first.specialtyId ?? "",
+        department: first.position,
+        position: first.position,
+        specialty: first.specialty,
         quoteDate: firstDate,
         shiftLabel: `Shift ${lines.length + 1}`,
         startTime: defaultStartTime || "",
@@ -392,31 +455,32 @@ export default function QuoteBuilder() {
   function currentQuoteId() { return quoteId || `${client || "client"}-${eventName || "event"}-${startDate || Date.now()}`.replace(/\s+/g, "-").toLowerCase(); }
 
   const computed = useMemo(() => lines.map((line, idx) => {
-    const row = rows.find((r) => rowKey(r) === line.position) ?? rows[0] ?? DEFAULT_RATE_ROWS[0];
+    const row = findRateRowForLine(line);
     const hours = hoursBetween(line.startTime, line.endTime);
     const total = calcLineTotal(hours, line.holidayHours, line.qty, row, line.travel, line.rateMode);
     return { no: idx + 1, line, row, hours, total };
-  }), [lines, rows]);
+  }), [lines, rows, positions, specialties]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Map<string, typeof computed>>();
     computed.forEach((item) => {
       const dateKey = item.line.quoteDate || "No Date";
-      const depKey = item.line.department || item.row.department || "Unassigned";
+      // Group by position name (the real concept). Fallback to rate row's position.
+      const posKey = item.line.position || item.row.position || "Unassigned";
       if (!map.has(dateKey)) map.set(dateKey, new Map());
-      const depMap = map.get(dateKey)!;
-      if (!depMap.has(depKey)) depMap.set(depKey, []);
-      depMap.get(depKey)!.push(item);
+      const posMap = map.get(dateKey)!;
+      if (!posMap.has(posKey)) posMap.set(posKey, []);
+      posMap.get(posKey)!.push(item);
     });
-    return Array.from(map.entries()).map(([date, depMap]) => ({
+    return Array.from(map.entries()).map(([date, posMap]) => ({
       date,
       day: dayDetails.find((d) => d.date === date),
-      departments: Array.from(depMap.entries()).map(([department, items]) => ({
-        department,
+      positions: Array.from(posMap.entries()).map(([position, items]) => ({
+        position,
         items,
         total: items.reduce((sum, i) => sum + i.total, 0)
       })),
-      total: Array.from(depMap.values()).flat().reduce((sum, i) => sum + i.total, 0)
+      total: Array.from(posMap.values()).flat().reduce((sum, i) => sum + i.total, 0)
     })).sort((a,b) => a.date.localeCompare(b.date));
   }, [computed, dayDetails]);
 
@@ -426,9 +490,9 @@ export default function QuoteBuilder() {
 
   function saveQuote(): QuoteDraft {
     const lineItems: QuoteLine[] = grouped.flatMap((group) =>
-      group.departments.flatMap((dep) =>
-        dep.items.map((item) => ({
-          serviceKey: `${group.date} | ${dep.department} | ${item.line.position} | ${item.line.shiftLabel} | ${item.line.rateMode}`,
+      group.positions.flatMap((pos) =>
+        pos.items.map((item) => ({
+          serviceKey: `${group.date} | ${pos.position} | ${item.row.specialty} | ${item.line.shiftLabel} | ${item.line.rateMode}`,
           qty: item.line.qty,
           hours: item.hours,
           holidayHours: item.line.holidayHours,
@@ -439,7 +503,9 @@ export default function QuoteBuilder() {
           dtRate: item.row.dtRate,
           rule: `${item.line.startTime || "-"} to ${item.line.endTime || "-"} | ${item.line.rateMode === "hourly" ? "Hourly" : "Day Rate"} | OT after ${item.row.dtAfter} / DT after 15`,
           total: item.total,
-          department: dep.department,
+          positionId: item.line.positionId || undefined,
+          specialtyId: item.line.specialtyId || undefined,
+          department: pos.position,   // kept for backward compat
           specialty: item.row.specialty,
           shiftLabel: item.line.shiftLabel,
           quoteDate: group.date,
@@ -529,10 +595,16 @@ export default function QuoteBuilder() {
         endTime   = ruleParts[1] || "";
       }
 
+      // Resolve FK ids: prefer stored IDs, fall back to name match on legacy rows
+      const ids = resolveIdsForLine({ positionId: l.positionId, specialtyId: l.specialtyId, department, specialty, position: department });
+
       return {
         id: Date.now() + i,
+        positionId: ids.positionId,
+        specialtyId: ids.specialtyId,
         department,
-        position: department && specialty ? `${department} | ${specialty}` : l.serviceKey,
+        position: department,
+        specialty,
         quoteDate,
         shiftLabel,
         startTime,
@@ -725,7 +797,7 @@ export default function QuoteBuilder() {
           <h3 className="section-title">Edit Quote Line Items</h3>
           <div style={{ overflowX:"auto" }}>
             <table>
-              <thead><tr><th>Date</th><th>Shift</th><th>Department</th><th>Position / Line Item</th><th>Rate Mode</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Qty</th><th>Holiday Hours</th><th>Travel</th><th>Line Total</th><th>Action</th></tr></thead>
+              <thead><tr><th>Date</th><th>Shift</th><th>Position</th><th>Specialty</th><th>Rate Mode</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Qty</th><th>Holiday Hours</th><th>Travel</th><th>Line Total</th><th>Action</th></tr></thead>
               <tbody>
                 {lines.map((line) => {
                   const calcHours = hoursBetween(line.startTime, line.endTime);
@@ -739,22 +811,37 @@ export default function QuoteBuilder() {
                       </td>
                       <td><input value={line.shiftLabel} onChange={(e)=>updateLine(line.id, { shiftLabel:e.target.value })} /></td>
                       <td>
-                        <select value={line.department} onChange={(e)=>{
-                          const dep = e.target.value;
-                          const firstPos = positionsForDepartment(dep)[0] || "";
-                          const row = rows.find((r)=>rowKey(r)===firstPos);
-                          updateLine(line.id, { department: dep, position: firstPos, travel: row?.travel ?? 0 });
+                        <select value={line.positionId} onChange={(e)=>{
+                          const newPosId = e.target.value;
+                          const newPos = positions.find((p) => p.id === newPosId);
+                          const firstSpc = specialtiesForPositionId(newPosId)[0];
+                          const row = rows.find((r) => r.specialtyId === firstSpc?.id);
+                          updateLine(line.id, {
+                            positionId: newPosId,
+                            specialtyId: firstSpc?.id ?? "",
+                            position: newPos?.name ?? "",
+                            department: newPos?.name ?? "",
+                            specialty: firstSpc?.name ?? "",
+                            travel: row?.travel ?? 0,
+                          });
                         }}>
-                          {departments.map((d)=><option key={d} value={d}>{d}</option>)}
+                          <option value="">— Select Position —</option>
+                          {availablePositions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                       </td>
                       <td>
-                        <select value={line.position} onChange={(e)=>{
-                          const pos = e.target.value;
-                          const row = rows.find((r)=>rowKey(r)===pos);
-                          updateLine(line.id, { position: pos, department: row?.department || line.department, travel: row?.travel ?? 0 });
+                        <select value={line.specialtyId} onChange={(e)=>{
+                          const newSpcId = e.target.value;
+                          const newSpc = specialties.find((s) => s.id === newSpcId);
+                          const row = rows.find((r) => r.specialtyId === newSpcId);
+                          updateLine(line.id, {
+                            specialtyId: newSpcId,
+                            specialty: newSpc?.name ?? "",
+                            travel: row?.travel ?? 0,
+                          });
                         }}>
-                          {positionsForDepartment(line.department).map((p)=><option key={p} value={p}>{p}</option>)}
+                          <option value="">— Select Specialty —</option>
+                          {specialtiesForPositionId(line.positionId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
                       </td>
                       <td>
@@ -766,11 +853,11 @@ export default function QuoteBuilder() {
                       <td style={{ minWidth: 130 }}><select value={normalizeTimeInput(line.startTime)} onChange={(e)=>updateLine(line.id, { startTime:e.target.value })}>{TIME_OPTIONS.map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
                       <td style={{ minWidth: 130 }}><select value={normalizeTimeInput(line.endTime)} onChange={(e)=>updateLine(line.id, { endTime:e.target.value })}>{TIME_OPTIONS.map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
                       <td>{calcHours.toFixed(2)}</td>
-                      <td>{line.rateMode === "hourly" ? `$${((rows.find((r)=>rowKey(r)===line.position) ?? rows[0] ?? DEFAULT_RATE_ROWS[0]).hourly).toFixed(2)}/hr` : `$${((rows.find((r)=>rowKey(r)===line.position) ?? rows[0] ?? DEFAULT_RATE_ROWS[0]).day).toFixed(2)}/day`}</td>
+                      <td>{line.rateMode === "hourly" ? `$${findRateRowForLine(line).hourly.toFixed(2)}/hr` : `$${findRateRowForLine(line).day.toFixed(2)}/day`}</td>
                       <td style={{ minWidth: 90 }}><select value={line.qty} onChange={(e)=>updateLine(line.id, { qty:Number(e.target.value || 0) })}>{QTY_OPTIONS.map((q)=><option key={q} value={q}>{q}</option>)}</select></td>
                       <td><input type="number" value={line.holidayHours} onChange={(e)=>updateLine(line.id, { holidayHours:Number(e.target.value || 0) })} /></td>
                       <td><input type="number" value={line.travel} onChange={(e)=>updateLine(line.id, { travel:Number(e.target.value || 0) })} /></td>
-                      <td>${calcLineTotal(calcHours, line.holidayHours, line.qty, (rows.find((r)=>rowKey(r)===line.position) ?? rows[0] ?? DEFAULT_RATE_ROWS[0]), line.travel, line.rateMode).toFixed(2)}</td>
+                      <td>${calcLineTotal(calcHours, line.holidayHours, line.qty, findRateRowForLine(line), line.travel, line.rateMode).toFixed(2)}</td>
                       <td><div className="action-row"><button type="button" className="secondary" onClick={()=>duplicateLine(line.id)}>Copy Line</button><button type="button" className="secondary" onClick={()=>deleteLine(line.id)}>Delete Line</button></div></td>
                     </tr>
                   );
@@ -818,17 +905,17 @@ export default function QuoteBuilder() {
                 <strong>{group.date}</strong>
                 <div className="muted">Default Day Schedule: {group.day?.defaultStartTime || "-"} to {group.day?.defaultEndTime || "-"} · Expected Hours: {group.day?.expectedHours ?? "-"}</div>
               </div>
-              {group.departments.map((dep) => (
-                <div key={dep.department} style={{ marginBottom: 12 }}>
-                  <div className="badge" style={{ marginBottom: 6 }}>{dep.department}</div>
+              {group.positions.map((posGroup) => (
+                <div key={posGroup.position} style={{ marginBottom: 12 }}>
+                  <div className="badge" style={{ marginBottom: 6 }}>{posGroup.position}</div>
                   <div style={{ overflowX:"auto" }}>
                     <table>
-                      <thead><tr><th>Date</th><th>Department</th><th>Shift</th><th>Position</th><th>Rate Mode</th><th>Qty</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Holiday Hrs</th><th>Travel</th><th>OT</th><th>DT</th><th>Line Total</th></tr></thead>
+                      <thead><tr><th>Date</th><th>Position</th><th>Shift</th><th>Specialty</th><th>Rate Mode</th><th>Qty</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Holiday Hrs</th><th>Travel</th><th>OT</th><th>DT</th><th>Line Total</th></tr></thead>
                       <tbody>
-                        {dep.items.map((item) => (
-                          <tr key={`${group.date}-${dep.department}-${item.line.id}`}>
+                        {posGroup.items.map((item) => (
+                          <tr key={`${group.date}-${posGroup.position}-${item.line.id}`}>
                             <td>{group.date}</td>
-                            <td>{dep.department}</td>
+                            <td>{posGroup.position}</td>
                             <td>{item.line.shiftLabel}</td>
                             <td>{item.row.specialty}</td>
                             <td>{item.line.rateMode === "hourly" ? "Hourly" : "Day Rate"}</td>
@@ -848,8 +935,8 @@ export default function QuoteBuilder() {
                     </table>
                   </div>
                   <div className="metric-card" style={{ marginTop: 8 }}>
-                    <div className="metric-label">{dep.department} Total for {group.date}</div>
-                    <div className="metric-value" style={{ fontSize: 22 }}>${dep.total.toFixed(2)}</div>
+                    <div className="metric-label">{posGroup.position} Total for {group.date}</div>
+                    <div className="metric-value" style={{ fontSize: 22 }}>${posGroup.total.toFixed(2)}</div>
                   </div>
                 </div>
               ))}

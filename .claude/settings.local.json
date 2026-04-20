@@ -8,7 +8,8 @@
       "Bash(pip install:*)",
       "Bash(python \"C:/amplified/build_infrastructure_pdf.py\")",
       "Bash(python -c ':*)",
-      "Bash(python \"C:\\\\amplified\\\\build_infrastructure_pdf.py\")"
+      "Bash(python \"C:\\\\amplified\\\\build_infrastructure_pdf.py\")",
+      "Bash(npx tsc *)"
     ]
   }
 }

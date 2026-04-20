@@ -34,6 +34,9 @@ export type QuoteLine = {
   dtRate: number;
   rule: string;
   total: number;
+  // FK references to positions/specialties master tables
+  positionId?: string;
+  specialtyId?: string;
   // Discrete UI columns (populated from quote_lines / invoice_lines table)
   department?: string;
   specialty?: string;
