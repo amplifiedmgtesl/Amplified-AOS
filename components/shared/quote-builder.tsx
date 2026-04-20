@@ -871,7 +871,7 @@ export default function QuoteBuilder() {
           <h3 className="section-title">Client-Facing Price Breakdown</h3>
           <div style={{ overflowX:"auto", marginBottom: 14 }}>
             <table>
-              <thead><tr><th>Date</th><th>Department</th><th>Shift</th><th>Position</th><th>Rate Mode</th><th>Qty</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Holiday Hrs</th><th>Travel</th><th>Line Total</th></tr></thead>
+              <thead><tr><th>Date</th><th>Position</th><th>Shift</th><th>Specialty</th><th>Rate Mode</th><th>Qty</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Holiday Hrs</th><th>Travel</th><th>Line Total</th></tr></thead>
               <tbody>
                 {computed.length === 0 ? (
                   <tr><td colSpan={13}>No line items yet.</td></tr>
@@ -879,7 +879,7 @@ export default function QuoteBuilder() {
                   computed.map((item) => (
                     <tr key={`client-breakdown-${item.line.id}`}>
                       <td>{item.line.quoteDate || "-"}</td>
-                      <td>{item.line.department}</td>
+                      <td>{item.line.position || item.row.position}</td>
                       <td>{item.line.shiftLabel}</td>
                       <td>{item.row.specialty}</td>
                       <td>{item.line.rateMode === "hourly" ? "Hourly" : "Day Rate"}</td>
