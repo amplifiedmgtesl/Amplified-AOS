@@ -412,75 +412,28 @@ function createDepositInvoiceDraft() {
     <div className="grid">
       <div className="card hide-print">
         <h2 className="section-title">Invoice Control Center</h2>
+
+        {/* Top action bar — save/copy/print */}
+        <div className="action-row" style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <button type="button" className="secondary" onClick={saveInvoiceDraftNow}>Save Invoice Draft</button>
+          <button type="button" className="secondary" onClick={saveAsNewDraft}>Save As New Draft</button>
+          <button type="button" className="secondary" onClick={createDepositInvoiceDraft}>Create Deposit Invoice Draft</button>
+          <button onClick={() => window.print()}>Download / Print Invoice PDF</button>
+        </div>
+
         <div className="grid4">
+          {/* Row 1 — invoice identity */}
           <div>
             <small>Open Saved Invoice / Draft</small>
             <select value={activeId} onChange={(e) => chooseInvoice(e.target.value)}>
               {drafts.map((d) => <option key={d.id} value={d.id}>{d.invoiceNo} — {d.client}</option>)}
             </select>
           </div>
-          <div>
-            <small>Invoice Number</small>
-            <input value={invoice.invoiceNo} onChange={(e) => patch({ invoiceNo: e.target.value })} />
-          </div>
-          <div className="action-row" style={{ alignItems: "end" }}>
-            <button type="button" className="secondary" onClick={saveInvoiceDraftNow}>Save Invoice Draft</button>
-          </div>
-          <div className="action-row" style={{ alignItems: "end" }}>
-            <button type="button" className="secondary" onClick={saveAsNewDraft}>Save As New Draft</button>
-          </div>
-          <div className="action-row" style={{ alignItems: "end" }}>
-            <button type="button" className="secondary" onClick={createDepositInvoiceDraft}>Create Deposit Invoice Draft</button>
-          </div>
-
-          <div>
-            <small>Link Saved Quote</small>
-            <select value={sourceQuoteId} disabled={!invoice.clientId} onChange={(e) => setSourceQuoteId(e.target.value)}>
-              <option value="">{invoice.clientId ? "None" : "— Select a client first —"}</option>
-              {invoice.clientId && quotes.filter((q) => q.clientId === invoice.clientId).map((q) => <option key={q.id} value={q.id}>{q.client} — {q.eventName}</option>)}
-            </select>
-          </div>
-          <div className="action-row" style={{ alignItems: "end" }}>
-            <button type="button" className="secondary" onClick={() => syncFromQuote(sourceQuoteId)}>Sync From Quote</button>
-          </div>
-          <div>
-            <small>Link Job Request</small>
-            <select value={sourceJobRequestId} disabled={!invoice.clientId} onChange={(e) => setSourceJobRequestId(e.target.value)}>
-              <option value="">{invoice.clientId ? "None" : "— Select a client first —"}</option>
-              {invoice.clientId && jobRequests.filter((r) => r.clientId === invoice.clientId).map((r) => <option key={r.id} value={r.id}>{r.client} — {r.eventName}</option>)}
-            </select>
-          </div>
-          <div className="action-row" style={{ alignItems: "end" }}>
-            <button type="button" className="secondary" onClick={() => syncFromJobRequest(sourceJobRequestId)}>Sync From Job Request</button>
-          </div>
-          <div className="action-row" style={{ alignItems: "end", gridColumn: "span 2" }}>
-            <button
-              type="button"
-              className="secondary"
-              onClick={syncLaborActuals}
-              disabled={syncingTimesheet || !invoice?.linkedJobSheetId}
-              title={invoice?.linkedJobSheetId ? "Pull approved timesheet entries grouped by position" : "Link a quote with a job sheet first"}
-            >
-              {syncingTimesheet ? "Pulling…" : "⟳ Pull Labor Actuals from Timesheet"}
-            </button>
-            {invoice?.linkedJobSheetId && (
-              <span className="muted" style={{ fontSize: 11 }}>Job sheet: {invoice.linkedJobSheetId}</span>
-            )}
-          </div>
-
+          <div><small>Invoice Number</small><input value={invoice.invoiceNo} onChange={(e) => patch({ invoiceNo: e.target.value })} /></div>
           <div><small>Status</small><select value={invoice.status} onChange={(e) => patch({ status: e.target.value })}><option value="draft">draft</option><option value="sent">sent</option><option value="partial">partial</option><option value="paid">paid</option></select></div>
-          <div><small>Issue Date</small><input type="date" value={invoice.issueDate} onChange={(e) => patch({ issueDate: e.target.value })} /></div>
-          <div><small>Due Date</small><input type="date" value={invoice.dueDate} onChange={(e) => patch({ dueDate: e.target.value })} /></div>
-          <div><small>PO No.</small><input value={invoice.poNo} onChange={(e) => patch({ poNo: e.target.value })} /></div>
-          <div>
-            <small>Linked Rate Card</small>
-            <select value={linkedRateCardProfileId} disabled={!invoice.clientId} onChange={(e) => setLinkedRateCardProfileId(e.target.value)}>
-              <option value="">{invoice.clientId ? "None" : "— Select a client first —"}</option>
-              {invoice.clientId && loadRateCardProfiles().filter((p) => p.clientId === invoice.clientId).map((p) => <option key={p.id} value={p.id}>{p.name || p.clientName}</option>)}
-            </select>
-          </div>
+          <div><small>Invoice View</small><select value={depositInvoiceMode ? "deposit" : "standard"} onChange={(e) => setDepositInvoiceMode(e.target.value === "deposit")}><option value="standard">Standard</option><option value="deposit">Deposit Only</option></select></div>
 
-          <div><small>Bill To</small><input value={invoice.billTo} onChange={(e) => patch({ billTo: e.target.value })} /></div>
+          {/* Row 2 — client + event */}
           <div>
             <small>Client</small>
             <select
@@ -496,13 +449,43 @@ function createDepositInvoiceDraft() {
               ))}
             </select>
           </div>
+          <div><small>Bill To</small><input value={invoice.billTo} onChange={(e) => patch({ billTo: e.target.value })} /></div>
           <div><small>Event Name</small><input value={invoice.eventName} onChange={(e) => patch({ eventName: e.target.value })} /></div>
           <div><small>Venue</small><input value={invoice.venue} onChange={(e) => patch({ venue: e.target.value })} /></div>
 
+          {/* Row 3 — dates + po */}
           <div><small>City / State</small><input value={invoice.cityState} onChange={(e) => patch({ cityState: e.target.value })} /></div>
+          <div><small>Issue Date</small><input type="date" value={invoice.issueDate} onChange={(e) => patch({ issueDate: e.target.value })} /></div>
+          <div><small>Due Date</small><input type="date" value={invoice.dueDate} onChange={(e) => patch({ dueDate: e.target.value })} /></div>
+          <div><small>PO No.</small><input value={invoice.poNo} onChange={(e) => patch({ poNo: e.target.value })} /></div>
+
+          {/* Row 4 — linked source dropdowns */}
+          <div>
+            <small>Linked Rate Card</small>
+            <select value={linkedRateCardProfileId} disabled={!invoice.clientId} onChange={(e) => setLinkedRateCardProfileId(e.target.value)}>
+              <option value="">{invoice.clientId ? "None" : "— Select a client first —"}</option>
+              {invoice.clientId && loadRateCardProfiles().filter((p) => p.clientId === invoice.clientId).map((p) => <option key={p.id} value={p.id}>{p.name || p.clientName}</option>)}
+            </select>
+          </div>
+          <div>
+            <small>Link Saved Quote</small>
+            <select value={sourceQuoteId} disabled={!invoice.clientId} onChange={(e) => setSourceQuoteId(e.target.value)}>
+              <option value="">{invoice.clientId ? "None" : "— Select a client first —"}</option>
+              {invoice.clientId && quotes.filter((q) => q.clientId === invoice.clientId).map((q) => <option key={q.id} value={q.id}>{q.client} — {q.eventName}</option>)}
+            </select>
+          </div>
+          <div>
+            <small>Link Job Request</small>
+            <select value={sourceJobRequestId} disabled={!invoice.clientId} onChange={(e) => setSourceJobRequestId(e.target.value)}>
+              <option value="">{invoice.clientId ? "None" : "— Select a client first —"}</option>
+              {invoice.clientId && jobRequests.filter((r) => r.clientId === invoice.clientId).map((r) => <option key={r.id} value={r.id}>{r.client} — {r.eventName}</option>)}
+            </select>
+          </div>
+          <div></div>
+
+          {/* Row 5 — money */}
           <div><small>Deposit</small><input type="number" value={invoice.deposit} onChange={(e) => patch({ deposit: Number(e.target.value || 0) })} /></div>
           <div><small>Paid Amount</small><input type="number" value={invoice.paidAmount} onChange={(e) => patch({ paidAmount: Number(e.target.value || 0) })} /></div>
-          <div><small>Invoice View</small><select value={depositInvoiceMode ? "deposit" : "standard"} onChange={(e) => setDepositInvoiceMode(e.target.value === "deposit")}><option value="standard">Standard</option><option value="deposit">Deposit Only</option></select></div>
         </div>
 
         {statusMsg ? <div className="badge" style={{ marginTop: 12 }}>{statusMsg}</div> : null}
@@ -512,9 +495,23 @@ function createDepositInvoiceDraft() {
           <textarea value={invoice.notes} onChange={(e) => patch({ notes: e.target.value })} />
         </div>
 
-        <div className="action-row" style={{ marginTop: 12 }}>
-          <button type="button" className="secondary" onClick={() => syncTermsFromLinkedRateCard()}>Sync Terms From Linked Rate Card</button>
-          <button onClick={() => window.print()}>Download / Print Invoice PDF</button>
+        {/* Bottom action bar — all sync/pull operations grouped */}
+        <div className="action-row" style={{ marginTop: 12, flexWrap: "wrap", gap: 8 }}>
+          <button type="button" className="secondary" onClick={() => syncFromQuote(sourceQuoteId)} disabled={!sourceQuoteId}>Sync From Quote</button>
+          <button type="button" className="secondary" onClick={() => syncFromJobRequest(sourceJobRequestId)} disabled={!sourceJobRequestId}>Sync From Job Request</button>
+          <button type="button" className="secondary" onClick={() => syncTermsFromLinkedRateCard()} disabled={!linkedRateCardProfileId}>Sync Terms From Linked Rate Card</button>
+          <button
+            type="button"
+            className="secondary"
+            onClick={syncLaborActuals}
+            disabled={syncingTimesheet || !invoice?.linkedJobSheetId}
+            title={invoice?.linkedJobSheetId ? "Pull approved timesheet entries grouped by position" : "Link a quote with a job sheet first"}
+          >
+            {syncingTimesheet ? "Pulling…" : "⟳ Pull Labor Actuals from Timesheet"}
+          </button>
+          {invoice?.linkedJobSheetId && (
+            <span className="muted" style={{ fontSize: 11, alignSelf: "center" }}>Job sheet: {invoice.linkedJobSheetId}</span>
+          )}
         </div>
       </div>
 
