@@ -211,6 +211,19 @@ export type EmployeeRecord = {
 };
 
 
+export type Customer = {
+  id: string;
+  name: string;
+  billTo?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  notes?: string;
+  isActive: boolean;
+};
+
 export type Position = {
   id: string;
   name: string;

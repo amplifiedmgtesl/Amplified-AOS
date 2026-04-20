@@ -13,6 +13,7 @@ const nav = [
   ["/job-sheets", "📑", "Job Sheets"],
   ["/timekeeping", "⏱️", "Timekeeping"],
   ["/job-costing", "📈", "Job Costing"],
+  ["/customers", "🏢", "Customers"],
   ["/employee-directory", "👥", "Employee Directory"],
   ["/job-requests", "📨", "Job Requests"],
   ["/call-sheets", "📞", "Call Sheets"],
