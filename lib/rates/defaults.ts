@@ -9,7 +9,8 @@ export type RateCardProfile = {
   updatedAt: string;
 };
 export type RateRow = {
-  department: string;
+  specialtyId?: string;  // FK → specialties(id); undefined for legacy/working-state rows
+  department: string;    // derived = position name; kept for backward compat
   position: string;
   specialty: string;
   hourly: number;
@@ -20,8 +21,8 @@ export type RateRow = {
   travel: number;
   show: boolean;
 };
-const makeRow = (department:string, position:string, specialty:string, hourly:number, day:number): RateRow => ({
-  department, position, specialty, hourly, day,
+const makeRow = (specialtyId: string, position: string, specialty: string, hourly: number, day: number): RateRow => ({
+  specialtyId, department: position, position, specialty, hourly, day,
   otRate: Number((hourly * 1.5).toFixed(2)),
   dtRate: Number((hourly * 2.0).toFixed(2)),
   dtAfter: "10",
@@ -29,20 +30,35 @@ const makeRow = (department:string, position:string, specialty:string, hourly:nu
   show: true
 });
 export const DEFAULT_RATE_ROWS: RateRow[] = [
-  makeRow("Stagehand","Stagehand","Labor",35,350), makeRow("Stagehand","Stagehand","Show Call",35,350),
-  makeRow("Stagehand","Stagehand","AVL",35,350), makeRow("Stagehand","Stagehand","Stage",35,350),
-  makeRow("Stagehand","Stagehand","Scaffolding",35,350), makeRow("Stagehand","Stagehand","Loader",35,350),
-  makeRow("Rigger","Rigger","Climber",50,500), makeRow("Rigger","Rigger","Operator",50,500),
-  makeRow("Rigger","Rigger","Up",50,500), makeRow("Rigger","Rigger","Down",50,500),
-  makeRow("Rigger 1","Rigger 1","Head Rigger",65,650), makeRow("Rigger 1","Rigger 1","High Steel",65,650),
-  makeRow("Rigger 1","Rigger 1","Rope Access",65,650),
-  makeRow("Fork Op","Fork Op","Shop",38,380), makeRow("Fork Op","Fork Op","Telendler",38,380), makeRow("Fork Op","Fork Op","Large Fork Options",38,380),
-  makeRow("Audio Technician","Audio Technician","A1",60,600), makeRow("Audio Technician","Audio Technician","A2",50,500),
-  makeRow("Lighting Technician","Lighting Technician","L1",60,600), makeRow("Lighting Technician","Lighting Technician","L2",50,500),
-  makeRow("Video Technician","Video Technician","V1",60,600), makeRow("Video Technician","Video Technician","V2",50,500),
-  makeRow("Camera Op","Camera Op","Tripod",50,500), makeRow("Camera Op","Camera Op","Mobile",50,500),
-  makeRow("Operations","Operations","Prod. Runner",34,340), makeRow("Operations","Operations","Prod. Assist",34,340), makeRow("Operations","Operations","Services",34,340),
-  makeRow("Operations","Operations","Steward",34,340), makeRow("Operations","Operations","Crew Chief",42,420),
+  makeRow("spc-01-01","Stagehand","Labor",35,350),
+  makeRow("spc-01-02","Stagehand","Show Call",35,350),
+  makeRow("spc-01-03","Stagehand","AVL",35,350),
+  makeRow("spc-01-04","Stagehand","Stage",35,350),
+  makeRow("spc-01-05","Stagehand","Scaffolding",35,350),
+  makeRow("spc-01-06","Stagehand","Loader",35,350),
+  makeRow("spc-03-01","Rigger","Climber",50,500),
+  makeRow("spc-03-02","Rigger","Operator",50,500),
+  makeRow("spc-03-03","Rigger","Up",50,500),
+  makeRow("spc-03-04","Rigger","Down",50,500),
+  makeRow("spc-04-01","Head Rigger","Head Rigger",65,650),
+  makeRow("spc-04-02","Head Rigger","High Steel",65,650),
+  makeRow("spc-04-03","Head Rigger","Rope Access",65,650),
+  makeRow("spc-08-01","Forklift Operator","Shop",38,380),
+  makeRow("spc-08-02","Forklift Operator","Telendler",38,380),
+  makeRow("spc-08-03","Forklift Operator","Large Fork Options",38,380),
+  makeRow("spc-05-01","Audio Technician","A1",60,600),
+  makeRow("spc-05-02","Audio Technician","A2",50,500),
+  makeRow("spc-06-01","Lighting Technician","L1",60,600),
+  makeRow("spc-06-02","Lighting Technician","L2",50,500),
+  makeRow("spc-07-01","Video Technician","V1",60,600),
+  makeRow("spc-07-02","Video Technician","V2",50,500),
+  makeRow("spc-09-01","Camera Operator","Tripod",50,500),
+  makeRow("spc-09-02","Camera Operator","Mobile",50,500),
+  makeRow("spc-10-01","Operations","Prod. Runner",34,340),
+  makeRow("spc-10-02","Operations","Prod. Assist",34,340),
+  makeRow("spc-10-03","Operations","Services",34,340),
+  makeRow("spc-10-04","Operations","Steward",34,340),
+  makeRow("spc-10-05","Operations","Crew Chief",42,420),
 ];
 export const DEFAULT_TERMS = `Billing Structure:
 All positions are billed at a five (5) hour minimum per shift.

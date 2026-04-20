@@ -130,6 +130,7 @@ async function _loadAll() {
     employeesRes,
     jobCostingRes,
     rateProfilesRes,
+    rateProfileRowsRes,
     rateStateRes,
     positionsRes,
     specialtiesRes,
@@ -148,6 +149,7 @@ async function _loadAll() {
     fetchAllEmployees(),
     supabase.from("job_costing_drafts").select("*"),
     supabase.from("rate_card_profiles").select("*"),
+    supabase.from("rate_card_profile_rows").select("*").order("sort_order"),
     supabase.from("app_rate_state").select("*"),
     supabase.from("positions").select("*").eq("is_active", true).order("sort_order"),
     supabase.from("specialties").select("*").eq("is_active", true).order("sort_order"),
@@ -204,7 +206,14 @@ async function _loadAll() {
   _cache.deletedEmployeeKeys = emps.filter((r: any) => r.is_deleted).map((r: any) => r.employee_key);
 
   _cache.jobCostingDrafts = (jobCostingRes.data ?? []).map(rowToJobCosting);
-  _cache.rateCardProfiles = (rateProfilesRes.data ?? []).map(rowToRateCardProfile);
+  const profileRowsByProfileId = new Map<string, any[]>();
+  for (const r of (rateProfileRowsRes.data ?? [])) {
+    if (!profileRowsByProfileId.has(r.profile_id)) profileRowsByProfileId.set(r.profile_id, []);
+    profileRowsByProfileId.get(r.profile_id)!.push(r);
+  }
+  _cache.rateCardProfiles = (rateProfilesRes.data ?? []).map((r) =>
+    rowToRateCardProfile(r, profileRowsByProfileId.get(r.id) ?? [])
+  );
 
   const rateStateMap: Record<string, any> = {};
   for (const r of rateStateRes.data ?? []) rateStateMap[r.key] = r.value;
@@ -605,6 +614,36 @@ export function upsertRateCardProfile(profile: RateCardProfile) {
   );
   _cache.rateCardProfiles = next;
   sync("rate_card_profiles", rateCardProfileToRow(profile));
+  syncRateCardProfileRows(profile);
+}
+
+function syncRateCardProfileRows(profile: RateCardProfile) {
+  supabase
+    .from("rate_card_profile_rows")
+    .delete()
+    .eq("profile_id", profile.id)
+    .then(() => {
+      const rows = profile.rows
+        .filter((row) => row.specialtyId)
+        .map((row, idx) => ({
+          id: `${profile.id}_${idx}`,
+          profile_id: profile.id,
+          specialty_id: row.specialtyId!,
+          hourly:    row.hourly,
+          day:       row.day,
+          ot_rate:   row.otRate,
+          dt_rate:   row.dtRate,
+          dt_after:  row.dtAfter,
+          travel:    row.travel,
+          show:      row.show,
+          sort_order: idx,
+        }));
+      if (rows.length > 0) {
+        supabase.from("rate_card_profile_rows").insert(rows).then(({ error }) => {
+          if (error) console.error("[db] syncRateCardProfileRows insert error:", error.message);
+        });
+      }
+    });
 }
 
 // ─── Row → Type mappers ───────────────────────────────────────────────────────
@@ -905,11 +944,32 @@ function rowToJobCosting(r: any): JobCostingDraft {
   };
 }
 
-function rowToRateCardProfile(r: any): RateCardProfile {
+function rowToRateRow(pr: any): RateRow {
+  const specialty = _cache.specialties.find((s) => s.id === pr.specialty_id);
+  const position = specialty ? _cache.positions.find((p) => p.id === specialty.positionId) : null;
+  return {
+    specialtyId: pr.specialty_id,
+    department: position?.name ?? "",
+    position:   position?.name ?? "",
+    specialty:  specialty?.name ?? "",
+    hourly:   pr.hourly   ?? 0,
+    day:      pr.day      ?? 0,
+    otRate:   pr.ot_rate  ?? 0,
+    dtRate:   pr.dt_rate  ?? 0,
+    dtAfter:  (pr.dt_after ?? "10") as import("../rates/defaults").TriggerOption,
+    travel:   pr.travel   ?? 0,
+    show:     pr.show     ?? true,
+  };
+}
+
+function rowToRateCardProfile(r: any, profileRows: any[]): RateCardProfile {
+  const rows = profileRows.length > 0
+    ? profileRows.map(rowToRateRow)
+    : (r.rows ?? []);   // fallback to JSONB for profiles not yet migrated
   return {
     id: r.id,
     clientName: r.client_name ?? "",
-    rows: r.rows ?? [],
+    rows,
     terms: r.terms ?? "",
     createdAt: r.created_at ?? new Date().toISOString(),
     updatedAt: r.updated_at ?? new Date().toISOString(),

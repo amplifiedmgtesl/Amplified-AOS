@@ -404,11 +404,30 @@ create table if not exists job_costing_drafts (
 create table if not exists rate_card_profiles (
   id          text primary key,
   client_name text,
-  rows        jsonb       not null default '[]',
+  rows        jsonb       not null default '[]',  -- deprecated; use rate_card_profile_rows
   terms       text,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+
+-- ─── Rate Card Profile Rows ───────────────────────────────────────────────────
+-- Normalized replacement for rate_card_profiles.rows JSONB.
+-- Each row references a specialty (which implies its position via specialties.position_id).
+create table if not exists rate_card_profile_rows (
+  id           text    primary key,
+  profile_id   text    not null references rate_card_profiles(id) on delete cascade,
+  specialty_id text    not null references specialties(id),
+  hourly       numeric not null default 0,
+  day          numeric not null default 0,
+  ot_rate      numeric not null default 0,
+  dt_rate      numeric not null default 0,
+  dt_after     text    not null default '10',
+  travel       numeric not null default 0,
+  show         boolean not null default true,
+  sort_order   integer not null default 0
+);
+
+create index if not exists rate_card_profile_rows_profile_id_idx on rate_card_profile_rows(profile_id);
 
 -- ─── App Rate State ───────────────────────────────────────────────────────────
 -- Simple key/value store for the active rate card state.

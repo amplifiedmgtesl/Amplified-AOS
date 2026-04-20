@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_RATE_ROWS, type TriggerOption, type RateRow } from "@/lib/rates/defaults";
-import { positionNames } from "@/lib/store/app-store";
+import { loadPositions, loadSpecialties, positionNames } from "@/lib/store/app-store";
 import {
   getActiveRateCardProfileId,
   loadClientName,
@@ -18,6 +18,7 @@ import {
   upsertRateCardProfile,
   type RateCardProfile,
 } from "@/lib/rates/storage";
+import type { Position, Specialty } from "@/lib/store/types";
 
 function triggerLabel(value: TriggerOption) {
   return `OT after ${value} / DT after 15`;
@@ -28,6 +29,8 @@ function blankProfileName() {
 
 export default function RateCardEditor() {
   const POSITIONS = positionNames();
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [clientName, setClientName] = useState("");
   const [rows, setRows] = useState<RateRow[]>(DEFAULT_RATE_ROWS);
   const [terms, setTerms] = useState("");
@@ -41,6 +44,8 @@ export default function RateCardEditor() {
     setClientName(loadClientName());
     setProfiles(loadRateCardProfiles());
     setActiveProfileIdState(getActiveRateCardProfileId());
+    setPositions(loadPositions());
+    setSpecialties(loadSpecialties());
   }, []);
 
   useEffect(() => { saveRateRows(rows); }, [rows]);
@@ -48,6 +53,19 @@ export default function RateCardEditor() {
   useEffect(() => { saveClientName(clientName); }, [clientName]);
 
   const visibleRows = useMemo(() => rows.filter((r) => r.show), [rows]);
+
+  function specialtiesForPosition(positionName: string): Specialty[] {
+    const pos = positions.find((p) => p.name === positionName);
+    if (!pos) return [];
+    return specialties.filter((s) => s.positionId === pos.id).sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  function resolveSpecialtyId(row: RateRow): string {
+    if (row.specialtyId) return row.specialtyId;
+    // Fallback: match by position + specialty name for legacy rows
+    const spcs = specialtiesForPosition(row.position);
+    return spcs.find((s) => s.name === row.specialty)?.id ?? "";
+  }
 
   function refreshProfiles() {
     setProfiles(loadRateCardProfiles());
@@ -59,21 +77,17 @@ export default function RateCardEditor() {
   }
 
   function addRateRow() {
-    setRows([
-      ...rows,
-      {
-        department: "Operations",
-        position: POSITIONS[0] || "Custom",
-        specialty: "New Specialty",
-        hourly: 35,
-        day: 350,
-        otRate: 52.5,
-        dtRate: 70,
-        dtAfter: "10",
-        travel: 0,
-        show: true,
-      },
-    ]);
+    const posName = POSITIONS[0] || "Stagehand";
+    const spcs = specialtiesForPosition(posName);
+    const first = spcs[0];
+    setRows([...rows, {
+      specialtyId: first?.id ?? "",
+      department: posName,
+      position: posName,
+      specialty: first?.name ?? "",
+      hourly: 35, day: 350, otRate: 52.5, dtRate: 70,
+      dtAfter: "10", travel: 0, show: true,
+    }]);
   }
 
   function saveCurrentProfile() {
@@ -96,14 +110,7 @@ export default function RateCardEditor() {
     const now = new Date().toISOString();
     const id = `ratecard-${Date.now()}`;
     const nextName = clientName ? `${clientName} Copy` : `${blankProfileName()} Copy`;
-    upsertRateCardProfile({
-      id,
-      clientName: nextName,
-      rows,
-      terms,
-      createdAt: now,
-      updatedAt: now,
-    });
+    upsertRateCardProfile({ id, clientName: nextName, rows, terms, createdAt: now, updatedAt: now });
     loadProfileIntoCurrent(id);
     setStatusMsg("Rate card copied.");
     setClientName(nextName);
@@ -140,7 +147,7 @@ export default function RateCardEditor() {
             <button className="secondary" onClick={saveAsCopy}>Copy for New Client</button>
           </div>
           <div className="action-row" style={{ alignItems: "end" }}>
-            <button className="secondary" onClick={addRateRow}>Add Position</button>
+            <button className="secondary" onClick={addRateRow}>Add Row</button>
             <button className="secondary" onClick={() => window.print()}>Download / Print PDF</button>
           </div>
         </div>
@@ -152,37 +159,58 @@ export default function RateCardEditor() {
           <table>
             <thead>
               <tr>
-                <th>Show</th><th>Department</th><th>Position</th><th>Specialty</th><th>Hourly</th><th>Day</th><th>OT Rate</th><th>DT Rate</th><th>OT Trigger</th><th>Travel</th>
+                <th>Show</th><th>Position</th><th>Specialty</th><th>Hourly</th><th>Day</th><th>OT Rate</th><th>DT Rate</th><th>OT Trigger</th><th>Travel</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, index) => (
-                <tr key={index}>
-                  <td><input type="checkbox" checked={row.show} onChange={(e) => updateRow(index, { show: e.target.checked })} /></td>
-                  <td><input value={row.department} onChange={(e) => updateRow(index, { department: e.target.value })} /></td>
-                  <td>
-                    <select value={row.position} onChange={(e) => updateRow(index, { position: e.target.value })}>
-                      {POSITIONS.map((p) => <option key={p} value={p}>{p}</option>)}
-                    </select>
-                  </td>
-                  <td><input value={row.specialty} onChange={(e) => updateRow(index, { specialty: e.target.value })} /></td>
-                  <td><input type="number" value={row.hourly} onChange={(e) => updateRow(index, { hourly: Number(e.target.value || 0) })} /></td>
-                  <td><input type="number" value={row.day} onChange={(e) => updateRow(index, { day: Number(e.target.value || 0) })} /></td>
-                  <td><input type="number" value={row.otRate} onChange={(e) => updateRow(index, { otRate: Number(e.target.value || 0) })} /></td>
-                  <td><input type="number" value={row.dtRate} onChange={(e) => updateRow(index, { dtRate: Number(e.target.value || 0) })} /></td>
-                  <td>
-                    <select value={row.dtAfter} onChange={(e) => updateRow(index, { dtAfter: e.target.value as TriggerOption })}>
-                      <option value="10">OT after 10</option>
-                      <option value="11">OT after 11</option>
-                      <option value="12">OT after 12</option>
-                      <option value="13">OT after 13</option>
-                      <option value="14">OT after 14</option>
-                      <option value="15">OT after 15</option>
-                    </select>
-                  </td>
-                  <td><input type="number" value={row.travel} onChange={(e) => updateRow(index, { travel: Number(e.target.value || 0) })} /></td>
-                </tr>
-              ))}
+              {rows.map((row, index) => {
+                const spcs = specialtiesForPosition(row.position);
+                const resolvedId = resolveSpecialtyId(row);
+                return (
+                  <tr key={index}>
+                    <td><input type="checkbox" checked={row.show} onChange={(e) => updateRow(index, { show: e.target.checked })} /></td>
+                    <td>
+                      <select value={row.position} onChange={(e) => {
+                        const posName = e.target.value;
+                        const newSpcs = specialtiesForPosition(posName);
+                        const first = newSpcs[0];
+                        updateRow(index, {
+                          position: posName,
+                          department: posName,
+                          specialtyId: first?.id ?? "",
+                          specialty: first?.name ?? "",
+                        });
+                      }}>
+                        {POSITIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <select value={resolvedId} onChange={(e) => {
+                        const spc = specialties.find((s) => s.id === e.target.value);
+                        updateRow(index, { specialtyId: e.target.value, specialty: spc?.name ?? "" });
+                      }}>
+                        {spcs.length === 0 && <option value="">— no specialties —</option>}
+                        {spcs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </td>
+                    <td><input type="number" value={row.hourly} onChange={(e) => updateRow(index, { hourly: Number(e.target.value || 0) })} /></td>
+                    <td><input type="number" value={row.day} onChange={(e) => updateRow(index, { day: Number(e.target.value || 0) })} /></td>
+                    <td><input type="number" value={row.otRate} onChange={(e) => updateRow(index, { otRate: Number(e.target.value || 0) })} /></td>
+                    <td><input type="number" value={row.dtRate} onChange={(e) => updateRow(index, { dtRate: Number(e.target.value || 0) })} /></td>
+                    <td>
+                      <select value={row.dtAfter} onChange={(e) => updateRow(index, { dtAfter: e.target.value as TriggerOption })}>
+                        <option value="10">OT after 10</option>
+                        <option value="11">OT after 11</option>
+                        <option value="12">OT after 12</option>
+                        <option value="13">OT after 13</option>
+                        <option value="14">OT after 14</option>
+                        <option value="15">OT after 15</option>
+                      </select>
+                    </td>
+                    <td><input type="number" value={row.travel} onChange={(e) => updateRow(index, { travel: Number(e.target.value || 0) })} /></td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -201,11 +229,11 @@ export default function RateCardEditor() {
 
         <div style={{ overflowX: "auto" }}>
           <table>
-            <thead><tr><th>Department</th><th>Position</th><th>Specialty</th><th>Hr</th><th>Day</th><th>OT</th><th>DT</th><th>Rule</th><th>Travel</th></tr></thead>
+            <thead><tr><th>Position</th><th>Specialty</th><th>Hr</th><th>Day</th><th>OT</th><th>DT</th><th>Rule</th><th>Travel</th></tr></thead>
             <tbody>
               {visibleRows.map((row, idx) => (
                 <tr key={idx}>
-                  <td>{row.department}</td><td>{row.position}</td><td>{row.specialty}</td><td>${row.hourly.toFixed(2)}</td><td>${row.day.toFixed(2)}</td><td>${row.otRate.toFixed(2)}</td><td>${row.dtRate.toFixed(2)}</td><td>{triggerLabel(row.dtAfter)}</td><td>{row.travel ? `$${row.travel.toFixed(2)}` : "-"}</td>
+                  <td>{row.position}</td><td>{row.specialty}</td><td>${row.hourly.toFixed(2)}</td><td>${row.day.toFixed(2)}</td><td>${row.otRate.toFixed(2)}</td><td>${row.dtRate.toFixed(2)}</td><td>{triggerLabel(row.dtAfter)}</td><td>{row.travel ? `$${row.travel.toFixed(2)}` : "-"}</td>
                 </tr>
               ))}
             </tbody>
