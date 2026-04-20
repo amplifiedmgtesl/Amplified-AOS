@@ -1,9 +1,10 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { combinedCalendarEvents, googleCalendarLink, parseHour } from "@/lib/store/calendar";
 import { deleteEventById, loadEventProfiles, loadJobSheets, saveEventProfile, setActiveJobSheet, setQuoteSeed, upsertJobSheet, upsertManualEvent } from "@/lib/store/app-store";
+import { supabase } from "@/lib/supabase/client";
 import type { CalendarEvent, JobSheet } from "@/lib/store/types";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -121,6 +122,14 @@ export default function MasterCalendar() {
   const selectedEvent = events.find((e) => e.id === selectedEventId) || null;
   const profiles = loadEventProfiles();
   const allSheets = loadJobSheets();
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
+  const [clientIdDraft, setClientIdDraft] = useState("");
+  const [clientNameDraft, setClientNameDraft] = useState("");
+
+  useEffect(() => {
+    supabase.from("clients").select("id, name").eq("is_active", true).order("name")
+      .then(({ data }) => setClients((data ?? []).map((r: any) => ({ id: r.id, name: r.name }))));
+  }, []);
 
   const unique = {
     clients: Array.from(new Set(events.map((e) => e.client).filter(Boolean))).sort(),
@@ -195,6 +204,17 @@ export default function MasterCalendar() {
   function openJobProfile(event: CalendarEvent) {
     setSelectedEventId(event.id);
     setProfileNotesDraft(profiles[event.id]?.notes || event.notes || "");
+    setClientIdDraft(event.clientId ?? "");
+    setClientNameDraft(event.client ?? "");
+  }
+
+  const isEditableSource = (src?: string) => src === "manual_calendar" || src === "uploaded_master_calendar";
+
+  function saveClientToEvent() {
+    if (!selectedEvent || !isEditableSource(selectedEvent.source)) return;
+    const updated: CalendarEvent = { ...selectedEvent, clientId: clientIdDraft || undefined, client: clientNameDraft };
+    upsertManualEvent(updated);
+    setRefreshKey((x) => x + 1);
   }
 
   function openOrCreateJobSheetForEvent(event: CalendarEvent) {
@@ -344,7 +364,38 @@ export default function MasterCalendar() {
             </div>
 
             <div className="grid3">
-              <div className="list-card"><strong>Client</strong><div className="muted">{selectedEvent.client || "-"}</div></div>
+              <div className="list-card">
+                <strong>Client</strong>
+                {isEditableSource(selectedEvent.source) ? (
+                  <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 4 }}>
+                    <select
+                      value={clientIdDraft}
+                      onChange={(e) => {
+                        const c = clients.find((c) => c.id === e.target.value);
+                        setClientIdDraft(e.target.value);
+                        if (c) setClientNameDraft(c.name);
+                        else if (!e.target.value) setClientNameDraft("");
+                      }}
+                      style={{ fontSize: 12 }}
+                    >
+                      <option value="">— Freeform —</option>
+                      {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    {clientIdDraft ? (
+                      <div className="muted" style={{ fontSize: 12 }}>{clientNameDraft}</div>
+                    ) : (
+                      <input
+                        value={clientNameDraft}
+                        onChange={(e) => setClientNameDraft(e.target.value)}
+                        placeholder="Type client name…"
+                        style={{ fontSize: 12 }}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <div className="muted">{selectedEvent.client || "-"}</div>
+                )}
+              </div>
               <div className="list-card"><strong>Event</strong><div className="muted">{selectedEvent.eventName || "-"}</div></div>
               <div className="list-card"><strong>Venue</strong><div className="muted">{selectedEvent.venue || "-"}</div></div>
             </div>
@@ -367,7 +418,7 @@ export default function MasterCalendar() {
             </div>
 
             <div className="action-row" style={{ marginTop: 16 }}>
-              <button onClick={() => saveSelectedProfile(null)}>Save Job Profile</button>
+              <button onClick={() => { saveSelectedProfile(null); if (isEditableSource(selectedEvent.source)) saveClientToEvent(); }}>Save Job Profile</button>
               {selectedEvent.googleMapsLink ? <a className="badge" href={selectedEvent.googleMapsLink} target="_blank" rel="noreferrer">Open Google Maps</a> : null}
               <a className="badge" href={googleCalendarLink(selectedEvent)} target="_blank" rel="noreferrer">Add to Google Calendar</a>
               <button className="secondary" onClick={() => openOrCreateJobSheetForEvent(selectedEvent)}>
