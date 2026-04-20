@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_RATE_ROWS, type TriggerOption, type RateRow } from "@/lib/rates/defaults";
 import { positionNames } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
+import type { Client } from "@/lib/store/types";
 import {
   getActiveRateCardProfileId,
   loadClientName,
@@ -32,7 +33,10 @@ export default function RateCardEditor() {
   const POSITIONS = positionNames();
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [clientId, setClientId] = useState("");
   const [clientName, setClientName] = useState("");
+  const [profileName, setProfileName] = useState("Standard");
   const [rows, setRows] = useState<RateRow[]>(DEFAULT_RATE_ROWS);
   const [terms, setTerms] = useState("");
   const [profiles, setProfiles] = useState<RateCardProfile[]>([]);
@@ -49,7 +53,9 @@ export default function RateCardEditor() {
     Promise.all([
       supabase.from("positions").select("*").eq("is_active", true).order("sort_order"),
       supabase.from("specialties").select("*").eq("is_active", true).order("sort_order"),
-    ]).then(([posRes, spcRes]) => {
+      supabase.from("clients").select("id, name").eq("is_active", true).order("name"),
+    ]).then(([posRes, spcRes, clientsRes]) => {
+      setClients((clientsRes.data ?? []).map((r: any) => ({ id: r.id, name: r.name, isActive: true })));
       const loadedPositions = (posRes.data ?? []).map((r: any) => ({ id: r.id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active }));
       const loadedSpecialties = (spcRes.data ?? []).map((r: any) => ({ id: r.id, positionId: r.position_id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active }));
       setPositions(loadedPositions);
@@ -112,7 +118,9 @@ export default function RateCardEditor() {
     const id = activeProfileId || `ratecard-${Date.now()}`;
     upsertRateCardProfile({
       id,
+      clientId: clientId || undefined,
       clientName: clientName || blankProfileName(),
+      name: profileName || "Standard",
       rows,
       terms,
       createdAt: now,
@@ -126,11 +134,16 @@ export default function RateCardEditor() {
   function saveAsCopy() {
     const now = new Date().toISOString();
     const id = `ratecard-${Date.now()}`;
-    const nextName = clientName ? `${clientName} Copy` : `${blankProfileName()} Copy`;
-    upsertRateCardProfile({ id, clientName: nextName, rows, terms, createdAt: now, updatedAt: now });
+    upsertRateCardProfile({
+      id,
+      clientId: clientId || undefined,
+      clientName: clientName || blankProfileName(),
+      name: `${profileName || "Standard"} Copy`,
+      rows, terms, createdAt: now, updatedAt: now,
+    });
     loadProfileIntoCurrent(id);
+    setProfileName(`${profileName || "Standard"} Copy`);
     setStatusMsg("Rate card copied.");
-    setClientName(nextName);
     refreshProfiles();
   }
 
@@ -139,6 +152,9 @@ export default function RateCardEditor() {
     setRows(loadRateRows());
     setTerms(loadTerms());
     setClientName(loadClientName());
+    const profile = profiles.find((p) => p.id === id);
+    setClientId(profile?.clientId ?? "");
+    setProfileName(profile?.name ?? "Standard");
     refreshProfiles();
     setStatusMsg("Rate card loaded.");
   }
@@ -149,14 +165,25 @@ export default function RateCardEditor() {
         <h2 className="section-title">Master Rate Editor</h2>
         <div className="grid4">
           <div>
-            <small>Client Name</small>
-            <input value={clientName} onChange={(e) => setClientName(e.target.value)} />
+            <small>Client</small>
+            <select value={clientId} onChange={(e) => {
+              const c = clients.find((c) => c.id === e.target.value);
+              setClientId(e.target.value);
+              setClientName(c?.name ?? "");
+            }}>
+              <option value="">— Select Client —</option>
+              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
           </div>
           <div>
-            <small>Saved Client Rate Cards</small>
+            <small>Rate Card Name</small>
+            <input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="e.g. Standard, Union, Weekend" />
+          </div>
+          <div>
+            <small>Saved Rate Cards</small>
             <select value={activeProfileId} onChange={(e) => openProfile(e.target.value)}>
               <option value="">Current Unsaved Working Card</option>
-              {profiles.map((p) => <option key={p.id} value={p.id}>{p.clientName}</option>)}
+              {profiles.map((p) => <option key={p.id} value={p.id}>{p.clientName}{p.name && p.name !== p.clientName ? ` — ${p.name}` : ""}</option>)}
             </select>
           </div>
           <div className="action-row" style={{ alignItems: "end" }}>

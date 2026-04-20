@@ -2,7 +2,9 @@ export type TriggerOption = "10" | "11" | "12" | "13" | "14" | "15";
 
 export type RateCardProfile = {
   id: string;
-  clientName: string;
+  clientId?: string;   // FK to clients table
+  clientName: string;  // kept for fallback/display compat
+  name: string;        // descriptive name e.g. "Standard", "Union", "Weekend"
   rows: RateRow[];
   terms: string;
   createdAt: string;

@@ -407,7 +407,9 @@ create table if not exists job_costing_drafts (
 -- ─── Rate Card Profiles ───────────────────────────────────────────────────────
 create table if not exists rate_card_profiles (
   id          text primary key,
-  client_name text,
+  client_id   text,        -- FK to clients; client_name kept for fallback
+  client_name text,        -- denormalized; kept for backward compat
+  name        text,        -- descriptive name e.g. "Standard", "Union", "Weekend"
   rows        jsonb       not null default '[]',  -- deprecated; use rate_card_profile_rows
   terms       text,
   created_at  timestamptz not null default now(),

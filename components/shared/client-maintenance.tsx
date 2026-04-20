@@ -91,10 +91,15 @@ export default function ClientMaintenance() {
 
   async function requestDeactivate() {
     if (!form) return;
-    const { count } = await supabase
-      .from("job_requests").select("id", { count: "exact", head: true }).eq("client_id", form.id);
-    if ((count ?? 0) > 0) {
-      setStatusMsg({ text: `Cannot deactivate — ${count} job request${count !== 1 ? "s" : ""} reference this client.`, ok: false });
+    const [jrRes, rcRes] = await Promise.all([
+      supabase.from("job_requests").select("id", { count: "exact", head: true }).eq("client_id", form.id),
+      supabase.from("rate_card_profiles").select("id", { count: "exact", head: true }).eq("client_id", form.id),
+    ]);
+    const msgs: string[] = [];
+    if ((jrRes.count ?? 0) > 0) msgs.push(`${jrRes.count} job request${jrRes.count !== 1 ? "s" : ""}`);
+    if ((rcRes.count ?? 0) > 0) msgs.push(`${rcRes.count} rate card${rcRes.count !== 1 ? "s" : ""}`);
+    if (msgs.length > 0) {
+      setStatusMsg({ text: `Cannot deactivate — ${msgs.join(" and ")} reference this client.`, ok: false });
       return;
     }
     setConfirmDeactivateId(form.id);
