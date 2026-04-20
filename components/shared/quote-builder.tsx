@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_RATE_ROWS, type RateRow } from "@/lib/rates/defaults";
 import { getActiveRateCardProfileId, loadClientName, loadProfileIntoCurrent, loadRateCardProfiles, loadRateRows, loadTerms } from "@/lib/rates/storage";
+import { supabase } from "@/lib/supabase/client";
 import {
   getActiveQuote,
   getActiveQuoteDraft,
@@ -44,6 +45,7 @@ type DayDetail = { id:number; date:string; defaultStartTime:string; defaultEndTi
 
 type DraftState = {
   quoteId:string;
+  clientId:string;
   client:string;
   eventName:string;
   venue:string;
@@ -142,7 +144,9 @@ function normalizeTimeInput(value: string) {
 
 export default function QuoteBuilder() {
   const [quoteId, setQuoteId] = useState("");
+  const [clientId, setClientId] = useState("");
   const [client, setClient] = useState("");
+  const [clientsList, setClientsList] = useState<{ id: string; name: string }[]>([]);
   const [eventName, setEventName] = useState("");
   const [venue, setVenue] = useState("");
   const [cityState, setCityState] = useState("");
@@ -200,6 +204,7 @@ export default function QuoteBuilder() {
 
   function applyDraftState(state: Partial<DraftState>) {
     setQuoteId(state.quoteId || "");
+    setClientId(state.clientId || "");
     setClient(state.client || "");
     setEventName(state.eventName || "");
     setVenue(state.venue || "");
@@ -222,7 +227,7 @@ export default function QuoteBuilder() {
 
   function currentDraftState(): DraftState {
     return {
-      quoteId, client, eventName, venue, cityState, startDate, endDate,
+      quoteId, clientId, client, eventName, venue, cityState, startDate, endDate,
       defaultStartTime, defaultEndTime, expectedHoursPerDay, depositPct, terms,
       linkedJobRequestId, linkedJobSheetId, signatureName, signedAt,
       activeRateCardProfileId, lines, dayDetails
@@ -256,6 +261,9 @@ export default function QuoteBuilder() {
   }
 
   useEffect(() => {
+    supabase.from("clients").select("id, name").eq("is_active", true).order("name")
+      .then(({ data }) => setClientsList((data ?? []).map((r: any) => ({ id: r.id, name: r.name }))));
+
     const latestRows = loadRateRows();
     setRows(latestRows);
     setTerms(loadTerms());
@@ -438,6 +446,7 @@ export default function QuoteBuilder() {
 
     const quote: QuoteDraft = {
       id: currentQuoteId(),
+      clientId: clientId || undefined,
       client,
       eventName,
       venue,
@@ -471,6 +480,7 @@ export default function QuoteBuilder() {
     const q = savedQuotes.find((x) => x.id === id);
     if (!q) return;
     setQuoteId(q.id);
+    setClientId(q.clientId || "");
     setClient(q.client);
     setEventName(q.eventName);
     setVenue(q.venue);
@@ -592,24 +602,47 @@ export default function QuoteBuilder() {
     window.location.href = "/invoices";
   }
 
+  const workingOn = activeSavedQuoteId
+    ? { label: "Saved Quote", detail: `${client || "—"} — ${eventName || "—"}`, color: "#0369a1", bg: "#e0f2fe" }
+    : activeDraftId
+    ? { label: "Draft", detail: draftName || "Working Draft", color: "#7c3aed", bg: "#ede9fe" }
+    : { label: "New / Unsaved", detail: "Not yet saved", color: "#888", bg: "#f3f4f6" };
+
   return (
     <div className="grid">
       <div className="card hide-print">
-        <h2 className="section-title">Quote Builder</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 className="section-title" style={{ margin: 0 }}>Quote Builder</h2>
+          <div style={{ background: workingOn.bg, border: `1px solid ${workingOn.color}`, borderRadius: 8, padding: "6px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: workingOn.color }}>{workingOn.label}</span>
+            <span style={{ fontSize: 13, color: workingOn.color }}>{workingOn.detail}</span>
+          </div>
+        </div>
         <div className="grid4">
           <div><small>Saved Quote Drafts</small><select value={activeDraftId} onChange={(e)=>loadDraft(e.target.value)}><option value="">Select Draft</option>{draftWorkspaces.map((d)=><option key={d.id} value={d.id}>{d.name} — {new Date(d.updatedAt).toLocaleString()}</option>)}</select></div>
           <div><small>Draft Name</small><input value={draftName} onChange={(e)=>setDraftName(e.target.value)} /></div>
           <div className="action-row" style={{ alignItems: "end" }}><button onClick={() => saveDraft()}>Save Draft</button></div>
           <div><small>Saved Quotes</small><select value={activeSavedQuoteId} onChange={(e)=>loadSavedQuote(e.target.value)}><option value="">New / Unsaved Quote</option>{savedQuotes.map((q)=><option key={q.id} value={q.id}>{q.client} — {q.eventName}</option>)}</select></div>
 
-          <div><small>Load Client Rate Card</small><select value={activeRateCardProfileId} onChange={(e)=>loadRateCardProfileIntoQuote(e.target.value)}><option value="">Current Working Rate Card</option>{rateCardProfiles.map((r)=><option key={r.id} value={r.id}>{r.clientName}</option>)}</select></div>
-          <div><small>Load Job Request</small><select value={linkedJobRequestId} onChange={(e)=>loadJobRequestIntoQuote(e.target.value)}><option value="">None</option>{jobRequests.map((r)=><option key={r.id} value={r.id}>{r.client} — {r.eventName}</option>)}</select></div>
-          <div><small>Linked Job Sheet</small><select value={linkedJobSheetId} onChange={(e)=>setLinkedJobSheetId(e.target.value)}><option value="">None</option>{jobSheets.map((s)=><option key={s.id} value={s.id}>{s.title}</option>)}</select></div>
-          <div><small>Client</small><input value={client} onChange={(e)=>setClient(e.target.value)} /></div>
-
+          <div>
+            <small>Client</small>
+            <select value={clientId} onChange={(e) => {
+              const c = clientsList.find((c) => c.id === e.target.value);
+              setClientId(e.target.value);
+              setClient(c?.name ?? client);
+            }}>
+              <option value="">— Select Client —</option>
+              {clientsList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
           <div><small>Event / Job</small><input value={eventName} onChange={(e)=>setEventName(e.target.value)} /></div>
           <div><small>Venue</small><input value={venue} onChange={(e)=>setVenue(e.target.value)} /></div>
           <div><small>City / State</small><input value={cityState} onChange={(e)=>setCityState(e.target.value)} /></div>
+
+          <div><small>Load Client Rate Card</small><select value={activeRateCardProfileId} onChange={(e)=>loadRateCardProfileIntoQuote(e.target.value)}><option value="">Current Working Rate Card</option>{rateCardProfiles.map((r)=><option key={r.id} value={r.id}>{r.clientName}</option>)}</select></div>
+          <div><small>Load Job Request</small><select value={linkedJobRequestId} onChange={(e)=>loadJobRequestIntoQuote(e.target.value)}><option value="">None</option>{jobRequests.map((r)=><option key={r.id} value={r.id}>{r.client} — {r.eventName}</option>)}</select></div>
+          <div><small>Linked Job Sheet</small><select value={linkedJobSheetId} onChange={(e)=>setLinkedJobSheetId(e.target.value)}><option value="">None</option>{jobSheets.map((s)=><option key={s.id} value={s.id}>{s.title}</option>)}</select></div>
+
           <div><small>Start Date</small><input type="date" value={startDate} onChange={(e)=>setStartDate(e.target.value)} /></div>
           <div><small>End Date</small><input type="date" value={endDate} onChange={(e)=>setEndDate(e.target.value)} /></div>
           <div><small>Default Start Time</small><input value={defaultStartTime} onChange={(e)=>setDefaultStartTime(e.target.value)} /></div>
