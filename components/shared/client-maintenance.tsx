@@ -37,13 +37,14 @@ export default function ClientMaintenance() {
   const [statusMsg, setStatusMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [showMerge, setShowMerge] = useState(false);
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"job_requests" | "quotes" | "rate_cards" | "calendar_events">("job_requests");
+  const [activeTab, setActiveTab] = useState<"job_requests" | "quotes" | "rate_cards" | "calendar_events" | "invoices">("job_requests");
   const [tabData, setTabData] = useState<{
     jobRequests: any[];
     quotes: any[];
     quoteDraftCount: number;
     rateCards: any[];
     calendarEvents: any[];
+    invoices: any[];
   } | null>(null);
   const [mergeSourceId, setMergeSourceId] = useState("");
   const [mergeTargetId, setMergeTargetId] = useState("");
@@ -77,13 +78,17 @@ export default function ClientMaintenance() {
         .select("id, event_name, start_date, start_time, end_date, status")
         .eq("client_id", selectedId).eq("is_deleted", false)
         .order("start_date", { ascending: false }),
-    ]).then(([jrRes, quotesRes, draftRes, rcRes, calRes]) => {
+      supabase.from("invoices")
+        .select("id, invoice_no, issue_date, event_name, amount_due, paid_amount, status")
+        .eq("client_id", selectedId).order("issue_date", { ascending: false }),
+    ]).then(([jrRes, quotesRes, draftRes, rcRes, calRes, invRes]) => {
       setTabData({
         jobRequests: jrRes.data ?? [],
         quotes: quotesRes.data ?? [],
         quoteDraftCount: draftRes.count ?? 0,
         rateCards: rcRes.data ?? [],
         calendarEvents: calRes.data ?? [],
+        invoices: invRes.data ?? [],
       });
     });
   }, [selectedId]);
@@ -120,12 +125,14 @@ export default function ClientMaintenance() {
     const qdCount = tabData?.quoteDraftCount ?? 0;
     const rcCount = tabData?.rateCards.length ?? 0;
     const calCount = tabData?.calendarEvents.length ?? 0;
+    const invCount = tabData?.invoices.length ?? 0;
     const msgs: string[] = [];
     if (jrCount > 0) msgs.push(`${jrCount} job request${jrCount !== 1 ? "s" : ""}`);
     if (qCount > 0) msgs.push(`${qCount} quote${qCount !== 1 ? "s" : ""}`);
     if (qdCount > 0) msgs.push(`${qdCount} quote draft${qdCount !== 1 ? "s" : ""}`);
     if (rcCount > 0) msgs.push(`${rcCount} rate card${rcCount !== 1 ? "s" : ""}`);
     if (calCount > 0) msgs.push(`${calCount} calendar event${calCount !== 1 ? "s" : ""}`);
+    if (invCount > 0) msgs.push(`${invCount} invoice${invCount !== 1 ? "s" : ""}`);
     if (msgs.length > 0) {
       setStatusMsg({ text: `Cannot deactivate — ${msgs.join(" and ")} reference this client.`, ok: false });
       return;
@@ -472,9 +479,9 @@ export default function ClientMaintenance() {
           <div className="card" style={{ marginTop: 16, padding: 0, overflow: "hidden" }}>
             {/* Tab bar */}
             <div style={{ display: "flex", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-              {(["job_requests", "quotes", "rate_cards", "calendar_events"] as const).map((tab) => {
-                const labels: Record<string, string> = { job_requests: "Job Requests", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Calendar Events" };
-                const counts: Record<string, number> = { job_requests: tabData.jobRequests.length, quotes: tabData.quotes.length, rate_cards: tabData.rateCards.length, calendar_events: tabData.calendarEvents.length };
+              {(["job_requests", "quotes", "rate_cards", "calendar_events", "invoices"] as const).map((tab) => {
+                const labels: Record<string, string> = { job_requests: "Job Requests", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Calendar Events", invoices: "Invoices" };
+                const counts: Record<string, number> = { job_requests: tabData.jobRequests.length, quotes: tabData.quotes.length, rate_cards: tabData.rateCards.length, calendar_events: tabData.calendarEvents.length, invoices: tabData.invoices.length };
                 const active = activeTab === tab;
                 return (
                   <button
@@ -599,6 +606,41 @@ export default function ClientMaintenance() {
                             <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{r.start_time ?? "—"}</td>
                             <td style={{ padding: "5px 8px 5px 0" }}>{r.event_name ?? "—"}</td>
                             <td style={{ padding: "5px 8px 5px 0", color: "#888" }}>{r.status ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+              )}
+
+              {activeTab === "invoices" && (
+                tabData.invoices.length === 0
+                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No invoices.</div>
+                  : <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+                          <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Invoice #</th>
+                          <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Issue Date</th>
+                          <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Event</th>
+                          <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Status</th>
+                          <th style={{ textAlign: "right", padding: "4px 0 6px 0",    fontWeight: 600 }}>Amount Due</th>
+                          <th style={{ textAlign: "right", padding: "4px 0 6px 0",    fontWeight: 600 }}>Paid</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tabData.invoices.map((r) => (
+                          <tr key={r.id} style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+                            <td style={{ padding: "5px 8px 5px 0" }}>{r.invoice_no ?? "—"}</td>
+                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{r.issue_date ?? "—"}</td>
+                            <td style={{ padding: "5px 8px 5px 0" }}>{r.event_name ?? "—"}</td>
+                            <td style={{ padding: "5px 8px 5px 0" }}>
+                              <span style={{
+                                background: r.status === "paid" ? "#dcfce7" : r.status === "sent" ? "#e0f2fe" : r.status === "partial" ? "#fef3c7" : "#f3f4f6",
+                                color: r.status === "paid" ? "#166534" : r.status === "sent" ? "#0369a1" : r.status === "partial" ? "#92400e" : "#555",
+                                borderRadius: 4, padding: "2px 6px", fontSize: 11,
+                              }}>{r.status ?? "—"}</span>
+                            </td>
+                            <td style={{ padding: "5px 0", textAlign: "right", whiteSpace: "nowrap" }}>{r.amount_due != null ? `$${Number(r.amount_due).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "—"}</td>
+                            <td style={{ padding: "5px 0", textAlign: "right", whiteSpace: "nowrap" }}>{r.paid_amount != null ? `$${Number(r.paid_amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "—"}</td>
                           </tr>
                         ))}
                       </tbody>
