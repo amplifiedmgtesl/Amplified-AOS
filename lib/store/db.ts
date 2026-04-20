@@ -1464,6 +1464,10 @@ export function getClients(): Client[] {
 
 export function upsertClient(c: Client): void {
   const idx = _cache.clients.findIndex((x) => x.id === c.id);
+  const previous = idx >= 0 ? _cache.clients[idx] : null;
+  const oldName = previous?.name ?? "";
+  const nameChanged = previous !== null && oldName !== c.name;
+
   if (idx >= 0) _cache.clients[idx] = c;
   else _cache.clients = [..._cache.clients, c].sort((a, b) => a.name.localeCompare(b.name));
   sync("clients", {
@@ -1472,6 +1476,33 @@ export function upsertClient(c: Client): void {
     address: c.address ?? null, city: c.city ?? null, state: c.state ?? null,
     zip: c.zip ?? null, notes: c.notes ?? null, is_active: c.isActive,
   });
+
+  if (nameChanged) {
+    // Cascade name change to legacy text columns on all tables that still carry
+    // the denormalized `client` field for backward compat.
+    const textTables = [
+      { table: "quotes",             col: "client" },
+      { table: "invoices",           col: "client" },
+      { table: "job_requests",       col: "client" },
+      { table: "calendar_events",    col: "client" },
+      { table: "job_sheets",         col: "client" },
+      { table: "job_costing_drafts", col: "client" },
+      { table: "rate_card_profiles", col: "client_name" },
+    ];
+    for (const { table, col } of textTables) {
+      supabase.from(table).update({ [col]: c.name }).eq(col, oldName).then(({ error }) => {
+        if (error) console.error(`[db] upsertClient cascade error on ${table}.${col}:`, error);
+      });
+    }
+    // Refresh in-memory caches so UI reflects the rename without a reload.
+    _cache.quotes = _cache.quotes.map((r) => r.client === oldName ? { ...r, client: c.name } : r);
+    _cache.invoiceDrafts = _cache.invoiceDrafts.map((r) => r.client === oldName ? { ...r, client: c.name } : r);
+    _cache.jobRequests = _cache.jobRequests.map((r) => r.client === oldName ? { ...r, client: c.name } : r);
+    _cache.manualEvents = _cache.manualEvents.map((r) => r.client === oldName ? { ...r, client: c.name } : r);
+    _cache.jobSheets = _cache.jobSheets.map((r) => r.client === oldName ? { ...r, client: c.name } : r);
+    _cache.jobCostingDrafts = _cache.jobCostingDrafts.map((r) => r.client === oldName ? { ...r, client: c.name } : r);
+    _cache.rateCardProfiles = _cache.rateCardProfiles.map((r) => r.clientName === oldName ? { ...r, clientName: c.name } : r);
+  }
 }
 
 export async function mergeClients(sourceId: string, targetId: string): Promise<string | null> {
