@@ -70,3 +70,9 @@ INSERT INTO specialties (id, position_id, name, sort_order) VALUES
   -- pos-15 Other
   ('spc-15-01', 'pos-15', 'Other',           1)
 ON CONFLICT (id) DO NOTHING;
+
+-- ─── RLS ──────────────────────────────────────────────────────────────────────
+ALTER TABLE specialties ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "specialties_full_access" ON specialties
+  FOR ALL USING (true);
