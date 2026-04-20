@@ -13,9 +13,12 @@ import type { Client } from "@/lib/store/types";
 
 const TIMES = timeOptions();
 
+function today() { return new Date().toISOString().slice(0, 10); }
+
 const BLANK: JobRequest = {
   id: "", clientId: "", client: "", eventName: "", venue: "", venueAddress: "",
-  city: "", state: "", cityState: "", googleMapsLink: "", requestDate: "", endDate: "",
+  city: "", state: "", cityState: "", googleMapsLink: "",
+  receivedDate: today(), requestDate: "", endDate: "",
   startTime: "", endTime: "", expectedHours: 10, addToCalendar: true,
   status: "lead", notes: "", attachmentNames: [], packetNotes: "",
 };
@@ -157,8 +160,9 @@ export default function JobRequests() {
               {JOB_REQUEST_STATUSES.map((s)=><option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </div>
-          <div><small>Start Date</small><input type="date" value={form.requestDate} onChange={(e)=>setForm({ ...form, requestDate:e.target.value })} /></div>
-          <div><small>End Date</small><input type="date" value={form.endDate || ""} onChange={(e)=>setForm({ ...form, endDate:e.target.value })} /></div>
+          <div><small>Request Date</small><input type="date" value={form.receivedDate} onChange={(e)=>setForm({ ...form, receivedDate:e.target.value })} /></div>
+          <div><small>Event Start Date</small><input type="date" value={form.requestDate} onChange={(e)=>setForm({ ...form, requestDate:e.target.value })} /></div>
+          <div><small>Event End Date</small><input type="date" value={form.endDate || ""} onChange={(e)=>setForm({ ...form, endDate:e.target.value })} /></div>
           <div><small>Start Time</small>
             <select value={form.startTime} onChange={(e)=>setForm({ ...form, startTime:e.target.value })}>
               {TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}
