@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { setQuoteSeed, upsertJobRequest, deleteJobRequest } from "@/lib/store/app-store";
+import { setQuoteSeed, upsertJobRequest, deleteJobRequest, setActiveQuote } from "@/lib/store/app-store";
 import { googleCalendarLink } from "@/lib/store/calendar";
 import { loadJobRequests } from "@/lib/store/app-store";
 import { timeOptions } from "@/lib/store/timekeeping";
@@ -236,7 +236,7 @@ export default function JobRequests() {
                       <div className="action-row">
                         <button className="secondary" onClick={() => editRow(r)}>Edit</button>
                         {r.linkedQuoteId ? (
-                          <span className="badge">Quote Exists</span>
+                          <button className="secondary" onClick={() => { setActiveQuote(r.linkedQuoteId!); window.location.href = "/quote-builder"; }}>View Quote</button>
                         ) : (
                           <button className="secondary" onClick={() => buildQuoteFromRow(r)}>Build Quote</button>
                         )}
