@@ -373,6 +373,16 @@ export function upsertJobRequest(row: JobRequest) {
   sync("job_requests", jobRequestToRow(row));
 }
 
+export async function deleteJobRequest(id: string): Promise<string | null> {
+  const row = _cache.jobRequests.find((r) => r.id === id);
+  if (!row) return null;
+  if (row.linkedQuoteId) return "Cannot delete — a quote has been built from this job request.";
+  const { error } = await supabase.from("job_requests").delete().eq("id", id);
+  if (error) return error.message;
+  _cache.jobRequests = _cache.jobRequests.filter((r) => r.id !== id);
+  return null;
+}
+
 // ─── Job Sheets ───────────────────────────────────────────────────────────────
 
 export function getJobSheets() { return _cache.jobSheets; }

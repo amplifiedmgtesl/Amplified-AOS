@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { setQuoteSeed, upsertJobRequest } from "@/lib/store/app-store";
+import { setQuoteSeed, upsertJobRequest, deleteJobRequest } from "@/lib/store/app-store";
 import { googleCalendarLink } from "@/lib/store/calendar";
 import { loadJobRequests } from "@/lib/store/app-store";
 import { timeOptions } from "@/lib/store/timekeeping";
@@ -24,9 +24,12 @@ export default function JobRequests() {
   const [refreshKey, setRefreshKey] = useState(0);
   const rows = useMemo(() => loadJobRequests(), [refreshKey]);
   const [form, setForm] = useState<JobRequest>({ ...BLANK });
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
   const [syncToGoogleOnSave, setSyncToGoogleOnSave] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.from("clients").select("id, name").eq("is_active", true).order("name")
@@ -42,12 +45,46 @@ export default function JobRequests() {
     return { ...next, cityState: [next.city, next.state].filter(Boolean).join(", ") };
   }
 
+  function editRow(r: JobRequest) {
+    setEditingId(r.id);
+    setForm({ ...r });
+    setMsg("");
+    setDeleteMsg(null);
+    setConfirmDeleteId(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setForm({ ...BLANK });
+    setMsg("");
+  }
+
+  async function requestDelete(r: JobRequest) {
+    setDeleteMsg(null);
+    if (r.linkedQuoteId) {
+      setDeleteMsg(`Cannot delete "${r.eventName}" — a quote has been built from this job request.`);
+      return;
+    }
+    setConfirmDeleteId(r.id);
+  }
+
+  async function confirmDelete() {
+    if (!confirmDeleteId) return;
+    const err = await deleteJobRequest(confirmDeleteId);
+    setConfirmDeleteId(null);
+    if (err) { setDeleteMsg(err); return; }
+    setDeleteMsg(null);
+    setRefreshKey((x) => x + 1);
+  }
+
   function save() {
     if (!form.clientId) { setMsg("Please select a client before saving."); return; }
     const row = normalized({ ...form, id: form.id || `jobreq-${Date.now()}` });
     upsertJobRequest(row);
     if (row.addToCalendar && syncToGoogleOnSave) openGoogleCal(row);
     setMsg(row.addToCalendar ? "Job request saved and sent to calendar workflow." : "Job request saved.");
+    setEditingId(null);
     setForm({ ...BLANK });
     setRefreshKey((x) => x + 1);
   }
@@ -95,7 +132,7 @@ export default function JobRequests() {
   return (
     <div className="grid">
       <div className="card">
-        <h2 className="section-title">New Job Request</h2>
+        <h2 className="section-title">{editingId ? "Edit Job Request" : "New Job Request"}</h2>
         <div className="grid4">
           <div>
             <small>Client *</small>
@@ -147,7 +184,8 @@ export default function JobRequests() {
         <div style={{ marginTop: 12 }}><small>Notes</small><textarea value={form.notes} onChange={(e)=>setForm({ ...form, notes:e.target.value })} /></div>
         <div className="action-row" style={{ marginTop: 12 }}>
           <button onClick={save}>Save Job Request</button>
-          <button className="secondary" onClick={saveAndBuildQuote}>Save + Build Quote</button>
+          {!editingId && <button className="secondary" onClick={saveAndBuildQuote}>Save + Build Quote</button>}
+          {editingId && <button className="secondary" onClick={cancelEdit}>Cancel</button>}
           {form.googleMapsLink ? <a className="badge" href={form.googleMapsLink} target="_blank" rel="noreferrer">Open Map Link</a> : null}
         </div>
         {msg ? <div className="badge" style={{ marginTop: 12 }}>{msg}</div> : null}
@@ -155,6 +193,24 @@ export default function JobRequests() {
 
       <div className="card">
         <h2 className="section-title">Saved Job Requests</h2>
+
+        {deleteMsg && (
+          <div style={{ background: "#fff3f3", border: "1px solid #e0a0a0", borderRadius: 8, padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#a00", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            {deleteMsg}
+            <button className="secondary" style={{ fontSize: 12, padding: "2px 8px" }} onClick={() => setDeleteMsg(null)}>✕</button>
+          </div>
+        )}
+
+        {confirmDeleteId && (
+          <div style={{ background: "#fff8e1", border: "1px solid #e0c840", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: "#7a5f00" }}>
+            Delete <strong>{rows.find((r) => r.id === confirmDeleteId)?.eventName}</strong>? This cannot be undone.
+            <div className="action-row" style={{ marginTop: 8 }}>
+              <button style={{ background: "linear-gradient(180deg,#e05,#b00)", color: "#fff" }} onClick={confirmDelete}>Delete</button>
+              <button className="secondary" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+
         {rows.length === 0 ? (
           <div className="muted">No job requests yet.</div>
         ) : (
@@ -163,12 +219,12 @@ export default function JobRequests() {
               <thead>
                 <tr>
                   <th>Client</th><th>Event</th><th>Venue</th><th>Dates</th>
-                  <th>Times</th><th>Expected Hrs</th><th>Status</th><th>Action</th>
+                  <th>Times</th><th>Exp Hrs</th><th>Status</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.id}>
+                  <tr key={r.id} style={{ background: editingId === r.id ? "var(--surface2, #f0f4ff)" : undefined }}>
                     <td>{r.client}</td>
                     <td>{r.eventName}</td>
                     <td>{r.venue}</td>
@@ -178,11 +234,13 @@ export default function JobRequests() {
                     <td>{JOB_REQUEST_STATUSES.find((s)=>s.value===r.status)?.label ?? r.status}</td>
                     <td>
                       <div className="action-row">
+                        <button className="secondary" onClick={() => editRow(r)}>Edit</button>
                         {r.linkedQuoteId ? (
                           <span className="badge">Quote Exists</span>
                         ) : (
                           <button className="secondary" onClick={() => buildQuoteFromRow(r)}>Build Quote</button>
                         )}
+                        <button className="secondary" style={{ color: "#c00" }} onClick={() => requestDelete(r)}>Delete</button>
                       </div>
                     </td>
                   </tr>
