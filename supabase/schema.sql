@@ -429,20 +429,22 @@ create table if not exists rate_card_profile_rows (
 
 create index if not exists rate_card_profile_rows_profile_id_idx on rate_card_profile_rows(profile_id);
 
--- ─── Customers ───────────────────────────────────────────────────────────────
--- Master client/customer records. All tables with a free-text `client` field
--- will eventually reference customer_id FK once data is clean.
-create table if not exists customers (
-  id        text    primary key,
-  name      text    not null,
-  bill_to   text,
-  email     text,
-  phone     text,
-  address   text,
-  city      text,
-  state     text,
-  notes     text,
-  is_active boolean not null default true
+-- ─── Clients ─────────────────────────────────────────────────────────────────
+-- Master client records. All tables with a free-text `client` field
+-- will eventually reference client_id FK once data is clean.
+create table if not exists clients (
+  id           text    primary key,
+  name         text    not null,
+  contact_name text,
+  bill_to      text,
+  email        text,
+  phone        text,
+  address      text,
+  city         text,
+  state        text,
+  zip          text,
+  notes        text,
+  is_active    boolean not null default true
 );
 
 -- ─── App Rate State ───────────────────────────────────────────────────────────

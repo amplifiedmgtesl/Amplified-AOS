@@ -211,15 +211,17 @@ export type EmployeeRecord = {
 };
 
 
-export type Customer = {
+export type Client = {
   id: string;
   name: string;
+  contactName?: string;
   billTo?: string;
   email?: string;
   phone?: string;
   address?: string;
   city?: string;
   state?: string;
+  zip?: string;
   notes?: string;
   isActive: boolean;
 };

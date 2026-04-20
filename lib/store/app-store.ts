@@ -187,14 +187,14 @@ export function getSpecialtiesByPosition(positionId: string): Specialty[] { retu
 export function upsertSpecialty(row: Specialty) { db.upsertSpecialty(row); }
 export function deleteSpecialty(id: string) { db.deleteSpecialty(id); }
 
-// ─── Customers ────────────────────────────────────────────────────────────────
+// ─── Clients ─────────────────────────────────────────────────────────────────
 
-import type { Customer } from "./types";
+import type { Client } from "./types";
 
-export function loadCustomers(): Customer[] { return db.getCustomers(); }
-export function upsertCustomer(row: Customer) { db.upsertCustomer(row); }
-export async function mergeCustomers(sourceId: string, targetId: string): Promise<string | null> {
-  return db.mergeCustomers(sourceId, targetId);
+export function loadClients(): Client[] { return db.getClients(); }
+export function upsertClient(row: Client) { db.upsertClient(row); }
+export async function mergeClients(sourceId: string, targetId: string): Promise<string | null> {
+  return db.mergeClients(sourceId, targetId);
 }
 
 /** Returns active position names as a flat string array — drop-in for old POSITIONS constant. */

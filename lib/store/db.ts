@@ -22,7 +22,7 @@ import type {
   JobCostingDraft,
   Position,
   Specialty,
-  Customer,
+  Client,
 } from "./types";
 import { DEFAULT_RATE_ROWS, DEFAULT_TERMS, type RateCardProfile, type RateRow } from "../rates/defaults";
 
@@ -48,7 +48,7 @@ interface Cache {
   rateCardProfiles: RateCardProfile[];
   positions: Position[];
   specialties: Specialty[];
-  customers: Customer[];
+  clients: Client[];
 }
 
 const _cache: Cache = {
@@ -71,7 +71,7 @@ const _cache: Cache = {
   rateCardProfiles: [],
   positions: [],
   specialties: [],
-  customers: [],
+  clients: [],
 };
 
 export function isInitialized(): boolean {
@@ -137,7 +137,7 @@ async function _loadAll() {
     rateStateRes,
     positionsRes,
     specialtiesRes,
-    customersRes,
+    clientsRes,
   ] = await Promise.all([
     supabase.from("calendar_events").select("*"),
     supabase.from("quotes").select("*"),
@@ -157,7 +157,7 @@ async function _loadAll() {
     supabase.from("app_rate_state").select("*"),
     supabase.from("positions").select("*").eq("is_active", true).order("sort_order"),
     supabase.from("specialties").select("*").eq("is_active", true).order("sort_order"),
-    supabase.from("customers").select("*").eq("is_active", true).order("name"),
+    supabase.from("clients").select("*").eq("is_active", true).order("name"),
   ]);
 
   const events = eventsRes.data ?? [];
@@ -216,7 +216,7 @@ async function _loadAll() {
   // because rowToRateRow resolves position/specialty names from cache.
   _cache.positions = (positionsRes.data ?? []).map(rowToPosition);
   _cache.specialties = (specialtiesRes.data ?? []).map(rowToSpecialty);
-  _cache.customers = (customersRes.data ?? []).map(rowToCustomer);
+  _cache.clients = (clientsRes.data ?? []).map(rowToClient);
 
   const profileRowsByProfileId = new Map<string, any[]>();
   for (const r of (rateProfileRowsRes.data ?? [])) {
@@ -1402,44 +1402,45 @@ export function deleteSpecialty(id: string): void {
   });
 }
 
-// ─── Customers ────────────────────────────────────────────────────────────────
+// ─── Clients ─────────────────────────────────────────────────────────────────
 
-function rowToCustomer(r: any): Customer {
+function rowToClient(r: any): Client {
   return {
     id: r.id,
     name: r.name ?? "",
+    contactName: r.contact_name ?? undefined,
     billTo: r.bill_to ?? undefined,
     email: r.email ?? undefined,
     phone: r.phone ?? undefined,
     address: r.address ?? undefined,
     city: r.city ?? undefined,
     state: r.state ?? undefined,
+    zip: r.zip ?? undefined,
     notes: r.notes ?? undefined,
     isActive: r.is_active ?? true,
   };
 }
 
-export function getCustomers(): Customer[] {
-  return _cache.customers;
+export function getClients(): Client[] {
+  return _cache.clients;
 }
 
-export function upsertCustomer(c: Customer): void {
-  const idx = _cache.customers.findIndex((x) => x.id === c.id);
-  if (idx >= 0) _cache.customers[idx] = c;
-  else _cache.customers = [..._cache.customers, c].sort((a, b) => a.name.localeCompare(b.name));
-  sync("customers", {
-    id: c.id, name: c.name, bill_to: c.billTo ?? null,
+export function upsertClient(c: Client): void {
+  const idx = _cache.clients.findIndex((x) => x.id === c.id);
+  if (idx >= 0) _cache.clients[idx] = c;
+  else _cache.clients = [..._cache.clients, c].sort((a, b) => a.name.localeCompare(b.name));
+  sync("clients", {
+    id: c.id, name: c.name, contact_name: c.contactName ?? null, bill_to: c.billTo ?? null,
     email: c.email ?? null, phone: c.phone ?? null,
     address: c.address ?? null, city: c.city ?? null, state: c.state ?? null,
-    notes: c.notes ?? null, is_active: c.isActive,
+    zip: c.zip ?? null, notes: c.notes ?? null, is_active: c.isActive,
   });
 }
 
-export async function mergeCustomers(sourceId: string, targetId: string): Promise<string | null> {
-  const source = _cache.customers.find((c) => c.id === sourceId);
-  const target = _cache.customers.find((c) => c.id === targetId);
-  if (!source || !target) return "Customer not found.";
-  // Update all tables that reference the source client name
+export async function mergeClients(sourceId: string, targetId: string): Promise<string | null> {
+  const source = _cache.clients.find((c) => c.id === sourceId);
+  const target = _cache.clients.find((c) => c.id === targetId);
+  if (!source || !target) return "Client not found.";
   const tables = [
     { table: "quotes",             col: "client" },
     { table: "invoices",           col: "client" },
@@ -1453,16 +1454,14 @@ export async function mergeCustomers(sourceId: string, targetId: string): Promis
     const { error } = await supabase.from(table).update({ [col]: target.name }).eq(col, source.name);
     if (error) return `Failed updating ${table}: ${error.message}`;
   }
-  // Also update local cache name references
   for (const t of ["quotes", "invoices"] as const) {
     const key = t === "quotes" ? "quotes" : "invoiceDrafts";
     (_cache as any)[key] = (_cache as any)[key].map((r: any) =>
       r.client === source.name ? { ...r, client: target.name } : r
     );
   }
-  // Soft-delete source customer
-  const updated = { ...source, isActive: false };
-  _cache.customers = _cache.customers.filter((c) => c.id !== sourceId);
-  sync("customers", { id: updated.id, name: updated.name, is_active: false });
+  // Soft-delete source
+  _cache.clients = _cache.clients.filter((c) => c.id !== sourceId);
+  sync("clients", { id: sourceId, name: source.name, is_active: false });
   return null;
 }
