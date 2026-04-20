@@ -39,6 +39,7 @@ export default function PositionMaintenance() {
   const [editSpcName, setEditSpcName] = useState("");
   const [newSpcNames, setNewSpcNames] = useState<Record<string, string>>({});
   const [confirmDeleteSpcId, setConfirmDeleteSpcId] = useState<string | null>(null);
+  const [deleteBlockMsg, setDeleteBlockMsg] = useState<string | null>(null);
 
   async function reload() {
     setLoading(true);
@@ -56,6 +57,57 @@ export default function PositionMaintenance() {
 
   function spcForPosition(posId: string) {
     return specialties.filter((s) => s.positionId === posId).sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  // ─── Delete-use checks ─────────────────────────────────────────────────────
+
+  async function positionInUse(p: Position): Promise<string | null> {
+    const spcs = spcForPosition(p.id);
+    if (spcs.length > 0) return `Cannot delete — ${spcs.length} specialist${spcs.length !== 1 ? "ies" : "y"} are assigned to this position. Remove them first.`;
+    const [tsRes, jsRes] = await Promise.all([
+      supabase.from("timesheet_entries").select("id", { count: "exact", head: true }).eq("position", p.name),
+      supabase.from("job_sheet_workers").select("id", { count: "exact", head: true }).eq("role", p.name),
+    ]);
+    const tsCount = tsRes.count ?? 0;
+    const jsCount = jsRes.count ?? 0;
+    if (tsCount > 0 || jsCount > 0) {
+      const parts = [];
+      if (tsCount > 0) parts.push(`${tsCount} timesheet entr${tsCount !== 1 ? "ies" : "y"}`);
+      if (jsCount > 0) parts.push(`${jsCount} job sheet worker${jsCount !== 1 ? "s" : ""}`);
+      return `Cannot delete — used by ${parts.join(" and ")}.`;
+    }
+    return null;
+  }
+
+  async function specialtyInUse(s: Specialty): Promise<string | null> {
+    const [rcRes, qlRes, ilRes] = await Promise.all([
+      supabase.from("rate_card_profile_rows").select("id", { count: "exact", head: true }).eq("specialty_id", s.id),
+      supabase.from("quote_lines").select("id", { count: "exact", head: true }).eq("specialty", s.name),
+      supabase.from("invoice_lines").select("id", { count: "exact", head: true }).eq("specialty", s.name),
+    ]);
+    const total = (rcRes.count ?? 0) + (qlRes.count ?? 0) + (ilRes.count ?? 0);
+    if (total > 0) {
+      const parts = [];
+      if ((rcRes.count ?? 0) > 0) parts.push(`${rcRes.count} rate card row${rcRes.count !== 1 ? "s" : ""}`);
+      if ((qlRes.count ?? 0) > 0) parts.push(`${qlRes.count} quote line${qlRes.count !== 1 ? "s" : ""}`);
+      if ((ilRes.count ?? 0) > 0) parts.push(`${ilRes.count} invoice line${ilRes.count !== 1 ? "s" : ""}`);
+      return `Cannot delete — used by ${parts.join(", ")}.`;
+    }
+    return null;
+  }
+
+  async function requestDeletePos(p: Position) {
+    setDeleteBlockMsg(null);
+    const msg = await positionInUse(p);
+    if (msg) { setDeleteBlockMsg(msg); return; }
+    setConfirmDeletePosId(p.id);
+  }
+
+  async function requestDeleteSpc(s: Specialty) {
+    setDeleteBlockMsg(null);
+    const msg = await specialtyInUse(s);
+    if (msg) { setDeleteBlockMsg(msg); return; }
+    setConfirmDeleteSpcId(s.id);
   }
 
   // ─── Position actions ──────────────────────────────────────────────────────
@@ -141,6 +193,12 @@ export default function PositionMaintenance() {
           <strong style={{ color: "#a00" }}>Error:</strong> {fetchError}
         </div>
       )}
+      {deleteBlockMsg && (
+        <div className="card" style={{ background: "#fff8e1", border: "1px solid #e0c840", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ color: "#7a5f00", fontSize: 13 }}>{deleteBlockMsg}</span>
+          <button className="secondary" style={{ fontSize: 12, padding: "3px 10px" }} onClick={() => setDeleteBlockMsg(null)}>✕</button>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
         {sorted.map((p, idx) => {
@@ -182,7 +240,7 @@ export default function PositionMaintenance() {
                           <button className="secondary" style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => setConfirmDeletePosId(null)}>✕</button>
                         </>
                       ) : (
-                        <button className="secondary" style={{ padding: "3px 10px", fontSize: 12, color: "#a00", borderColor: "#e0a0a0" }} onClick={() => setConfirmDeletePosId(p.id)}>Delete</button>
+                        <button className="secondary" style={{ padding: "3px 10px", fontSize: 12, color: "#a00", borderColor: "#e0a0a0" }} onClick={() => requestDeletePos(p)}>Delete</button>
                       )}
                     </>
                   )}
@@ -227,7 +285,7 @@ export default function PositionMaintenance() {
                               <button className="secondary" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => setConfirmDeleteSpcId(null)}>✕</button>
                             </>
                           ) : (
-                            <button className="secondary" style={{ padding: "2px 8px", fontSize: 11, color: "#a00", borderColor: "#e0a0a0" }} onClick={() => setConfirmDeleteSpcId(s.id)}>Delete</button>
+                            <button className="secondary" style={{ padding: "2px 8px", fontSize: 11, color: "#a00", borderColor: "#e0a0a0" }} onClick={() => requestDeleteSpc(s)}>Delete</button>
                           )}
                         </>
                       )}

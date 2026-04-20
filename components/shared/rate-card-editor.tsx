@@ -78,7 +78,13 @@ export default function RateCardEditor() {
 
   function addRateRow() {
     const posName = POSITIONS[0] || "Stagehand";
-    const spcs = specialtiesForPosition(posName);
+    // Read directly from cache — React state may lag on first click
+    const allPositions = loadPositions();
+    const allSpecialties = loadSpecialties();
+    const pos = allPositions.find((p) => p.name === posName);
+    const spcs = pos
+      ? allSpecialties.filter((s) => s.positionId === pos.id).sort((a, b) => a.sortOrder - b.sortOrder)
+      : [];
     const first = spcs[0];
     setRows([...rows, {
       specialtyId: first?.id ?? "",
