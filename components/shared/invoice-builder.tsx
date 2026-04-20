@@ -503,6 +503,11 @@ function createDepositInvoiceDraft() {
   // Resolve IDs for a line (fallback for pre-migration rows saved with only
   // text or service_key).
   const resolveLineIds = (line: QuoteLine): { positionId: string; specialtyId: string; positionName: string; specialtyName: string } => {
+    if (typeof window !== "undefined" && !(window as any).__invoiceLineDebugged) {
+      (window as any).__invoiceLineDebugged = true;
+      // eslint-disable-next-line no-console
+      console.log("[invoice-builder] sample line:", JSON.stringify(line, null, 2));
+    }
     let positionId = line.positionId || "";
     let specialtyId = line.specialtyId || "";
     let deptText = (line.department || "").trim().toLowerCase();
