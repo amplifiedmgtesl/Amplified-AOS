@@ -566,6 +566,27 @@ function createDepositInvoiceDraft() {
           </div>
         </div>
 
+        <div className="total-card" style={{ marginTop: 12 }}>
+          <table>
+            <tbody>
+              {!depositInvoiceMode ? (
+                <>
+                  <tr><td><strong>Subtotal</strong></td><td>${invoice.subtotal.toFixed(2)}</td></tr>
+                  <tr><td><strong>Deposit</strong></td><td>${invoice.deposit.toFixed(2)}</td></tr>
+                  <tr><td><strong>Amount Due</strong></td><td>${invoice.amountDue.toFixed(2)}</td></tr>
+                  <tr><td><strong>Paid</strong></td><td>${invoice.paidAmount.toFixed(2)}</td></tr>
+                  <tr><td><strong>Balance</strong></td><td>${balance.toFixed(2)}</td></tr>
+                </>
+              ) : (
+                <>
+                  <tr><td><strong>Total</strong></td><td>${invoice.deposit.toFixed(2)}</td></tr>
+                  <tr><td><strong>Deposit</strong></td><td>${invoice.deposit.toFixed(2)}</td></tr>
+                </>
+              )}
+            </tbody>
+          </table>
+        </div>
+
         {!depositInvoiceMode ? (
         <div style={{ overflowX: "auto" }}>
           <table>
@@ -690,39 +711,16 @@ function createDepositInvoiceDraft() {
           </div>
         ) : null}
 
-        <div className="total-row">
-          <div className="invoice-box">
-            <h3 className="section-title">Terms & Notes</h3>
-            <div style={{ whiteSpace: "pre-line", lineHeight: 1.35, fontSize: 13 }}>{invoice.terms}</div>
-            {invoice.notes ? (
-              <div style={{ marginTop: 12, whiteSpace: "pre-line", lineHeight: 1.35, fontSize: 13 }}>
-                <strong>Notes:</strong>
-                {"\n"}
-                {invoice.notes}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="total-card">
-            <table>
-              <tbody>
-                {!depositInvoiceMode ? (
-                  <>
-                    <tr><td><strong>Subtotal</strong></td><td>${invoice.subtotal.toFixed(2)}</td></tr>
-                    <tr><td><strong>Deposit</strong></td><td>${invoice.deposit.toFixed(2)}</td></tr>
-                    <tr><td><strong>Amount Due</strong></td><td>${invoice.amountDue.toFixed(2)}</td></tr>
-                    <tr><td><strong>Paid</strong></td><td>${invoice.paidAmount.toFixed(2)}</td></tr>
-                    <tr><td><strong>Balance</strong></td><td>${balance.toFixed(2)}</td></tr>
-                  </>
-                ) : (
-                  <>
-                    <tr><td><strong>Total</strong></td><td>${invoice.deposit.toFixed(2)}</td></tr>
-                    <tr><td><strong>Deposit</strong></td><td>${invoice.deposit.toFixed(2)}</td></tr>
-                  </>
-                )}
-              </tbody>
-            </table>
-          </div>
+        <div className="invoice-box" style={{ marginTop: 18 }}>
+          <h3 className="section-title">Terms & Notes</h3>
+          <div style={{ whiteSpace: "pre-line", lineHeight: 1.35, fontSize: 13 }}>{invoice.terms}</div>
+          {invoice.notes ? (
+            <div style={{ marginTop: 12, whiteSpace: "pre-line", lineHeight: 1.35, fontSize: 13 }}>
+              <strong>Notes:</strong>
+              {"\n"}
+              {invoice.notes}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

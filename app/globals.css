@@ -146,10 +146,18 @@ small,.muted{color:var(--muted)}
   .invoice-shell{
     padding:0 !important;
   }
-  @page{
-    size: landscape;
-    margin: 0.3in;
+  /* Bigger, more readable invoice line items in print */
+  .invoice-shell th,
+  .invoice-shell td{
+    font-size: 11px !important;
+    padding: 4px 6px !important;
   }
+}
+
+/* @page must be at top level (some browsers ignore it when nested in @media). */
+@page{
+  size: landscape;
+  margin: 0.3in;
 }
 
 .print-only-inline{display:none}
