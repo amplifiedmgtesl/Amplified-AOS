@@ -216,15 +216,30 @@ export default function QuoteBuilder() {
   };
 
   // Resolve position/specialty IDs for a line when missing (pre-migration saved quotes).
-  const resolveIdsForLine = (line: { positionId?: string; specialtyId?: string; department?: string; specialty?: string; position?: string }): { positionId: string; specialtyId: string } => {
+  // Fallback chain: stored IDs → text columns → service_key parse.
+  const resolveIdsForLine = (line: { positionId?: string; specialtyId?: string; department?: string; specialty?: string; position?: string; serviceKey?: string }): { positionId: string; specialtyId: string } => {
     let positionId = line.positionId || "";
     let specialtyId = line.specialtyId || "";
-    if (!positionId && line.department) {
-      const pos = positions.find((p) => p.name.toLowerCase().trim() === (line.department ?? "").toLowerCase().trim());
+    let deptText = (line.department || "").trim().toLowerCase();
+    let spcText = (line.specialty || "").trim().toLowerCase();
+
+    // Fallback: parse service_key if discrete text columns are empty.
+    // Known formats: 5-part "date|dept|position|specialty|rateMode" or
+    // 6-part with shiftLabel inserted.
+    if (!deptText || !spcText) {
+      const parts = (line.serviceKey || "").split(" | ");
+      if (parts.length >= 5) {
+        if (!deptText) deptText = (parts[1] || "").trim().toLowerCase();
+        if (!spcText) spcText  = (parts[3] || "").trim().toLowerCase();
+      }
+    }
+
+    if (!positionId && deptText) {
+      const pos = positions.find((p) => p.name.toLowerCase().trim() === deptText);
       if (pos) positionId = pos.id;
     }
-    if (!specialtyId && positionId && line.specialty) {
-      const spc = specialties.find((s) => s.positionId === positionId && s.name.toLowerCase().trim() === (line.specialty ?? "").toLowerCase().trim());
+    if (!specialtyId && positionId && spcText) {
+      const spc = specialties.find((s) => s.positionId === positionId && s.name.toLowerCase().trim() === spcText);
       if (spc) specialtyId = spc.id;
     }
     return { positionId, specialtyId };

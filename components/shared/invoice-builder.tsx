@@ -491,12 +491,25 @@ function createDepositInvoiceDraft() {
       .sort((a, b) => a.sortOrder - b.sortOrder);
   };
 
-  // Resolve IDs for a line (fallback for pre-migration rows saved with only text).
+  // Resolve IDs for a line (fallback for pre-migration rows saved with only
+  // text or service_key).
   const resolveLineIds = (line: QuoteLine): { positionId: string; specialtyId: string; positionName: string; specialtyName: string } => {
     let positionId = line.positionId || "";
     let specialtyId = line.specialtyId || "";
-    const deptText = (line.department || "").trim().toLowerCase();
-    const spcText = (line.specialty || "").trim().toLowerCase();
+    let deptText = (line.department || "").trim().toLowerCase();
+    let spcText = (line.specialty || "").trim().toLowerCase();
+
+    // Fallback: parse service_key when discrete text columns are empty.
+    // Legacy 5-part format: "date | department | position | specialty | rateMode"
+    // Legacy 6-part format: "date | department | position | specialty | shiftLabel | rateMode"
+    if (!deptText || !spcText) {
+      const parts = (line.serviceKey || "").split(" | ");
+      if (parts.length >= 5) {
+        if (!deptText) deptText = (parts[1] || "").trim().toLowerCase();
+        if (!spcText) spcText  = (parts[3] || "").trim().toLowerCase();
+      }
+    }
+
     if (!positionId && deptText) {
       const pos = positions.find((p) => p.name.toLowerCase().trim() === deptText);
       if (pos) positionId = pos.id;
