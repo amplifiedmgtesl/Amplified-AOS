@@ -440,7 +440,7 @@ function createDepositInvoiceDraft() {
               value={invoice.clientId ?? ""}
               onChange={(e) => {
                 const c = clients.find((x) => x.id === e.target.value);
-                patch({ clientId: c?.id, client: c?.name ?? "" });
+                patch({ clientId: c?.id, client: c?.name ?? "", billTo: c?.name ?? "" });
               }}
             >
               <option value="">— select client —</option>
@@ -449,7 +449,22 @@ function createDepositInvoiceDraft() {
               ))}
             </select>
           </div>
-          <div><small>Bill To</small><input value={invoice.billTo} onChange={(e) => patch({ billTo: e.target.value })} /></div>
+          <div>
+            <small>Client Billing Address</small>
+            {(() => {
+              const c = clients.find((x) => x.id === invoice.clientId);
+              if (!c) return <div style={{ color: "#888", fontSize: 12, padding: "6px 8px", border: "1px solid var(--border, #e5e7eb)", borderRadius: 4, background: "#f9fafb", minHeight: 62 }}>Select a client.</div>;
+              const cityLine = [c.city, c.state].filter(Boolean).join(", ") + (c.zip ? ` ${c.zip}` : "");
+              return (
+                <div style={{ fontSize: 12, padding: "6px 8px", border: "1px solid var(--border, #e5e7eb)", borderRadius: 4, background: "#f9fafb", minHeight: 62 }}>
+                  <div style={{ fontWeight: 600 }}>{c.name}</div>
+                  {c.address && <div style={{ color: "#555" }}>{c.address}</div>}
+                  {cityLine && <div style={{ color: "#555" }}>{cityLine}</div>}
+                  {!c.address && !cityLine && <div style={{ color: "#888", fontStyle: "italic" }}>No address on file.</div>}
+                </div>
+              );
+            })()}
+          </div>
           <div><small>Event Name</small><input value={invoice.eventName} onChange={(e) => patch({ eventName: e.target.value })} /></div>
           <div><small>Venue</small><input value={invoice.venue} onChange={(e) => patch({ venue: e.target.value })} /></div>
 
