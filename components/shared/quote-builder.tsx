@@ -257,7 +257,9 @@ export default function QuoteBuilder() {
     setActiveDraftIdState(found.id);
     setActiveQuoteDraft(found.id);
     setDraftName(found.name);
-    applyDraftState(found.data || {});
+    const data = found.data || {};
+    // Fall back to top-level clientId if JSONB predates clientId being stored
+    applyDraftState({ ...data, clientId: data.clientId || found.clientId || "" });
     setStatusMsg("Quote draft loaded.");
   }
 
