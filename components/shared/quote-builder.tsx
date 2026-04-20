@@ -797,7 +797,7 @@ export default function QuoteBuilder() {
           <h3 className="section-title">Edit Quote Line Items</h3>
           <div style={{ overflowX:"auto" }}>
             <table>
-              <thead><tr><th>Date</th><th>Shift</th><th>Position</th><th>Specialty</th><th>Rate Mode</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Qty</th><th>Holiday Hours</th><th>Travel</th><th>Line Total</th><th>Action</th></tr></thead>
+              <thead><tr><th>Date</th><th>Position</th><th>Specialty</th><th>Shift</th><th>Rate Mode</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Qty</th><th>Holiday Hours</th><th>Travel</th><th>Line Total</th><th>Action</th></tr></thead>
               <tbody>
                 {lines.map((line) => {
                   const calcHours = hoursBetween(line.startTime, line.endTime);
@@ -809,7 +809,6 @@ export default function QuoteBuilder() {
                           {dayDetails.map((d)=><option key={d.date} value={d.date}>{d.date}</option>)}
                         </select>
                       </td>
-                      <td><input value={line.shiftLabel} onChange={(e)=>updateLine(line.id, { shiftLabel:e.target.value })} /></td>
                       <td>
                         <select value={line.positionId} onChange={(e)=>{
                           const newPosId = e.target.value;
@@ -844,6 +843,7 @@ export default function QuoteBuilder() {
                           {specialtiesForPositionId(line.positionId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                         </select>
                       </td>
+                      <td><input value={line.shiftLabel} onChange={(e)=>updateLine(line.id, { shiftLabel:e.target.value })} /></td>
                       <td>
                         <select value={line.rateMode} onChange={(e)=>updateLine(line.id, { rateMode:e.target.value as RateMode })}>
                           <option value="hourly">Hourly</option>
@@ -871,7 +871,7 @@ export default function QuoteBuilder() {
           <h3 className="section-title">Client-Facing Price Breakdown</h3>
           <div style={{ overflowX:"auto", marginBottom: 14 }}>
             <table>
-              <thead><tr><th>Date</th><th>Position</th><th>Shift</th><th>Specialty</th><th>Rate Mode</th><th>Qty</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Holiday Hrs</th><th>Travel</th><th>Line Total</th></tr></thead>
+              <thead><tr><th>Date</th><th>Position</th><th>Specialty</th><th>Shift</th><th>Rate Mode</th><th>Qty</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Holiday Hrs</th><th>Travel</th><th>Line Total</th></tr></thead>
               <tbody>
                 {computed.length === 0 ? (
                   <tr><td colSpan={13}>No line items yet.</td></tr>
@@ -880,8 +880,8 @@ export default function QuoteBuilder() {
                     <tr key={`client-breakdown-${item.line.id}`}>
                       <td>{item.line.quoteDate || "-"}</td>
                       <td>{item.line.position || item.row.position}</td>
-                      <td>{item.line.shiftLabel}</td>
                       <td>{item.row.specialty}</td>
+                      <td>{item.line.shiftLabel}</td>
                       <td>{item.line.rateMode === "hourly" ? "Hourly" : "Day Rate"}</td>
                       <td>{item.line.qty}</td>
                       <td>{item.line.startTime || "-"}</td>
@@ -910,14 +910,14 @@ export default function QuoteBuilder() {
                   <div className="badge" style={{ marginBottom: 6 }}>{posGroup.position}</div>
                   <div style={{ overflowX:"auto" }}>
                     <table>
-                      <thead><tr><th>Date</th><th>Position</th><th>Shift</th><th>Specialty</th><th>Rate Mode</th><th>Qty</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Holiday Hrs</th><th>Travel</th><th>OT</th><th>DT</th><th>Line Total</th></tr></thead>
+                      <thead><tr><th>Date</th><th>Position</th><th>Specialty</th><th>Shift</th><th>Rate Mode</th><th>Qty</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Holiday Hrs</th><th>Travel</th><th>OT</th><th>DT</th><th>Line Total</th></tr></thead>
                       <tbody>
                         {posGroup.items.map((item) => (
                           <tr key={`${group.date}-${posGroup.position}-${item.line.id}`}>
                             <td>{group.date}</td>
                             <td>{posGroup.position}</td>
-                            <td>{item.line.shiftLabel}</td>
                             <td>{item.row.specialty}</td>
+                            <td>{item.line.shiftLabel}</td>
                             <td>{item.line.rateMode === "hourly" ? "Hourly" : "Day Rate"}</td>
                             <td>{item.line.qty}</td>
                             <td>{item.line.startTime || "-"}</td>
