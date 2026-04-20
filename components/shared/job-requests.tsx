@@ -17,7 +17,7 @@ function today() { return new Date().toISOString().slice(0, 10); }
 
 const BLANK: JobRequest = {
   id: "", clientId: "", client: "", eventName: "", venue: "", venueAddress: "",
-  city: "", state: "", cityState: "", googleMapsLink: "",
+  venueZip: "", city: "", state: "", cityState: "", googleMapsLink: "",
   receivedDate: today(), requestDate: "", endDate: "",
   startTime: "", endTime: "", expectedHours: 10, addToCalendar: true,
   status: "lead", notes: "", attachmentNames: [], packetNotes: "",
@@ -44,8 +44,17 @@ export default function JobRequests() {
     setForm((f) => ({ ...f, clientId, client: c?.name ?? "" }));
   }
 
+  function mapAddress(r: JobRequest): string {
+    return [r.venueAddress, r.city, r.state, r.venueZip].filter(Boolean).join(", ");
+  }
+
   function normalized(next: JobRequest): JobRequest {
-    return { ...next, cityState: [next.city, next.state].filter(Boolean).join(", ") };
+    const addr = mapAddress(next);
+    return {
+      ...next,
+      cityState: [next.city, next.state].filter(Boolean).join(", "),
+      googleMapsLink: addr ? `https://maps.google.com/?q=${encodeURIComponent(addr)}` : next.googleMapsLink,
+    };
   }
 
   function editRow(r: JobRequest) {
@@ -154,7 +163,7 @@ export default function JobRequests() {
               {US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <div><small>Google Maps Link</small><input value={form.googleMapsLink} onChange={(e)=>setForm({ ...form, googleMapsLink:e.target.value })} /></div>
+          <div><small>Venue Zip</small><input value={form.venueZip ?? ""} onChange={(e)=>setForm({ ...form, venueZip:e.target.value })} placeholder="00000" /></div>
           <div><small>Status</small>
             <select value={form.status} onChange={(e)=>setForm({ ...form, status:e.target.value })}>
               {JOB_REQUEST_STATUSES.map((s)=><option key={s.value} value={s.value}>{s.label}</option>)}
@@ -185,6 +194,28 @@ export default function JobRequests() {
             </select>
           </div>
         </div>
+        {mapAddress(form) && (
+          <div style={{ marginTop: 12 }}>
+            <small>Venue Map</small>
+            <a
+              href={`https://maps.google.com/?q=${encodeURIComponent(mapAddress(form))}`}
+              target="_blank"
+              rel="noreferrer"
+              title="Open in Maps"
+              style={{ display: "block", marginTop: 4, borderRadius: 8, overflow: "hidden", border: "1px solid var(--border, #e5e7eb)" }}
+            >
+              <iframe
+                src={`https://maps.google.com/maps?q=${encodeURIComponent(mapAddress(form))}&output=embed`}
+                width="100%"
+                height="220"
+                style={{ border: 0, display: "block", pointerEvents: "none" }}
+                loading="lazy"
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            </a>
+            <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Tap to open in your maps app</div>
+          </div>
+        )}
         <div style={{ marginTop: 12 }}><small>Notes</small><textarea value={form.notes} onChange={(e)=>setForm({ ...form, notes:e.target.value })} /></div>
         <div className="action-row" style={{ marginTop: 12 }}>
           <button onClick={save}>Save Job Request</button>
