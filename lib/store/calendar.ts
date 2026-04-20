@@ -1,4 +1,3 @@
-import { IMPORTED_CALENDAR_EVENTS } from "@/lib/data/calendar-events";
 import { loadDeletedEventIds, loadJobRequests, loadManualEvents, loadQuotes } from "./app-store";
 import type { CalendarEvent } from "./types";
 
@@ -8,31 +7,17 @@ function normalizeStatus(value?: string) {
 
 function makeEventKey(e: { id?: string; client?: string; eventName?: string; venue?: string; startDate?: string; linkedJobRequestId?: string; source?: string }) {
   if (e.source === "manual_calendar") return e.id || "";
-  if (e.source === "imported_calendar") return e.id || "";
+  if (e.source === "uploaded_master_calendar") return e.id || "";
   return e.linkedJobRequestId || [e.client || "", e.eventName || "", e.venue || "", e.startDate || ""].join("|").toLowerCase();
 }
 
 export function combinedCalendarEvents(): CalendarEvent[] {
   const deleted = new Set(loadDeletedEventIds());
 
-  const imported = (IMPORTED_CALENDAR_EVENTS as unknown as CalendarEvent[])
-    .map((e, idx) => ({
-      ...e,
-      id: e.id || `import-${idx}`,
-      source: "imported_calendar",
-      endDate: e.endDate || e.startDate,
-      startTime: e.startTime || "08:00",
-      endTime: e.endTime || "17:00",
-      notes: e.notes || "",
-      status: e.status || "upcoming",
-    }))
-    .filter((e) => !deleted.has(e.id));
-
   const manual = loadManualEvents()
     .filter((e) => !deleted.has(e.id))
     .map((e) => ({
       ...e,
-      source: "manual_calendar",
       endDate: e.endDate || e.startDate,
       startTime: e.startTime || "08:00",
       endTime: e.endTime || "17:00",
@@ -84,10 +69,6 @@ export function combinedCalendarEvents(): CalendarEvent[] {
     .filter((e) => !deleted.has(e.id));
 
   const merged = new Map<string, CalendarEvent>();
-
-  imported.forEach((m) => {
-    merged.set(makeEventKey({ id: m.id, source: m.source }), m);
-  });
 
   manual.forEach((m) => {
     merged.set(makeEventKey({ id: m.id, source: m.source }), m);
