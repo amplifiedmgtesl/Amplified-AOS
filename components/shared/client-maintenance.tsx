@@ -111,10 +111,12 @@ export default function ClientMaintenance() {
   async function requestDeactivate() {
     if (!form) return;
     const jrCount = tabData?.jobRequests.length ?? 0;
+    const qCount = tabData?.quotes.length ?? 0;
     const rcCount = tabData?.rateCards.length ?? 0;
     const calCount = tabData?.calendarEvents.length ?? 0;
     const msgs: string[] = [];
     if (jrCount > 0) msgs.push(`${jrCount} job request${jrCount !== 1 ? "s" : ""}`);
+    if (qCount > 0) msgs.push(`${qCount} quote${qCount !== 1 ? "s" : ""}`);
     if (rcCount > 0) msgs.push(`${rcCount} rate card${rcCount !== 1 ? "s" : ""}`);
     if (calCount > 0) msgs.push(`${calCount} calendar event${calCount !== 1 ? "s" : ""}`);
     if (msgs.length > 0) {
