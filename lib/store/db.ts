@@ -1157,6 +1157,7 @@ function syncInvoiceLines(invoiceId: string, lines: import("./types").QuoteLine[
 function quoteToRow(q: QuoteDraft) {
   return {
     id: q.id,
+    client_id: q.clientId ?? null,
     client: q.client,
     event_name: q.eventName,
     venue: q.venue,
@@ -1490,6 +1491,8 @@ export async function mergeClients(sourceId: string, targetId: string): Promise<
   // Also reassign client_id on normalized tables
   await supabase.from("job_requests").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("rate_card_profiles").update({ client_id: target.id }).eq("client_id", source.id);
+  await supabase.from("quotes").update({ client_id: target.id }).eq("client_id", source.id);
+  await supabase.from("calendar_events").update({ client_id: target.id }).eq("client_id", source.id);
   for (const t of ["quotes", "invoices"] as const) {
     const key = t === "quotes" ? "quotes" : "invoiceDrafts";
     (_cache as any)[key] = (_cache as any)[key].map((r: any) =>

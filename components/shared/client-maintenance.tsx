@@ -36,9 +36,10 @@ export default function ClientMaintenance() {
   const [statusMsg, setStatusMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [showMerge, setShowMerge] = useState(false);
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"job_requests" | "rate_cards" | "calendar_events">("job_requests");
+  const [activeTab, setActiveTab] = useState<"job_requests" | "quotes" | "rate_cards" | "calendar_events">("job_requests");
   const [tabData, setTabData] = useState<{
     jobRequests: any[];
+    quotes: any[];
     rateCards: any[];
     calendarEvents: any[];
   } | null>(null);
@@ -62,6 +63,9 @@ export default function ClientMaintenance() {
       supabase.from("job_requests")
         .select("id, received_date, request_date, end_date, venue, status, linked_quote_id")
         .eq("client_id", selectedId).order("received_date", { ascending: false }),
+      supabase.from("quotes")
+        .select("id, event_name, start_date, end_date, status, total")
+        .eq("client_id", selectedId).order("start_date", { ascending: false }),
       supabase.from("rate_card_profiles")
         .select("id, name, updated_at")
         .eq("client_id", selectedId).order("name"),
@@ -69,9 +73,10 @@ export default function ClientMaintenance() {
         .select("id, event_name, start_date, start_time, end_date, status")
         .eq("client_id", selectedId).eq("is_deleted", false)
         .order("start_date", { ascending: false }),
-    ]).then(([jrRes, rcRes, calRes]) => {
+    ]).then(([jrRes, quotesRes, rcRes, calRes]) => {
       setTabData({
         jobRequests: jrRes.data ?? [],
+        quotes: quotesRes.data ?? [],
         rateCards: rcRes.data ?? [],
         calendarEvents: calRes.data ?? [],
       });
@@ -445,9 +450,9 @@ export default function ClientMaintenance() {
           <div className="card" style={{ marginTop: 16, padding: 0, overflow: "hidden" }}>
             {/* Tab bar */}
             <div style={{ display: "flex", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-              {(["job_requests", "rate_cards", "calendar_events"] as const).map((tab) => {
-                const labels: Record<string, string> = { job_requests: "Job Requests", rate_cards: "Rate Cards", calendar_events: "Calendar Events" };
-                const counts: Record<string, number> = { job_requests: tabData.jobRequests.length, rate_cards: tabData.rateCards.length, calendar_events: tabData.calendarEvents.length };
+              {(["job_requests", "quotes", "rate_cards", "calendar_events"] as const).map((tab) => {
+                const labels: Record<string, string> = { job_requests: "Job Requests", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Calendar Events" };
+                const counts: Record<string, number> = { job_requests: tabData.jobRequests.length, quotes: tabData.quotes.length, rate_cards: tabData.rateCards.length, calendar_events: tabData.calendarEvents.length };
                 const active = activeTab === tab;
                 return (
                   <button
@@ -495,6 +500,37 @@ export default function ClientMaintenance() {
                                 ? <span style={{ background: "#e0f2fe", color: "#0369a1", borderRadius: 4, padding: "2px 6px", fontSize: 11 }}>Quoted</span>
                                 : <span style={{ background: "#fef9c3", color: "#854d0e", borderRadius: 4, padding: "2px 6px", fontSize: 11 }}>Pending</span>}
                             </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+              )}
+
+              {activeTab === "quotes" && (
+                tabData.quotes.length === 0
+                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No quotes.</div>
+                  : <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Event</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Date</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Status</th>
+                          <th style={{ textAlign: "right", padding: "4px 0 6px 0", fontWeight: 600 }}>Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tabData.quotes.map((q) => (
+                          <tr key={q.id} style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+                            <td style={{ padding: "5px 8px 5px 0" }}>{q.event_name ?? "—"}</td>
+                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{q.start_date ?? "—"}{q.end_date && q.end_date !== q.start_date ? ` – ${q.end_date}` : ""}</td>
+                            <td style={{ padding: "5px 8px 5px 0" }}>
+                              <span style={{
+                                background: q.status === "booked" ? "#dcfce7" : q.status === "quoted" ? "#e0f2fe" : "#f3f4f6",
+                                color: q.status === "booked" ? "#166534" : q.status === "quoted" ? "#0369a1" : "#555",
+                                borderRadius: 4, padding: "2px 6px", fontSize: 11,
+                              }}>{q.status ?? "—"}</span>
+                            </td>
+                            <td style={{ padding: "5px 0", textAlign: "right", whiteSpace: "nowrap" }}>{q.total != null ? `$${Number(q.total).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "—"}</td>
                           </tr>
                         ))}
                       </tbody>
