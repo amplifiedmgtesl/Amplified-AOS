@@ -355,7 +355,7 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
 
   function saveInvoiceDraftNow() {
     if (!invoice) return;
-    persist({ ...invoice, invoiceNo: invoice.invoiceNo || invoiceLabel || invoice.invoiceNo }, "Invoice draft saved.");
+    persist({ ...invoice, invoiceNo: invoice.invoiceNo || invoiceLabel || invoice.invoiceNo }, "Invoice saved.");
   }
 
 
@@ -415,7 +415,7 @@ function createDepositInvoiceDraft() {
 
         {/* Top action bar — save/copy/print */}
         <div className="action-row" style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-          <button type="button" className="secondary" onClick={saveInvoiceDraftNow}>Save Invoice Draft</button>
+          <button type="button" className="secondary" onClick={saveInvoiceDraftNow}>Save Invoice</button>
           <button type="button" className="secondary" onClick={saveAsNewDraft}>Save As New Draft</button>
           <button type="button" className="secondary" onClick={createDepositInvoiceDraft}>Create Deposit Invoice Draft</button>
           <button onClick={() => window.print()}>Download / Print Invoice PDF</button>
