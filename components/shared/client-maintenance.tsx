@@ -423,23 +423,24 @@ export default function ClientMaintenance() {
         )}
 
         {activity && (
-          <div className="card" style={{ marginTop: 16 }}>
-            <h2 className="section-title" style={{ marginBottom: 16 }}>Activity</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div className="card" style={{ marginTop: 16, padding: "12px 16px" }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#888", marginBottom: 10 }}>Job Requests</div>
+            <div style={{ display: "flex", gap: 10 }}>
               <div style={{
-                background: "var(--surface2, #f9fafb)", border: "1px solid var(--border, #e5e7eb)",
-                borderRadius: 8, padding: "16px 20px", textAlign: "center",
+                flex: 1, background: "var(--surface2, #f9fafb)", border: "1px solid var(--border, #e5e7eb)",
+                borderRadius: 6, padding: "8px 12px", textAlign: "center",
               }}>
-                <div style={{ fontSize: 32, fontWeight: 700, lineHeight: 1 }}>{activity.ytd}</div>
-                <div style={{ fontSize: 12, color: "#888", marginTop: 6 }}>YTD Job Requests</div>
+                <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1 }}>{activity.ytd}</div>
+                <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>YTD</div>
               </div>
               <div style={{
+                flex: 1,
                 background: activity.pending > 0 ? "#fff8e1" : "var(--surface2, #f9fafb)",
                 border: `1px solid ${activity.pending > 0 ? "#e0c840" : "var(--border, #e5e7eb)"}`,
-                borderRadius: 8, padding: "16px 20px", textAlign: "center",
+                borderRadius: 6, padding: "8px 12px", textAlign: "center",
               }}>
-                <div style={{ fontSize: 32, fontWeight: 700, lineHeight: 1, color: activity.pending > 0 ? "#7a5f00" : "inherit" }}>{activity.pending}</div>
-                <div style={{ fontSize: 12, color: "#888", marginTop: 6 }}>Pending (no quote yet)</div>
+                <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1, color: activity.pending > 0 ? "#7a5f00" : "inherit" }}>{activity.pending}</div>
+                <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Pending</div>
               </div>
             </div>
           </div>
