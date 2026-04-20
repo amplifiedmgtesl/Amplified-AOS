@@ -188,19 +188,28 @@ export default function QuoteBuilder() {
   const linkedTimesheet = linkedJobSheetId ? getTimesheetByJobSheetId(linkedJobSheetId) : null;
   const timeSummary = useMemo(() => summarizeTimesheet(linkedTimesheet), [linkedJobSheetId, linkedTimesheet?.rows?.length]);
 
-  // Positions that the current rate card actually has rates for.
+  // Positions that the current rate card has rates for, PLUS any position
+  // currently referenced by a line on this quote (so existing values display
+  // even if the working rate card doesn't include them).
   const availablePositions = useMemo(() => {
     const posIds = new Set<string>();
     for (const row of rows) {
       const pos = positions.find((p) => p.name === row.position);
       if (pos) posIds.add(pos.id);
     }
+    for (const line of lines) {
+      if (line.positionId) posIds.add(line.positionId);
+    }
     return positions.filter((p) => posIds.has(p.id)).sort((a, b) => a.sortOrder - b.sortOrder);
-  }, [rows, positions]);
+  }, [rows, positions, lines]);
 
   const specialtiesForPositionId = (positionId: string): Specialty[] => {
     if (!positionId) return [];
     const rateSpecialtyIds = new Set(rows.map((r) => r.specialtyId).filter(Boolean) as string[]);
+    // Also include any specialty currently referenced by a line on this quote.
+    for (const line of lines) {
+      if (line.specialtyId) rateSpecialtyIds.add(line.specialtyId);
+    }
     return specialties
       .filter((s) => s.positionId === positionId && rateSpecialtyIds.has(s.id))
       .sort((a, b) => a.sortOrder - b.sortOrder);

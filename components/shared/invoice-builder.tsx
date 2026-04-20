@@ -176,8 +176,10 @@ export default function InvoiceBuilder() {
   const [quotes, setQuotes] = useState<QuoteDraft[]>([]);
   const [jobRequests, setJobRequests] = useState<JobRequest[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  // Positions and specialties are read every render from the cache so they
+  // reflect fetchAll completing after mount.
+  const positions = loadPositions();
+  const specialties = loadSpecialties();
   const [activeId, setActiveIdState] = useState<string>("");
   const [invoice, setInvoice] = useState<InvoiceDraft | null>(null);
   const [sourceQuoteId, setSourceQuoteId] = useState<string>("");
@@ -198,8 +200,6 @@ export default function InvoiceBuilder() {
     setQuotes(quoteRows);
     setJobRequests(requestRows);
     setClients(loadClients().filter((c) => c.isActive).sort((a, b) => a.name.localeCompare(b.name)));
-    setPositions(loadPositions());
-    setSpecialties(loadSpecialties());
 
     const active = getActiveInvoice() || invoiceRows[0]?.id || "";
     const found = invoiceRows.find((r) => r.id === active) || invoiceRows[0] || null;
@@ -460,19 +460,32 @@ function createDepositInvoiceDraft() {
   const dateOptions = useMemo(() => buildDateOptions(activeQuote, activeJobRequest), [activeQuote, activeJobRequest]);
   const positionOptions = useMemo(() => rateRows.map((r) => `${r.department} | ${r.specialty}`), [rateRows]);
 
-  // Positions that the current rate card actually has rates for.
+  // Positions that the current rate card has rates for, PLUS any position
+  // currently referenced by a line on this invoice (so existing values display
+  // even if the working rate card doesn't include them).
   const availablePositions = useMemo(() => {
     const posIds = new Set<string>();
     for (const row of rateRows) {
       const pos = positions.find((p) => p.name === row.position);
       if (pos) posIds.add(pos.id);
     }
+    if (invoice) {
+      for (const line of invoice.lines) {
+        if (line.positionId) posIds.add(line.positionId);
+      }
+    }
     return positions.filter((p) => posIds.has(p.id)).sort((a, b) => a.sortOrder - b.sortOrder);
-  }, [rateRows, positions]);
+  }, [rateRows, positions, invoice]);
 
   const specialtiesForPositionId = (positionId: string): Specialty[] => {
     if (!positionId) return [];
     const rateSpecialtyIds = new Set(rateRows.map((r) => r.specialtyId).filter(Boolean) as string[]);
+    // Also include any specialty currently referenced by a line on this invoice.
+    if (invoice) {
+      for (const line of invoice.lines) {
+        if (line.specialtyId) rateSpecialtyIds.add(line.specialtyId);
+      }
+    }
     return specialties
       .filter((s) => s.positionId === positionId && rateSpecialtyIds.has(s.id))
       .sort((a, b) => a.sortOrder - b.sortOrder);
