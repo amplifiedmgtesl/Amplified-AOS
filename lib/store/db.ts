@@ -223,7 +223,7 @@ async function _loadAll() {
 
   const rateStateMap: Record<string, any> = {};
   for (const r of rateStateRes.data ?? []) rateStateMap[r.key] = r.value;
-  if (rateStateMap["rate_rows"]) _cache.rateRows = rateStateMap["rate_rows"];
+  // rate_rows intentionally not read — app_rate_state is deprecated for rows; use named profiles
   if (rateStateMap["terms"]) _cache.terms = rateStateMap["terms"];
   if (rateStateMap["client_name"]) _cache.clientName = rateStateMap["client_name"];
 
@@ -598,7 +598,7 @@ export function getRateCardProfiles() { return _cache.rateCardProfiles; }
 
 export function setRateRows(rows: RateRow[]) {
   _cache.rateRows = rows;
-  syncRateState("rate_rows", rows);
+  // app_rate_state write intentionally removed — deprecated for rate rows
 }
 
 export function setTerms(value: string) {
