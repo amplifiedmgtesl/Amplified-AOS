@@ -86,6 +86,7 @@ export function getActiveInvoice(): string | null {
 export function loadJobRequests(): JobRequest[] { return db.getJobRequests(); }
 export function saveJobRequests(rows: JobRequest[]) { db.setJobRequests(rows); }
 export function upsertJobRequest(row: JobRequest) { db.upsertJobRequest(row); }
+export async function deleteJobRequest(id: string): Promise<string | null> { return db.deleteJobRequest(id); }
 
 // ─── Job Sheets ───────────────────────────────────────────────────────────────
 

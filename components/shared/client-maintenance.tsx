@@ -35,6 +35,7 @@ export default function ClientMaintenance() {
   const [saving, setSaving] = useState(false);
   const [statusMsg, setStatusMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [showMerge, setShowMerge] = useState(false);
+  const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null);
   const [mergeSourceId, setMergeSourceId] = useState("");
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [merging, setMerging] = useState(false);
@@ -72,6 +73,27 @@ export default function ClientMaintenance() {
     if (!form) return;
     setForm({ ...form, [field]: value });
     setDirty(true);
+  }
+
+  async function requestDeactivate() {
+    if (!form) return;
+    const { count } = await supabase
+      .from("job_requests").select("id", { count: "exact", head: true }).eq("client_id", form.id);
+    if ((count ?? 0) > 0) {
+      setStatusMsg({ text: `Cannot deactivate — ${count} job request${count !== 1 ? "s" : ""} reference this client.`, ok: false });
+      return;
+    }
+    setConfirmDeactivateId(form.id);
+  }
+
+  async function confirmDeactivate() {
+    if (!form || !confirmDeactivateId) return;
+    upsertClient({ ...form, isActive: false });
+    setConfirmDeactivateId(null);
+    setSelectedId(null);
+    setForm(null);
+    setStatusMsg({ text: "Client deactivated.", ok: true });
+    await reload();
   }
 
   async function saveForm() {
@@ -356,12 +378,27 @@ export default function ClientMaintenance() {
               </div>
             </div>
 
+            {confirmDeactivateId === selectedClient.id && (
+              <div style={{ background: "#fff8e1", border: "1px solid #e0c840", borderRadius: 8, padding: "10px 14px", marginTop: 16, fontSize: 13, color: "#7a5f00" }}>
+                Deactivate <strong>{selectedClient.name}</strong>? They will no longer appear in dropdowns.
+                <div className="action-row" style={{ marginTop: 8 }}>
+                  <button style={{ background: "linear-gradient(180deg,#e05,#b00)", color: "#fff" }} onClick={confirmDeactivate}>Deactivate</button>
+                  <button className="secondary" onClick={() => setConfirmDeactivateId(null)}>Cancel</button>
+                </div>
+              </div>
+            )}
+
             <div className="action-row" style={{ marginTop: 20 }}>
               <button onClick={saveForm} disabled={!dirty || !selectedClient.name.trim() || saving}>
                 {saving ? "Saving…" : "Save"}
               </button>
               {dirty && (
                 <button className="secondary" onClick={cancelEdit}>Cancel</button>
+              )}
+              {!dirty && selectedClient.id && (
+                <button className="secondary" style={{ color: "#c00", marginLeft: "auto" }} onClick={requestDeactivate}>
+                  Deactivate
+                </button>
               )}
             </div>
           </div>
