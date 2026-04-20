@@ -239,6 +239,7 @@ export default function QuoteBuilder() {
     const name = manualName || draftName || "Working Draft";
     upsertQuoteDraftWorkspace({
       id,
+      clientId: clientId || undefined,
       name,
       updatedAt: new Date().toISOString(),
       data: currentDraftState()

@@ -293,6 +293,7 @@ export type JobCostingLine = {
 
 export type QuoteDraftWorkspace = {
   id: string;
+  clientId?: string;
   name: string;
   updatedAt: string;
   data: any;
