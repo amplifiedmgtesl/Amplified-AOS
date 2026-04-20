@@ -38,6 +38,7 @@ export default function ClientMaintenance() {
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null);
   const [activity, setActivity] = useState<{ ytd: number; pending: number } | null>(null);
   const [rateCardCount, setRateCardCount] = useState<number | null>(null);
+  const [calendarEventCount, setCalendarEventCount] = useState<number | null>(null);
   const [mergeSourceId, setMergeSourceId] = useState("");
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [merging, setMerging] = useState(false);
@@ -53,7 +54,7 @@ export default function ClientMaintenance() {
   useEffect(() => { reload(); }, []);
 
   useEffect(() => {
-    if (!selectedId) { setActivity(null); setRateCardCount(null); return; }
+    if (!selectedId) { setActivity(null); setRateCardCount(null); setCalendarEventCount(null); return; }
     const year = new Date().getFullYear().toString();
     Promise.all([
       supabase.from("job_requests").select("id", { count: "exact", head: true })
@@ -62,9 +63,12 @@ export default function ClientMaintenance() {
         .eq("client_id", selectedId).is("linked_quote_id", null),
       supabase.from("rate_card_profiles").select("id", { count: "exact", head: true })
         .eq("client_id", selectedId),
-    ]).then(([ytdRes, pendingRes, rcRes]) => {
+      supabase.from("calendar_events").select("id", { count: "exact", head: true })
+        .eq("client_id", selectedId).eq("is_deleted", false),
+    ]).then(([ytdRes, pendingRes, rcRes, calRes]) => {
       setActivity({ ytd: ytdRes.count ?? 0, pending: pendingRes.count ?? 0 });
       setRateCardCount(rcRes.count ?? 0);
+      setCalendarEventCount(calRes.count ?? 0);
     });
   }, [selectedId]);
 
@@ -95,13 +99,15 @@ export default function ClientMaintenance() {
 
   async function requestDeactivate() {
     if (!form) return;
-    const [jrRes, rcRes] = await Promise.all([
+    const [jrRes, rcRes, calRes] = await Promise.all([
       supabase.from("job_requests").select("id", { count: "exact", head: true }).eq("client_id", form.id),
       supabase.from("rate_card_profiles").select("id", { count: "exact", head: true }).eq("client_id", form.id),
+      supabase.from("calendar_events").select("id", { count: "exact", head: true }).eq("client_id", form.id).eq("is_deleted", false),
     ]);
     const msgs: string[] = [];
     if ((jrRes.count ?? 0) > 0) msgs.push(`${jrRes.count} job request${jrRes.count !== 1 ? "s" : ""}`);
     if ((rcRes.count ?? 0) > 0) msgs.push(`${rcRes.count} rate card${rcRes.count !== 1 ? "s" : ""}`);
+    if ((calRes.count ?? 0) > 0) msgs.push(`${calRes.count} calendar event${calRes.count !== 1 ? "s" : ""}`);
     if (msgs.length > 0) {
       setStatusMsg({ text: `Cannot deactivate — ${msgs.join(" and ")} reference this client.`, ok: false });
       return;
@@ -464,6 +470,19 @@ export default function ClientMaintenance() {
                 <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1, color: activity.pending > 0 ? "#7a5f00" : "inherit" }}>{activity.pending}</div>
                 <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Pending</div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {calendarEventCount !== null && (
+          <div className="card" style={{ marginTop: 16, padding: "12px 16px" }}>
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#888", marginBottom: 10 }}>Calendar Events</div>
+            <div style={{
+              background: "var(--surface2, #f9fafb)", border: "1px solid var(--border, #e5e7eb)",
+              borderRadius: 6, padding: "8px 12px", textAlign: "center",
+            }}>
+              <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1 }}>{calendarEventCount}</div>
+              <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Total</div>
             </div>
           </div>
         )}
