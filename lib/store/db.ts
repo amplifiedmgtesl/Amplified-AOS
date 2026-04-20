@@ -678,6 +678,7 @@ function rowToCalendarEvent(r: any): CalendarEvent {
   return {
     id: r.id,
     source: r.source ?? "",
+    clientId: r.client_id ?? undefined,
     client: r.client ?? "",
     eventName: r.event_name ?? "",
     venue: r.venue ?? "",
@@ -694,6 +695,7 @@ function rowToCalendarEvent(r: any): CalendarEvent {
     status: r.status ?? "",
     lead: r.lead ?? undefined,
     hands: r.hands ?? undefined,
+    linkedJobRequestId: r.linked_job_request_id ?? undefined,
   };
 }
 
@@ -1015,6 +1017,7 @@ function calendarEventToRow(e: CalendarEvent, isDeleted: boolean) {
   return {
     id: e.id,
     source: e.source,
+    client_id: e.clientId ?? null,
     client: e.client,
     event_name: e.eventName,
     venue: e.venue,
@@ -1031,6 +1034,7 @@ function calendarEventToRow(e: CalendarEvent, isDeleted: boolean) {
     status: e.status,
     lead: e.lead ?? null,
     hands: e.hands ?? null,
+    linked_job_request_id: e.linkedJobRequestId ?? null,
     is_deleted: isDeleted,
     profile_notes: profile?.notes ?? null,
     profile_attachment_names: profile?.attachmentNames ?? [],
