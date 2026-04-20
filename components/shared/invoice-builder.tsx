@@ -60,11 +60,20 @@ function parseOtTrigger(rule: string) {
 
 function parseLineMeta(line: QuoteLine): LineMeta {
   const parts = (line.serviceKey || "").split(" | ");
-  const date = parts[0] || "";
-  const department = parts[1] || "";
+  // 6-part legacy format: "date | dept | position | specialty | shift | rateMode"
+  // 5-part legacy format: "date | dept | position | specialty | rateMode" (no shift)
+  const has6 = parts.length >= 6;
+
+  // Prefer discrete columns; fall back to service_key parse only when empty.
+  const date = line.quoteDate || parts[0] || "";
+  const department = line.department || parts[1] || "";
   const position = parts[2] || line.serviceKey || "";
-  const shiftLabel = parts[3] || "Shift 1";
-  const rateMode = ((parts[4] || "").toLowerCase() === "day" ? "day" : "hourly") as RateMode;
+  // Shift is only present in 6-part service_keys. If discrete column is empty
+  // AND it's a 5-part key, don't pull parts[3] (that's specialty).
+  const shiftLabel = line.shiftLabel || (has6 ? (parts[4] || "Shift 1") : "Shift 1");
+  // rateMode is parts[5] in 6-part, parts[4] in 5-part.
+  const rateModeRaw = (line.rateMode || (has6 ? parts[5] : parts[4]) || "hourly").toLowerCase();
+  const rateMode = (rateModeRaw === "day" ? "day" : "hourly") as RateMode;
 
   const timePart = (line.rule || "").split(" | ")[0] || "";
   const times = timePart.split(" to ");
@@ -74,8 +83,8 @@ function parseLineMeta(line: QuoteLine): LineMeta {
     position,
     shiftLabel,
     rateMode,
-    startTime: times[0] || "",
-    endTime: times[1] || "",
+    startTime: line.startTime || times[0] || "",
+    endTime: line.endTime || times[1] || "",
   };
 }
 
