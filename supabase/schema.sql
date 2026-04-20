@@ -162,6 +162,7 @@ create table if not exists job_requests (
   received_date    text,             -- date the inquiry came in; used for YTD stats
   request_date     text,             -- event start date
   end_date         text,
+  venue_zip        text,
   start_time       text,
   end_time         text,
   expected_hours   numeric,
