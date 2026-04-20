@@ -80,6 +80,7 @@ export type Timesheet = {
 
 export type QuoteDraft = {
   id: string;
+  clientId?: string;
   client: string;
   eventName: string;
   venue: string;
