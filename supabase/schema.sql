@@ -159,7 +159,8 @@ create table if not exists job_requests (
   state            text,
   city_state       text,
   google_maps_link text,
-  request_date     text,
+  received_date    text,             -- date the inquiry came in; used for YTD stats
+  request_date     text,             -- event start date
   end_date         text,
   start_time       text,
   end_time         text,

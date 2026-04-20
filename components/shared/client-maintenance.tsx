@@ -56,7 +56,7 @@ export default function ClientMaintenance() {
     const year = new Date().getFullYear().toString();
     Promise.all([
       supabase.from("job_requests").select("id", { count: "exact", head: true })
-        .eq("client_id", selectedId).like("request_date", `${year}%`),
+        .eq("client_id", selectedId).like("received_date", `${year}%`),
       supabase.from("job_requests").select("id", { count: "exact", head: true })
         .eq("client_id", selectedId).is("linked_quote_id", null),
     ]).then(([ytdRes, pendingRes]) => {
