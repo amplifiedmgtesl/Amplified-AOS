@@ -267,15 +267,20 @@ export default function ClientMaintenance() {
                 />
               </div>
 
-              <div>
-                <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Bill To</label>
-                <input
-                  value={selectedClient.billTo ?? ""}
-                  onChange={(e) => updateField("billTo", e.target.value)}
-                  placeholder="Billing name (if different)"
-                  style={{ width: "100%" }}
-                />
-              </div>
+              {selectedClient.billTo && (
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "#888" }}>
+                    Historical Billing Address <span style={{ fontStyle: "italic" }}>(read-only — seeded from invoices)</span>
+                  </label>
+                  <pre style={{
+                    margin: 0, padding: "10px 14px", background: "var(--surface2, #f9fafb)",
+                    border: "1px solid var(--border, #e5e7eb)", borderRadius: 6,
+                    fontSize: 13, fontFamily: "inherit", whiteSpace: "pre-wrap", color: "#555",
+                  }}>
+                    {selectedClient.billTo}
+                  </pre>
+                </div>
+              )}
 
               <div>
                 <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Email</label>
