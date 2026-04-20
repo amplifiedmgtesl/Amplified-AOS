@@ -47,8 +47,16 @@ export default function RateCardEditor() {
     setRows(loadRateRows());
     setTerms(loadTerms());
     setClientName(loadClientName());
-    setProfiles(loadRateCardProfiles());
-    setActiveProfileIdState(getActiveRateCardProfileId());
+    const loadedProfiles = loadRateCardProfiles();
+    const activeId = getActiveRateCardProfileId();
+    setProfiles(loadedProfiles);
+    setActiveProfileIdState(activeId);
+    // Hydrate client dropdown and name from the active profile
+    const activeProfile = loadedProfiles.find((p) => p.id === activeId);
+    if (activeProfile) {
+      setClientId(activeProfile.clientId ?? "");
+      setProfileName(activeProfile.name ?? "Standard");
+    }
     // Load directly from DB — cache may not be ready at mount time
     Promise.all([
       supabase.from("positions").select("*").eq("is_active", true).order("sort_order"),
