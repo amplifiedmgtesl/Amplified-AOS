@@ -702,6 +702,7 @@ function rowToCalendarEvent(r: any): CalendarEvent {
 function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
   return {
     id: r.id,
+    clientId: r.client_id ?? undefined,
     client: r.client ?? "",
     eventName: r.event_name ?? "",
     venue: r.venue ?? "",
