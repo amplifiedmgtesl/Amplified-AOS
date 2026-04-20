@@ -645,8 +645,8 @@ export default function QuoteBuilder() {
           <div><small>Venue</small><input value={venue} onChange={(e)=>setVenue(e.target.value)} /></div>
           <div><small>City / State</small><input value={cityState} onChange={(e)=>setCityState(e.target.value)} /></div>
 
-          <div><small>Load Client Rate Card</small><select value={activeRateCardProfileId} onChange={(e)=>loadRateCardProfileIntoQuote(e.target.value)}><option value="">Current Working Rate Card</option>{rateCardProfiles.map((r)=><option key={r.id} value={r.id}>{r.clientName}</option>)}</select></div>
-          <div><small>Load Job Request</small><select value={linkedJobRequestId} onChange={(e)=>loadJobRequestIntoQuote(e.target.value)}><option value="">None</option>{jobRequests.map((r)=><option key={r.id} value={r.id}>{r.client} — {r.eventName}</option>)}</select></div>
+          <div><small>Load Client Rate Card</small><select value={activeRateCardProfileId} onChange={(e)=>loadRateCardProfileIntoQuote(e.target.value)}><option value="">Current Working Rate Card</option>{rateCardProfiles.filter((r) => !clientId || r.clientId === clientId).map((r)=><option key={r.id} value={r.id}>{r.name || r.clientName}</option>)}</select></div>
+          <div><small>Load Job Request</small><select value={linkedJobRequestId} onChange={(e)=>loadJobRequestIntoQuote(e.target.value)}><option value="">None</option>{jobRequests.filter((r) => !clientId || r.clientId === clientId).map((r)=><option key={r.id} value={r.id}>{r.eventName || r.client}</option>)}</select></div>
           <div><small>Linked Job Sheet</small><select value={linkedJobSheetId} onChange={(e)=>setLinkedJobSheetId(e.target.value)}><option value="">None</option>{jobSheets.map((s)=><option key={s.id} value={s.id}>{s.title}</option>)}</select></div>
 
           <div><small>Start Date</small><input type="date" value={startDate} onChange={(e)=>setStartDate(e.target.value)} /></div>
