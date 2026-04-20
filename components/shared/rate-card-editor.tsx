@@ -3,7 +3,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_RATE_ROWS, type TriggerOption, type RateRow } from "@/lib/rates/defaults";
-import { loadPositions, loadSpecialties, positionNames } from "@/lib/store/app-store";
+import { positionNames } from "@/lib/store/app-store";
+import { supabase } from "@/lib/supabase/client";
 import {
   getActiveRateCardProfileId,
   loadClientName,
@@ -44,8 +45,14 @@ export default function RateCardEditor() {
     setClientName(loadClientName());
     setProfiles(loadRateCardProfiles());
     setActiveProfileIdState(getActiveRateCardProfileId());
-    setPositions(loadPositions());
-    setSpecialties(loadSpecialties());
+    // Load directly from DB — cache may not be ready at mount time
+    Promise.all([
+      supabase.from("positions").select("*").eq("is_active", true).order("sort_order"),
+      supabase.from("specialties").select("*").eq("is_active", true).order("sort_order"),
+    ]).then(([posRes, spcRes]) => {
+      setPositions((posRes.data ?? []).map((r: any) => ({ id: r.id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active })));
+      setSpecialties((spcRes.data ?? []).map((r: any) => ({ id: r.id, positionId: r.position_id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active })));
+    });
   }, []);
 
   useEffect(() => { saveRateRows(rows); }, [rows]);
@@ -78,13 +85,7 @@ export default function RateCardEditor() {
 
   function addRateRow() {
     const posName = POSITIONS[0] || "Stagehand";
-    // Read directly from cache — React state may lag on first click
-    const allPositions = loadPositions();
-    const allSpecialties = loadSpecialties();
-    const pos = allPositions.find((p) => p.name === posName);
-    const spcs = pos
-      ? allSpecialties.filter((s) => s.positionId === pos.id).sort((a, b) => a.sortOrder - b.sortOrder)
-      : [];
+    const spcs = specialtiesForPosition(posName);
     const first = spcs[0];
     setRows([...rows, {
       specialtyId: first?.id ?? "",
