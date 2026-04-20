@@ -50,8 +50,18 @@ export default function RateCardEditor() {
       supabase.from("positions").select("*").eq("is_active", true).order("sort_order"),
       supabase.from("specialties").select("*").eq("is_active", true).order("sort_order"),
     ]).then(([posRes, spcRes]) => {
-      setPositions((posRes.data ?? []).map((r: any) => ({ id: r.id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active })));
-      setSpecialties((spcRes.data ?? []).map((r: any) => ({ id: r.id, positionId: r.position_id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active })));
+      const loadedPositions = (posRes.data ?? []).map((r: any) => ({ id: r.id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active }));
+      const loadedSpecialties = (spcRes.data ?? []).map((r: any) => ({ id: r.id, positionId: r.position_id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active }));
+      setPositions(loadedPositions);
+      setSpecialties(loadedSpecialties);
+      // Resolve specialtyId for existing rows that predate Phase 2 (no specialtyId stored)
+      setRows((current) => current.map((row) => {
+        if (row.specialtyId) return row;
+        const pos = loadedPositions.find((p) => p.name === row.position);
+        if (!pos) return row;
+        const spc = loadedSpecialties.find((s) => s.positionId === pos.id && s.name === row.specialty);
+        return spc ? { ...row, specialtyId: spc.id } : row;
+      }));
     });
   }, []);
 
@@ -166,7 +176,7 @@ export default function RateCardEditor() {
           <table>
             <thead>
               <tr>
-                <th>Show</th><th>Position</th><th>Specialty</th><th>Hourly</th><th>Day</th><th>OT Rate</th><th>DT Rate</th><th>OT Trigger</th><th>Travel</th>
+                <th>Show</th><th>Position</th><th>Specialty</th><th>Hourly</th><th>Day</th><th>OT Rate</th><th>DT Rate</th><th>OT Trigger</th><th>Travel</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -215,6 +225,7 @@ export default function RateCardEditor() {
                       </select>
                     </td>
                     <td><input type="number" value={row.travel} onChange={(e) => updateRow(index, { travel: Number(e.target.value || 0) })} /></td>
+                    <td><button className="secondary" style={{ color: "#a00", borderColor: "#e0a0a0", padding: "3px 8px" }} onClick={() => setRows(rows.filter((_, i) => i !== index))}>✕</button></td>
                   </tr>
                 );
               })}

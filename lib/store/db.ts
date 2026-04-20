@@ -206,6 +206,12 @@ async function _loadAll() {
   _cache.deletedEmployeeKeys = emps.filter((r: any) => r.is_deleted).map((r: any) => r.employee_key);
 
   _cache.jobCostingDrafts = (jobCostingRes.data ?? []).map(rowToJobCosting);
+
+  // Positions and specialties must be in cache BEFORE rate card profiles
+  // because rowToRateRow resolves position/specialty names from cache.
+  _cache.positions = (positionsRes.data ?? []).map(rowToPosition);
+  _cache.specialties = (specialtiesRes.data ?? []).map(rowToSpecialty);
+
   const profileRowsByProfileId = new Map<string, any[]>();
   for (const r of (rateProfileRowsRes.data ?? [])) {
     if (!profileRowsByProfileId.has(r.profile_id)) profileRowsByProfileId.set(r.profile_id, []);
@@ -220,9 +226,6 @@ async function _loadAll() {
   if (rateStateMap["rate_rows"]) _cache.rateRows = rateStateMap["rate_rows"];
   if (rateStateMap["terms"]) _cache.terms = rateStateMap["terms"];
   if (rateStateMap["client_name"]) _cache.clientName = rateStateMap["client_name"];
-
-  _cache.positions = (positionsRes.data ?? []).map(rowToPosition);
-  _cache.specialties = (specialtiesRes.data ?? []).map(rowToSpecialty);
 
   _cache.initialized = true;
 }
