@@ -587,6 +587,7 @@ export default function QuoteBuilder() {
       dueDate,
       poNo: "",
       billTo: client,
+      clientId: clientId || undefined,
       client,
       eventName,
       venue,

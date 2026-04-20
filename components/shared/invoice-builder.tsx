@@ -435,9 +435,9 @@ function createDepositInvoiceDraft() {
 
           <div>
             <small>Link Saved Quote</small>
-            <select value={sourceQuoteId} onChange={(e) => setSourceQuoteId(e.target.value)}>
-              <option value="">None</option>
-              {quotes.map((q) => <option key={q.id} value={q.id}>{q.client} — {q.eventName}</option>)}
+            <select value={sourceQuoteId} disabled={!invoice.clientId} onChange={(e) => setSourceQuoteId(e.target.value)}>
+              <option value="">{invoice.clientId ? "None" : "— Select a client first —"}</option>
+              {invoice.clientId && quotes.filter((q) => q.clientId === invoice.clientId).map((q) => <option key={q.id} value={q.id}>{q.client} — {q.eventName}</option>)}
             </select>
           </div>
           <div className="action-row" style={{ alignItems: "end" }}>
@@ -445,9 +445,9 @@ function createDepositInvoiceDraft() {
           </div>
           <div>
             <small>Link Job Request</small>
-            <select value={sourceJobRequestId} onChange={(e) => setSourceJobRequestId(e.target.value)}>
-              <option value="">None</option>
-              {jobRequests.map((r) => <option key={r.id} value={r.id}>{r.client} — {r.eventName}</option>)}
+            <select value={sourceJobRequestId} disabled={!invoice.clientId} onChange={(e) => setSourceJobRequestId(e.target.value)}>
+              <option value="">{invoice.clientId ? "None" : "— Select a client first —"}</option>
+              {invoice.clientId && jobRequests.filter((r) => r.clientId === invoice.clientId).map((r) => <option key={r.id} value={r.id}>{r.client} — {r.eventName}</option>)}
             </select>
           </div>
           <div className="action-row" style={{ alignItems: "end" }}>
@@ -474,9 +474,9 @@ function createDepositInvoiceDraft() {
           <div><small>PO No.</small><input value={invoice.poNo} onChange={(e) => patch({ poNo: e.target.value })} /></div>
           <div>
             <small>Linked Rate Card</small>
-            <select value={linkedRateCardProfileId} onChange={(e) => setLinkedRateCardProfileId(e.target.value)}>
-              <option value="">None</option>
-              {loadRateCardProfiles().map((p) => <option key={p.id} value={p.id}>{p.clientName}</option>)}
+            <select value={linkedRateCardProfileId} disabled={!invoice.clientId} onChange={(e) => setLinkedRateCardProfileId(e.target.value)}>
+              <option value="">{invoice.clientId ? "None" : "— Select a client first —"}</option>
+              {invoice.clientId && loadRateCardProfiles().filter((p) => p.clientId === invoice.clientId).map((p) => <option key={p.id} value={p.id}>{p.name || p.clientName}</option>)}
             </select>
           </div>
 
