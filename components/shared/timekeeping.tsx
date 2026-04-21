@@ -265,7 +265,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                 <thead>
                   <tr>
                     <th>Position</th><th>Employee</th><th>First Name</th><th>Last Name</th><th>Phone</th><th>Email</th>
-                    <th>Work Date</th><th>End Date</th>
+                    <th>Start Date</th><th>End Date</th>
                     <th>Time IN 1</th><th>Time OUT 1</th><th>Meal Break 1</th>
                     <th>Time IN 2</th><th>Time OUT 2</th><th>Meal Break 2</th>
                     <th>STD HOURS</th><th>OT HOURS</th><th>DT HOURS</th><th>TOTAL HOURS</th>
@@ -401,7 +401,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
             <table>
               <thead>
                 <tr>
-                  <th>Name</th><th>Position</th><th>Work Date</th><th>Time In</th><th>Time Out</th>
+                  <th>Name</th><th>Position</th><th>Start Date</th><th>Time In</th><th>Time Out</th>
                   <th>Meal Break</th><th>STD</th><th>OT</th><th>DT</th><th>Total Hrs</th><th>Action</th>
                 </tr>
               </thead>

@@ -844,7 +844,7 @@ export default function QuoteBuilder() {
                         </select>
                       </td>
                       <td style={{ minWidth: 150 }}>
-                        <input type="date" style={{ minWidth: 140 }} value={line.endDate || ""} onChange={(e)=>updateLine(line.id, { endDate: e.target.value })} />
+                        <input type="date" style={{ minWidth: 140 }} value={line.endDate || line.quoteDate || ""} onChange={(e)=>updateLine(line.id, { endDate: e.target.value })} />
                       </td>
                       <td>
                         <select value={line.positionId} onChange={(e)=>{
