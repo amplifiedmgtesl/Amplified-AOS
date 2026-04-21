@@ -726,7 +726,8 @@ function createDepositInvoiceDraft() {
           <table>
             <thead>
               <tr>
-                <th>Date</th>
+                <th>Start Date</th>
+                <th className="hide-print">End Date</th>
                 <th>Position</th>
                 <th>Specialty</th>
                 <th>Shift</th>
@@ -745,16 +746,27 @@ function createDepositInvoiceDraft() {
               {invoice.lines.map((line, idx) => {
                 const meta = parseLineMeta(line);
                 const ids = resolveLineIds(line);
+                const lineEndDate = line.endDate || meta.date || "";
                 return (
                   <tr key={idx}>
                     <td>
                       <div className="hide-print">
-                        <select value={meta.date} onChange={(e) => patchLine(idx, {}, { ...meta, date: e.target.value })}>
+                        <select value={meta.date} onChange={(e) => {
+                          const newStart = e.target.value;
+                          const curEnd = line.endDate || meta.date || "";
+                          const newEnd = (!curEnd || curEnd < newStart) ? newStart : curEnd;
+                          patchLine(idx, { endDate: newEnd }, { ...meta, date: newStart });
+                        }}>
                           <option value="">Select Date</option>
                           {dateOptions.map((d) => <option key={d} value={d}>{d}</option>)}
                         </select>
                       </div>
-                      <div className="print-terms">{meta.date || "-"}</div>
+                      <div className="print-terms">
+                        {lineEndDate && lineEndDate !== meta.date ? `${meta.date || "-"} → ${lineEndDate}` : (meta.date || "-")}
+                      </div>
+                    </td>
+                    <td className="hide-print">
+                      <input type="date" value={line.endDate || ""} onChange={(e) => patchLine(idx, { endDate: e.target.value })} />
                     </td>
                     <td>
                       <div className="hide-print">

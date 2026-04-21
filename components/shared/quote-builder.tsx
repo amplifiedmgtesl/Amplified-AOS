@@ -37,7 +37,8 @@ type Line = {
   department:string;
   position:string;
   specialty:string;
-  quoteDate:string;
+  quoteDate:string;    // start date
+  endDate:string;      // end date (defaults to same as quoteDate; advance for multi-day / cross-midnight lines)
   shiftLabel:string;
   startTime:string;
   endTime:string;
@@ -274,6 +275,7 @@ export default function QuoteBuilder() {
       position: first.position,
       specialty: first.specialty,
       quoteDate: "",
+      endDate: "",
       shiftLabel: "Shift 1",
       startTime: "",
       endTime: "",
@@ -444,6 +446,7 @@ export default function QuoteBuilder() {
         position: first.position,
         specialty: first.specialty,
         quoteDate: firstDate,
+        endDate: firstDate,
         shiftLabel: `Shift ${lines.length + 1}`,
         startTime: defaultStartTime || "",
         endTime: defaultEndTime || "",
@@ -533,6 +536,7 @@ export default function QuoteBuilder() {
           specialty: item.row.specialty,
           shiftLabel: item.line.shiftLabel,
           quoteDate: group.date,
+          endDate: item.line.endDate || group.date,
           startTime: item.line.startTime,
           endTime: item.line.endTime,
           rateMode: item.line.rateMode
@@ -630,6 +634,7 @@ export default function QuoteBuilder() {
         position: department,
         specialty,
         quoteDate,
+        endDate: l.endDate || quoteDate,
         shiftLabel,
         startTime,
         endTime,
@@ -821,17 +826,25 @@ export default function QuoteBuilder() {
           <h3 className="section-title">Edit Quote Line Items</h3>
           <div style={{ overflowX:"auto" }}>
             <table>
-              <thead><tr><th>Date</th><th>Position</th><th>Specialty</th><th>Shift</th><th>Rate Mode</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Qty</th><th>Holiday Hours</th><th>Travel</th><th>Line Total</th><th>Action</th></tr></thead>
+              <thead><tr><th>Start Date</th><th>End Date</th><th>Position</th><th>Specialty</th><th>Shift</th><th>Rate Mode</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Qty</th><th>Holiday Hours</th><th>Travel</th><th>Line Total</th><th>Action</th></tr></thead>
               <tbody>
                 {lines.map((line) => {
                   const calcHours = hoursBetween(line.startTime, line.endTime);
                   return (
                     <tr key={line.id}>
                       <td style={{ minWidth: 150 }}>
-                        <select style={{ minWidth: 140 }} value={line.quoteDate} onChange={(e)=>updateLine(line.id, { quoteDate:e.target.value })}>
+                        <select style={{ minWidth: 140 }} value={line.quoteDate} onChange={(e)=>{
+                          const newStart = e.target.value;
+                          // Auto-advance endDate if it's empty or earlier than the new start.
+                          const newEnd = (!line.endDate || line.endDate < newStart) ? newStart : line.endDate;
+                          updateLine(line.id, { quoteDate: newStart, endDate: newEnd });
+                        }}>
                           <option value="">Select Date</option>
                           {dayDetails.map((d)=><option key={d.date} value={d.date}>{d.date}</option>)}
                         </select>
+                      </td>
+                      <td style={{ minWidth: 150 }}>
+                        <input type="date" style={{ minWidth: 140 }} value={line.endDate || ""} onChange={(e)=>updateLine(line.id, { endDate: e.target.value })} />
                       </td>
                       <td>
                         <select value={line.positionId} onChange={(e)=>{
@@ -902,7 +915,7 @@ export default function QuoteBuilder() {
                 ) : (
                   computed.map((item) => (
                     <tr key={`client-breakdown-${item.line.id}`}>
-                      <td>{item.line.quoteDate || "-"}</td>
+                      <td>{item.line.endDate && item.line.endDate !== item.line.quoteDate ? `${item.line.quoteDate} → ${item.line.endDate}` : (item.line.quoteDate || "-")}</td>
                       <td>{item.line.position || item.row.position}</td>
                       <td>{item.row.specialty}</td>
                       <td>{item.line.shiftLabel}</td>
@@ -938,7 +951,7 @@ export default function QuoteBuilder() {
                       <tbody>
                         {posGroup.items.map((item) => (
                           <tr key={`${group.date}-${posGroup.position}-${item.line.id}`}>
-                            <td>{group.date}</td>
+                            <td>{item.line.endDate && item.line.endDate !== group.date ? `${group.date} → ${item.line.endDate}` : group.date}</td>
                             <td>{posGroup.position}</td>
                             <td>{item.row.specialty}</td>
                             <td>{item.line.shiftLabel}</td>

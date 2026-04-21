@@ -42,6 +42,7 @@ export type QuoteLine = {
   specialty?: string;
   shiftLabel?: string;
   quoteDate?: string;
+  endDate?: string;      // optional end date for shifts that span multiple days
   startTime?: string;
   endTime?: string;
   rateMode?: string;
@@ -54,11 +55,15 @@ export type TimeEntry = {
   lastName: string;
   phone: string;
   email: string;
+  workDate?: string;           // YYYY-MM-DD — start date of pair 1 (defaults to job sheet date)
+  endDate?: string;            // YYYY-MM-DD — end date of the last pair (>= workDate)
   timeIn1: string;
   timeOut1: string;
-  lunchMinutes: number;
   timeIn2: string;
   timeOut2: string;
+  lunchMinutes: number;        // LEGACY: kept for rollback safety. Not used in hours math.
+  mealBreak1Minutes?: number;  // Pair 1 meal break (0/30/60). Seeded from lunchMinutes on migration.
+  mealBreak2Minutes?: number;  // Pair 2 meal break (0/30/60).
   stdHours: number;
   otHours: number;
   dtHours: number;
@@ -71,6 +76,7 @@ export type TimeEntry = {
   userId?: string | null;      // set for staff-submitted entries
   status?: string | null;      // null=admin-created, submitted|approved|rejected for staff entries
   sortOrder?: number;
+  createdAt?: string;
 };
 
 export type Timesheet = {

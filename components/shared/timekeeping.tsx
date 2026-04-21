@@ -3,7 +3,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames, loadEmployees, getPendingStaffEntries, approveStaffEntry, rejectStaffEntry, setEntryApproved } from "@/lib/store/app-store";
-import { blankTimeEntry, computeTimeEntry, lunchOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
+import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
+import { parseMinutes } from "@/lib/time-utils";
 import type { EmployeeRecord, TimeEntry, Timesheet } from "@/lib/store/types";
 
 const TIMES = timeOptions();
@@ -264,7 +265,9 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                 <thead>
                   <tr>
                     <th>Position</th><th>Employee</th><th>First Name</th><th>Last Name</th><th>Phone</th><th>Email</th>
-                    <th>Time IN</th><th>Time OUT</th><th>Lunch</th><th>Time IN</th><th>Time OUT</th>
+                    <th>Work Date</th><th>End Date</th>
+                    <th>Time IN 1</th><th>Time OUT 1</th><th>Meal Break 1</th>
+                    <th>Time IN 2</th><th>Time OUT 2</th><th>Meal Break 2</th>
                     <th>STD HOURS</th><th>OT HOURS</th><th>DT HOURS</th><th>TOTAL HOURS</th>
                     {!hidePayAlways && !timesheet.hidePayColumns ? <><th>STD RATE</th><th>OT RATE</th><th>DT RATE</th><th>TOTAL PAY</th></> : null}
                     <th className="hide-print">Action</th>
@@ -293,11 +296,30 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       <td style={{ minWidth: 160 }}><input className="input-tight" style={{ minWidth: 150 }} value={row.lastName} onChange={(e)=>updateRow(row.id, { lastName:e.target.value })} /></td>
                       <td><input className="input-tight" value={row.phone} onChange={(e)=>updateRow(row.id, { phone:e.target.value })} /></td>
                       <td style={{ minWidth: 240 }}><input className="input-tight" style={{ minWidth: 230 }} value={row.email} onChange={(e)=>updateRow(row.id, { email:e.target.value })} /></td>
+                      <td style={{ minWidth: 140 }}><input type="date" className="input-tight" style={{ minWidth: 130 }} value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} /></td>
+                      <td style={{ minWidth: 140 }}>
+                        <input type="date" className="input-tight" style={{ minWidth: 130 }} value={row.endDate ?? ""} onChange={(e)=>updateRow(row.id, { endDate: e.target.value })} />
+                        {(() => {
+                          // +1 day hint: if pair 1 (or pair 2) crosses midnight by text but workDate === endDate
+                          const in1 = parseMinutes(row.timeIn1 ?? "");
+                          const out1 = parseMinutes(row.timeOut1 ?? "");
+                          const in2 = parseMinutes(row.timeIn2 ?? "");
+                          const out2 = parseMinutes(row.timeOut2 ?? "");
+                          const pair1Crosses = in1 != null && out1 != null && out1 < in1;
+                          const pair2Crosses = in2 != null && out2 != null && out2 < in2;
+                          const sameDay = row.workDate && row.endDate && row.workDate === row.endDate;
+                          if (sameDay && (pair1Crosses || pair2Crosses)) {
+                            return <div style={{ fontSize: 10, color: "#c2410c", marginTop: 2 }}>shift crosses midnight — advance End Date?</div>;
+                          }
+                          return null;
+                        })()}
+                      </td>
                       <td style={{ minWidth: 115 }}><select className="input-tight" style={{ minWidth: 105 }} value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
                       <td style={{ minWidth: 115 }}><select className="input-tight" style={{ minWidth: 105 }} value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.lunchMinutes} onChange={(e)=>updateRow(row.id, { lunchMinutes:Number(e.target.value) })}>{lunchOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
+                      <td><select className="input-tight" value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
                       <td style={{ minWidth: 115 }}><select className="input-tight" style={{ minWidth: 105 }} value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
                       <td style={{ minWidth: 115 }}><select className="input-tight" style={{ minWidth: 105 }} value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
+                      <td><select className="input-tight" value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
                       <td>{row.stdHours.toFixed(2)}</td>
                       <td>{row.otHours.toFixed(2)}</td>
                       <td>{row.dtHours.toFixed(2)}</td>
@@ -335,7 +357,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                 </tbody>
                 <tfoot>
                   <tr>
-                    <th colSpan={11}>Totals</th>
+                    <th colSpan={14}>Totals</th>
                     <th>{totals.stdHours.toFixed(2)}</th>
                     <th>{totals.otHours.toFixed(2)}</th>
                     <th>{totals.dtHours.toFixed(2)}</th>
@@ -380,7 +402,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               <thead>
                 <tr>
                   <th>Name</th><th>Position</th><th>Work Date</th><th>Time In</th><th>Time Out</th>
-                  <th>Lunch</th><th>STD</th><th>OT</th><th>DT</th><th>Total Hrs</th><th>Action</th>
+                  <th>Meal Break</th><th>STD</th><th>OT</th><th>DT</th><th>Total Hrs</th><th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -391,7 +413,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     <td>{(entry as any).workDate || "—"}</td>
                     <td>{entry.timeIn1 || "—"}</td>
                     <td>{entry.timeOut1 || "—"}</td>
-                    <td>{entry.lunchMinutes}m</td>
+                    <td>{((entry.mealBreak1Minutes ?? entry.lunchMinutes ?? 0) + (entry.mealBreak2Minutes ?? 0))}m</td>
                     <td>{entry.stdHours.toFixed(2)}</td>
                     <td>{entry.otHours.toFixed(2)}</td>
                     <td>{entry.dtHours.toFixed(2)}</td>
