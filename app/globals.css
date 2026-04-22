@@ -240,15 +240,21 @@ small,.muted{color:var(--muted)}
 .line-table .line-band-3 > td{background:#fbeadf}
 /* Timesheet signature row — print-only (used on-site to confirm crew arrival) */
 .sig-row{display:none}
-.sig-cell{padding:8px 6px !important}
-.sig-label{display:inline-block;font-size:10px;color:#444;margin-right:6px;white-space:nowrap}
-.sig-line{display:inline-block;border-bottom:1px solid #000;flex:1;min-width:120px;vertical-align:bottom;height:14px}
 @media print{
   /* Timesheet keeps its color bands + shows the signature row. Invoice/quote
      editable tables are already wrapped in .hide-print so their bands never
      print anyway. */
   .sig-row{display:table-row !important}
-  .sig-row > td{background:transparent !important;border-bottom:none !important;padding-top:4px;padding-bottom:10px !important}
+  .sig-row > td{
+    background:transparent !important;
+    border-top:none !important;
+    border-left:none !important;
+    border-right:none !important;
+    border-bottom:1px solid #000 !important;
+    padding:18px 6px 3px !important;
+    font-size:10px;color:#555;
+    vertical-align:bottom;
+  }
   .timesheet-grid .line-row > td{border-bottom:none}
   .timesheet-grid .line-row-end > td{border-bottom:none}
 }

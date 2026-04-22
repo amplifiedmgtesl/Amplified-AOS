@@ -373,10 +373,10 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       ) : null}
                     </tr>
                     <tr className={`sig-row ${band}`}>
-                      <td className="sig-cell"><span className="sig-label">Signature (Time IN 1):</span><span className="sig-line"></span></td>
-                      <td colSpan={2}></td>
-                      <td className="sig-cell"><span className="sig-label">Signature (Time IN 2):</span><span className="sig-line"></span></td>
-                      <td colSpan={showPay ? 10 : 6}></td>
+                      <td className="sig-cell">Signature (Time IN 1):</td>
+                      <td className="sig-blank" colSpan={2}></td>
+                      <td className="sig-cell">Signature (Time IN 2):</td>
+                      <td className="sig-blank" colSpan={showPay ? 10 : 6}></td>
                     </tr>
                     </Fragment>
                     );
