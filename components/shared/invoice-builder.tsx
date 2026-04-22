@@ -1000,9 +1000,9 @@ function createDepositInvoiceDraft() {
 
         <div className="invoice-box" style={{ marginTop: 18 }}>
           <h3 className="section-title">Terms & Notes</h3>
-          <div style={{ whiteSpace: "pre-line", lineHeight: 1.35, fontSize: 13 }}>{invoice.terms}</div>
+          <div style={{ whiteSpace: "pre-line", lineHeight: 1.3, fontSize: 11 }}>{invoice.terms}</div>
           {invoice.notes ? (
-            <div style={{ marginTop: 12, whiteSpace: "pre-line", lineHeight: 1.35, fontSize: 13 }}>
+            <div style={{ marginTop: 10, whiteSpace: "pre-line", lineHeight: 1.3, fontSize: 11 }}>
               <strong>Notes:</strong>
               {"\n"}
               {invoice.notes}
