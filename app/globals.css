@@ -247,13 +247,10 @@ small,.muted{color:var(--muted)}
   .sig-row{display:table-row !important}
   .sig-row > td{
     background:transparent !important;
-    border-top:none !important;
-    border-left:none !important;
-    border-right:none !important;
-    border-bottom:1px solid #000 !important;
-    padding:18px 6px 3px !important;
+    border:none !important;
+    padding:14px 6px 18px !important;
     font-size:10px;color:#555;
-    vertical-align:bottom;
+    vertical-align:top;
   }
   .timesheet-grid .line-row > td{border-bottom:none}
   .timesheet-grid .line-row-end > td{border-bottom:none}
