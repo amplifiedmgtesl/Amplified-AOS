@@ -248,7 +248,7 @@ small,.muted{color:var(--muted)}
      editable tables are already wrapped in .hide-print so their bands never
      print anyway. */
   .sig-row{display:table-row !important}
-  .sig-row > td{background:transparent !important;border-bottom:1px solid #000;padding-top:4px;padding-bottom:10px !important}
+  .sig-row > td{background:transparent !important;border-bottom:none !important;padding-top:4px;padding-bottom:10px !important}
   .timesheet-grid .line-row > td{border-bottom:none}
   .timesheet-grid .line-row-end > td{border-bottom:none}
 }
