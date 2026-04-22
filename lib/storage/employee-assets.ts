@@ -46,6 +46,23 @@ export async function uploadEmployeeDocument(employeeKey: string, file: File): P
   return data.publicUrl;
 }
 
+/**
+ * Delete a previously-uploaded asset from the bucket. Accepts either the
+ * public URL stored on the employee record or a bare storage path. Silently
+ * no-ops for legacy base64 data URLs and for anything we can't locate.
+ */
+export async function deleteEmployeeAsset(urlOrPath: string): Promise<void> {
+  if (!urlOrPath) return;
+  if (urlOrPath.startsWith("data:")) return; // legacy inline, nothing in storage
+  let path = urlOrPath;
+  // Extract path from a Supabase public URL:
+  //   https://<proj>.supabase.co/storage/v1/object/public/employee-assets/<path>
+  const match = urlOrPath.match(/\/employee-assets\/(.+?)(\?|$)/);
+  if (match) path = match[1];
+  const { error } = await supabase.storage.from(BUCKET).remove([path]);
+  if (error) console.error("[storage] remove failed:", error, path);
+}
+
 // ── One-time migration: base64 data URLs → Storage ─────────────────────────────
 
 function dataUrlToBlob(dataUrl: string): { blob: Blob; ext: string } | null {

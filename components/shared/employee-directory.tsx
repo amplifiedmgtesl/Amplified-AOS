@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { IMPORTED_EMPLOYEES } from "@/lib/data/employees";
 import { addWorkerToTimesheet, deleteEmployee, getActiveEmployee, getActiveJobSheet, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, loadTimesheets, setActiveEmployee, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
-import { uploadProfilePicture, uploadEmployeeDocument } from "@/lib/storage/employee-assets";
+import { uploadProfilePicture, uploadEmployeeDocument, deleteEmployeeAsset } from "@/lib/storage/employee-assets";
 import { US_STATES } from "@/lib/constants";
 import type { EmployeeDocument, EmployeeRecord } from "@/lib/store/types";
 
@@ -52,6 +52,14 @@ export default function EmployeeDirectory() {
   const cities = useMemo(() => Array.from(new Set(employees.map((e) => e.city || "").filter(Boolean))).sort(), [employees]);
   const statuses = useMemo(() => Array.from(new Set(employees.map((e) => e.status || "").filter(Boolean))).sort(), [employees]);
   const types = useMemo(() => Array.from(new Set(employees.map((e) => e.employmentType || "").filter(Boolean))).sort(), [employees]);
+  // Common employment-type choices + any distinct values already saved in
+  // the directory. Lets the profile dropdown pick from a clean list while
+  // still honoring any legacy values that happen to exist.
+  const COMMON_EMPLOYMENT_TYPES = ["Employee", "Contractor", "W2", "1099", "Full-Time", "Part-Time", "Seasonal"];
+  const employmentTypeOptions = useMemo(
+    () => Array.from(new Set([...COMMON_EMPLOYMENT_TYPES, ...types])).sort(),
+    [types],
+  );
 
 
   const filtered = useMemo(() => {
@@ -203,6 +211,35 @@ function addToCurrentTimesheet(employee: Employee) {
     setRefreshKey((x) => x + 1);
   }
 
+  async function removeActivePicture() {
+    if (!activeEmployee || !activeEmployee.profilePicture) return;
+    if (!confirm("Remove this profile picture?")) return;
+    try {
+      await deleteEmployeeAsset(activeEmployee.profilePicture);
+    } catch (err) {
+      console.error("[employee-directory] failed to remove picture from storage:", err);
+    }
+    upsertEmployee({ ...activeEmployee, profilePicture: undefined, source: "local" });
+    setRefreshKey((x) => x + 1);
+  }
+
+  async function removeActiveDocument(docId: string) {
+    if (!activeEmployee) return;
+    const doc = (activeEmployee.documents || []).find((d) => d.id === docId);
+    if (!doc) return;
+    if (!confirm(`Delete "${doc.name}"?`)) return;
+    if (doc.dataUrl) {
+      try {
+        await deleteEmployeeAsset(doc.dataUrl);
+      } catch (err) {
+        console.error("[employee-directory] failed to remove document from storage:", err);
+      }
+    }
+    const nextDocs = (activeEmployee.documents || []).filter((d) => d.id !== docId);
+    upsertEmployee({ ...activeEmployee, documents: nextDocs, source: "local" });
+    setRefreshKey((x) => x + 1);
+  }
+
   return (
     <div className="grid">
       <div className="card hide-print">
@@ -253,7 +290,12 @@ function addToCurrentTimesheet(employee: Employee) {
           <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 16, alignItems: "start" }}>
             <div className="list-card" style={{ textAlign: "center" }}>
               {activeEmployee.profilePicture ? <img src={activeEmployee.profilePicture} alt="Profile" style={{ width:"100%", maxWidth:160, borderRadius:12 }} /> : <div className="muted" style={{ padding: "32px 8px" }}>No profile picture</div>}
-              <div className="hide-print" style={{ marginTop: 8 }}><input type="file" accept="image/*" onChange={(e)=>updateActivePicture(e.target.files)} /></div>
+              <div className="hide-print" style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                <input type="file" accept="image/*" onChange={(e)=>updateActivePicture(e.target.files)} />
+                {activeEmployee.profilePicture ? (
+                  <button type="button" className="secondary" onClick={removeActivePicture} style={{ fontSize: 12, padding: "4px 10px" }}>Remove Picture</button>
+                ) : null}
+              </div>
             </div>
             <div className="grid2">
               <div><small>Employee Key</small><input value={activeEmployee.employeeKey} onChange={(e)=>updateActiveField("employeeKey", e.target.value)} /></div>
@@ -267,7 +309,13 @@ function addToCurrentTimesheet(employee: Employee) {
               <div><small>State</small><select value={activeEmployee.stateCode || ""} onChange={(e)=>updateActiveField("stateCode", e.target.value)}><option value="">— Select —</option>{US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
               <div><small>Zip</small><input value={activeEmployee.zip || ""} onChange={(e)=>updateActiveField("zip", e.target.value)} /></div>
               <div><small>Status</small><input value={activeEmployee.status || ""} onChange={(e)=>updateActiveField("status", e.target.value)} /></div>
-              <div><small>Employment Type</small><input value={activeEmployee.employmentType || ""} onChange={(e)=>updateActiveField("employmentType", e.target.value)} /></div>
+              <div>
+                <small>Employment Type</small>
+                <select value={activeEmployee.employmentType || ""} onChange={(e)=>updateActiveField("employmentType", e.target.value)}>
+                  <option value="">— Select —</option>
+                  {employmentTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
             </div>
           </div>
 
@@ -287,7 +335,10 @@ function addToCurrentTimesheet(employee: Employee) {
                   {(activeEmployee.documents || []).map((doc) => (
                     <div key={doc.id} className="list-card">
                       <strong>{doc.name}</strong>
-                      {doc.dataUrl ? <div className="action-row" style={{ marginTop: 8 }}><a className="badge" href={doc.dataUrl} target="_blank" rel="noreferrer">View File</a></div> : null}
+                      <div className="action-row" style={{ marginTop: 8, gap: 8 }}>
+                        {doc.dataUrl ? <a className="badge" href={doc.dataUrl} target="_blank" rel="noreferrer">View File</a> : null}
+                        <button type="button" className="secondary" onClick={() => removeActiveDocument(doc.id)} style={{ fontSize: 12, padding: "4px 10px" }}>Delete</button>
+                      </div>
                     </div>
                   ))}
                 </div>
