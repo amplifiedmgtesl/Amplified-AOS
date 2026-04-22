@@ -954,6 +954,29 @@ function createDepositInvoiceDraft() {
           </div>
         ) : null}
 
+        {/* Summary totals repeated after line items */}
+        <div className="total-card" style={{ marginTop: 12 }}>
+          <h3 className="section-title" style={{ marginBottom: 8 }}>Invoice Summary</h3>
+          <table>
+            <tbody>
+              {!depositInvoiceMode ? (
+                <>
+                  <tr><td><strong>Subtotal</strong></td><td>${invoice.subtotal.toFixed(2)}</td></tr>
+                  <tr><td><strong>Deposit</strong></td><td>${invoice.deposit.toFixed(2)}</td></tr>
+                  <tr><td><strong>Amount Due</strong></td><td>${invoice.amountDue.toFixed(2)}</td></tr>
+                  <tr><td><strong>Paid</strong></td><td>${invoice.paidAmount.toFixed(2)}</td></tr>
+                  <tr><td><strong>Balance</strong></td><td>${balance.toFixed(2)}</td></tr>
+                </>
+              ) : (
+                <>
+                  <tr><td><strong>Total</strong></td><td>${invoice.deposit.toFixed(2)}</td></tr>
+                  <tr><td><strong>Deposit</strong></td><td>${invoice.deposit.toFixed(2)}</td></tr>
+                </>
+              )}
+            </tbody>
+          </table>
+        </div>
+
         {!depositInvoiceMode && invoice.timesheetSummary && invoice.timesheetSummary.length > 0 ? (
           <div style={{ marginTop: 18 }}>
             <h3 className="section-title">Detailed Labor Breakdown from Timekeeping</h3>
