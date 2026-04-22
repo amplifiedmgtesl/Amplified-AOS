@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { IMPORTED_EMPLOYEES } from "@/lib/data/employees";
 import { addWorkerToTimesheet, bulkUpsertEmployees, deleteEmployee, getActiveEmployee, getActiveJobSheet, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, loadTimesheets, setActiveEmployee, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
+import { uploadProfilePicture, uploadEmployeeDocument } from "@/lib/storage/employee-assets";
 import { US_STATES } from "@/lib/constants";
 import type { EmployeeDocument, EmployeeRecord } from "@/lib/store/types";
 
@@ -23,14 +24,6 @@ function mergedEmployees() {
   const map = new Map<string, EmployeeRecord>();
   imported.forEach((e) => map.set(e.employeeKey, e));
   return Array.from(map.values());
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.readAsDataURL(file);
-  });
 }
 
 export default function EmployeeDirectory() {
@@ -195,20 +188,30 @@ function addToCurrentTimesheet(employee: Employee) {
 
   async function updateActivePicture(files: FileList | null) {
     if (!activeEmployee || !files?.[0]) return;
-    const dataUrl = await readFileAsDataUrl(files[0]);
-    upsertEmployee({ ...activeEmployee, profilePicture: dataUrl, source: "local" });
-    setRefreshKey((x) => x + 1);
+    try {
+      const publicUrl = await uploadProfilePicture(activeEmployee.employeeKey, files[0]);
+      upsertEmployee({ ...activeEmployee, profilePicture: publicUrl, source: "local" });
+      setRefreshKey((x) => x + 1);
+    } catch (err) {
+      console.error("[employee-directory] profile picture upload failed:", err);
+      alert("Failed to upload profile picture. Check console for details.");
+    }
   }
 
   async function updateActiveDocuments(files: FileList | null) {
     if (!activeEmployee || !files?.length) return;
     const docs: EmployeeDocument[] = [...(activeEmployee.documents || [])];
-    for (const file of Array.from(files)) {
-      const dataUrl = await readFileAsDataUrl(file);
-      docs.push({ id: `doc-${Date.now()}-${file.name}`, name: file.name, dataUrl });
+    try {
+      for (const file of Array.from(files)) {
+        const publicUrl = await uploadEmployeeDocument(activeEmployee.employeeKey, file);
+        docs.push({ id: `doc-${Date.now()}-${file.name}`, name: file.name, dataUrl: publicUrl });
+      }
+      upsertEmployee({ ...activeEmployee, documents: docs, source: "local" });
+      setRefreshKey((x) => x + 1);
+    } catch (err) {
+      console.error("[employee-directory] document upload failed:", err);
+      alert("Failed to upload one or more documents. Check console for details.");
     }
-    upsertEmployee({ ...activeEmployee, documents: docs, source: "local" });
-    setRefreshKey((x) => x + 1);
   }
 
   function saveActiveNotes(notes: string) {
