@@ -306,15 +306,10 @@ function addToCurrentTimesheet(employee: Employee) {
       )}
 
       {activeEmployee && (
-        <div className="doc-sheet">
-          <div className="pdf-header">
-            <div></div>
-            <div className="pdf-title-wrap">
-              <div className="pdf-logo-wrap"><img src="/branding/client-logo.png" alt="Logo" className="pdf-logo" /></div>
-              <h2 className="pdf-title">Employee Profile</h2>
-              <div className="pdf-subtitle">{activeEmployee.fullName}</div>
-            </div>
-            <div></div>
+        <div className="card">
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
+            <h2 className="section-title" style={{ margin: 0 }}>Employee Profile — {activeEmployee.fullName}</h2>
+            <div className="muted" style={{ fontSize: 13 }}>{activeEmployee.employeeKey}</div>
           </div>
           <div className="grid3">
             <div className="list-card">
