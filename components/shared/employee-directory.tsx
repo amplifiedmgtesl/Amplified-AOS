@@ -262,11 +262,12 @@ function addToCurrentTimesheet(employee: Employee) {
               <div><small>Last Name</small><input value={activeEmployee.lastName} onChange={(e)=>updateActiveField("lastName", e.target.value)} /></div>
               <div><small>Phone</small><input value={activeEmployee.phone || ""} onChange={(e)=>updateActiveField("phone", e.target.value)} /></div>
               <div><small>Email</small><input value={activeEmployee.email || ""} onChange={(e)=>updateActiveField("email", e.target.value)} /></div>
+              <div style={{ gridColumn: "1 / -1" }}><small>Address</small><input value={activeEmployee.address || ""} onChange={(e)=>updateActiveField("address", e.target.value)} placeholder="Street address (and apt/suite if applicable)" /></div>
               <div><small>City</small><input value={activeEmployee.city || ""} onChange={(e)=>updateActiveField("city", e.target.value)} /></div>
               <div><small>State</small><select value={activeEmployee.stateCode || ""} onChange={(e)=>updateActiveField("stateCode", e.target.value)}><option value="">— Select —</option>{US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
+              <div><small>Zip</small><input value={activeEmployee.zip || ""} onChange={(e)=>updateActiveField("zip", e.target.value)} /></div>
               <div><small>Status</small><input value={activeEmployee.status || ""} onChange={(e)=>updateActiveField("status", e.target.value)} /></div>
               <div><small>Employment Type</small><input value={activeEmployee.employmentType || ""} onChange={(e)=>updateActiveField("employmentType", e.target.value)} /></div>
-              <div style={{ gridColumn: "1 / -1" }}><small>Address</small><input value={activeEmployee.address || ""} onChange={(e)=>updateActiveField("address", e.target.value)} /></div>
             </div>
           </div>
 

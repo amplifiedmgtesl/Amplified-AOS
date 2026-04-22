@@ -218,9 +218,10 @@ export type EmployeeRecord = {
   city?: string;
   state?: string;
   stateCode?: string;
+  zip?: string;
   email?: string;
   phone?: string;
-  address?: string;
+  address?: string;  // street address — matches Client.address. Old single-string addresses live in address_donotuse in DB (not mapped).
   notes?: string;
   profilePicture?: string;
   documents?: EmployeeDocument[];

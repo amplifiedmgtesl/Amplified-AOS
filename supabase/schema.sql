@@ -263,9 +263,12 @@ create table if not exists employees (
   city            text,
   state           text,
   state_code      text,
+  zip             text,
   email           text,
   phone           text,
-  address         text,
+  address         text,            -- street address (matches clients.address convention)
+  address_donotuse text,           -- legacy single-string full address; do not read or write
+
   notes           text,
   profile_picture text,
   documents       jsonb   not null default '[]',
