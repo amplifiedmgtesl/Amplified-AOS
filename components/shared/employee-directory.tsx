@@ -305,7 +305,106 @@ function addToCurrentTimesheet(employee: Employee) {
         </div>
       )}
 
-      <div className="grid2">
+      {activeEmployee && (
+        <div className="doc-sheet">
+          <div className="pdf-header">
+            <div></div>
+            <div className="pdf-title-wrap">
+              <div className="pdf-logo-wrap"><img src="/branding/client-logo.png" alt="Logo" className="pdf-logo" /></div>
+              <h2 className="pdf-title">Employee Profile</h2>
+              <div className="pdf-subtitle">{activeEmployee.fullName}</div>
+            </div>
+            <div></div>
+          </div>
+          <div className="grid3">
+            <div className="list-card">
+              {activeEmployee.profilePicture ? <img src={activeEmployee.profilePicture} alt="Profile" style={{ width:"100%", maxWidth:180, borderRadius:12 }} /> : <div className="muted">No profile picture uploaded</div>}
+              <div className="hide-print" style={{ marginTop: 8 }}><input type="file" accept="image/*" onChange={(e)=>updateActivePicture(e.target.files)} /></div>
+            </div>
+            <div className="metric-card"><div className="metric-label">Contact</div><div style={{ marginTop: 12 }}>{activeEmployee.phone || "-"}<br />{activeEmployee.email || "-"}</div></div>
+            <div className="metric-card"><div className="metric-label">Location</div><div style={{ marginTop: 12 }}>{activeEmployee.city || "-"}<br />{activeEmployee.stateCode || activeEmployee.state || "-"}</div></div>
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <h3 className="section-title">Notes</h3>
+            <textarea value={activeEmployee.notes || ""} onChange={(e)=>saveActiveNotes(e.target.value)} />
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <h3 className="section-title">Certificates / ID / Files</h3>
+            <div className="hide-print"><input type="file" multiple onChange={(e)=>updateActiveDocuments(e.target.files)} /></div>
+            <div style={{ marginTop: 10 }}>
+              {(activeEmployee.documents || []).length === 0 ? (
+                <div className="muted">No files uploaded yet.</div>
+              ) : (
+                <div className="grid">
+                  {(activeEmployee.documents || []).map((doc) => (
+                    <div key={doc.id} className="list-card">
+                      <strong>{doc.name}</strong>
+                      {doc.dataUrl ? <div className="action-row" style={{ marginTop: 8 }}><a className="badge" href={doc.dataUrl} target="_blank" rel="noreferrer">View File</a></div> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Job History summary ── */}
+          {(() => {
+            const jobHistory = loadJobSheets()
+              .filter((js) => js.workers.some((w) => w.employeeKey === activeEmployee.employeeKey));
+            return (
+              <div style={{ marginTop: 16 }}>
+                <div className="action-row" style={{ marginBottom: 8 }}>
+                  <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Job History</h3>
+                  {jobHistory.length > 0 && (
+                    <button className="secondary" onClick={() => setHistoryModal("jobs")}>
+                      View All ({jobHistory.length})
+                    </button>
+                  )}
+                </div>
+                {jobHistory.length === 0
+                  ? <div className="muted">No job sheets found for this employee.</div>
+                  : <div className="muted">{jobHistory.length} job{jobHistory.length !== 1 ? "s" : ""} assigned — most recent: <strong>{jobHistory.sort((a,b) => b.date.localeCompare(a.date))[0]?.date}</strong></div>
+                }
+              </div>
+            );
+          })()}
+
+          {/* ── Timesheet History summary ── */}
+          {(() => {
+            const tsWithEntries = loadTimesheets()
+              .map((ts) => ({ ts, entries: ts.rows.filter((r) => r.employeeKey === activeEmployee.employeeKey) }))
+              .filter((x) => x.entries.length > 0);
+            const totalHours = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalHours, 0), 0);
+            const totalPay = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalPay, 0), 0);
+            return (
+              <div style={{ marginTop: 16 }}>
+                <div className="action-row" style={{ marginBottom: 8 }}>
+                  <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Timesheet History</h3>
+                  {tsWithEntries.length > 0 && (
+                    <button className="secondary" onClick={() => setHistoryModal("timesheets")}>
+                      View All ({tsWithEntries.length})
+                    </button>
+                  )}
+                </div>
+                {tsWithEntries.length === 0
+                  ? <div className="muted">No timesheet entries found for this employee.</div>
+                  : (
+                    <div className="grid3">
+                      <div className="metric-card"><div className="metric-label">Timesheets</div><div className="metric-value">{tsWithEntries.length}</div></div>
+                      <div className="metric-card"><div className="metric-label">Total Hours</div><div className="metric-value">{totalHours.toFixed(1)}</div></div>
+                      <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
+                    </div>
+                  )
+                }
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      <div>
         <div className="card">
           <h2 className="section-title">Directory Results</h2>
           <div className="muted" style={{ marginBottom: 8 }}>Directory count: {filtered.length} of {employees.length}</div>
@@ -349,106 +448,6 @@ function addToCurrentTimesheet(employee: Employee) {
           </div>
         </div>
 
-        <div className="doc-sheet">
-          <div className="pdf-header">
-            <div></div>
-            <div className="pdf-title-wrap">
-              <div className="pdf-logo-wrap"><img src="/branding/client-logo.png" alt="Logo" className="pdf-logo" /></div>
-              <h2 className="pdf-title">Employee Profile</h2>
-              <div className="pdf-subtitle">{activeEmployee ? activeEmployee.fullName : "No employee selected"}</div>
-            </div>
-            <div></div>
-          </div>
-          {!activeEmployee ? <div className="muted">Select an employee to open their profile.</div> : (
-            <>
-              <div className="grid3">
-                <div className="list-card">
-                  {activeEmployee.profilePicture ? <img src={activeEmployee.profilePicture} alt="Profile" style={{ width:"100%", maxWidth:180, borderRadius:12 }} /> : <div className="muted">No profile picture uploaded</div>}
-                  <div className="hide-print" style={{ marginTop: 8 }}><input type="file" accept="image/*" onChange={(e)=>updateActivePicture(e.target.files)} /></div>
-                </div>
-                <div className="metric-card"><div className="metric-label">Contact</div><div style={{ marginTop: 12 }}>{activeEmployee.phone || "-"}<br />{activeEmployee.email || "-"}</div></div>
-                <div className="metric-card"><div className="metric-label">Location</div><div style={{ marginTop: 12 }}>{activeEmployee.city || "-"}<br />{activeEmployee.stateCode || activeEmployee.state || "-"}</div></div>
-              </div>
-
-              <div style={{ marginTop: 16 }}>
-                <h3 className="section-title">Notes</h3>
-                <textarea value={activeEmployee.notes || ""} onChange={(e)=>saveActiveNotes(e.target.value)} />
-              </div>
-
-              <div style={{ marginTop: 16 }}>
-                <h3 className="section-title">Certificates / ID / Files</h3>
-                <div className="hide-print"><input type="file" multiple onChange={(e)=>updateActiveDocuments(e.target.files)} /></div>
-                <div style={{ marginTop: 10 }}>
-                  {(activeEmployee.documents || []).length === 0 ? (
-                    <div className="muted">No files uploaded yet.</div>
-                  ) : (
-                    <div className="grid">
-                      {(activeEmployee.documents || []).map((doc) => (
-                        <div key={doc.id} className="list-card">
-                          <strong>{doc.name}</strong>
-                          {doc.dataUrl ? <div className="action-row" style={{ marginTop: 8 }}><a className="badge" href={doc.dataUrl} target="_blank" rel="noreferrer">View File</a></div> : null}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* ── Job History summary ── */}
-              {(() => {
-                const jobHistory = loadJobSheets()
-                  .filter((js) => js.workers.some((w) => w.employeeKey === activeEmployee.employeeKey));
-                return (
-                  <div style={{ marginTop: 16 }}>
-                    <div className="action-row" style={{ marginBottom: 8 }}>
-                      <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Job History</h3>
-                      {jobHistory.length > 0 && (
-                        <button className="secondary" onClick={() => setHistoryModal("jobs")}>
-                          View All ({jobHistory.length})
-                        </button>
-                      )}
-                    </div>
-                    {jobHistory.length === 0
-                      ? <div className="muted">No job sheets found for this employee.</div>
-                      : <div className="muted">{jobHistory.length} job{jobHistory.length !== 1 ? "s" : ""} assigned — most recent: <strong>{jobHistory.sort((a,b) => b.date.localeCompare(a.date))[0]?.date}</strong></div>
-                    }
-                  </div>
-                );
-              })()}
-
-              {/* ── Timesheet History summary ── */}
-              {(() => {
-                const tsWithEntries = loadTimesheets()
-                  .map((ts) => ({ ts, entries: ts.rows.filter((r) => r.employeeKey === activeEmployee.employeeKey) }))
-                  .filter((x) => x.entries.length > 0);
-                const totalHours = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalHours, 0), 0);
-                const totalPay = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalPay, 0), 0);
-                return (
-                  <div style={{ marginTop: 16 }}>
-                    <div className="action-row" style={{ marginBottom: 8 }}>
-                      <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Timesheet History</h3>
-                      {tsWithEntries.length > 0 && (
-                        <button className="secondary" onClick={() => setHistoryModal("timesheets")}>
-                          View All ({tsWithEntries.length})
-                        </button>
-                      )}
-                    </div>
-                    {tsWithEntries.length === 0
-                      ? <div className="muted">No timesheet entries found for this employee.</div>
-                      : (
-                        <div className="grid3">
-                          <div className="metric-card"><div className="metric-label">Timesheets</div><div className="metric-value">{tsWithEntries.length}</div></div>
-                          <div className="metric-card"><div className="metric-label">Total Hours</div><div className="metric-value">{totalHours.toFixed(1)}</div></div>
-                          <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
-                        </div>
-                      )
-                    }
-                  </div>
-                );
-              })()}
-            </>
-          )}
-        </div>
       </div>
       {/* ── History modal ── */}
       {historyModal && activeEmployee && (
