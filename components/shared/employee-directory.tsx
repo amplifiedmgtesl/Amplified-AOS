@@ -44,6 +44,8 @@ export default function EmployeeDirectory() {
   const [role, setRole] = useState("Crew");
   const [csvText, setCsvText] = useState("");
   const [historyModal, setHistoryModal] = useState<"jobs" | "timesheets" | null>(null);
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const [migrating, setMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState<{ inserted: number; errors: number } | null>(null);
   const [form, setForm] = useState<EmployeeRecord>({
@@ -164,11 +166,12 @@ function addToCurrentTimesheet(employee: Employee) {
       stateCode: "", state: "", city: "", address: "", employmentType: "", type: "contractor", notes: "", documents: [], source: "local"
     });
     setRefreshKey((x) => x + 1);
+    setAddModalOpen(false);
   }
 
   function importCsv() {
     const lines = csvText.split(/\r?\n/).filter(Boolean);
-    if (lines.length < 2) return;
+    if (lines.length < 2) { setImportModalOpen(false); return; }
     const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
     lines.slice(1).forEach((line, idx) => {
       const cols = line.split(",").map((c) => c.trim());
@@ -190,6 +193,7 @@ function addToCurrentTimesheet(employee: Employee) {
     });
     setCsvText("");
     setRefreshKey((x) => x + 1);
+    setImportModalOpen(false);
   }
 
   async function updateActivePicture(files: FileList | null) {
@@ -221,6 +225,12 @@ function addToCurrentTimesheet(employee: Employee) {
       <div className="card hide-print">
         <h2 className="section-title">National Employee Directory</h2>
 
+        {/* ── Top action row ── */}
+        <div className="action-row" style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <button type="button" onClick={() => setAddModalOpen(true)}>+ Add Crew Manually</button>
+          <button type="button" className="secondary" onClick={() => setImportModalOpen(true)}>⇪ Import from CSV</button>
+        </div>
+
         {/* ── Migration banner (shown until records are in Supabase) ── */}
         {!isMigrated && (
           <div className="badge" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
@@ -249,33 +259,51 @@ function addToCurrentTimesheet(employee: Employee) {
         </div>
       </div>
 
-      <div className="grid2 hide-print">
-        <div className="card">
-          <h2 className="section-title">Add Crew Manually</h2>
-          <div className="grid2">
-            <div><small>Employee Key</small><input value={form.employeeKey} onChange={(e)=>setForm({ ...form, employeeKey:e.target.value })} /></div>
-            <div><small>Full Name</small><input value={form.fullName} onChange={(e)=>setForm({ ...form, fullName:e.target.value })} /></div>
-            <div><small>First Name</small><input value={form.firstName} onChange={(e)=>setForm({ ...form, firstName:e.target.value })} /></div>
-            <div><small>Last Name</small><input value={form.lastName} onChange={(e)=>setForm({ ...form, lastName:e.target.value })} /></div>
-            <div><small>Phone</small><input value={form.phone || ""} onChange={(e)=>setForm({ ...form, phone:e.target.value })} /></div>
-            <div><small>Email</small><input value={form.email || ""} onChange={(e)=>setForm({ ...form, email:e.target.value })} /></div>
-            <div><small>City</small><input value={form.city || ""} onChange={(e)=>setForm({ ...form, city:e.target.value })} /></div>
-            <div><small>State</small><select value={form.stateCode || ""} onChange={(e)=>setForm({ ...form, stateCode:e.target.value })}><option value="">— Select —</option>{US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
-            <div><small>Status</small><input value={form.status || ""} onChange={(e)=>setForm({ ...form, status:e.target.value })} /></div>
-            <div><small>Employment Type</small><input value={form.employmentType || ""} onChange={(e)=>setForm({ ...form, employmentType:e.target.value })} /></div>
-            <div style={{ gridColumn: "1 / -1" }}><small>Address</small><input value={form.address || ""} onChange={(e)=>setForm({ ...form, address:e.target.value })} /></div>
+      {addModalOpen && (
+        <div className="modal-backdrop" onClick={() => setAddModalOpen(false)}>
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h2 className="section-title" style={{ margin: 0 }}>Add Crew Manually</h2>
+              <button type="button" className="secondary" onClick={() => setAddModalOpen(false)} aria-label="Close">✕</button>
+            </div>
+            <div className="grid2">
+              <div><small>Employee Key</small><input value={form.employeeKey} onChange={(e)=>setForm({ ...form, employeeKey:e.target.value })} placeholder="Leave blank to auto-generate" /></div>
+              <div><small>Full Name</small><input value={form.fullName} onChange={(e)=>setForm({ ...form, fullName:e.target.value })} /></div>
+              <div><small>First Name</small><input value={form.firstName} onChange={(e)=>setForm({ ...form, firstName:e.target.value })} /></div>
+              <div><small>Last Name</small><input value={form.lastName} onChange={(e)=>setForm({ ...form, lastName:e.target.value })} /></div>
+              <div><small>Phone</small><input value={form.phone || ""} onChange={(e)=>setForm({ ...form, phone:e.target.value })} /></div>
+              <div><small>Email</small><input value={form.email || ""} onChange={(e)=>setForm({ ...form, email:e.target.value })} /></div>
+              <div><small>City</small><input value={form.city || ""} onChange={(e)=>setForm({ ...form, city:e.target.value })} /></div>
+              <div><small>State</small><select value={form.stateCode || ""} onChange={(e)=>setForm({ ...form, stateCode:e.target.value })}><option value="">— Select —</option>{US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
+              <div><small>Status</small><input value={form.status || ""} onChange={(e)=>setForm({ ...form, status:e.target.value })} /></div>
+              <div><small>Employment Type</small><input value={form.employmentType || ""} onChange={(e)=>setForm({ ...form, employmentType:e.target.value })} /></div>
+              <div style={{ gridColumn: "1 / -1" }}><small>Address</small><input value={form.address || ""} onChange={(e)=>setForm({ ...form, address:e.target.value })} /></div>
+            </div>
+            <div style={{ marginTop: 12 }}><small>Notes</small><textarea value={form.notes || ""} onChange={(e)=>setForm({ ...form, notes:e.target.value })} /></div>
+            <div className="action-row" style={{ marginTop: 16, justifyContent: "flex-end" }}>
+              <button type="button" className="secondary" onClick={() => setAddModalOpen(false)}>Cancel</button>
+              <button type="button" onClick={saveManualEmployee}>Save Employee</button>
+            </div>
           </div>
-          <div style={{ marginTop: 12 }}><small>Notes</small><textarea value={form.notes || ""} onChange={(e)=>setForm({ ...form, notes:e.target.value })} /></div>
-          <div className="action-row" style={{ marginTop: 12 }}><button onClick={saveManualEmployee}>Save Employee</button></div>
         </div>
+      )}
 
-        <div className="card">
-          <h2 className="section-title">Import Crew via CSV / Excel Export</h2>
-          <p className="muted">Paste CSV from Excel here. Expected headers can include: employee key, full name, first name, last name, phone, email, state code, city, address, employment type, status.</p>
-          <textarea value={csvText} onChange={(e)=>setCsvText(e.target.value)} style={{ minHeight: 260 }} />
-          <div className="action-row" style={{ marginTop: 12 }}><button onClick={importCsv}>Import CSV Text</button></div>
+      {importModalOpen && (
+        <div className="modal-backdrop" onClick={() => setImportModalOpen(false)}>
+          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h2 className="section-title" style={{ margin: 0 }}>Import Crew via CSV / Excel Export</h2>
+              <button type="button" className="secondary" onClick={() => setImportModalOpen(false)} aria-label="Close">✕</button>
+            </div>
+            <p className="muted" style={{ marginTop: 0 }}>Paste CSV from Excel here. Expected headers can include: employee key, full name, first name, last name, phone, email, state code, city, address, employment type, status.</p>
+            <textarea value={csvText} onChange={(e)=>setCsvText(e.target.value)} style={{ minHeight: 320, fontFamily: "monospace", fontSize: 12 }} placeholder="Paste comma-separated rows here…" />
+            <div className="action-row" style={{ marginTop: 16, justifyContent: "flex-end" }}>
+              <button type="button" className="secondary" onClick={() => setImportModalOpen(false)}>Cancel</button>
+              <button type="button" onClick={importCsv} disabled={!csvText.trim()}>Import CSV Text</button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="grid2">
         <div className="card">
