@@ -238,15 +238,22 @@ small,.muted{color:var(--muted)}
 .line-table .line-band-1 > td{background:#eaf1fb}
 .line-table .line-band-2 > td{background:#edf5e8}
 .line-table .line-band-3 > td{background:#fbeadf}
+/* Timesheet signature row — print-only (used on-site to confirm crew arrival) */
+.sig-row{display:none}
+.sig-cell{padding:8px 6px !important}
+.sig-label{display:inline-block;font-size:10px;color:#444;margin-right:6px;white-space:nowrap}
+.sig-line{display:inline-block;border-bottom:1px solid #000;flex:1;min-width:120px;vertical-align:bottom;height:14px}
 @media print{
-  /* Drop backgrounds + separators in print so pages stay compact and monochrome */
-  .line-table .line-band-0 > td,
-  .line-table .line-band-1 > td,
-  .line-table .line-band-2 > td,
-  .line-table .line-band-3 > td{background:#fff !important}
-  .line-table .line-row > td{border-bottom:1px solid var(--line);padding:4px 6px}
-  .line-table .line-row-end > td{border-bottom:1px solid var(--line)}
+  /* Timesheet keeps its color bands + shows the signature row. Invoice/quote
+     editable tables are already wrapped in .hide-print so their bands never
+     print anyway. */
+  .sig-row{display:table-row !important}
+  .sig-row > td{background:transparent !important;border-bottom:1px solid #000;padding-top:4px;padding-bottom:10px !important}
+  .timesheet-grid .line-row > td{border-bottom:none}
+  .timesheet-grid .line-row-end > td{border-bottom:none}
 }
+/* Force browsers to preserve the row colors on print */
+.line-table,.line-table *{print-color-adjust:exact;-webkit-print-color-adjust:exact}
 
 
 
