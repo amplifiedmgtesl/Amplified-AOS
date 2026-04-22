@@ -29,20 +29,31 @@ export function mealBreakOptions() {
 }
 export function computeTimeEntry(entry: TimeEntry): TimeEntry {
   const workDate = entry.workDate;
-  const endDate = entry.endDate;
+  // Auto-seed endDate: if we have a workDate, infer the true shift-end date
+  // from pair crossovers rather than trusting whatever endDate happens to be
+  // saved. This removes the old "advance End Date?" warning and keeps the
+  // end-date field in sync with the times the user entered.
+  let endDate = entry.endDate;
+  let out1DateOut = workDate;
+  let out2DateOut = workDate;
+  if (workDate) {
+    const { out1Date, out2Date } = inferPairDatesLocal(
+      workDate, entry.timeIn1, entry.timeOut1, entry.timeIn2, entry.timeOut2
+    );
+    out1DateOut = out1Date;
+    out2DateOut = out2Date;
+    // Use the latest pair-out date as the authoritative end date.
+    endDate = out2Date;
+  }
 
   // Pair dates: when we have anchor dates, infer per-pair dates from the text
   // times (pair 1 rollover if out1 < in1, pair 2 starts on pair 1's out date,
   // etc.). When dates are missing (legacy rows), durationMinutes uses the +24
   // trick as a fallback.
   let totalMinutes = 0;
-  if (workDate && endDate) {
-    // Use time-utils inferPairDates via local helpers (avoid circular calls).
-    const { in1Date, out1Date, in2Date, out2Date } = inferPairDatesLocal(
-      workDate, entry.timeIn1, entry.timeOut1, entry.timeIn2, entry.timeOut2
-    );
-    totalMinutes += durationMinutes(in1Date, entry.timeIn1, out1Date, entry.timeOut1);
-    totalMinutes += durationMinutes(in2Date, entry.timeIn2, out2Date, entry.timeOut2);
+  if (workDate) {
+    totalMinutes += durationMinutes(workDate, entry.timeIn1, out1DateOut, entry.timeOut1);
+    totalMinutes += durationMinutes(out1DateOut, entry.timeIn2, out2DateOut, entry.timeOut2);
   } else {
     // Legacy fallback — same-day +24 if negative
     totalMinutes += durationMinutes(undefined, entry.timeIn1, undefined, entry.timeOut1);
@@ -64,6 +75,7 @@ export function computeTimeEntry(entry: TimeEntry): TimeEntry {
   const totalPay = +(stdHours * entry.stdRate + otHours * entry.otRate + dtHours * entry.dtRate).toFixed(2);
   return {
     ...entry,
+    endDate,
     stdHours: +stdHours.toFixed(2),
     otHours: +otHours.toFixed(2),
     dtHours: +dtHours.toFixed(2),
