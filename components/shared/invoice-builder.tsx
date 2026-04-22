@@ -770,7 +770,10 @@ function createDepositInvoiceDraft() {
                         </div>
                       </td>
                       <td className="hide-print">
-                        <input type="date" value={line.endDate || ""} onChange={(e) => patchLine(idx, { endDate: e.target.value })} />
+                        <select value={line.endDate || meta.date || ""} onChange={(e) => patchLine(idx, { endDate: e.target.value })}>
+                          <option value="">Select Date</option>
+                          {dateOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+                        </select>
                       </td>
                       <td colSpan={2}>
                         <div className="hide-print">

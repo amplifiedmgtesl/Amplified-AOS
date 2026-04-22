@@ -865,7 +865,10 @@ export default function QuoteBuilder() {
                           </select>
                         </td>
                         <td>
-                          <input type="date" value={line.endDate || line.quoteDate || ""} onChange={(e)=>updateLine(line.id, { endDate: e.target.value })} />
+                          <select value={line.endDate || line.quoteDate || ""} onChange={(e)=>updateLine(line.id, { endDate: e.target.value })}>
+                            <option value="">Select Date</option>
+                            {dayDetails.map((d)=><option key={d.date} value={d.date}>{d.date}</option>)}
+                          </select>
                         </td>
                         <td colSpan={2}>
                           <select value={line.positionId} onChange={(e)=>{
