@@ -3,8 +3,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { IMPORTED_EMPLOYEES } from "@/lib/data/employees";
-import { addWorkerToTimesheet, bulkUpsertEmployees, deleteEmployee, getActiveEmployee, getActiveJobSheet, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, loadTimesheets, setActiveEmployee, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
-import { uploadProfilePicture, uploadEmployeeDocument, migrateEmployeeMedia } from "@/lib/storage/employee-assets";
+import { addWorkerToTimesheet, deleteEmployee, getActiveEmployee, getActiveJobSheet, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, loadTimesheets, setActiveEmployee, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
+import { uploadProfilePicture, uploadEmployeeDocument } from "@/lib/storage/employee-assets";
 import { US_STATES } from "@/lib/constants";
 import type { EmployeeDocument, EmployeeRecord } from "@/lib/store/types";
 
@@ -38,10 +38,6 @@ export default function EmployeeDirectory() {
   const [csvText, setCsvText] = useState("");
   const [historyModal, setHistoryModal] = useState<"jobs" | "timesheets" | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [migrating, setMigrating] = useState(false);
-  const [migrateResult, setMigrateResult] = useState<{ inserted: number; errors: number } | null>(null);
-  const [mediaMigrating, setMediaMigrating] = useState(false);
-  const [mediaMigrateResult, setMediaMigrateResult] = useState<{ migrated: number; skipped: number; errors: number } | null>(null);
   const activeSheetId = getActiveJobSheet();
   const activeSheet = loadJobSheets().find((s) => s.id === activeSheetId) || null;
   const employees = useMemo(() => mergedEmployees(), [refreshKey]);
@@ -57,54 +53,6 @@ export default function EmployeeDirectory() {
   const statuses = useMemo(() => Array.from(new Set(employees.map((e) => e.status || "").filter(Boolean))).sort(), [employees]);
   const types = useMemo(() => Array.from(new Set(employees.map((e) => e.employmentType || "").filter(Boolean))).sort(), [employees]);
 
-  async function handleMigrateToDatabase() {
-    setMigrating(true);
-    setMigrateResult(null);
-    const toMigrate = (IMPORTED_EMPLOYEES as unknown as EmployeeRecord[]).map((e) => ({
-      ...e,
-      type: "contractor" as const,
-      source: "imported",
-    }));
-    const result = await bulkUpsertEmployees(toMigrate);
-    setMigrateResult(result);
-    setMigrating(false);
-    setRefreshKey((x) => x + 1);
-  }
-
-  async function handleMigrateMediaToStorage() {
-    if (!confirm("This will upload every employee's inline profile picture and document files to Supabase Storage. Continue?")) return;
-    setMediaMigrating(true);
-    setMediaMigrateResult(null);
-    const all = loadEmployees();
-    let migrated = 0, skipped = 0, errors = 0;
-    for (const emp of all) {
-      const needs =
-        (emp.profilePicture && emp.profilePicture.startsWith("data:")) ||
-        (emp.documents || []).some((d) => d.dataUrl?.startsWith("data:"));
-      if (!needs) { skipped++; continue; }
-      try {
-        const updated = await migrateEmployeeMedia({
-          employeeKey: emp.employeeKey,
-          profilePicture: emp.profilePicture,
-          documents: emp.documents,
-        });
-        if (updated) {
-          upsertEmployee({ ...emp, ...updated, source: emp.source ?? "local" });
-          migrated++;
-        } else {
-          skipped++;
-        }
-      } catch (err) {
-        console.error("[employee-directory] media migrate failed for", emp.employeeKey, err);
-        errors++;
-      }
-    }
-    setMediaMigrateResult({ migrated, skipped, errors });
-    setMediaMigrating(false);
-    setRefreshKey((x) => x + 1);
-  }
-
-  const isMigrated = loadEmployees().length > 0;
 
   const filtered = useMemo(() => {
     const rows = employees.filter((e) => {
@@ -265,35 +213,6 @@ function addToCurrentTimesheet(employee: Employee) {
           <button type="button" onClick={startNewEmployee}>+ Add Crew Manually</button>
           <button type="button" className="secondary" onClick={() => setImportModalOpen(true)}>⇪ Import from CSV</button>
         </div>
-
-        {/* ── Migration banner (shown until records are in Supabase) ── */}
-        {!isMigrated && (
-          <div className="badge" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
-            <span>⚠️ The 2,473 imported contacts are stored in a local file and have not been migrated to the database yet.</span>
-            <button type="button" onClick={handleMigrateToDatabase} disabled={migrating}>
-              {migrating ? "Migrating…" : "Migrate to Database"}
-            </button>
-          </div>
-        )}
-        {migrateResult && (
-          <div className="badge" style={{ marginBottom: 12 }}>
-            ✅ Migration complete — {migrateResult.inserted} records saved{migrateResult.errors > 0 ? `, ${migrateResult.errors} errors` : ""}.
-          </div>
-        )}
-
-        {/* One-time media migration: inline base64 data URLs → Storage bucket */}
-        <div className="badge" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
-          <span>📤 Migrate existing profile pictures & documents from inline base64 to Supabase Storage.</span>
-          <button type="button" onClick={handleMigrateMediaToStorage} disabled={mediaMigrating}>
-            {mediaMigrating ? "Uploading…" : "Migrate Media to Storage"}
-          </button>
-        </div>
-        {mediaMigrateResult && (
-          <div className="badge" style={{ marginBottom: 12 }}>
-            ✅ Media migration done — {mediaMigrateResult.migrated} migrated, {mediaMigrateResult.skipped} skipped{mediaMigrateResult.errors > 0 ? `, ${mediaMigrateResult.errors} errors` : ""}.
-          </div>
-        )}
-
 
         <div className="grid4">
           <div><small>Search</small><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Name, key, phone, email..." /></div>
