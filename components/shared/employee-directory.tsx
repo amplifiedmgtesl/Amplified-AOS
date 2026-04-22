@@ -44,27 +44,9 @@ export default function EmployeeDirectory() {
   const [role, setRole] = useState("Crew");
   const [csvText, setCsvText] = useState("");
   const [historyModal, setHistoryModal] = useState<"jobs" | "timesheets" | null>(null);
-  const [addModalOpen, setAddModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [migrating, setMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState<{ inserted: number; errors: number } | null>(null);
-  const [form, setForm] = useState<EmployeeRecord>({
-    employeeKey: "",
-    fullName: "",
-    firstName: "",
-    lastName: "",
-    phone: "",
-    email: "",
-    stateCode: "",
-    state: "",
-    city: "",
-    address: "",
-    employmentType: "",
-    type: "contractor",
-    notes: "",
-    documents: [],
-    source: "local"
-  });
   const activeSheetId = getActiveJobSheet();
   const activeSheet = loadJobSheets().find((s) => s.id === activeSheetId) || null;
   const employees = useMemo(() => mergedEmployees(), [refreshKey]);
@@ -157,16 +139,31 @@ function addToCurrentTimesheet(employee: Employee) {
   setRefreshKey((x) => x + 1);
 }
 
-  function saveManualEmployee() {
-    const key = form.employeeKey || `emp-${Date.now()}`;
-    const fullName = form.fullName || `${form.firstName} ${form.lastName}`.trim();
-    upsertEmployee({ ...form, employeeKey: key, fullName, type: form.type || "contractor", source: "local" });
-    setForm({
-      employeeKey: "", fullName: "", firstName: "", lastName: "", phone: "", email: "",
-      stateCode: "", state: "", city: "", address: "", employmentType: "", type: "contractor", notes: "", documents: [], source: "local"
-    });
+  function startNewEmployee() {
+    const key = `emp-${Date.now()}`;
+    const blank: EmployeeRecord = {
+      employeeKey: key, fullName: "", firstName: "", lastName: "", phone: "", email: "",
+      stateCode: "", state: "", city: "", address: "", employmentType: "", status: "",
+      type: "contractor", notes: "", documents: [], source: "local",
+    };
+    upsertEmployee(blank);
+    setActiveEmployee(key);
     setRefreshKey((x) => x + 1);
-    setAddModalOpen(false);
+  }
+
+  function updateActiveField<K extends keyof EmployeeRecord>(key: K, value: EmployeeRecord[K]) {
+    if (!activeEmployee) return;
+    const updated = { ...activeEmployee, [key]: value, source: "local" as const };
+    // Keep fullName in sync when first/last change
+    if (key === "firstName" || key === "lastName") {
+      const fn = key === "firstName" ? (value as string) : activeEmployee.firstName;
+      const ln = key === "lastName" ? (value as string) : activeEmployee.lastName;
+      if (!activeEmployee.fullName || activeEmployee.fullName === `${activeEmployee.firstName} ${activeEmployee.lastName}`.trim()) {
+        updated.fullName = `${fn} ${ln}`.trim();
+      }
+    }
+    upsertEmployee(updated);
+    setRefreshKey((x) => x + 1);
   }
 
   function importCsv() {
@@ -227,7 +224,7 @@ function addToCurrentTimesheet(employee: Employee) {
 
         {/* ── Top action row ── */}
         <div className="action-row" style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-          <button type="button" onClick={() => setAddModalOpen(true)}>+ Add Crew Manually</button>
+          <button type="button" onClick={startNewEmployee}>+ Add Crew Manually</button>
           <button type="button" className="secondary" onClick={() => setImportModalOpen(true)}>⇪ Import from CSV</button>
         </div>
 
@@ -259,35 +256,6 @@ function addToCurrentTimesheet(employee: Employee) {
         </div>
       </div>
 
-      {addModalOpen && (
-        <div className="modal-backdrop" onClick={() => setAddModalOpen(false)}>
-          <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h2 className="section-title" style={{ margin: 0 }}>Add Crew Manually</h2>
-              <button type="button" className="secondary" onClick={() => setAddModalOpen(false)} aria-label="Close">✕</button>
-            </div>
-            <div className="grid2">
-              <div><small>Employee Key</small><input value={form.employeeKey} onChange={(e)=>setForm({ ...form, employeeKey:e.target.value })} placeholder="Leave blank to auto-generate" /></div>
-              <div><small>Full Name</small><input value={form.fullName} onChange={(e)=>setForm({ ...form, fullName:e.target.value })} /></div>
-              <div><small>First Name</small><input value={form.firstName} onChange={(e)=>setForm({ ...form, firstName:e.target.value })} /></div>
-              <div><small>Last Name</small><input value={form.lastName} onChange={(e)=>setForm({ ...form, lastName:e.target.value })} /></div>
-              <div><small>Phone</small><input value={form.phone || ""} onChange={(e)=>setForm({ ...form, phone:e.target.value })} /></div>
-              <div><small>Email</small><input value={form.email || ""} onChange={(e)=>setForm({ ...form, email:e.target.value })} /></div>
-              <div><small>City</small><input value={form.city || ""} onChange={(e)=>setForm({ ...form, city:e.target.value })} /></div>
-              <div><small>State</small><select value={form.stateCode || ""} onChange={(e)=>setForm({ ...form, stateCode:e.target.value })}><option value="">— Select —</option>{US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
-              <div><small>Status</small><input value={form.status || ""} onChange={(e)=>setForm({ ...form, status:e.target.value })} /></div>
-              <div><small>Employment Type</small><input value={form.employmentType || ""} onChange={(e)=>setForm({ ...form, employmentType:e.target.value })} /></div>
-              <div style={{ gridColumn: "1 / -1" }}><small>Address</small><input value={form.address || ""} onChange={(e)=>setForm({ ...form, address:e.target.value })} /></div>
-            </div>
-            <div style={{ marginTop: 12 }}><small>Notes</small><textarea value={form.notes || ""} onChange={(e)=>setForm({ ...form, notes:e.target.value })} /></div>
-            <div className="action-row" style={{ marginTop: 16, justifyContent: "flex-end" }}>
-              <button type="button" className="secondary" onClick={() => setAddModalOpen(false)}>Cancel</button>
-              <button type="button" onClick={saveManualEmployee}>Save Employee</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {importModalOpen && (
         <div className="modal-backdrop" onClick={() => setImportModalOpen(false)}>
           <div className="modal-panel" onClick={(e) => e.stopPropagation()}>
@@ -308,16 +276,28 @@ function addToCurrentTimesheet(employee: Employee) {
       {activeEmployee && (
         <div className="card">
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 12 }}>
-            <h2 className="section-title" style={{ margin: 0 }}>Employee Profile — {activeEmployee.fullName}</h2>
+            <h2 className="section-title" style={{ margin: 0 }}>Employee Profile{activeEmployee.fullName ? ` — ${activeEmployee.fullName}` : ""}</h2>
             <div className="muted" style={{ fontSize: 13 }}>{activeEmployee.employeeKey}</div>
           </div>
-          <div className="grid3">
-            <div className="list-card">
-              {activeEmployee.profilePicture ? <img src={activeEmployee.profilePicture} alt="Profile" style={{ width:"100%", maxWidth:180, borderRadius:12 }} /> : <div className="muted">No profile picture uploaded</div>}
+
+          <div style={{ display: "grid", gridTemplateColumns: "180px 1fr", gap: 16, alignItems: "start" }}>
+            <div className="list-card" style={{ textAlign: "center" }}>
+              {activeEmployee.profilePicture ? <img src={activeEmployee.profilePicture} alt="Profile" style={{ width:"100%", maxWidth:160, borderRadius:12 }} /> : <div className="muted" style={{ padding: "32px 8px" }}>No profile picture</div>}
               <div className="hide-print" style={{ marginTop: 8 }}><input type="file" accept="image/*" onChange={(e)=>updateActivePicture(e.target.files)} /></div>
             </div>
-            <div className="metric-card"><div className="metric-label">Contact</div><div style={{ marginTop: 12 }}>{activeEmployee.phone || "-"}<br />{activeEmployee.email || "-"}</div></div>
-            <div className="metric-card"><div className="metric-label">Location</div><div style={{ marginTop: 12 }}>{activeEmployee.city || "-"}<br />{activeEmployee.stateCode || activeEmployee.state || "-"}</div></div>
+            <div className="grid2">
+              <div><small>Employee Key</small><input value={activeEmployee.employeeKey} onChange={(e)=>updateActiveField("employeeKey", e.target.value)} /></div>
+              <div><small>Full Name</small><input value={activeEmployee.fullName} onChange={(e)=>updateActiveField("fullName", e.target.value)} /></div>
+              <div><small>First Name</small><input value={activeEmployee.firstName} onChange={(e)=>updateActiveField("firstName", e.target.value)} /></div>
+              <div><small>Last Name</small><input value={activeEmployee.lastName} onChange={(e)=>updateActiveField("lastName", e.target.value)} /></div>
+              <div><small>Phone</small><input value={activeEmployee.phone || ""} onChange={(e)=>updateActiveField("phone", e.target.value)} /></div>
+              <div><small>Email</small><input value={activeEmployee.email || ""} onChange={(e)=>updateActiveField("email", e.target.value)} /></div>
+              <div><small>City</small><input value={activeEmployee.city || ""} onChange={(e)=>updateActiveField("city", e.target.value)} /></div>
+              <div><small>State</small><select value={activeEmployee.stateCode || ""} onChange={(e)=>updateActiveField("stateCode", e.target.value)}><option value="">— Select —</option>{US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
+              <div><small>Status</small><input value={activeEmployee.status || ""} onChange={(e)=>updateActiveField("status", e.target.value)} /></div>
+              <div><small>Employment Type</small><input value={activeEmployee.employmentType || ""} onChange={(e)=>updateActiveField("employmentType", e.target.value)} /></div>
+              <div style={{ gridColumn: "1 / -1" }}><small>Address</small><input value={activeEmployee.address || ""} onChange={(e)=>updateActiveField("address", e.target.value)} /></div>
+            </div>
           </div>
 
           <div style={{ marginTop: 16 }}>
