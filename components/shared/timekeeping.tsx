@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames, loadEmployees, getPendingStaffEntries, approveStaffEntry, rejectStaffEntry, setEntryApproved } from "@/lib/store/app-store";
 import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
 import { parseMinutes } from "@/lib/time-utils";
@@ -261,23 +261,42 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
         ) : (
           <>
             <div style={{ overflowX: "auto" }}>
-              <table className="timesheet-grid">
+              {(() => {
+                const showPay = !hidePayAlways && !timesheet.hidePayColumns;
+                // Row-1 colSpans sum to N where N = row-2 cell count.
+                // Without pay (N=10): [1,2,1,1,1,2,1,1]  |  With pay (N=14): [2,2,2,2,1,2,1,2]
+                const r1Spans = showPay
+                  ? { pos: 2, emp: 2, fn: 2, ln: 2, phone: 1, email: 2, start: 1, end: 2 }
+                  : { pos: 1, emp: 2, fn: 1, ln: 1, phone: 1, email: 2, start: 1, end: 1 };
+                return (
+              <table className="timesheet-grid line-table">
                 <thead>
                   <tr>
-                    <th>Position</th><th>Employee</th><th>First Name</th><th>Last Name</th><th>Phone</th><th>Email</th>
-                    <th>Start Date</th><th>End Date</th>
-                    <th>Time IN 1</th><th>Time OUT 1</th><th>Meal Break 1</th>
-                    <th>Time IN 2</th><th>Time OUT 2</th><th>Meal Break 2</th>
-                    <th>STD HOURS</th><th>OT HOURS</th><th>DT HOURS</th><th>TOTAL HOURS</th>
-                    {!hidePayAlways && !timesheet.hidePayColumns ? <><th>STD RATE</th><th>OT RATE</th><th>DT RATE</th><th>TOTAL PAY</th></> : null}
-                    <th className="hide-print">Action</th>
+                    <th colSpan={r1Spans.pos}>Position</th>
+                    <th colSpan={r1Spans.emp}>Employee</th>
+                    <th colSpan={r1Spans.fn}>First Name</th>
+                    <th colSpan={r1Spans.ln}>Last Name</th>
+                    <th colSpan={r1Spans.phone}>Phone</th>
+                    <th colSpan={r1Spans.email}>Email</th>
+                    <th colSpan={r1Spans.start}>Start Date</th>
+                    <th colSpan={r1Spans.end}>End Date</th>
+                    <th rowSpan={2} className="hide-print">Action</th>
+                  </tr>
+                  <tr>
+                    <th>Time IN 1</th><th>Time OUT 1</th><th>Meal 1</th>
+                    <th>Time IN 2</th><th>Time OUT 2</th><th>Meal 2</th>
+                    <th>STD HRS</th><th>OT HRS</th><th>DT HRS</th><th>TOTAL HRS</th>
+                    {showPay ? <><th>STD RATE</th><th>OT RATE</th><th>DT RATE</th><th>TOTAL PAY</th></> : null}
                   </tr>
                 </thead>
                 <tbody>
-                  {timesheet.rows.map((row) => (
-                    <tr key={row.id}>
-                      <td style={{ minWidth: 150 }}><select className="input-tight" style={{ minWidth: 140 }} value={row.position} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select></td>
-                      <td style={{ minWidth: 180 }}>
+                  {timesheet.rows.map((row, idx) => {
+                    const band = `line-band-${idx % 4}`;
+                    return (
+                    <Fragment key={row.id}>
+                    <tr className={`line-row ${band}`}>
+                      <td colSpan={r1Spans.pos}><select className="input-tight" value={row.position} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select></td>
+                      <td colSpan={r1Spans.emp}>
                         <EmployeeAutoFill
                           employeeKey={row.employeeKey}
                           employees={employees}
@@ -287,20 +306,18 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                             lastName: emp.lastName || emp.fullName.split(" ").slice(1).join(" ") || "",
                             phone: emp.phone || "",
                             email: emp.email || "",
-                            // Link to employee → needs approval before it's locked
                             status: row.status === "approved" ? "approved" : "submitted",
                           })}
                         />
                       </td>
-                      <td style={{ minWidth: 140 }}><input className="input-tight" style={{ minWidth: 130 }} value={row.firstName} onChange={(e)=>updateRow(row.id, { firstName:e.target.value })} /></td>
-                      <td style={{ minWidth: 160 }}><input className="input-tight" style={{ minWidth: 150 }} value={row.lastName} onChange={(e)=>updateRow(row.id, { lastName:e.target.value })} /></td>
-                      <td><input className="input-tight" value={row.phone} onChange={(e)=>updateRow(row.id, { phone:e.target.value })} /></td>
-                      <td style={{ minWidth: 240 }}><input className="input-tight" style={{ minWidth: 230 }} value={row.email} onChange={(e)=>updateRow(row.id, { email:e.target.value })} /></td>
-                      <td style={{ minWidth: 140 }}><input type="date" className="input-tight" style={{ minWidth: 130 }} value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} /></td>
-                      <td style={{ minWidth: 140 }}>
-                        <input type="date" className="input-tight" style={{ minWidth: 130 }} value={row.endDate ?? ""} onChange={(e)=>updateRow(row.id, { endDate: e.target.value })} />
+                      <td colSpan={r1Spans.fn}><input className="input-tight" value={row.firstName} onChange={(e)=>updateRow(row.id, { firstName:e.target.value })} /></td>
+                      <td colSpan={r1Spans.ln}><input className="input-tight" value={row.lastName} onChange={(e)=>updateRow(row.id, { lastName:e.target.value })} /></td>
+                      <td colSpan={r1Spans.phone}><input className="input-tight" value={row.phone} onChange={(e)=>updateRow(row.id, { phone:e.target.value })} /></td>
+                      <td colSpan={r1Spans.email}><input className="input-tight" value={row.email} onChange={(e)=>updateRow(row.id, { email:e.target.value })} /></td>
+                      <td colSpan={r1Spans.start}><input type="date" className="input-tight" value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} /></td>
+                      <td colSpan={r1Spans.end}>
+                        <input type="date" className="input-tight" value={row.endDate ?? ""} onChange={(e)=>updateRow(row.id, { endDate: e.target.value })} />
                         {(() => {
-                          // +1 day hint: if pair 1 (or pair 2) crosses midnight by text but workDate === endDate
                           const in1 = parseMinutes(row.timeIn1 ?? "");
                           const out1 = parseMinutes(row.timeOut1 ?? "");
                           const in2 = parseMinutes(row.timeIn2 ?? "");
@@ -314,26 +331,8 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                           return null;
                         })()}
                       </td>
-                      <td style={{ minWidth: 115 }}><select className="input-tight" style={{ minWidth: 105 }} value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td style={{ minWidth: 115 }}><select className="input-tight" style={{ minWidth: 105 }} value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
-                      <td style={{ minWidth: 115 }}><select className="input-tight" style={{ minWidth: 105 }} value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td style={{ minWidth: 115 }}><select className="input-tight" style={{ minWidth: 105 }} value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
-                      <td>{row.stdHours.toFixed(2)}</td>
-                      <td>{row.otHours.toFixed(2)}</td>
-                      <td>{row.dtHours.toFixed(2)}</td>
-                      <td>{row.totalHours.toFixed(2)}</td>
-                      {!hidePayAlways && !timesheet.hidePayColumns ? (
-                        <>
-                          <td style={{ minWidth: 110 }}><select className="input-tight" style={{ minWidth: 100 }} value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td style={{ minWidth: 110 }}><select className="input-tight" style={{ minWidth: 100 }} value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td style={{ minWidth: 110 }}><select className="input-tight" style={{ minWidth: 100 }} value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td>${row.totalPay.toFixed(2)}</td>
-                        </>
-                      ) : null}
-                      <td className="hide-print">
-                        <div className="action-row">
+                      <td rowSpan={2} className="hide-print" style={{ verticalAlign: "middle" }}>
+                        <div className="action-row" style={{ flexDirection: "column", gap: 6 }}>
                           {row.employeeKey && row.status === "submitted" && !hidePayAlways && (
                             <>
                               <button onClick={() => handleApproveRow(row)}>✓ Approve</button>
@@ -353,20 +352,44 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    <tr className={`line-row line-row-end ${band}`}>
+                      <td><select className="input-tight" value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
+                      <td><select className="input-tight" value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
+                      <td><select className="input-tight" value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
+                      <td><select className="input-tight" value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
+                      <td><select className="input-tight" value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
+                      <td><select className="input-tight" value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
+                      <td>{row.stdHours.toFixed(2)}</td>
+                      <td>{row.otHours.toFixed(2)}</td>
+                      <td>{row.dtHours.toFixed(2)}</td>
+                      <td>{row.totalHours.toFixed(2)}</td>
+                      {showPay ? (
+                        <>
+                          <td><select className="input-tight" value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td><select className="input-tight" value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td><select className="input-tight" value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td>${row.totalPay.toFixed(2)}</td>
+                        </>
+                      ) : null}
+                    </tr>
+                    </Fragment>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
                   <tr>
-                    <th colSpan={14}>Totals</th>
+                    <th colSpan={6}>Totals</th>
                     <th>{totals.stdHours.toFixed(2)}</th>
                     <th>{totals.otHours.toFixed(2)}</th>
                     <th>{totals.dtHours.toFixed(2)}</th>
                     <th>{totals.totalHours.toFixed(2)}</th>
-                    {!hidePayAlways && !timesheet.hidePayColumns ? <><th></th><th></th><th></th><th>${totals.totalPay.toFixed(2)}</th></> : null}
+                    {showPay ? <><th></th><th></th><th></th><th>${totals.totalPay.toFixed(2)}</th></> : null}
                     <th className="hide-print"></th>
                   </tr>
                 </tfoot>
               </table>
+                );
+              })()}
             </div>
 
             <div style={{ marginTop: 16 }}>
