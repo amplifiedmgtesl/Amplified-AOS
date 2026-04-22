@@ -167,31 +167,34 @@ small,.muted{color:var(--muted)}
 .quote-date-select-wide{min-width:140px}
 
 
-/* ===== Combined invoice header box (Bill To + invoice meta) ===== */
-.invoice-header-box{margin-bottom:18px}
-.invoice-header-top{
-  display:grid;grid-template-columns:1.2fr 1fr;gap:18px;align-items:start;
-  padding-bottom:12px;border-bottom:2px solid var(--sand);margin-bottom:12px;
+/* ===== Invoice totals inside the Bill To box ===== */
+.billto-totals{
+  margin-top:14px;padding-top:12px;border-top:2px solid var(--sand);
+  display:flex;flex-direction:column;gap:4px;
 }
-.invoice-header-billto .section-title{margin-bottom:6px}
-.invoice-billto-name{font-size:20px;font-weight:800;color:var(--ink);margin-bottom:4px}
-.invoice-header-billto .muted{font-size:14px;margin-top:2px}
-.invoice-header-number{text-align:right}
-.invoice-header-number .invoice-number{font-size:36px}
-.invoice-header-meta{width:100%;border-collapse:collapse}
-.invoice-header-meta td{
-  border-bottom:1px solid var(--accent-soft);
-  padding:8px 10px;font-size:15px;vertical-align:middle;
+.billto-totals-row{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-size:15px;padding:4px 0;
 }
-.invoice-header-meta tr:last-child td{border-bottom:none}
-.invoice-header-meta td strong{
-  color:var(--gold-dark);font-size:11px;text-transform:uppercase;letter-spacing:.08em;
-  display:block;font-weight:700;
+.billto-totals-row > span:first-child{
+  color:var(--gold-dark);font-weight:700;text-transform:uppercase;letter-spacing:.06em;font-size:12px;
 }
-@media (max-width:960px){
-  .invoice-header-top{grid-template-columns:1fr}
-  .invoice-header-number{text-align:left}
+.billto-totals-row > span:last-child{font-weight:700;color:var(--ink)}
+.billto-totals-due{
+  font-size:22px;margin:6px 0;padding:8px 10px;
+  background:linear-gradient(180deg,var(--accent-soft) 0%,#efe0bf 100%);
+  border:1px solid var(--gold);border-radius:10px;
 }
+.billto-totals-due > span:first-child{font-size:13px}
+.billto-totals-due > span:last-child{font-size:24px;color:var(--gold-dark)}
+.billto-totals-balance{
+  font-size:26px;margin-top:6px;padding:10px 12px;
+  background:linear-gradient(180deg,#fff7e0 0%,#ffe9a8 100%);
+  border:2px solid var(--gold-dark);border-radius:12px;
+  box-shadow:0 2px 6px rgba(135,101,42,.18);
+}
+.billto-totals-balance > span:first-child{font-size:14px}
+.billto-totals-balance > span:last-child{font-size:28px;color:var(--gold-dark)}
 
 
 /* ===== Print-only invoice PDF lines (grouped by date) ===== */
