@@ -292,9 +292,10 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                 <tbody>
                   {timesheet.rows.map((row, idx) => {
                     const band = `line-band-${idx % 4}`;
+                    const unlinked = !row.employeeKey;
                     return (
                     <Fragment key={row.id}>
-                    <tr className={`line-row ${band}`}>
+                    <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}`}>
                       <td colSpan={r1Spans.pos}><select className="input-tight" value={row.position} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select></td>
                       <td colSpan={r1Spans.emp}>
                         <EmployeeAutoFill
@@ -309,11 +310,12 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                             status: row.status === "approved" ? "approved" : "submitted",
                           })}
                         />
+                        {unlinked ? <div className="unlinked-hint">⚠ Link an employee to enable this row</div> : null}
                       </td>
-                      <td colSpan={r1Spans.fn}><input className="input-tight" value={row.firstName} onChange={(e)=>updateRow(row.id, { firstName:e.target.value })} /></td>
-                      <td colSpan={r1Spans.ln}><input className="input-tight" value={row.lastName} onChange={(e)=>updateRow(row.id, { lastName:e.target.value })} /></td>
-                      <td colSpan={r1Spans.phone}><input className="input-tight" value={row.phone} onChange={(e)=>updateRow(row.id, { phone:e.target.value })} /></td>
-                      <td colSpan={r1Spans.email}><input className="input-tight" value={row.email} onChange={(e)=>updateRow(row.id, { email:e.target.value })} /></td>
+                      <td colSpan={r1Spans.fn}><input className="input-tight" value={row.firstName} disabled readOnly title="Pulled from employee record" /></td>
+                      <td colSpan={r1Spans.ln}><input className="input-tight" value={row.lastName} disabled readOnly title="Pulled from employee record" /></td>
+                      <td colSpan={r1Spans.phone}><input className="input-tight" value={row.phone} disabled readOnly title="Pulled from employee record" /></td>
+                      <td colSpan={r1Spans.email}><input className="input-tight" value={row.email} disabled readOnly title="Pulled from employee record" /></td>
                       <td colSpan={r1Spans.start}><input type="date" className="input-tight" value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} /></td>
                       <td colSpan={r1Spans.end}>
                         <input type="date" className="input-tight" value={row.endDate ?? ""} onChange={(e)=>updateRow(row.id, { endDate: e.target.value })} />

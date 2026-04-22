@@ -238,6 +238,18 @@ small,.muted{color:var(--muted)}
 .line-table .line-band-1 > td{background:#eaf1fb}
 .line-table .line-band-2 > td{background:#edf5e8}
 .line-table .line-band-3 > td{background:#fbeadf}
+/* Timesheet unlinked-row indicator — rows without an employee_key */
+.line-table .line-unlinked > td:first-child{
+  box-shadow:inset 4px 0 0 #c2410c;
+}
+.unlinked-hint{
+  font-size:11px;color:#c2410c;margin-top:4px;font-weight:600;
+}
+@media print{
+  .unlinked-hint{display:none !important}
+}
+
+
 /* Timesheet signature row — print-only (used on-site to confirm crew arrival) */
 .sig-row{display:none}
 @media print{
