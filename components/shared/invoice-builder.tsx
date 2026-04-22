@@ -532,6 +532,7 @@ function createDepositInvoiceDraft() {
     return { positionId, specialtyId, positionName: posName, specialtyName: spcName };
   };
   const balance = useMemo(() => !invoice ? 0 : Math.max(0, Number(invoice.amountDue || 0) - Number(invoice.paidAmount || 0)), [invoice]);
+  const locked = !!invoice && (invoice.status === "sent" || invoice.status === "paid");
 
   if (!invoice) {
     return (
@@ -546,6 +547,12 @@ function createDepositInvoiceDraft() {
     <div className="grid">
       <div className="card hide-print">
         <h2 className="section-title">Invoice Control Center</h2>
+
+        {locked ? (
+          <div className="badge" style={{ marginBottom: 12, background: "#fde6d9", borderColor: "#c48457", color: "#7a3f14" }}>
+            🔒 This invoice is marked <strong>{invoice.status}</strong>. Only Status, Paid Amount, and Notes can be changed. To edit other fields, change the status back to draft.
+          </div>
+        ) : null}
 
         {/* Top action bar — save/copy/print */}
         <div className="action-row" style={{ marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
@@ -563,15 +570,16 @@ function createDepositInvoiceDraft() {
               {drafts.map((d) => <option key={d.id} value={d.id}>{d.invoiceNo} — {d.client}</option>)}
             </select>
           </div>
-          <div><small>Invoice Number</small><input value={invoice.invoiceNo} onChange={(e) => patch({ invoiceNo: e.target.value })} /></div>
+          <div><small>Invoice Number</small><input value={invoice.invoiceNo} onChange={(e) => patch({ invoiceNo: e.target.value })} disabled={locked} /></div>
           <div><small>Status</small><select value={invoice.status} onChange={(e) => patch({ status: e.target.value })}><option value="draft">draft</option><option value="sent">sent</option><option value="partial">partial</option><option value="paid">paid</option></select></div>
-          <div><small>Invoice View</small><select value={depositInvoiceMode ? "deposit" : "standard"} onChange={(e) => setDepositInvoiceMode(e.target.value === "deposit")}><option value="standard">Standard</option><option value="deposit">Deposit Only</option></select></div>
+          <div><small>Invoice View</small><select value={depositInvoiceMode ? "deposit" : "standard"} onChange={(e) => setDepositInvoiceMode(e.target.value === "deposit")} disabled={locked}><option value="standard">Standard</option><option value="deposit">Deposit Only</option></select></div>
 
           {/* Row 2 — client + event */}
           <div>
             <small>Client</small>
             <select
               value={invoice.clientId ?? ""}
+              disabled={locked}
               onChange={(e) => {
                 const c = clients.find((x) => x.id === e.target.value);
                 patch({ clientId: c?.id, client: c?.name ?? "", billTo: c?.name ?? "" });
@@ -599,33 +607,33 @@ function createDepositInvoiceDraft() {
               );
             })()}
           </div>
-          <div><small>Event Name</small><input value={invoice.eventName} onChange={(e) => patch({ eventName: e.target.value })} /></div>
-          <div><small>Venue</small><input value={invoice.venue} onChange={(e) => patch({ venue: e.target.value })} /></div>
+          <div><small>Event Name</small><input value={invoice.eventName} onChange={(e) => patch({ eventName: e.target.value })} disabled={locked} /></div>
+          <div><small>Venue</small><input value={invoice.venue} onChange={(e) => patch({ venue: e.target.value })} disabled={locked} /></div>
 
           {/* Row 3 — dates + po */}
-          <div><small>City / State</small><input value={invoice.cityState} onChange={(e) => patch({ cityState: e.target.value })} /></div>
-          <div><small>Issue Date</small><input type="date" value={invoice.issueDate} onChange={(e) => patch({ issueDate: e.target.value })} /></div>
-          <div><small>Due Date</small><input type="date" value={invoice.dueDate} onChange={(e) => patch({ dueDate: e.target.value })} /></div>
-          <div><small>PO No.</small><input value={invoice.poNo} onChange={(e) => patch({ poNo: e.target.value })} /></div>
+          <div><small>City / State</small><input value={invoice.cityState} onChange={(e) => patch({ cityState: e.target.value })} disabled={locked} /></div>
+          <div><small>Issue Date</small><input type="date" value={invoice.issueDate} onChange={(e) => patch({ issueDate: e.target.value })} disabled={locked} /></div>
+          <div><small>Due Date</small><input type="date" value={invoice.dueDate} onChange={(e) => patch({ dueDate: e.target.value })} disabled={locked} /></div>
+          <div><small>PO No.</small><input value={invoice.poNo} onChange={(e) => patch({ poNo: e.target.value })} disabled={locked} /></div>
 
           {/* Row 4 — linked source dropdowns */}
           <div>
             <small>Linked Rate Card</small>
-            <select value={linkedRateCardProfileId} disabled={!invoice.clientId} onChange={(e) => setLinkedRateCardProfileId(e.target.value)}>
+            <select value={linkedRateCardProfileId} disabled={locked || !invoice.clientId} onChange={(e) => setLinkedRateCardProfileId(e.target.value)}>
               <option value="">{invoice.clientId ? "None" : "— Select a client first —"}</option>
               {invoice.clientId && loadRateCardProfiles().filter((p) => p.clientId === invoice.clientId).map((p) => <option key={p.id} value={p.id}>{p.name || p.clientName}</option>)}
             </select>
           </div>
           <div>
             <small>Link Saved Quote</small>
-            <select value={sourceQuoteId} disabled={!invoice.clientId} onChange={(e) => setSourceQuoteId(e.target.value)}>
+            <select value={sourceQuoteId} disabled={locked || !invoice.clientId} onChange={(e) => setSourceQuoteId(e.target.value)}>
               <option value="">{invoice.clientId ? "None" : "— Select a client first —"}</option>
               {invoice.clientId && quotes.filter((q) => q.clientId === invoice.clientId).map((q) => <option key={q.id} value={q.id}>{q.client} — {q.eventName}</option>)}
             </select>
           </div>
           <div>
             <small>Link Job Request</small>
-            <select value={sourceJobRequestId} disabled={!invoice.clientId} onChange={(e) => setSourceJobRequestId(e.target.value)}>
+            <select value={sourceJobRequestId} disabled={locked || !invoice.clientId} onChange={(e) => setSourceJobRequestId(e.target.value)}>
               <option value="">{invoice.clientId ? "None" : "— Select a client first —"}</option>
               {invoice.clientId && jobRequests.filter((r) => r.clientId === invoice.clientId).map((r) => <option key={r.id} value={r.id}>{r.client} — {r.eventName}</option>)}
             </select>
@@ -633,7 +641,7 @@ function createDepositInvoiceDraft() {
           <div></div>
 
           {/* Row 5 — money */}
-          <div><small>Deposit</small><input type="number" value={invoice.deposit} onChange={(e) => patch({ deposit: Number(e.target.value || 0) })} /></div>
+          <div><small>Deposit</small><input type="number" value={invoice.deposit} onChange={(e) => patch({ deposit: Number(e.target.value || 0) })} disabled={locked} /></div>
           <div><small>Paid Amount</small><input type="number" value={invoice.paidAmount} onChange={(e) => patch({ paidAmount: Number(e.target.value || 0) })} /></div>
         </div>
 
@@ -646,14 +654,14 @@ function createDepositInvoiceDraft() {
 
         {/* Bottom action bar — all sync/pull operations grouped */}
         <div className="action-row" style={{ marginTop: 12, flexWrap: "wrap", gap: 8 }}>
-          <button type="button" className="secondary" onClick={() => syncFromQuote(sourceQuoteId)} disabled={!sourceQuoteId}>Sync From Quote</button>
-          <button type="button" className="secondary" onClick={() => syncFromJobRequest(sourceJobRequestId)} disabled={!sourceJobRequestId}>Sync From Job Request</button>
-          <button type="button" className="secondary" onClick={() => syncTermsFromLinkedRateCard()} disabled={!linkedRateCardProfileId}>Sync Terms From Linked Rate Card</button>
+          <button type="button" className="secondary" onClick={() => syncFromQuote(sourceQuoteId)} disabled={locked || !sourceQuoteId}>Sync From Quote</button>
+          <button type="button" className="secondary" onClick={() => syncFromJobRequest(sourceJobRequestId)} disabled={locked || !sourceJobRequestId}>Sync From Job Request</button>
+          <button type="button" className="secondary" onClick={() => syncTermsFromLinkedRateCard()} disabled={locked || !linkedRateCardProfileId}>Sync Terms From Linked Rate Card</button>
           <button
             type="button"
             className="secondary"
             onClick={syncLaborActuals}
-            disabled={syncingTimesheet || !invoice?.linkedJobSheetId}
+            disabled={locked || syncingTimesheet || !invoice?.linkedJobSheetId}
             title={invoice?.linkedJobSheetId ? "Pull approved timesheet entries grouped by position" : "Link a quote with a job sheet first"}
           >
             {syncingTimesheet ? "Pulling…" : "⟳ Pull Labor Actuals from Timesheet"}
@@ -755,7 +763,7 @@ function createDepositInvoiceDraft() {
                     <tr className={`line-row ${band}`}>
                       <td>
                         <div className="hide-print">
-                          <select value={meta.date} onChange={(e) => {
+                          <select value={meta.date} disabled={locked} onChange={(e) => {
                             const newStart = e.target.value;
                             const curEnd = line.endDate || meta.date || "";
                             const newEnd = (!curEnd || curEnd < newStart) ? newStart : curEnd;
@@ -770,14 +778,14 @@ function createDepositInvoiceDraft() {
                         </div>
                       </td>
                       <td className="hide-print">
-                        <select value={line.endDate || meta.date || ""} onChange={(e) => patchLine(idx, { endDate: e.target.value })}>
+                        <select value={line.endDate || meta.date || ""} disabled={locked} onChange={(e) => patchLine(idx, { endDate: e.target.value })}>
                           <option value="">Select Date</option>
                           {dateOptions.map((d) => <option key={d} value={d}>{d}</option>)}
                         </select>
                       </td>
                       <td colSpan={2}>
                         <div className="hide-print">
-                          <select value={ids.positionId} onChange={(e) => setLinePosition(idx, e.target.value)}>
+                          <select value={ids.positionId} disabled={locked} onChange={(e) => setLinePosition(idx, e.target.value)}>
                             <option value="">— Select Position —</option>
                             {availablePositions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                           </select>
@@ -786,7 +794,7 @@ function createDepositInvoiceDraft() {
                       </td>
                       <td colSpan={2}>
                         <div className="hide-print">
-                          <select value={ids.specialtyId} onChange={(e) => setLineSpecialty(idx, e.target.value)}>
+                          <select value={ids.specialtyId} disabled={locked} onChange={(e) => setLineSpecialty(idx, e.target.value)}>
                             <option value="">— Select Specialty —</option>
                             {specialtiesForPositionId(ids.positionId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                           </select>
@@ -794,12 +802,12 @@ function createDepositInvoiceDraft() {
                         <div className="print-terms">{ids.specialtyName || "-"}</div>
                       </td>
                       <td>
-                        <div className="hide-print"><input value={meta.shiftLabel} onChange={(e) => patchLine(idx, {}, { ...meta, shiftLabel: e.target.value })} /></div>
+                        <div className="hide-print"><input value={meta.shiftLabel} disabled={locked} onChange={(e) => patchLine(idx, {}, { ...meta, shiftLabel: e.target.value })} /></div>
                         <div className="print-terms">{meta.shiftLabel}</div>
                       </td>
                       <td>
                         <div className="hide-print">
-                          <select value={meta.rateMode} onChange={(e) => patchLine(idx, {}, { ...meta, rateMode: e.target.value as RateMode })}>
+                          <select value={meta.rateMode} disabled={locked} onChange={(e) => patchLine(idx, {}, { ...meta, rateMode: e.target.value as RateMode })}>
                             <option value="hourly">Hourly</option>
                             <option value="day">Day Rate</option>
                           </select>
@@ -810,7 +818,7 @@ function createDepositInvoiceDraft() {
                     <tr className={`line-row line-row-end ${band}`}>
                       <td>
                         <div className="hide-print">
-                          <select value={meta.startTime} onChange={(e) => patchLine(idx, {}, { ...meta, startTime: e.target.value })}>
+                          <select value={meta.startTime} disabled={locked} onChange={(e) => patchLine(idx, {}, { ...meta, startTime: e.target.value })}>
                             <option value="">Start</option>
                             {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                           </select>
@@ -819,7 +827,7 @@ function createDepositInvoiceDraft() {
                       </td>
                       <td>
                         <div className="hide-print">
-                          <select value={meta.endTime} onChange={(e) => patchLine(idx, {}, { ...meta, endTime: e.target.value })}>
+                          <select value={meta.endTime} disabled={locked} onChange={(e) => patchLine(idx, {}, { ...meta, endTime: e.target.value })}>
                             <option value="">End</option>
                             {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                           </select>
@@ -827,23 +835,23 @@ function createDepositInvoiceDraft() {
                         <div className="print-terms">{meta.endTime || "-"}</div>
                       </td>
                       <td>
-                        <div className="hide-print"><input type="number" value={line.qty} onChange={(e) => patchLine(idx, { qty: Number(e.target.value || 0) })} /></div>
+                        <div className="hide-print"><input type="number" value={line.qty} disabled={locked} onChange={(e) => patchLine(idx, { qty: Number(e.target.value || 0) })} /></div>
                         <div className="print-terms">{line.qty}</div>
                       </td>
                       <td>
-                        <div className="hide-print"><input type="number" value={line.hours} onChange={(e) => patchLine(idx, { hours: Number(e.target.value || 0) })} /></div>
+                        <div className="hide-print"><input type="number" value={line.hours} disabled={locked} onChange={(e) => patchLine(idx, { hours: Number(e.target.value || 0) })} /></div>
                         <div className="print-terms">{line.hours}</div>
                       </td>
                       <td>
-                        <div className="hide-print"><input type="number" value={line.baseHourly} onChange={(e) => patchLine(idx, { baseHourly: Number(e.target.value || 0) })} /></div>
+                        <div className="hide-print"><input type="number" value={line.baseHourly} disabled={locked} onChange={(e) => patchLine(idx, { baseHourly: Number(e.target.value || 0) })} /></div>
                         <div className="print-terms">{line.baseHourly != null ? `$${line.baseHourly.toFixed(2)}` : "-"}</div>
                       </td>
                       <td>
-                        <div className="hide-print"><input type="number" value={line.baseDay} onChange={(e) => patchLine(idx, { baseDay: Number(e.target.value || 0) })} /></div>
+                        <div className="hide-print"><input type="number" value={line.baseDay} disabled={locked} onChange={(e) => patchLine(idx, { baseDay: Number(e.target.value || 0) })} /></div>
                         <div className="print-terms">{line.baseDay != null ? `$${line.baseDay.toFixed(2)}` : "-"}</div>
                       </td>
                       <td>
-                        <div className="hide-print"><input type="number" value={line.travel} onChange={(e) => patchLine(idx, { travel: Number(e.target.value || 0) })} /></div>
+                        <div className="hide-print"><input type="number" value={line.travel} disabled={locked} onChange={(e) => patchLine(idx, { travel: Number(e.target.value || 0) })} /></div>
                         <div className="print-terms">{line.travel ? `$${line.travel.toFixed(2)}` : "-"}</div>
                       </td>
                       <td>${Number(line.total || 0).toFixed(2)}</td>
