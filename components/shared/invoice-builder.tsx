@@ -678,7 +678,6 @@ function createDepositInvoiceDraft() {
           <div className="pdf-title-wrap">
             <div className="pdf-logo-wrap"><img src="/branding/client-logo.png?v=2" alt="Company logo" className="pdf-logo" /></div>
             <h2 className="pdf-title">Invoice</h2>
-            <div className="pdf-subtitle">Amplified Event Solutions</div>
           </div>
           <div></div>
         </div>
