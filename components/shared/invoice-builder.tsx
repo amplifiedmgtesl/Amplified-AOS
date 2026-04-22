@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   getActiveInvoice,
   loadClients,
@@ -723,15 +723,17 @@ function createDepositInvoiceDraft() {
 
         {!depositInvoiceMode ? (
         <div style={{ overflowX: "auto" }}>
-          <table>
+          <table className="line-table">
             <thead>
               <tr>
                 <th>Start Date</th>
                 <th className="hide-print">End Date</th>
-                <th>Position</th>
-                <th>Specialty</th>
+                <th colSpan={2}>Position</th>
+                <th colSpan={2}>Specialty</th>
                 <th>Shift</th>
                 <th>Mode</th>
+              </tr>
+              <tr>
                 <th>Start</th>
                 <th>End</th>
                 <th>Qty</th>
@@ -747,98 +749,103 @@ function createDepositInvoiceDraft() {
                 const meta = parseLineMeta(line);
                 const ids = resolveLineIds(line);
                 const lineEndDate = line.endDate || meta.date || "";
+                const band = `line-band-${idx % 4}`;
                 return (
-                  <tr key={idx}>
-                    <td>
-                      <div className="hide-print">
-                        <select value={meta.date} onChange={(e) => {
-                          const newStart = e.target.value;
-                          const curEnd = line.endDate || meta.date || "";
-                          const newEnd = (!curEnd || curEnd < newStart) ? newStart : curEnd;
-                          patchLine(idx, { endDate: newEnd }, { ...meta, date: newStart });
-                        }}>
-                          <option value="">Select Date</option>
-                          {dateOptions.map((d) => <option key={d} value={d}>{d}</option>)}
-                        </select>
-                      </div>
-                      <div className="print-terms">
-                        {lineEndDate && lineEndDate !== meta.date ? `${meta.date || "-"} → ${lineEndDate}` : (meta.date || "-")}
-                      </div>
-                    </td>
-                    <td className="hide-print">
-                      <input type="date" value={line.endDate || ""} onChange={(e) => patchLine(idx, { endDate: e.target.value })} />
-                    </td>
-                    <td>
-                      <div className="hide-print">
-                        <select value={ids.positionId} onChange={(e) => setLinePosition(idx, e.target.value)}>
-                          <option value="">— Select Position —</option>
-                          {availablePositions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
-                      </div>
-                      <div className="print-terms">{ids.positionName || "-"}</div>
-                    </td>
-                    <td>
-                      <div className="hide-print">
-                        <select value={ids.specialtyId} onChange={(e) => setLineSpecialty(idx, e.target.value)}>
-                          <option value="">— Select Specialty —</option>
-                          {specialtiesForPositionId(ids.positionId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                      </div>
-                      <div className="print-terms">{ids.specialtyName || "-"}</div>
-                    </td>
-                    <td>
-                      <div className="hide-print"><input value={meta.shiftLabel} onChange={(e) => patchLine(idx, {}, { ...meta, shiftLabel: e.target.value })} /></div>
-                      <div className="print-terms">{meta.shiftLabel}</div>
-                    </td>
-                    <td>
-                      <div className="hide-print">
-                        <select value={meta.rateMode} onChange={(e) => patchLine(idx, {}, { ...meta, rateMode: e.target.value as RateMode })}>
-                          <option value="hourly">Hourly</option>
-                          <option value="day">Day Rate</option>
-                        </select>
-                      </div>
-                      <div className="print-terms">{meta.rateMode === "hourly" ? "Hourly" : "Day Rate"}</div>
-                    </td>
-                    <td>
-                      <div className="hide-print">
-                        <select value={meta.startTime} onChange={(e) => patchLine(idx, {}, { ...meta, startTime: e.target.value })}>
-                          <option value="">Start</option>
-                          {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      </div>
-                      <div className="print-terms">{meta.startTime || "-"}</div>
-                    </td>
-                    <td>
-                      <div className="hide-print">
-                        <select value={meta.endTime} onChange={(e) => patchLine(idx, {}, { ...meta, endTime: e.target.value })}>
-                          <option value="">End</option>
-                          {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      </div>
-                      <div className="print-terms">{meta.endTime || "-"}</div>
-                    </td>
-                    <td>
-                      <div className="hide-print"><input type="number" value={line.qty} onChange={(e) => patchLine(idx, { qty: Number(e.target.value || 0) })} /></div>
-                      <div className="print-terms">{line.qty}</div>
-                    </td>
-                    <td>
-                      <div className="hide-print"><input type="number" value={line.hours} onChange={(e) => patchLine(idx, { hours: Number(e.target.value || 0) })} /></div>
-                      <div className="print-terms">{line.hours}</div>
-                    </td>
-                    <td>
-                      <div className="hide-print"><input type="number" value={line.baseHourly} onChange={(e) => patchLine(idx, { baseHourly: Number(e.target.value || 0) })} /></div>
-                      <div className="print-terms">{line.baseHourly != null ? `$${line.baseHourly.toFixed(2)}` : "-"}</div>
-                    </td>
-                    <td>
-                      <div className="hide-print"><input type="number" value={line.baseDay} onChange={(e) => patchLine(idx, { baseDay: Number(e.target.value || 0) })} /></div>
-                      <div className="print-terms">{line.baseDay != null ? `$${line.baseDay.toFixed(2)}` : "-"}</div>
-                    </td>
-                    <td>
-                      <div className="hide-print"><input type="number" value={line.travel} onChange={(e) => patchLine(idx, { travel: Number(e.target.value || 0) })} /></div>
-                      <div className="print-terms">{line.travel ? `$${line.travel.toFixed(2)}` : "-"}</div>
-                    </td>
-                    <td>${Number(line.total || 0).toFixed(2)}</td>
-                  </tr>
+                  <Fragment key={idx}>
+                    <tr className={`line-row ${band}`}>
+                      <td>
+                        <div className="hide-print">
+                          <select value={meta.date} onChange={(e) => {
+                            const newStart = e.target.value;
+                            const curEnd = line.endDate || meta.date || "";
+                            const newEnd = (!curEnd || curEnd < newStart) ? newStart : curEnd;
+                            patchLine(idx, { endDate: newEnd }, { ...meta, date: newStart });
+                          }}>
+                            <option value="">Select Date</option>
+                            {dateOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div className="print-terms">
+                          {lineEndDate && lineEndDate !== meta.date ? `${meta.date || "-"} → ${lineEndDate}` : (meta.date || "-")}
+                        </div>
+                      </td>
+                      <td className="hide-print">
+                        <input type="date" value={line.endDate || ""} onChange={(e) => patchLine(idx, { endDate: e.target.value })} />
+                      </td>
+                      <td colSpan={2}>
+                        <div className="hide-print">
+                          <select value={ids.positionId} onChange={(e) => setLinePosition(idx, e.target.value)}>
+                            <option value="">— Select Position —</option>
+                            {availablePositions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        </div>
+                        <div className="print-terms">{ids.positionName || "-"}</div>
+                      </td>
+                      <td colSpan={2}>
+                        <div className="hide-print">
+                          <select value={ids.specialtyId} onChange={(e) => setLineSpecialty(idx, e.target.value)}>
+                            <option value="">— Select Specialty —</option>
+                            {specialtiesForPositionId(ids.positionId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          </select>
+                        </div>
+                        <div className="print-terms">{ids.specialtyName || "-"}</div>
+                      </td>
+                      <td>
+                        <div className="hide-print"><input value={meta.shiftLabel} onChange={(e) => patchLine(idx, {}, { ...meta, shiftLabel: e.target.value })} /></div>
+                        <div className="print-terms">{meta.shiftLabel}</div>
+                      </td>
+                      <td>
+                        <div className="hide-print">
+                          <select value={meta.rateMode} onChange={(e) => patchLine(idx, {}, { ...meta, rateMode: e.target.value as RateMode })}>
+                            <option value="hourly">Hourly</option>
+                            <option value="day">Day Rate</option>
+                          </select>
+                        </div>
+                        <div className="print-terms">{meta.rateMode === "hourly" ? "Hourly" : "Day Rate"}</div>
+                      </td>
+                    </tr>
+                    <tr className={`line-row line-row-end ${band}`}>
+                      <td>
+                        <div className="hide-print">
+                          <select value={meta.startTime} onChange={(e) => patchLine(idx, {}, { ...meta, startTime: e.target.value })}>
+                            <option value="">Start</option>
+                            {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <div className="print-terms">{meta.startTime || "-"}</div>
+                      </td>
+                      <td>
+                        <div className="hide-print">
+                          <select value={meta.endTime} onChange={(e) => patchLine(idx, {}, { ...meta, endTime: e.target.value })}>
+                            <option value="">End</option>
+                            {TIME_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        </div>
+                        <div className="print-terms">{meta.endTime || "-"}</div>
+                      </td>
+                      <td>
+                        <div className="hide-print"><input type="number" value={line.qty} onChange={(e) => patchLine(idx, { qty: Number(e.target.value || 0) })} /></div>
+                        <div className="print-terms">{line.qty}</div>
+                      </td>
+                      <td>
+                        <div className="hide-print"><input type="number" value={line.hours} onChange={(e) => patchLine(idx, { hours: Number(e.target.value || 0) })} /></div>
+                        <div className="print-terms">{line.hours}</div>
+                      </td>
+                      <td>
+                        <div className="hide-print"><input type="number" value={line.baseHourly} onChange={(e) => patchLine(idx, { baseHourly: Number(e.target.value || 0) })} /></div>
+                        <div className="print-terms">{line.baseHourly != null ? `$${line.baseHourly.toFixed(2)}` : "-"}</div>
+                      </td>
+                      <td>
+                        <div className="hide-print"><input type="number" value={line.baseDay} onChange={(e) => patchLine(idx, { baseDay: Number(e.target.value || 0) })} /></div>
+                        <div className="print-terms">{line.baseDay != null ? `$${line.baseDay.toFixed(2)}` : "-"}</div>
+                      </td>
+                      <td>
+                        <div className="hide-print"><input type="number" value={line.travel} onChange={(e) => patchLine(idx, { travel: Number(e.target.value || 0) })} /></div>
+                        <div className="print-terms">{line.travel ? `$${line.travel.toFixed(2)}` : "-"}</div>
+                      </td>
+                      <td>${Number(line.total || 0).toFixed(2)}</td>
+                    </tr>
+                  </Fragment>
                 );
               })}
             </tbody>

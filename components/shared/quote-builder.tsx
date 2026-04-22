@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { DEFAULT_RATE_ROWS, type RateRow } from "@/lib/rates/defaults";
 import { getActiveRateCardProfileId, loadClientName, loadProfileIntoCurrent, loadRateCardProfiles, loadRateRows, loadTerms } from "@/lib/rates/storage";
 import { supabase } from "@/lib/supabase/client";
@@ -825,78 +825,107 @@ export default function QuoteBuilder() {
         <div className="hide-print card" style={{ marginTop:16 }}>
           <h3 className="section-title">Edit Quote Line Items</h3>
           <div style={{ overflowX:"auto" }}>
-            <table>
-              <thead><tr><th>Start Date</th><th>End Date</th><th>Position</th><th>Specialty</th><th>Shift</th><th>Rate Mode</th><th>Start</th><th>End</th><th>Hours</th><th>Applied Rate</th><th>Qty</th><th>Holiday Hours</th><th>Travel</th><th>Line Total</th><th>Action</th></tr></thead>
+            <table className="line-table">
+              <thead>
+                <tr>
+                  <th>Start Date</th>
+                  <th>End Date</th>
+                  <th colSpan={2}>Position</th>
+                  <th colSpan={2}>Specialty</th>
+                  <th>Shift</th>
+                  <th>Rate Mode</th>
+                  <th rowSpan={2}>Action</th>
+                </tr>
+                <tr>
+                  <th>Start</th>
+                  <th>End</th>
+                  <th>Hours</th>
+                  <th>Applied Rate</th>
+                  <th>Qty</th>
+                  <th>Holiday Hrs</th>
+                  <th>Travel</th>
+                  <th>Line Total</th>
+                </tr>
+              </thead>
               <tbody>
-                {lines.map((line) => {
+                {lines.map((line, idx) => {
                   const calcHours = hoursBetween(line.startTime, line.endTime);
+                  const band = `line-band-${idx % 4}`;
                   return (
-                    <tr key={line.id}>
-                      <td style={{ minWidth: 150 }}>
-                        <select style={{ minWidth: 140 }} value={line.quoteDate} onChange={(e)=>{
-                          const newStart = e.target.value;
-                          // Auto-advance endDate if it's empty or earlier than the new start.
-                          const newEnd = (!line.endDate || line.endDate < newStart) ? newStart : line.endDate;
-                          updateLine(line.id, { quoteDate: newStart, endDate: newEnd });
-                        }}>
-                          <option value="">Select Date</option>
-                          {dayDetails.map((d)=><option key={d.date} value={d.date}>{d.date}</option>)}
-                        </select>
-                      </td>
-                      <td style={{ minWidth: 150 }}>
-                        <input type="date" style={{ minWidth: 140 }} value={line.endDate || line.quoteDate || ""} onChange={(e)=>updateLine(line.id, { endDate: e.target.value })} />
-                      </td>
-                      <td>
-                        <select value={line.positionId} onChange={(e)=>{
-                          const newPosId = e.target.value;
-                          const newPos = positions.find((p) => p.id === newPosId);
-                          const firstSpc = specialtiesForPositionId(newPosId)[0];
-                          const row = rows.find((r) => r.specialtyId === firstSpc?.id);
-                          updateLine(line.id, {
-                            positionId: newPosId,
-                            specialtyId: firstSpc?.id ?? "",
-                            position: newPos?.name ?? "",
-                            department: newPos?.name ?? "",
-                            specialty: firstSpc?.name ?? "",
-                            travel: row?.travel ?? 0,
-                          });
-                        }}>
-                          <option value="">— Select Position —</option>
-                          {availablePositions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
-                      </td>
-                      <td>
-                        <select value={line.specialtyId} onChange={(e)=>{
-                          const newSpcId = e.target.value;
-                          const newSpc = specialties.find((s) => s.id === newSpcId);
-                          const row = rows.find((r) => r.specialtyId === newSpcId);
-                          updateLine(line.id, {
-                            specialtyId: newSpcId,
-                            specialty: newSpc?.name ?? "",
-                            travel: row?.travel ?? 0,
-                          });
-                        }}>
-                          <option value="">— Select Specialty —</option>
-                          {specialtiesForPositionId(line.positionId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                      </td>
-                      <td><input value={line.shiftLabel} onChange={(e)=>updateLine(line.id, { shiftLabel:e.target.value })} /></td>
-                      <td>
-                        <select value={line.rateMode} onChange={(e)=>updateLine(line.id, { rateMode:e.target.value as RateMode })}>
-                          <option value="hourly">Hourly</option>
-                          <option value="day">Day Rate</option>
-                        </select>
-                      </td>
-                      <td style={{ minWidth: 130 }}><select value={normalizeTimeInput(line.startTime)} onChange={(e)=>updateLine(line.id, { startTime:e.target.value })}>{TIME_OPTIONS.map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
-                      <td style={{ minWidth: 130 }}><select value={normalizeTimeInput(line.endTime)} onChange={(e)=>updateLine(line.id, { endTime:e.target.value })}>{TIME_OPTIONS.map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
-                      <td>{calcHours.toFixed(2)}</td>
-                      <td>{line.rateMode === "hourly" ? `$${findRateRowForLine(line).hourly.toFixed(2)}/hr` : `$${findRateRowForLine(line).day.toFixed(2)}/day`}</td>
-                      <td style={{ minWidth: 90 }}><select value={line.qty} onChange={(e)=>updateLine(line.id, { qty:Number(e.target.value || 0) })}>{QTY_OPTIONS.map((q)=><option key={q} value={q}>{q}</option>)}</select></td>
-                      <td><input type="number" value={line.holidayHours} onChange={(e)=>updateLine(line.id, { holidayHours:Number(e.target.value || 0) })} /></td>
-                      <td><input type="number" value={line.travel} onChange={(e)=>updateLine(line.id, { travel:Number(e.target.value || 0) })} /></td>
-                      <td>${calcLineTotal(calcHours, line.holidayHours, line.qty, findRateRowForLine(line), line.travel, line.rateMode).toFixed(2)}</td>
-                      <td><div className="action-row"><button type="button" className="secondary" onClick={()=>duplicateLine(line.id)}>Copy Line</button><button type="button" className="secondary" onClick={()=>deleteLine(line.id)}>Delete Line</button></div></td>
-                    </tr>
+                    <Fragment key={line.id}>
+                      <tr className={`line-row ${band}`}>
+                        <td>
+                          <select value={line.quoteDate} onChange={(e)=>{
+                            const newStart = e.target.value;
+                            const newEnd = (!line.endDate || line.endDate < newStart) ? newStart : line.endDate;
+                            updateLine(line.id, { quoteDate: newStart, endDate: newEnd });
+                          }}>
+                            <option value="">Select Date</option>
+                            {dayDetails.map((d)=><option key={d.date} value={d.date}>{d.date}</option>)}
+                          </select>
+                        </td>
+                        <td>
+                          <input type="date" value={line.endDate || line.quoteDate || ""} onChange={(e)=>updateLine(line.id, { endDate: e.target.value })} />
+                        </td>
+                        <td colSpan={2}>
+                          <select value={line.positionId} onChange={(e)=>{
+                            const newPosId = e.target.value;
+                            const newPos = positions.find((p) => p.id === newPosId);
+                            const firstSpc = specialtiesForPositionId(newPosId)[0];
+                            const row = rows.find((r) => r.specialtyId === firstSpc?.id);
+                            updateLine(line.id, {
+                              positionId: newPosId,
+                              specialtyId: firstSpc?.id ?? "",
+                              position: newPos?.name ?? "",
+                              department: newPos?.name ?? "",
+                              specialty: firstSpc?.name ?? "",
+                              travel: row?.travel ?? 0,
+                            });
+                          }}>
+                            <option value="">— Select Position —</option>
+                            {availablePositions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        </td>
+                        <td colSpan={2}>
+                          <select value={line.specialtyId} onChange={(e)=>{
+                            const newSpcId = e.target.value;
+                            const newSpc = specialties.find((s) => s.id === newSpcId);
+                            const row = rows.find((r) => r.specialtyId === newSpcId);
+                            updateLine(line.id, {
+                              specialtyId: newSpcId,
+                              specialty: newSpc?.name ?? "",
+                              travel: row?.travel ?? 0,
+                            });
+                          }}>
+                            <option value="">— Select Specialty —</option>
+                            {specialtiesForPositionId(line.positionId).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                          </select>
+                        </td>
+                        <td><input value={line.shiftLabel} onChange={(e)=>updateLine(line.id, { shiftLabel:e.target.value })} /></td>
+                        <td>
+                          <select value={line.rateMode} onChange={(e)=>updateLine(line.id, { rateMode:e.target.value as RateMode })}>
+                            <option value="hourly">Hourly</option>
+                            <option value="day">Day Rate</option>
+                          </select>
+                        </td>
+                        <td rowSpan={2} style={{ verticalAlign: "middle" }}>
+                          <div className="action-row" style={{ flexDirection: "column", gap: 6 }}>
+                            <button type="button" className="secondary" onClick={()=>duplicateLine(line.id)}>Copy Line</button>
+                            <button type="button" className="secondary" onClick={()=>deleteLine(line.id)}>Delete Line</button>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr className={`line-row line-row-end ${band}`}>
+                        <td><select value={normalizeTimeInput(line.startTime)} onChange={(e)=>updateLine(line.id, { startTime:e.target.value })}>{TIME_OPTIONS.map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
+                        <td><select value={normalizeTimeInput(line.endTime)} onChange={(e)=>updateLine(line.id, { endTime:e.target.value })}>{TIME_OPTIONS.map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
+                        <td>{calcHours.toFixed(2)}</td>
+                        <td>{line.rateMode === "hourly" ? `$${findRateRowForLine(line).hourly.toFixed(2)}/hr` : `$${findRateRowForLine(line).day.toFixed(2)}/day`}</td>
+                        <td><select value={line.qty} onChange={(e)=>updateLine(line.id, { qty:Number(e.target.value || 0) })}>{QTY_OPTIONS.map((q)=><option key={q} value={q}>{q}</option>)}</select></td>
+                        <td><input type="number" value={line.holidayHours} onChange={(e)=>updateLine(line.id, { holidayHours:Number(e.target.value || 0) })} /></td>
+                        <td><input type="number" value={line.travel} onChange={(e)=>updateLine(line.id, { travel:Number(e.target.value || 0) })} /></td>
+                        <td>${calcLineTotal(calcHours, line.holidayHours, line.qty, findRateRowForLine(line), line.travel, line.rateMode).toFixed(2)}</td>
+                      </tr>
+                    </Fragment>
                   );
                 })}
               </tbody>

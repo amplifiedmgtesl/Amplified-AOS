@@ -167,6 +167,26 @@ small,.muted{color:var(--muted)}
 .quote-date-select-wide{min-width:140px}
 
 
+/* ===== Two-row line-item table (invoice + quote) ===== */
+.line-table th,.line-table td{vertical-align:middle}
+.line-table .line-row > td{border-bottom:none;padding-top:8px;padding-bottom:6px}
+.line-table .line-row-end > td{border-bottom:3px solid var(--gold-dark);padding-bottom:10px}
+/* Color-band each line group so the two rows visually belong together */
+.line-table .line-band-0 > td{background:#fbf4e8}
+.line-table .line-band-1 > td{background:#eaf1fb}
+.line-table .line-band-2 > td{background:#edf5e8}
+.line-table .line-band-3 > td{background:#fbeadf}
+@media print{
+  /* Drop backgrounds + separators in print so pages stay compact and monochrome */
+  .line-table .line-band-0 > td,
+  .line-table .line-band-1 > td,
+  .line-table .line-band-2 > td,
+  .line-table .line-band-3 > td{background:#fff !important}
+  .line-table .line-row > td{border-bottom:1px solid var(--line);padding:4px 6px}
+  .line-table .line-row-end > td{border-bottom:1px solid var(--line)}
+}
+
+
 
 /* ===== PDF BRANDING ===== */
 .branded-header {
