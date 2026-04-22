@@ -167,6 +167,33 @@ small,.muted{color:var(--muted)}
 .quote-date-select-wide{min-width:140px}
 
 
+/* ===== Combined invoice header box (Bill To + invoice meta) ===== */
+.invoice-header-box{margin-bottom:18px}
+.invoice-header-top{
+  display:grid;grid-template-columns:1.2fr 1fr;gap:18px;align-items:start;
+  padding-bottom:12px;border-bottom:2px solid var(--sand);margin-bottom:12px;
+}
+.invoice-header-billto .section-title{margin-bottom:6px}
+.invoice-billto-name{font-size:20px;font-weight:800;color:var(--ink);margin-bottom:4px}
+.invoice-header-billto .muted{font-size:14px;margin-top:2px}
+.invoice-header-number{text-align:right}
+.invoice-header-number .invoice-number{font-size:36px}
+.invoice-header-meta{width:100%;border-collapse:collapse}
+.invoice-header-meta td{
+  border-bottom:1px solid var(--accent-soft);
+  padding:8px 10px;font-size:15px;vertical-align:middle;
+}
+.invoice-header-meta tr:last-child td{border-bottom:none}
+.invoice-header-meta td strong{
+  color:var(--gold-dark);font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+  display:block;font-weight:700;
+}
+@media (max-width:960px){
+  .invoice-header-top{grid-template-columns:1fr}
+  .invoice-header-number{text-align:left}
+}
+
+
 /* ===== Print-only invoice PDF lines (grouped by date) ===== */
 .print-only{display:none}
 @media print{

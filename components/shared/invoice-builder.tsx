@@ -683,29 +683,36 @@ function createDepositInvoiceDraft() {
           <div></div>
         </div>
 
-        <div className="invoice-top">
-          <div className="invoice-box">
-            <h3 className="section-title">Bill To</h3>
-            <div><strong>{invoice.billTo || invoice.client}</strong></div>
-            <div className="muted">{invoice.eventName}</div>
-            <div className="muted">{invoice.venue}</div>
-            <div className="muted">{invoice.cityState}</div>
+        <div className="invoice-box invoice-header-box">
+          <div className="invoice-header-top">
+            <div className="invoice-header-billto">
+              <h3 className="section-title">Bill To</h3>
+              <div className="invoice-billto-name">{invoice.billTo || invoice.client}</div>
+              <div className="muted">{invoice.eventName}</div>
+              <div className="muted">{invoice.venue}</div>
+              <div className="muted">{invoice.cityState}</div>
+            </div>
+            <div className="invoice-header-number">
+              <div className="invoice-number">{invoice.invoiceNo}</div>
+            </div>
           </div>
-
-          <div className="invoice-box">
-            <div className="invoice-number">{invoice.invoiceNo}</div>
-            <table>
-              <tbody>
-                <tr><td><strong>Issue Date</strong></td><td>{invoice.issueDate}</td></tr>
-                <tr><td><strong>Due Date</strong></td><td>{invoice.dueDate}</td></tr>
-                <tr><td><strong>Status</strong></td><td>{invoice.status}</td></tr>
-                <tr><td><strong>PO No.</strong></td><td>{invoice.poNo || "-"}</td></tr>
-                <tr><td><strong>Saved Quote</strong></td><td>{sourceQuoteId || "-"}</td></tr>
-                <tr><td><strong>Job Request</strong></td><td>{sourceJobRequestId || "-"}</td></tr>
-                <tr><td><strong>Rate Card</strong></td><td>{linkedRateCardProfileId || invoice.rateCardProfileId || "-"}</td></tr>
-              </tbody>
-            </table>
-          </div>
+          <table className="invoice-header-meta">
+            <tbody>
+              <tr>
+                <td><strong>Issue Date</strong></td><td>{invoice.issueDate}</td>
+                <td><strong>Due Date</strong></td><td>{invoice.dueDate}</td>
+                <td><strong>Status</strong></td><td>{invoice.status}</td>
+              </tr>
+              <tr>
+                <td><strong>PO No.</strong></td><td>{invoice.poNo || "-"}</td>
+                <td><strong>Saved Quote</strong></td><td>{sourceQuoteId || "-"}</td>
+                <td><strong>Job Request</strong></td><td>{sourceJobRequestId || "-"}</td>
+              </tr>
+              <tr>
+                <td><strong>Rate Card</strong></td><td colSpan={5}>{linkedRateCardProfileId || invoice.rateCardProfileId || "-"}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <div className="total-card" style={{ marginTop: 12 }}>
