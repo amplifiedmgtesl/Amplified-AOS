@@ -12,23 +12,12 @@ insert into storage.buckets (id, name, public)
 values ('employee-assets', 'employee-assets', true)
 on conflict (id) do nothing;
 
--- Authenticated users can upload / update / delete within this bucket.
--- (Public read is handled by the bucket's public = true flag.)
-drop policy if exists "employee_assets_insert_auth" on storage.objects;
-create policy "employee_assets_insert_auth"
-  on storage.objects for insert
-  to authenticated
-  with check (bucket_id = 'employee-assets');
-
-drop policy if exists "employee_assets_update_auth" on storage.objects;
-create policy "employee_assets_update_auth"
-  on storage.objects for update
-  to authenticated
+-- Single "full_access" policy matching the standard used on every other
+-- table in this schema (see 20260416b_positions_rls.sql,
+-- 20260420p_quote_invoice_lines_rls.sql, etc).
+drop policy if exists "employee_assets_full_access" on storage.objects;
+create policy "employee_assets_full_access"
+  on storage.objects for all
+  to anon, authenticated
   using (bucket_id = 'employee-assets')
   with check (bucket_id = 'employee-assets');
-
-drop policy if exists "employee_assets_delete_auth" on storage.objects;
-create policy "employee_assets_delete_auth"
-  on storage.objects for delete
-  to authenticated
-  using (bucket_id = 'employee-assets');
