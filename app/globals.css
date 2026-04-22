@@ -167,6 +167,38 @@ small,.muted{color:var(--muted)}
 .quote-date-select-wide{min-width:140px}
 
 
+/* ===== Print-only invoice PDF lines (grouped by date) ===== */
+.print-only{display:none}
+@media print{
+  .print-only{display:block !important}
+}
+.pdf-day-group{margin-bottom:14px;break-inside:avoid;page-break-inside:avoid}
+.pdf-day-header{
+  background:linear-gradient(180deg,var(--gold) 0%,var(--gold-dark) 100%);
+  color:#fff;padding:6px 12px;font-weight:700;font-size:13px;
+  border-radius:8px 8px 0 0;letter-spacing:.06em;text-transform:uppercase;
+}
+.pdf-line-table{width:100%;border-collapse:collapse;table-layout:auto;margin-bottom:2px}
+.pdf-line-table th{
+  background:#eadfc5;color:var(--gold-dark);font-size:10px;
+  text-transform:uppercase;letter-spacing:.06em;padding:4px 6px;
+  border:1px solid var(--line);text-align:left;
+}
+.pdf-line-table td{font-size:11px;padding:4px 6px;vertical-align:middle;border:none}
+.pdf-line-table .pdf-row td{border-bottom:none;padding-top:5px;padding-bottom:2px}
+.pdf-line-table .pdf-row-end td{border-bottom:1px solid #d0c5a8;padding-bottom:6px}
+.pdf-line-table .pdf-band-0 td{background:#ffffff}
+.pdf-line-table .pdf-band-1 td{background:#f7f1e4}
+.pdf-line-table .pdf-day-total td{
+  background:#fbf4e8;font-weight:700;font-size:11px;
+  border-top:2px solid var(--gold-dark);border-bottom:2px solid var(--gold-dark);
+  padding:6px 8px;
+}
+@media print{
+  .pdf-day-group{break-inside:avoid;page-break-inside:avoid}
+}
+
+
 /* ===== Two-row line-item table (invoice + quote) ===== */
 .line-table th,.line-table td{vertical-align:middle}
 .line-table .line-row > td{border-bottom:none;padding-top:8px;padding-bottom:6px}

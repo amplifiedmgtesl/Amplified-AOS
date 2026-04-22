@@ -730,7 +730,7 @@ function createDepositInvoiceDraft() {
         </div>
 
         {!depositInvoiceMode ? (
-        <div style={{ overflowX: "auto" }}>
+        <div className="hide-print" style={{ overflowX: "auto" }}>
           <table className="line-table">
             <thead>
               <tr>
@@ -868,6 +868,91 @@ function createDepositInvoiceDraft() {
           <div className="muted">This deposit invoice references the linked quote/job data and bills the deposit amount only.</div>
         </div>
         )}
+
+        {/* PDF-only: lines grouped by date with daily totals */}
+        {!depositInvoiceMode ? (
+          <div className="print-only pdf-lines" style={{ marginTop: 12 }}>
+            {(() => {
+              type Group = { date: string; rows: QuoteLine[]; total: number };
+              const groups = new Map<string, Group>();
+              for (const line of invoice.lines) {
+                const m = parseLineMeta(line);
+                const key = m.date || line.quoteDate || "(no date)";
+                if (!groups.has(key)) groups.set(key, { date: key, rows: [], total: 0 });
+                const g = groups.get(key)!;
+                g.rows.push(line);
+                g.total += Number(line.total || 0);
+              }
+              const sortedKeys = Array.from(groups.keys()).sort();
+              return sortedKeys.map((key) => {
+                const g = groups.get(key)!;
+                return (
+                  <div key={`pdf-day-${key}`} className="pdf-day-group">
+                    <div className="pdf-day-header">Service Date: {g.date}</div>
+                    <table className="pdf-line-table">
+                      <thead>
+                        <tr>
+                          <th colSpan={2}>Position</th>
+                          <th colSpan={2}>Specialty</th>
+                          <th colSpan={2}>Shift</th>
+                          <th>Mode</th>
+                        </tr>
+                        <tr>
+                          <th>Start</th>
+                          <th>End</th>
+                          <th>Qty</th>
+                          <th>Hours</th>
+                          <th>Rate</th>
+                          <th>Travel</th>
+                          <th>Line Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {g.rows.map((line, li) => {
+                          const meta = parseLineMeta(line);
+                          const ids = resolveLineIds(line);
+                          const band = li % 2 === 0 ? "pdf-band-0" : "pdf-band-1";
+                          const rateDisplay = meta.rateMode === "hourly"
+                            ? `$${Number(line.baseHourly || 0).toFixed(2)}/hr`
+                            : `$${Number(line.baseDay || 0).toFixed(2)}/day`;
+                          const spanKey = `${key}-${li}`;
+                          const endDate = line.endDate || "";
+                          const multiDay = endDate && endDate !== (meta.date || line.quoteDate || "");
+                          return (
+                            <Fragment key={`pdf-line-${spanKey}`}>
+                              <tr className={`pdf-row ${band}`}>
+                                <td colSpan={2}>
+                                  {ids.positionName || "-"}
+                                  {multiDay ? <span className="muted" style={{ marginLeft: 6, fontSize: 10 }}>(through {endDate})</span> : null}
+                                </td>
+                                <td colSpan={2}>{ids.specialtyName || "-"}</td>
+                                <td colSpan={2}>{meta.shiftLabel || "-"}</td>
+                                <td>{meta.rateMode === "hourly" ? "Hourly" : "Day Rate"}</td>
+                              </tr>
+                              <tr className={`pdf-row pdf-row-end ${band}`}>
+                                <td>{meta.startTime || "-"}</td>
+                                <td>{meta.endTime || "-"}</td>
+                                <td>{line.qty}</td>
+                                <td>{Number(line.hours || 0).toFixed(2)}</td>
+                                <td>{rateDisplay}</td>
+                                <td>{line.travel ? `$${Number(line.travel).toFixed(2)}` : "-"}</td>
+                                <td>${Number(line.total || 0).toFixed(2)}</td>
+                              </tr>
+                            </Fragment>
+                          );
+                        })}
+                        <tr className="pdf-day-total">
+                          <td colSpan={6} style={{ textAlign: "right" }}>Daily Total</td>
+                          <td>${g.total.toFixed(2)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        ) : null}
 
         {!depositInvoiceMode && invoice.timesheetSummary && invoice.timesheetSummary.length > 0 ? (
           <div style={{ marginTop: 18 }}>
