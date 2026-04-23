@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 
 const nav = [
   ["/dashboard", "🏠", "Dashboard"],
-  ["/master-calendar", "🗓️", "Master Calendar"],
+  ["/master-calendar", "🗓️", "Calendar"],
   ["/clients", "🏢", "Clients"],
   ["/quote-builder", "🧾", "Quote Builder"],
   ["/invoices", "💵", "Invoices"],
@@ -14,7 +14,7 @@ const nav = [
   ["/job-sheets", "📑", "Job Sheets"],
   ["/timekeeping", "⏱️", "Timekeeping"],
   ["/job-costing", "📈", "Job Costing"],
-  ["/employee-directory", "👥", "Employee Directory"],
+  ["/employee-directory", "👥", "Employees"],
   ["/job-requests", "📨", "Job Requests"],
   // ["/call-sheets", "📞", "Call Sheets"],  // Hidden — duplicate of Job Sheets. Code kept under app/call-sheets/ but excluded from nav + analysis.
   ["/maintenance", "⚙️", "Maintenance"],
