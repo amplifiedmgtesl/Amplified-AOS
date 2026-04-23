@@ -288,6 +288,35 @@ small,.muted{color:var(--muted)}
 .line-table,.line-table *{print-color-adjust:exact;-webkit-print-color-adjust:exact}
 
 
+/* ===== Dashboard info-badge tooltips ===== */
+.info-badge{
+  position:relative;display:inline-flex;align-items:center;justify-content:center;
+  width:18px;height:18px;border-radius:50%;
+  background:var(--gold-dark);color:#fff;
+  font-family:Georgia,serif;font-style:italic;font-weight:700;font-size:12px;
+  margin-left:6px;vertical-align:middle;cursor:pointer;
+  line-height:1;padding:0;user-select:none;
+}
+.info-badge:hover,.info-badge:focus{background:var(--gold);outline:none}
+.info-tip{
+  position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);
+  min-width:260px;max-width:340px;
+  background:#1b130c;color:#f5ecd9;
+  padding:10px 12px;border-radius:10px;
+  font-family:Arial,Helvetica,sans-serif;font-style:normal;font-weight:400;
+  font-size:12px;line-height:1.4;letter-spacing:.01em;
+  text-align:left;white-space:normal;
+  box-shadow:0 8px 24px rgba(0,0,0,.3);
+  opacity:0;pointer-events:none;transition:opacity .12s ease;
+  z-index:100;
+}
+.info-tip::after{
+  content:"";position:absolute;top:100%;left:50%;transform:translateX(-50%);
+  border:6px solid transparent;border-top-color:#1b130c;
+}
+.info-badge:hover .info-tip,.info-badge:focus .info-tip{opacity:1}
+
+
 
 /* ===== PDF BRANDING ===== */
 .branded-header {

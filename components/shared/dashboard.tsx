@@ -46,17 +46,10 @@ function isDepositOnlyInvoice(inv: InvoiceDraft): boolean {
 
 function Info({ text }: { text: string }) {
   return (
-    <span
-      title={text}
-      style={{
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        width: 16, height: 16, borderRadius: "50%",
-        border: "1px solid var(--muted)", color: "var(--muted)",
-        fontSize: 10, fontWeight: 700, marginLeft: 6, cursor: "help",
-        fontFamily: "Georgia, serif", fontStyle: "italic",
-      }}
-      aria-label={text}
-    >i</span>
+    <span className="info-badge" tabIndex={0} aria-label={text}>
+      i
+      <span className="info-tip">{text}</span>
+    </span>
   );
 }
 
