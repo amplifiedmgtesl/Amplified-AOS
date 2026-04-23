@@ -2,6 +2,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { printWithTitle } from "@/lib/print-with-title";
 import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames, loadEmployees, getPendingStaffEntries, approveStaffEntry, rejectStaffEntry, setEntryApproved } from "@/lib/store/app-store";
 import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
 import { parseMinutes } from "@/lib/time-utils";
@@ -235,7 +236,11 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
             </div>
           )}
           <div className="action-row" style={{ alignItems: "end" }}>
-            <button onClick={() => window.print()}>Download / Print PDF</button>
+            <button onClick={() => printWithTitle([
+              "Timesheet",
+              currentSheet?.title,
+              currentSheet?.client,
+            ])}>Download / Print PDF</button>
           </div>
         </div>
         <div className="action-row" style={{ marginTop: 12 }}>

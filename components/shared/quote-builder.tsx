@@ -2,6 +2,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { printWithTitle } from "@/lib/print-with-title";
 import { DEFAULT_RATE_ROWS, type RateRow } from "@/lib/rates/defaults";
 import { getActiveRateCardProfileId, loadClientName, loadProfileIntoCurrent, loadRateCardProfiles, loadRateRows, loadTerms } from "@/lib/rates/storage";
 import { supabase } from "@/lib/supabase/client";
@@ -774,15 +775,12 @@ export default function QuoteBuilder() {
 
   <div className="hide-print action-row" style={{ marginBottom: 12 }}>
 
-          <button onClick={() => {
-            const prev = document.title;
-            const clean = [eventName ? `Quote — ${eventName}` : "Quote", client].filter(Boolean).join(" — ");
-            document.title = clean || "Quote";
-            const restore = () => { document.title = prev; window.removeEventListener("afterprint", restore); };
-            window.addEventListener("afterprint", restore);
-            setTimeout(restore, 60_000);
-            window.print();
-          }}>Download / Print PDF</button>
+          <button onClick={() => printWithTitle([
+            "Quote",
+            eventName,
+            client,
+            startDate,
+          ])}>Download / Print PDF</button>
           <small className="muted" style={{ alignSelf: "center" }}>Tip: uncheck "Headers and footers" in the browser's print dialog to hide the URL.</small>
           <button className="secondary" onClick={addLine}>Add Shift / Line Item</button>
           <button className="secondary" onClick={() => { saveQuote(); setStatusMsg("Quote saved."); }}>Save Quote</button>

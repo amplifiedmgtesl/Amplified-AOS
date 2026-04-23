@@ -2,6 +2,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { printWithTitle } from "@/lib/print-with-title";
 import {
   getActiveInvoice,
   loadClients,
@@ -559,16 +560,11 @@ function createDepositInvoiceDraft() {
           <button type="button" className="secondary" onClick={saveInvoiceDraftNow}>Save Invoice</button>
           <button type="button" className="secondary" onClick={saveAsNewDraft}>Save As New Draft</button>
           <button type="button" className="secondary" onClick={createDepositInvoiceDraft}>Create Deposit Invoice Draft</button>
-          <button onClick={() => {
-            const prev = document.title;
-            const clean = [invoice.invoiceNo ? `Invoice ${invoice.invoiceNo}` : "Invoice", invoice.client].filter(Boolean).join(" — ");
-            document.title = clean || "Invoice";
-            // restore after the print dialog closes (best-effort across browsers)
-            const restore = () => { document.title = prev; window.removeEventListener("afterprint", restore); };
-            window.addEventListener("afterprint", restore);
-            setTimeout(restore, 60_000);
-            window.print();
-          }}>Download / Print Invoice PDF</button>
+          <button onClick={() => printWithTitle([
+            invoice.invoiceNo ? `Invoice ${invoice.invoiceNo}` : "Invoice",
+            invoice.client,
+            invoice.eventName,
+          ])}>Download / Print Invoice PDF</button>
           <small className="muted" style={{ alignSelf: "center" }}>Tip: uncheck "Headers and footers" in the browser's print dialog to hide the URL.</small>
         </div>
 

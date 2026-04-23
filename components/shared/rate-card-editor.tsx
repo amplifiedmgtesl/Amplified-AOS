@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { printWithTitle } from "@/lib/print-with-title";
 import { DEFAULT_RATE_ROWS, type TriggerOption, type RateRow } from "@/lib/rates/defaults";
 import { positionNames } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
@@ -200,7 +201,11 @@ export default function RateCardEditor() {
           </div>
           <div className="action-row" style={{ alignItems: "end" }}>
             <button className="secondary" onClick={addRateRow}>Add Row</button>
-            <button className="secondary" onClick={() => window.print()}>Download / Print PDF</button>
+            <button className="secondary" onClick={() => printWithTitle([
+              "Rate Card",
+              profileName,
+              clientName,
+            ])}>Download / Print PDF</button>
           </div>
         </div>
         {statusMsg ? <div className="badge" style={{ marginTop: 12 }}>{statusMsg}</div> : null}
