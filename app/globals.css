@@ -8,7 +8,24 @@ html,body{margin:0;padding:0;background:linear-gradient(180deg,#f8f1e7 0%,#efe1c
 a{text-decoration:none;color:inherit}
 button,input,textarea,select{font:inherit}
 .layout{display:grid;grid-template-columns:210px 1fr;min-height:100vh}
-.sidebar{background:linear-gradient(180deg,var(--dark) 0%,var(--dark-2) 55%,#34271a 100%);color:#fff;padding:22px 18px;border-right:4px solid var(--gold-dark)}
+.layout.layout-collapsed{grid-template-columns:64px 1fr}
+.sidebar{position:relative;background:linear-gradient(180deg,var(--dark) 0%,var(--dark-2) 55%,#34271a 100%);color:#fff;padding:22px 18px;border-right:4px solid var(--gold-dark);display:flex;flex-direction:column}
+.layout-collapsed .sidebar{padding:22px 8px}
+.layout-collapsed .nav-link{text-align:center;padding:10px 0;margin-bottom:6px}
+.sidebar-toggle{
+  position:absolute;right:-14px;top:72px;z-index:10;
+  width:24px;height:24px;border-radius:50%;
+  background:var(--gold-dark);color:#fff;border:2px solid #fff;
+  font-size:14px;font-weight:900;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;padding:0;
+  box-shadow:0 2px 6px rgba(0,0,0,.25);
+}
+.sidebar-toggle:hover{background:var(--gold)}
+.sidebar-brand-mini{
+  font-family:"Arial Black",Impact,Arial,sans-serif;font-style:italic;
+  font-size:20px;letter-spacing:2px;color:var(--gold);text-align:center;
+  padding:12px 0;border-bottom:1px solid rgba(234,215,184,.12);margin-bottom:4px;
+}
 .nav-link{display:block;padding:12px 14px;border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03));margin-bottom:8px;border:1px solid rgba(234,215,184,.08)}
 .nav-link:hover{background:linear-gradient(180deg,rgba(187,154,84,.25),rgba(169,111,59,.18))}
 .main{padding:24px 28px 40px}
