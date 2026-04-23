@@ -774,7 +774,16 @@ export default function QuoteBuilder() {
 
   <div className="hide-print action-row" style={{ marginBottom: 12 }}>
 
-          <button onClick={() => window.print()}>Download / Print PDF</button>
+          <button onClick={() => {
+            const prev = document.title;
+            const clean = [eventName ? `Quote — ${eventName}` : "Quote", client].filter(Boolean).join(" — ");
+            document.title = clean || "Quote";
+            const restore = () => { document.title = prev; window.removeEventListener("afterprint", restore); };
+            window.addEventListener("afterprint", restore);
+            setTimeout(restore, 60_000);
+            window.print();
+          }}>Download / Print PDF</button>
+          <small className="muted" style={{ alignSelf: "center" }}>Tip: uncheck "Headers and footers" in the browser's print dialog to hide the URL.</small>
           <button className="secondary" onClick={addLine}>Add Shift / Line Item</button>
           <button className="secondary" onClick={() => { saveQuote(); setStatusMsg("Quote saved."); }}>Save Quote</button>
           <button className="secondary" onClick={saveInvoiceDraft}>Save Invoice Draft</button>
