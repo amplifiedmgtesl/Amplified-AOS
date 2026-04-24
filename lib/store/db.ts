@@ -463,12 +463,96 @@ export async function rejectStaffEntry(entryId: string): Promise<void> {
   if (error) console.error("[db] rejectStaffEntry:", error);
 }
 
+export interface StaffEntryReviewRow {
+  id: string;
+  workDate: string | null;
+  position: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  employeeKey: string | null;
+  userId: string | null;
+  jobSheetId: string | null;
+  timesheetId: string | null;
+  jobClient: string;
+  jobEventName: string;
+  jobDate: string;
+  timeIn1: string;
+  timeOut1: string;
+  timeIn2: string;
+  timeOut2: string;
+  mealBreak1Minutes: number;
+  mealBreak2Minutes: number;
+  stdHours: number;
+  otHours: number;
+  dtHours: number;
+  totalHours: number;
+  totalPay: number;
+  status: string | null;
+  notes: string;
+  updatedAt: string;
+}
+
+export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]> {
+  const { data, error } = await supabase
+    .from("timesheet_entries")
+    .select(`
+      id, work_date, position, first_name, last_name, email, employee_key, user_id,
+      job_sheet_id, timesheet_id, time_in1, time_out1, time_in2, time_out2,
+      meal_break_1_minutes, meal_break_2_minutes,
+      std_hours, ot_hours, dt_hours, total_hours, total_pay,
+      status, notes, updated_at,
+      job_sheets ( client, event_name, date )
+    `)
+    .not("status", "is", null)
+    .order("updated_at", { ascending: false });
+  if (error) { console.error("[db] getAllStaffReviewEntries:", error); return []; }
+  return (data ?? []).map((r: any) => ({
+    id: r.id,
+    workDate: r.work_date ?? null,
+    position: r.position ?? "",
+    firstName: r.first_name ?? "",
+    lastName: r.last_name ?? "",
+    email: r.email ?? "",
+    employeeKey: r.employee_key ?? null,
+    userId: r.user_id ?? null,
+    jobSheetId: r.job_sheet_id ?? null,
+    timesheetId: r.timesheet_id ?? null,
+    jobClient: r.job_sheets?.client ?? "",
+    jobEventName: r.job_sheets?.event_name ?? "",
+    jobDate: r.job_sheets?.date ?? "",
+    timeIn1: r.time_in1 ?? "",
+    timeOut1: r.time_out1 ?? "",
+    timeIn2: r.time_in2 ?? "",
+    timeOut2: r.time_out2 ?? "",
+    mealBreak1Minutes: Number(r.meal_break_1_minutes ?? 0),
+    mealBreak2Minutes: Number(r.meal_break_2_minutes ?? 0),
+    stdHours: Number(r.std_hours ?? 0),
+    otHours: Number(r.ot_hours ?? 0),
+    dtHours: Number(r.dt_hours ?? 0),
+    totalHours: Number(r.total_hours ?? 0),
+    totalPay: Number(r.total_pay ?? 0),
+    status: r.status ?? null,
+    notes: r.notes ?? "",
+    updatedAt: r.updated_at ?? "",
+  }));
+}
+
 export async function setEntryApproved(entryId: string): Promise<void> {
   const { error } = await supabase
     .from("timesheet_entries")
     .update({ status: "approved", updated_at: new Date().toISOString() })
     .eq("id", entryId);
   if (error) console.error("[db] setEntryApproved:", error);
+}
+
+export async function ensureTimesheetForJob(jobSheetId: string, jobTitle?: string): Promise<string> {
+  const id = `timesheet-${jobSheetId}`;
+  const { error } = await supabase
+    .from("timesheets")
+    .upsert({ id, job_sheet_id: jobSheetId, title: jobTitle || "Timekeeping Sheet", hide_pay_columns: false }, { onConflict: "id" });
+  if (error) { console.error("[db] ensureTimesheetForJob:", error); throw error; }
+  return id;
 }
 
 export async function pullApprovedTimesheetSummary(jobSheetId: string): Promise<Array<{

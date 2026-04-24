@@ -106,6 +106,8 @@ export function saveTimesheets(rows: Timesheet[]) { db.setTimesheets(rows); }
 export function upsertTimesheet(row: Timesheet) { db.upsertTimesheet(row); }
 
 export async function getPendingStaffEntries(jobSheetId: string) { return db.getPendingStaffEntries(jobSheetId); }
+export async function getAllStaffReviewEntries() { return db.getAllStaffReviewEntries(); }
+export async function ensureTimesheetForJob(jobSheetId: string, jobTitle?: string) { return db.ensureTimesheetForJob(jobSheetId, jobTitle); }
 export async function approveStaffEntry(entryId: string, timesheetId: string) { return db.approveStaffEntry(entryId, timesheetId); }
 export async function rejectStaffEntry(entryId: string) { return db.rejectStaffEntry(entryId); }
 export async function setEntryApproved(entryId: string) { return db.setEntryApproved(entryId); }
