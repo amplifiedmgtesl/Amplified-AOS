@@ -10,7 +10,7 @@ import {
 } from "@/lib/store/app-store";
 import type { StaffEntryReviewRow } from "@/lib/store/db";
 
-type StatusFilter = "submitted" | "approved" | "rejected" | "all";
+type StatusFilter = "pending" | "approved" | "rejected" | "all";
 
 function fullName(r: StaffEntryReviewRow) {
   return `${r.firstName} ${r.lastName}`.trim() || r.email || "—";
@@ -22,17 +22,21 @@ function jobLabel(r: StaffEntryReviewRow) {
   return parts.join(" — ") || "(untitled job)";
 }
 
-function statusBadge(status: string | null) {
-  if (status === "submitted") return <span className="badge" style={{ background: "#eaf2fb", color: "#1a4a7a" }}>Submitted</span>;
-  if (status === "approved")  return <span className="badge" style={{ background: "#e8f7e8", color: "#1a5a1a" }}>Approved</span>;
-  if (status === "rejected")  return <span className="badge" style={{ background: "#fbeaea", color: "#8a1a1a" }}>Rejected</span>;
-  return <span className="badge">{status ?? "—"}</span>;
+function isPending(r: StaffEntryReviewRow) {
+  return r.status === "submitted" || r.status === null || r.status === "";
+}
+
+function statusBadge(r: StaffEntryReviewRow) {
+  if (r.status === "approved")  return <span className="badge" style={{ background: "#e8f7e8", color: "#1a5a1a" }}>Approved</span>;
+  if (r.status === "rejected")  return <span className="badge" style={{ background: "#fbeaea", color: "#8a1a1a" }}>Rejected</span>;
+  if (r.status === "submitted") return <span className="badge" style={{ background: "#eaf2fb", color: "#1a4a7a" }}>Submitted</span>;
+  return <span className="badge" style={{ background: "#fff4d6", color: "#7a5a1a" }}>Pending</span>;
 }
 
 export default function TimesheetReview() {
   const [rows, setRows] = useState<StaffEntryReviewRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState<StatusFilter>("submitted");
+  const [status, setStatus] = useState<StatusFilter>("pending");
   const [employeeEmail, setEmployeeEmail] = useState<string>("");
   const [jobSheetId, setJobSheetId] = useState<string>("");  // "" = all, "__none__" = no job
   const [dateFrom, setDateFrom] = useState<string>("");
@@ -68,7 +72,9 @@ export default function TimesheetReview() {
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
-      if (status !== "all" && r.status !== status) return false;
+      if (status === "pending"  && !isPending(r)) return false;
+      if (status === "approved" && r.status !== "approved") return false;
+      if (status === "rejected" && r.status !== "rejected") return false;
       if (employeeEmail && (r.email || "") !== employeeEmail) return false;
       if (jobSheetId === "__none__" && r.jobSheetId) return false;
       if (jobSheetId && jobSheetId !== "__none__" && r.jobSheetId !== jobSheetId) return false;
@@ -112,7 +118,7 @@ export default function TimesheetReview() {
   }
 
   function clearFilters() {
-    setStatus("submitted");
+    setStatus("pending");
     setEmployeeEmail("");
     setJobSheetId("");
     setDateFrom("");
@@ -125,7 +131,7 @@ export default function TimesheetReview() {
         <div>
           <small>Status</small>
           <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
-            <option value="submitted">Submitted (pending)</option>
+            <option value="pending">Pending (needs approval)</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
             <option value="all">All</option>
@@ -210,10 +216,10 @@ export default function TimesheetReview() {
                 <td>{r.dtHours > 0 ? r.dtHours.toFixed(1) : "—"}</td>
                 <td><strong>{r.totalHours.toFixed(1)}</strong></td>
                 <td>${r.totalPay.toFixed(2)}</td>
-                <td>{statusBadge(r.status)}</td>
+                <td>{statusBadge(r)}</td>
                 <td>
                   <div className="action-row">
-                    {r.status === "submitted" && (
+                    {isPending(r) && (
                       <>
                         <button disabled={busyId === r.id} onClick={() => handleApprove(r)} style={{ padding: "4px 10px", fontSize: 12 }}>
                           {busyId === r.id ? "…" : "Approve"}

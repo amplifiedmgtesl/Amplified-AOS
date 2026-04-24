@@ -504,7 +504,6 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
       status, notes, updated_at,
       job_sheets ( client, event_name, date )
     `)
-    .in("status", ["submitted", "approved", "rejected"])
     .order("updated_at", { ascending: false });
   if (error) { console.error("[db] getAllStaffReviewEntries:", error); return []; }
   return (data ?? []).map((r: any) => ({
