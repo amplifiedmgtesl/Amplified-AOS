@@ -501,11 +501,24 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
       job_sheet_id, timesheet_id, time_in1, time_out1, time_in2, time_out2,
       meal_break_1_minutes, meal_break_2_minutes,
       std_hours, ot_hours, dt_hours, total_hours, total_pay,
-      status, notes, updated_at,
-      job_sheets ( client, event_name, date )
+      status, notes, updated_at
     `)
     .order("updated_at", { ascending: false });
   if (error) { console.error("[db] getAllStaffReviewEntries:", error); return []; }
+
+  const jobIds = Array.from(new Set((data ?? []).map((r: any) => r.job_sheet_id).filter(Boolean)));
+  const jobMap = new Map<string, { client: string; eventName: string; date: string }>();
+  if (jobIds.length > 0) {
+    const { data: jobs, error: jobsErr } = await supabase
+      .from("job_sheets")
+      .select("id, client, event_name, date")
+      .in("id", jobIds);
+    if (jobsErr) { console.error("[db] getAllStaffReviewEntries jobs:", jobsErr); }
+    for (const j of (jobs ?? []) as any[]) {
+      jobMap.set(j.id, { client: j.client ?? "", eventName: j.event_name ?? "", date: j.date ?? "" });
+    }
+  }
+
   return (data ?? []).map((r: any) => ({
     id: r.id,
     workDate: r.work_date ?? null,
@@ -517,9 +530,9 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
     userId: r.user_id ?? null,
     jobSheetId: r.job_sheet_id ?? null,
     timesheetId: r.timesheet_id ?? null,
-    jobClient: r.job_sheets?.client ?? "",
-    jobEventName: r.job_sheets?.event_name ?? "",
-    jobDate: r.job_sheets?.date ?? "",
+    jobClient: r.job_sheet_id ? jobMap.get(r.job_sheet_id)?.client ?? "" : "",
+    jobEventName: r.job_sheet_id ? jobMap.get(r.job_sheet_id)?.eventName ?? "" : "",
+    jobDate: r.job_sheet_id ? jobMap.get(r.job_sheet_id)?.date ?? "" : "",
     timeIn1: r.time_in1 ?? "",
     timeOut1: r.time_out1 ?? "",
     timeIn2: r.time_in2 ?? "",
