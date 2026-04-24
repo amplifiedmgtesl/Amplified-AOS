@@ -140,7 +140,8 @@ export function blankTimeEntry(id: string): TimeEntry {
     stdRate: 35,
     otRate: 52,
     dtRate: 70,
-    totalPay: 0
+    totalPay: 0,
+    status: "submitted",
   });
 }
 export function summarizeTimesheet(timesheet: Timesheet | null) {

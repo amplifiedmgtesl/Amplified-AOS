@@ -155,7 +155,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
         phone: w.phone || "",
         email: w.email || "",
         employeeKey: w.employeeKey || null,
-        status: w.employeeKey ? "submitted" : null,
+        status: "submitted",
       }));
     });
     persist({ ...timesheet, rows: nextRows });
