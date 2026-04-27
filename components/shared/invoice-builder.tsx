@@ -202,10 +202,11 @@ export default function InvoiceBuilder() {
   const [approvedEntries, setApprovedEntries] = useState<import("@/lib/store/types").TimeEntry[]>([]);
   const [invoiceLabel, setInvoiceLabel] = useState("");
   const [depositInvoiceMode, setDepositInvoiceMode] = useState(false);
+  const allJobSheets = useMemo(() => loadJobSheets().slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")), [statusMsg]);
   const linkedJobSheet = useMemo(() => {
     if (!invoice?.linkedJobSheetId) return null;
-    return loadJobSheets().find((s) => s.id === invoice.linkedJobSheetId) || null;
-  }, [invoice?.linkedJobSheetId]);
+    return allJobSheets.find((s) => s.id === invoice.linkedJobSheetId) || null;
+  }, [invoice?.linkedJobSheetId, allJobSheets]);
 
   useEffect(() => {
     if (!invoice?.linkedJobSheetId) { setApprovedEntries([]); return; }
@@ -694,10 +695,26 @@ function createDepositInvoiceDraft() {
         {/* Linked job sheet diagnostic — screen only, hidden on print */}
         <div className="hide-print" style={{ marginTop: 12, padding: "10px 14px", background: "var(--cream)", border: "1px solid var(--line)", borderRadius: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "var(--gold-dark)", marginBottom: 6 }}>
-            Linked Job Sheet & Approved Timesheets <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}>(read-only — set when invoice is synced from quote)</span>
+            Linked Job Sheet & Approved Timesheets <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}>(admin override — auto-set when invoice is synced from quote)</span>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+            <small>Job Sheet:</small>
+            <select
+              value={invoice?.linkedJobSheetId || ""}
+              onChange={(e) => patch({ linkedJobSheetId: e.target.value || undefined })}
+              disabled={locked}
+              style={{ minWidth: 360, fontSize: 12 }}
+            >
+              <option value="">— None —</option>
+              {allJobSheets.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {[s.date, s.client, s.eventName].filter(Boolean).join(" — ") || s.title || s.id}
+                </option>
+              ))}
+            </select>
           </div>
           {!invoice?.linkedJobSheetId ? (
-            <div className="muted" style={{ fontSize: 12 }}>No job sheet linked. Sync this invoice from a quote that has a job sheet to enable "Pull Labor Actuals".</div>
+            <div className="muted" style={{ fontSize: 12 }}>No job sheet linked. Pick one above, or sync this invoice from a quote that has a job sheet.</div>
           ) : (
             <div style={{ fontSize: 12 }}>
               <div><strong>Job Sheet ID:</strong> {invoice.linkedJobSheetId}</div>
