@@ -85,22 +85,17 @@ rclone copy supabase-prod:employee-assets supabase-dev:employee-assets --progres
 # repeat for each bucket
 ```
 
-## Step 4 — Sanitize dev (PII scrub)
+## Step 4 — Sanitize dev (lightweight)
 
-Run [`docs/dev-sanitization.sql`](./dev-sanitization.sql) against the dev DB **immediately** after cloning:
+The live data set is small enough that aggressive scrubbing isn't needed — only employee emails and the auth user list need to be neutralized so dev can never accidentally email real people. Run [`docs/dev-sanitization.sql`](./dev-sanitization.sql):
 
 ```bash
 psql "$DEV_DB_URL" < docs/dev-sanitization.sql
 ```
 
-What it does:
-- Rewrites every email in `clients`, `employees`, `profiles`, `timesheet_entries`, `job_sheet_workers`, `auth.users`, etc. to `dev+<row_id>@example.invalid` (non-deliverable, RFC-2606 reserved TLD).
-- Blanks phone numbers to `555-0100`.
-- Keeps names so screens look like real data.
-- Leaves financial figures, dates, and IDs untouched (we *want* to test against realistic data shapes).
-- Preserves one designated admin login you can pre-edit at the top of the file.
+Before running, edit the `\set dev_admin_emails` line at the top of the script to list the emails that should keep working as logins on dev. Everyone else's `auth.users.email` gets rewritten to `dev+<id>@example.invalid` (non-deliverable, RFC-2606 reserved TLD), and every employee email is similarly scrambled.
 
-**Read the script before running** — set the email of the dev admin you want to keep functional.
+Anything that still looks wrong after the script (a stray phone, a one-off note) can be corrected by hand in the Supabase dashboard.
 
 ## Step 5 — Set Vercel Preview environment variables
 
