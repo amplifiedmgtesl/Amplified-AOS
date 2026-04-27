@@ -85,17 +85,11 @@ rclone copy supabase-prod:employee-assets supabase-dev:employee-assets --progres
 # repeat for each bucket
 ```
 
-## Step 4 — Sanitize dev (lightweight)
+## Step 4 — (Skipped for now) PII sanitization
 
-The live data set is small enough that aggressive scrubbing isn't needed — only employee emails and the auth user list need to be neutralized so dev can never accidentally email real people. Run [`docs/dev-sanitization.sql`](./dev-sanitization.sql):
+Not doing automated scrubbing — the data set is small and any concerns can be hand-corrected in the Supabase dashboard. If we ever need a scripted scrub (e.g. before sharing dev access more widely or sending dev test emails), add a `docs/dev-sanitization.sql` and re-introduce this step.
 
-```bash
-psql "$DEV_DB_URL" < docs/dev-sanitization.sql
-```
-
-Before running, edit the `\set dev_admin_emails` line at the top of the script to list the emails that should keep working as logins on dev. Everyone else's `auth.users.email` gets rewritten to `dev+<id>@example.invalid` (non-deliverable, RFC-2606 reserved TLD), and every employee email is similarly scrambled.
-
-Anything that still looks wrong after the script (a stray phone, a one-off note) can be corrected by hand in the Supabase dashboard.
+The one thing worth doing right after the clone, before exposing dev to anyone: in the Supabase dashboard, change the password on every `auth.users` row except the dev admin(s), so cloned prod credentials can't be used to log into dev.
 
 ## Step 5 — Set Vercel Preview environment variables
 
@@ -211,7 +205,6 @@ Check the env vars again — Vercel evaluates scopes by exact match, and selecti
 
 ## See also
 
-- [`docs/dev-sanitization.sql`](./dev-sanitization.sql) — PII scrub script
 - [Supabase docs: Database → Backups](https://supabase.com/docs/guides/platform/backups)
 - [Vercel docs: Environment Variables](https://vercel.com/docs/projects/environment-variables)
 - Project memory: `~/.claude/projects/.../memory/feedback_deployment.md` (existing prod-only deployment workflow — update once dev environment is live)
