@@ -304,6 +304,52 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
     persist({ ...invoice, ...p });
   }
 
+  function blankLine(defaultDate: string): QuoteLine {
+    const meta: LineMeta = {
+      date: defaultDate,
+      department: "",
+      position: "",
+      shiftLabel: "",
+      rateMode: "hourly",
+      startTime: "",
+      endTime: "",
+    };
+    const line: QuoteLine = {
+      serviceKey: buildServiceKey(meta),
+      qty: 1,
+      hours: 0,
+      holidayHours: 0,
+      travel: 0,
+      baseHourly: 0,
+      baseDay: 0,
+      otRate: 0,
+      dtRate: 0,
+      rule: "",
+      total: 0,
+      department: "",
+      specialty: "",
+      shiftLabel: "",
+      quoteDate: defaultDate,
+      endDate: defaultDate,
+      startTime: "",
+      endTime: "",
+      rateMode: "hourly",
+    };
+    return recalcLineFromMeta(line, meta);
+  }
+
+  function addLine() {
+    if (!invoice) return;
+    const defaultDate = dateOptions[0] || "";
+    persist({ ...invoice, lines: [...invoice.lines, blankLine(defaultDate)] }, "Line added.");
+  }
+
+  function removeLine(idx: number) {
+    if (!invoice) return;
+    if (!confirm("Remove this line?")) return;
+    persist({ ...invoice, lines: invoice.lines.filter((_, i) => i !== idx) }, "Line removed.");
+  }
+
   function patchLine(index: number, linePatch: Partial<QuoteLine>, metaPatch?: Partial<LineMeta>) {
     if (!invoice) return;
     const nextLines = invoice.lines.map((line, idx) => {
@@ -826,6 +872,7 @@ function createDepositInvoiceDraft() {
                 <th>Day Rate</th>
                 <th>Travel</th>
                 <th>Line Total</th>
+                <th className="hide-print"></th>
               </tr>
             </thead>
             <tbody>
@@ -931,12 +978,27 @@ function createDepositInvoiceDraft() {
                         <div className="print-terms">{line.travel ? `$${line.travel.toFixed(2)}` : "-"}</div>
                       </td>
                       <td>${Number(line.total || 0).toFixed(2)}</td>
+                      <td className="hide-print">
+                        <button
+                          type="button"
+                          className="secondary"
+                          disabled={locked}
+                          onClick={() => removeLine(idx)}
+                          style={{ padding: "2px 8px", fontSize: 11, color: "#a00", borderColor: "#e0a0a0" }}
+                          title="Remove line"
+                        >
+                          ✕
+                        </button>
+                      </td>
                     </tr>
                   </Fragment>
                 );
               })}
             </tbody>
           </table>
+          <div className="hide-print" style={{ marginTop: 8 }}>
+            <button type="button" className="secondary" disabled={locked} onClick={addLine}>+ Add Line</button>
+          </div>
         </div>
         ) : (
         <div className="invoice-box" style={{ marginTop: 12 }}>
