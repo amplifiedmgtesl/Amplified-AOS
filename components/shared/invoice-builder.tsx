@@ -16,6 +16,7 @@ import {
   upsertInvoiceDraft,
   loadJobSheets,
   getApprovedEntriesForJob,
+  getEntryCountsForJob,
 } from "@/lib/store/app-store";
 import { getActiveRateCardProfileId, loadRateCardProfiles, loadRateRows } from "@/lib/rates/storage";
 import type { Client, InvoiceDraft, JobRequest, Position, QuoteDraft, QuoteLine, Specialty } from "@/lib/store/types";
@@ -200,6 +201,7 @@ export default function InvoiceBuilder() {
   const [statusMsg, setStatusMsg] = useState("");
   const [syncingTimesheet, setSyncingTimesheet] = useState(false);
   const [approvedEntries, setApprovedEntries] = useState<import("@/lib/store/types").TimeEntry[]>([]);
+  const [pendingEntryCount, setPendingEntryCount] = useState<number>(0);
   const [invoiceLabel, setInvoiceLabel] = useState("");
   const [depositInvoiceMode, setDepositInvoiceMode] = useState(false);
   const allJobSheets = useMemo(() => loadJobSheets().slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")), [statusMsg]);
@@ -220,10 +222,15 @@ export default function InvoiceBuilder() {
   }, [invoice?.linkedJobSheetId, allJobSheets]);
 
   useEffect(() => {
-    if (!invoice?.linkedJobSheetId) { setApprovedEntries([]); return; }
+    if (!invoice?.linkedJobSheetId) { setApprovedEntries([]); setPendingEntryCount(0); return; }
     let cancelled = false;
-    getApprovedEntriesForJob(invoice.linkedJobSheetId).then((rows) => {
-      if (!cancelled) setApprovedEntries(rows);
+    Promise.all([
+      getApprovedEntriesForJob(invoice.linkedJobSheetId),
+      getEntryCountsForJob(invoice.linkedJobSheetId),
+    ]).then(([rows, counts]) => {
+      if (cancelled) return;
+      setApprovedEntries(rows);
+      setPendingEntryCount(counts.pending);
     });
     return () => { cancelled = true; };
   }, [invoice?.linkedJobSheetId, statusMsg]);
@@ -688,8 +695,16 @@ function createDepositInvoiceDraft() {
               ))}
             </select>
             {invoice?.linkedJobSheetId && (
-              <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
-                {linkedJobSheet?.title ?? "(not found)"} · Approved entries: <strong>{approvedEntries.length}</strong>
+              <div style={{ fontSize: 11, marginTop: 2 }}>
+                <span className="muted">{linkedJobSheet?.title ?? "(not found)"} · </span>
+                <span>Approved: <strong>{approvedEntries.length}</strong></span>
+                {" · "}
+                <span style={pendingEntryCount > 0 ? { color: "#a06000", fontWeight: 600 } : { color: "var(--muted)" }}>
+                  Pending: {pendingEntryCount}
+                </span>
+                {pendingEntryCount > 0 && (
+                  <a href="/timekeeping/review" style={{ marginLeft: 6, fontSize: 11 }}>Review →</a>
+                )}
               </div>
             )}
           </div>

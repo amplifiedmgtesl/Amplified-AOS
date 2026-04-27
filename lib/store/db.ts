@@ -569,6 +569,16 @@ export async function getApprovedEntriesForJob(jobSheetId: string): Promise<impo
   return (data ?? []).map(rowToTimeEntry);
 }
 
+export async function getEntryCountsForJob(jobSheetId: string): Promise<{ approved: number; pending: number }> {
+  const [approved, pending] = await Promise.all([
+    supabase.from("timesheet_entries").select("id", { count: "exact", head: true }).eq("job_sheet_id", jobSheetId).eq("status", "approved"),
+    supabase.from("timesheet_entries").select("id", { count: "exact", head: true }).eq("job_sheet_id", jobSheetId).or("status.eq.submitted,status.is.null"),
+  ]);
+  if (approved.error) console.error("[db] getEntryCountsForJob approved:", approved.error);
+  if (pending.error)  console.error("[db] getEntryCountsForJob pending:",  pending.error);
+  return { approved: approved.count ?? 0, pending: pending.count ?? 0 };
+}
+
 export async function ensureTimesheetForJob(jobSheetId: string, jobTitle?: string): Promise<string> {
   const id = `timesheet-${jobSheetId}`;
   const { error } = await supabase
