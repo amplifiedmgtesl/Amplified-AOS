@@ -203,6 +203,16 @@ export default function InvoiceBuilder() {
   const [invoiceLabel, setInvoiceLabel] = useState("");
   const [depositInvoiceMode, setDepositInvoiceMode] = useState(false);
   const allJobSheets = useMemo(() => loadJobSheets().slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")), [statusMsg]);
+  const clientJobSheets = useMemo(() => {
+    if (!invoice?.clientId) return allJobSheets;
+    const filtered = allJobSheets.filter((s) => s.clientId === invoice.clientId);
+    // Always include the currently linked one even if its client differs (legacy mismatch)
+    if (invoice.linkedJobSheetId && !filtered.some((s) => s.id === invoice.linkedJobSheetId)) {
+      const linked = allJobSheets.find((s) => s.id === invoice.linkedJobSheetId);
+      if (linked) filtered.unshift(linked);
+    }
+    return filtered;
+  }, [allJobSheets, invoice?.clientId, invoice?.linkedJobSheetId]);
   const linkedJobSheet = useMemo(() => {
     if (!invoice?.linkedJobSheetId) return null;
     return allJobSheets.find((s) => s.id === invoice.linkedJobSheetId) || null;
@@ -706,7 +716,7 @@ function createDepositInvoiceDraft() {
               style={{ minWidth: 360, fontSize: 12 }}
             >
               <option value="">— None —</option>
-              {allJobSheets.map((s) => (
+              {clientJobSheets.map((s) => (
                 <option key={s.id} value={s.id}>
                   {[s.date, s.client, s.eventName].filter(Boolean).join(" — ") || s.title || s.id}
                 </option>
