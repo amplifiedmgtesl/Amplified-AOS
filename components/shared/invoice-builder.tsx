@@ -673,7 +673,26 @@ function createDepositInvoiceDraft() {
               {invoice.clientId && jobRequests.filter((r) => r.clientId === invoice.clientId).map((r) => <option key={r.id} value={r.id}>{r.client} — {r.eventName}</option>)}
             </select>
           </div>
-          <div></div>
+          <div className="hide-print">
+            <small>Link Job Sheet</small>
+            <select
+              value={invoice?.linkedJobSheetId || ""}
+              onChange={(e) => patch({ linkedJobSheetId: e.target.value || undefined })}
+              disabled={locked}
+            >
+              <option value="">— None —</option>
+              {clientJobSheets.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {[s.date, s.eventName].filter(Boolean).join(" — ") || s.title || s.id}
+                </option>
+              ))}
+            </select>
+            {invoice?.linkedJobSheetId && (
+              <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                {linkedJobSheet?.title ?? "(not found)"} · Approved entries: <strong>{approvedEntries.length}</strong>
+              </div>
+            )}
+          </div>
 
           {/* Row 5 — money */}
           <div><small>Deposit</small><input type="number" value={invoice.deposit} onChange={(e) => patch({ deposit: Number(e.target.value || 0) })} disabled={locked} /></div>
@@ -703,45 +722,6 @@ function createDepositInvoiceDraft() {
           </button>
         </div>
 
-        {/* Linked job sheet diagnostic — screen only, hidden on print */}
-        <div className="hide-print" style={{ marginTop: 12, padding: "10px 14px", background: "var(--cream)", border: "1px solid var(--line)", borderRadius: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--gold-dark)", marginBottom: 6 }}>
-            Linked Job Sheet & Approved Timesheets <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}>(admin override — auto-set when invoice is synced from quote)</span>
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
-            <small>Job Sheet:</small>
-            <select
-              value={invoice?.linkedJobSheetId || ""}
-              onChange={(e) => patch({ linkedJobSheetId: e.target.value || undefined })}
-              disabled={locked}
-              style={{ minWidth: 360, fontSize: 12 }}
-            >
-              <option value="">— None —</option>
-              {clientJobSheets.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {[s.date, s.client, s.eventName].filter(Boolean).join(" — ") || s.title || s.id}
-                </option>
-              ))}
-            </select>
-          </div>
-          {!invoice?.linkedJobSheetId ? (
-            <div className="muted" style={{ fontSize: 12 }}>No job sheet linked. Pick one above, or sync this invoice from a quote that has a job sheet.</div>
-          ) : (
-            <div style={{ fontSize: 12 }}>
-              <div><strong>Job Sheet ID:</strong> {invoice.linkedJobSheetId}</div>
-              <div><strong>Title:</strong> {linkedJobSheet?.title ?? <span className="muted">(job sheet not found)</span>}</div>
-              {linkedJobSheet && (
-                <div className="muted">{linkedJobSheet.client} — {linkedJobSheet.eventName} {linkedJobSheet.date && `(${linkedJobSheet.date})`}</div>
-              )}
-              <div style={{ marginTop: 8 }}>
-                <strong>Approved entries: {approvedEntries.length}</strong>
-                {approvedEntries.length === 0 && (
-                  <span className="muted"> — nothing approved yet for this job. Approve entries on /timekeeping/review.</span>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
       <div className="invoice-shell">
