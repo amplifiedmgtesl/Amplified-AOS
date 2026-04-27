@@ -735,23 +735,6 @@ function createDepositInvoiceDraft() {
               )}
               <div style={{ marginTop: 8 }}>
                 <strong>Approved entries: {approvedEntries.length}</strong>
-                {approvedEntries.length > 0 && (
-                  <table style={{ marginTop: 4, fontSize: 11 }}>
-                    <thead>
-                      <tr><th>Date</th><th>Name</th><th>Position</th><th>Hours</th></tr>
-                    </thead>
-                    <tbody>
-                      {approvedEntries.map((e) => (
-                        <tr key={e.id}>
-                          <td>{(e as any).workDate || "—"}</td>
-                          <td>{e.firstName} {e.lastName}</td>
-                          <td>{e.position}</td>
-                          <td>{e.totalHours.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
                 {approvedEntries.length === 0 && (
                   <span className="muted"> — nothing approved yet for this job. Approve entries on /timekeeping/review.</span>
                 )}
