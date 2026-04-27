@@ -558,6 +558,17 @@ export async function setEntryApproved(entryId: string): Promise<void> {
   if (error) console.error("[db] setEntryApproved:", error);
 }
 
+export async function getApprovedEntriesForJob(jobSheetId: string): Promise<import("./types").TimeEntry[]> {
+  const { data, error } = await supabase
+    .from("timesheet_entries")
+    .select("*")
+    .eq("job_sheet_id", jobSheetId)
+    .eq("status", "approved")
+    .order("work_date");
+  if (error) { console.error("[db] getApprovedEntriesForJob:", error); return []; }
+  return (data ?? []).map(rowToTimeEntry);
+}
+
 export async function ensureTimesheetForJob(jobSheetId: string, jobTitle?: string): Promise<string> {
   const id = `timesheet-${jobSheetId}`;
   const { error } = await supabase

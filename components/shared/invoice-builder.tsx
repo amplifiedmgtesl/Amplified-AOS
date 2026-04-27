@@ -14,6 +14,8 @@ import {
   pullApprovedTimesheetSummary,
   setActiveInvoice,
   upsertInvoiceDraft,
+  loadJobSheets,
+  getApprovedEntriesForJob,
 } from "@/lib/store/app-store";
 import { getActiveRateCardProfileId, loadRateCardProfiles, loadRateRows } from "@/lib/rates/storage";
 import type { Client, InvoiceDraft, JobRequest, Position, QuoteDraft, QuoteLine, Specialty } from "@/lib/store/types";
@@ -197,8 +199,23 @@ export default function InvoiceBuilder() {
   const [linkedRateCardProfileId, setLinkedRateCardProfileId] = useState<string>("");
   const [statusMsg, setStatusMsg] = useState("");
   const [syncingTimesheet, setSyncingTimesheet] = useState(false);
+  const [approvedEntries, setApprovedEntries] = useState<import("@/lib/store/types").TimeEntry[]>([]);
   const [invoiceLabel, setInvoiceLabel] = useState("");
   const [depositInvoiceMode, setDepositInvoiceMode] = useState(false);
+  const linkedJobSheet = useMemo(() => {
+    if (!invoice?.linkedJobSheetId) return null;
+    return loadJobSheets().find((s) => s.id === invoice.linkedJobSheetId) || null;
+  }, [invoice?.linkedJobSheetId]);
+
+  useEffect(() => {
+    if (!invoice?.linkedJobSheetId) { setApprovedEntries([]); return; }
+    let cancelled = false;
+    getApprovedEntriesForJob(invoice.linkedJobSheetId).then((rows) => {
+      if (!cancelled) setApprovedEntries(rows);
+    });
+    return () => { cancelled = true; };
+  }, [invoice?.linkedJobSheetId, statusMsg]);
+
   const rateRows = useMemo(() => loadRateRows(), []);
   const TIME_OPTIONS = useMemo(() => timeOptions(), []);
 
@@ -672,8 +689,46 @@ function createDepositInvoiceDraft() {
           >
             {syncingTimesheet ? "Pulling…" : "⟳ Pull Labor Actuals from Timesheet"}
           </button>
-          {invoice?.linkedJobSheetId && (
-            <span className="muted" style={{ fontSize: 11, alignSelf: "center" }}>Job sheet: {invoice.linkedJobSheetId}</span>
+        </div>
+
+        {/* Linked job sheet diagnostic — screen only, hidden on print */}
+        <div className="hide-print" style={{ marginTop: 12, padding: "10px 14px", background: "var(--cream)", border: "1px solid var(--line)", borderRadius: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--gold-dark)", marginBottom: 6 }}>
+            Linked Job Sheet & Approved Timesheets <span className="muted" style={{ fontWeight: 400, fontSize: 11 }}>(read-only — set when invoice is synced from quote)</span>
+          </div>
+          {!invoice?.linkedJobSheetId ? (
+            <div className="muted" style={{ fontSize: 12 }}>No job sheet linked. Sync this invoice from a quote that has a job sheet to enable "Pull Labor Actuals".</div>
+          ) : (
+            <div style={{ fontSize: 12 }}>
+              <div><strong>Job Sheet ID:</strong> {invoice.linkedJobSheetId}</div>
+              <div><strong>Title:</strong> {linkedJobSheet?.title ?? <span className="muted">(job sheet not found)</span>}</div>
+              {linkedJobSheet && (
+                <div className="muted">{linkedJobSheet.client} — {linkedJobSheet.eventName} {linkedJobSheet.date && `(${linkedJobSheet.date})`}</div>
+              )}
+              <div style={{ marginTop: 8 }}>
+                <strong>Approved entries: {approvedEntries.length}</strong>
+                {approvedEntries.length > 0 && (
+                  <table style={{ marginTop: 4, fontSize: 11 }}>
+                    <thead>
+                      <tr><th>Date</th><th>Name</th><th>Position</th><th>Hours</th></tr>
+                    </thead>
+                    <tbody>
+                      {approvedEntries.map((e) => (
+                        <tr key={e.id}>
+                          <td>{(e as any).workDate || "—"}</td>
+                          <td>{e.firstName} {e.lastName}</td>
+                          <td>{e.position}</td>
+                          <td>{e.totalHours.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {approvedEntries.length === 0 && (
+                  <span className="muted"> — nothing approved yet for this job. Approve entries on /timekeeping/review.</span>
+                )}
+              </div>
+            </div>
           )}
         </div>
       </div>
