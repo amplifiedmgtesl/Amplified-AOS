@@ -886,25 +886,19 @@ function createDepositInvoiceDraft() {
                     <tr className={`line-row ${band}`}>
                       <td>
                         <div className="hide-print">
-                          <select value={meta.date} disabled={locked} onChange={(e) => {
+                          <input type="date" value={meta.date} disabled={locked} onChange={(e) => {
                             const newStart = e.target.value;
                             const curEnd = line.endDate || meta.date || "";
                             const newEnd = (!curEnd || curEnd < newStart) ? newStart : curEnd;
                             patchLine(idx, { endDate: newEnd }, { ...meta, date: newStart });
-                          }}>
-                            <option value="">Select Date</option>
-                            {dateOptions.map((d) => <option key={d} value={d}>{d}</option>)}
-                          </select>
+                          }} />
                         </div>
                         <div className="print-terms">
                           {lineEndDate && lineEndDate !== meta.date ? `${meta.date || "-"} → ${lineEndDate}` : (meta.date || "-")}
                         </div>
                       </td>
                       <td className="hide-print">
-                        <select value={line.endDate || meta.date || ""} disabled={locked} onChange={(e) => patchLine(idx, { endDate: e.target.value })}>
-                          <option value="">Select Date</option>
-                          {dateOptions.map((d) => <option key={d} value={d}>{d}</option>)}
-                        </select>
+                        <input type="date" value={line.endDate || meta.date || ""} disabled={locked} onChange={(e) => patchLine(idx, { endDate: e.target.value })} />
                       </td>
                       <td colSpan={2}>
                         <div className="hide-print">
