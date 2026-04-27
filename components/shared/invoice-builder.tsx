@@ -102,6 +102,18 @@ function buildRule(meta: LineMeta, line: QuoteLine) {
 }
 
 function recalcLineFromMeta(line: QuoteLine, meta: LineMeta): QuoteLine {
+  // Sync the discrete columns with whatever the meta says — otherwise the next
+  // parseLineMeta() pass reads stale values and the UI appears not to update.
+  line = {
+    ...line,
+    quoteDate: meta.date || line.quoteDate || "",
+    department: meta.department ?? line.department,
+    rateMode: meta.rateMode || line.rateMode,
+    shiftLabel: meta.shiftLabel ?? line.shiftLabel,
+    startTime: meta.startTime ?? line.startTime,
+    endTime: meta.endTime ?? line.endTime,
+  };
+
   const qty = Number(line.qty || 0);
   const hours = Number(line.hours || 0);
   const holidayHours = Number(line.holidayHours || 0);
