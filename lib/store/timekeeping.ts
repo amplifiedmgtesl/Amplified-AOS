@@ -144,10 +144,14 @@ export function blankTimeEntry(id: string): TimeEntry {
     status: "submitted",
   });
 }
-export function summarizeTimesheet(timesheet: Timesheet | null) {
+export function summarizeTimesheet(
+  timesheet: Timesheet | null,
+  filter?: (row: TimeEntry) => boolean,
+) {
   if (!timesheet) return [];
   const map = new Map<string, { position:string; workers:number; stdHours:number; otHours:number; dtHours:number; totalHours:number; totalPay:number }>();
-  timesheet.rows.forEach((r) => {
+  const rows = filter ? timesheet.rows.filter(filter) : timesheet.rows;
+  rows.forEach((r) => {
     const key = r.position || "Unassigned";
     if (!map.has(key)) map.set(key, { position:key, workers:0, stdHours:0, otHours:0, dtHours:0, totalHours:0, totalPay:0 });
     const agg = map.get(key)!;

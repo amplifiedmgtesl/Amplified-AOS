@@ -120,6 +120,10 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
 
   const currentSheet = sheets.find((s) => s.id === jobSheetId) || null;
   const summary = useMemo(() => summarizeTimesheet(timesheet), [timesheet]);
+  const approvedSummary = useMemo(
+    () => summarizeTimesheet(timesheet, (r) => r.status === "approved"),
+    [timesheet]
+  );
 
   function persist(next: Timesheet) {
     setTimesheet(next);
@@ -406,12 +410,44 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
             </div>
 
             <div style={{ marginTop: 16 }}>
-              <h3 className="section-title">Labor Summary for Quotes / Invoices</h3>
+              <h3 className="section-title">Labor Summary for Quotes</h3>
+              <p className="muted" style={{ fontSize: 12, marginTop: -6, marginBottom: 8 }}>
+                All entries on this job, regardless of approval status — useful for validating actuals vs. the quote.
+              </p>
               <div style={{ overflowX: "auto" }}>
                 <table>
                   <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hidePayAlways && <th>Total Pay</th>}</tr></thead>
                   <tbody>
-                    {summary.map((r) => (
+                    {summary.length === 0 ? (
+                      <tr><td colSpan={hidePayAlways ? 6 : 7} className="muted" style={{ textAlign: "center" }}>No entries.</td></tr>
+                    ) : summary.map((r) => (
+                      <tr key={r.position}>
+                        <td>{r.position}</td>
+                        <td>{r.workers}</td>
+                        <td>{r.stdHours.toFixed(2)}</td>
+                        <td>{r.otHours.toFixed(2)}</td>
+                        <td>{r.dtHours.toFixed(2)}</td>
+                        <td>{r.totalHours.toFixed(2)}</td>
+                        {!hidePayAlways && <td>${r.totalPay.toFixed(2)}</td>}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <h3 className="section-title">Labor Summary for Invoices</h3>
+              <p className="muted" style={{ fontSize: 12, marginTop: -6, marginBottom: 8 }}>
+                Approved entries only — this is what "Pull labor actuals from timesheets" uses on the invoice.
+              </p>
+              <div style={{ overflowX: "auto" }}>
+                <table>
+                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hidePayAlways && <th>Total Pay</th>}</tr></thead>
+                  <tbody>
+                    {approvedSummary.length === 0 ? (
+                      <tr><td colSpan={hidePayAlways ? 6 : 7} className="muted" style={{ textAlign: "center" }}>No approved entries yet.</td></tr>
+                    ) : approvedSummary.map((r) => (
                       <tr key={r.position}>
                         <td>{r.position}</td>
                         <td>{r.workers}</td>
