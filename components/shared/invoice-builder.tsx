@@ -204,15 +204,16 @@ export default function InvoiceBuilder() {
   const [depositInvoiceMode, setDepositInvoiceMode] = useState(false);
   const allJobSheets = useMemo(() => loadJobSheets().slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")), [statusMsg]);
   const clientJobSheets = useMemo(() => {
-    if (!invoice?.clientId) return allJobSheets;
-    const filtered = allJobSheets.filter((s) => s.clientId === invoice.clientId);
+    const invoiceClientName = (invoice?.client || "").trim().toLowerCase();
+    if (!invoiceClientName) return allJobSheets;
+    const filtered = allJobSheets.filter((s) => (s.client || "").trim().toLowerCase() === invoiceClientName);
     // Always include the currently linked one even if its client differs (legacy mismatch)
-    if (invoice.linkedJobSheetId && !filtered.some((s) => s.id === invoice.linkedJobSheetId)) {
+    if (invoice?.linkedJobSheetId && !filtered.some((s) => s.id === invoice.linkedJobSheetId)) {
       const linked = allJobSheets.find((s) => s.id === invoice.linkedJobSheetId);
       if (linked) filtered.unshift(linked);
     }
     return filtered;
-  }, [allJobSheets, invoice?.clientId, invoice?.linkedJobSheetId]);
+  }, [allJobSheets, invoice?.client, invoice?.linkedJobSheetId]);
   const linkedJobSheet = useMemo(() => {
     if (!invoice?.linkedJobSheetId) return null;
     return allJobSheets.find((s) => s.id === invoice.linkedJobSheetId) || null;
