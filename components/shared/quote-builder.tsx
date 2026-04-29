@@ -396,11 +396,12 @@ export default function QuoteBuilder() {
       setLines([emptyLine(latestRows)]);
     }
 
-    const activeQuoteId = getActiveQuote();
-    if (activeQuoteId) {
-      setActiveSavedQuoteId(activeQuoteId);
-      loadSavedQuote(activeQuoteId);
-    }
+    // Hot-fix (2026-04-29): no longer auto-load a saved quote on mount.
+    // Drafts (work-in-progress) still auto-load above — that's continuity.
+    // Saved quotes only load when explicitly picked from the dropdown.
+    // Removes the silent-glue-to-stale-data class of bug where a previous
+    // session's `aes_active_quote_v1` would auto-pin the user to a stale
+    // (or corrupted) row on every refresh.
   }, []);
 
   useEffect(() => {
@@ -793,7 +794,17 @@ export default function QuoteBuilder() {
     <div className="grid">
       <div className="card hide-print">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <h2 className="section-title" style={{ margin: 0 }}>Quote Builder</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <h2 className="section-title" style={{ margin: 0 }}>Quote Builder</h2>
+            <button
+              className="secondary"
+              onClick={() => loadSavedQuote("")}
+              title="Clear the form and start a brand new quote"
+              style={{ fontSize: 13 }}
+            >
+              + New Quote
+            </button>
+          </div>
           <div style={{ background: workingOn.bg, border: `1px solid ${workingOn.color}`, borderRadius: 8, padding: "6px 14px", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", color: workingOn.color }}>{workingOn.label}</span>
             <span style={{ fontSize: 13, color: workingOn.color }}>{workingOn.detail}</span>
