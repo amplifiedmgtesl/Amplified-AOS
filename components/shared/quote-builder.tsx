@@ -528,10 +528,34 @@ export default function QuoteBuilder() {
   const amountDue = subtotal - deposit;
 
   function saveQuote(): QuoteDraft {
-    const lineItems: QuoteLine[] = grouped.flatMap((group) =>
-      group.positions.flatMap((pos) =>
+    // Hot-fix (2026-04-29): validate before save. Quotes need a start_date and
+    // every line item needs a quote_date — without them, downstream features
+    // (job sheets, timesheets, invoices, hour calculations) all break. Block
+    // here rather than letting a half-built quote into the system.
+    if (!startDate) {
+      const msg = "Please set the quote's Start Date before saving.";
+      if (typeof window !== "undefined") alert(msg);
+      setStatusMsg(msg);
+      throw new Error(msg);
+    }
+    const linesWithoutDate = lines.filter((l) => !l.quoteDate);
+    if (linesWithoutDate.length > 0) {
+      const msg = `Please assign a date to all line items before saving (${linesWithoutDate.length} line${linesWithoutDate.length === 1 ? "" : "s"} missing a date).`;
+      if (typeof window !== "undefined") alert(msg);
+      setStatusMsg(msg);
+      throw new Error(msg);
+    }
+
+    const lineItems: QuoteLine[] = grouped.flatMap((group) => {
+      // Hot-fix (2026-04-29): "No Date" is a UI grouping label only — it must
+      // never reach the DB, where quote_date / end_date are real `date`-typed
+      // columns since migration 20260421a. Convert the placeholder to empty
+      // string so the column mapper stores null. Same goes for serviceKey,
+      // which is a legacy composite text column but cleaner without "No Date".
+      const safeDate = (group.date && group.date !== "No Date") ? group.date : "";
+      return group.positions.flatMap((pos) =>
         pos.items.map((item) => ({
-          serviceKey: `${group.date} | ${pos.position} | ${item.row.specialty} | ${item.line.shiftLabel} | ${item.line.rateMode}`,
+          serviceKey: `${safeDate} | ${pos.position} | ${item.row.specialty} | ${item.line.shiftLabel} | ${item.line.rateMode}`,
           qty: item.line.qty,
           hours: item.hours,
           holidayHours: item.line.holidayHours,
@@ -547,14 +571,14 @@ export default function QuoteBuilder() {
           department: pos.position,   // kept for backward compat
           specialty: item.row.specialty,
           shiftLabel: item.line.shiftLabel,
-          quoteDate: group.date,
-          endDate: item.line.endDate || group.date,
+          quoteDate: safeDate,
+          endDate: item.line.endDate || safeDate,
           startTime: item.line.startTime,
           endTime: item.line.endTime,
           rateMode: item.line.rateMode
         }))
-      )
-    );
+      );
+    });
 
     const quote: QuoteDraft = {
       id: currentQuoteId(),
