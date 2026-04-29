@@ -244,20 +244,18 @@ function sync(table: string, row: object) {
     .upsert(row)
     .then(({ error }) => {
       if (error) {
-        // Hot-fix (2026-04-29): stringify error fields explicitly so the real
-        // Postgres error survives Chromium's "Could not fetch properties" GC
-        // wrapper on async error objects. Without this we just see the
-        // wrapper and never the actual code/message/details/hint.
-        console.error(
-          `[db] sync error on ${table}:`,
-          {
-            message: (error as any).message,
-            code: (error as any).code,
-            details: (error as any).details,
-            hint: (error as any).hint,
-            row,
-          }
-        );
+        // Hot-fix (2026-04-29): bake error fields into a single string so
+        // Safari's async object GC can't strip them before the dev tools
+        // render the line. JSON.stringify produces a primitive string that
+        // can't be garbage-collected — message/code/details/hint stay visible.
+        const msg = JSON.stringify({
+          message: (error as any).message ?? null,
+          code: (error as any).code ?? null,
+          details: (error as any).details ?? null,
+          hint: (error as any).hint ?? null,
+        });
+        console.error(`[db] sync error on ${table}: ${msg}`);
+        try { console.error("[db] sync error row:", JSON.stringify(row)); } catch {}
       }
     });
 }
@@ -1342,13 +1340,14 @@ function syncInvoiceLines(invoiceId: string, lines: import("./types").QuoteLine[
     .eq("invoice_id", invoiceId)
     .then(({ error }) => {
       if (error) {
-        console.error("[db] delete invoice_lines error:", {
-          message: (error as any).message,
-          code: (error as any).code,
-          details: (error as any).details,
-          hint: (error as any).hint,
+        const msg = JSON.stringify({
+          message: (error as any).message ?? null,
+          code: (error as any).code ?? null,
+          details: (error as any).details ?? null,
+          hint: (error as any).hint ?? null,
           invoiceId,
         });
+        console.error(`[db] delete invoice_lines error: ${msg}`);
         return;
       }
       if (lines.length === 0) return;
@@ -1357,14 +1356,15 @@ function syncInvoiceLines(invoiceId: string, lines: import("./types").QuoteLine[
         .insert(lines.map((l, i) => invoiceLineToRow(invoiceId, l, i)))
         .then(({ error: e2 }) => {
           if (e2) {
-            console.error("[db] insert invoice_lines error:", {
-              message: (e2 as any).message,
-              code: (e2 as any).code,
-              details: (e2 as any).details,
-              hint: (e2 as any).hint,
+            const msg = JSON.stringify({
+              message: (e2 as any).message ?? null,
+              code: (e2 as any).code ?? null,
+              details: (e2 as any).details ?? null,
+              hint: (e2 as any).hint ?? null,
               invoiceId,
               lineCount: lines.length,
             });
+            console.error(`[db] insert invoice_lines error: ${msg}`);
           }
         });
     });
