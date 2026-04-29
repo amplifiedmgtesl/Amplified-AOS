@@ -212,7 +212,20 @@ jobs (
 - `quotes` — UUID PK, `quote_no` from a global Postgres SEQUENCE, `display_code` like `LNC-miami-commencement-00042`, `parent_quote_id` for revision chains, `status` enum (`issued | signed | superseded`), DB-enforced read-only on content columns, lines in `quote_lines`.
 - "Issue Quote" promotes draft → quote (atomic INSERT into quotes + DELETE draft).
 - "Revise" clones a frozen quote into a new draft.
-- New addition for the cross-system rewrite: every quote also carries `job_id` FK.
+- Every quote also carries `job_id` FK.
+
+**Quote pulls event info from the job — does NOT copy it.** (Updated 2026-04-29 from John's observation.) Today the quote duplicates `client`, `event_name`, `venue`, `city_state`, `start_date`, `end_date`, `start_time`, `end_time` from the job request. Pure denormalization with no benefit and lots of drift risk — typo a venue on the quote and the job request still says the old name; reschedule on the request and the quote is silently outdated.
+
+In the rewrite:
+- `quote_drafts` and `quotes` carry **only** `job_id` FK plus quote-specific fields (`deposit_pct`, `terms`, `signature_name`/`signed_at`, `rate_card_profile_id`, `quote_no`/`display_code`/`status`/etc., line items via child table). Drop the duplicated event-info columns entirely.
+- The quote builder UI replaces the free-form client/event/venue/date inputs with a **single "Job" dropdown** populated from `jobs` (the renamed `job_requests`). Picking a job populates the read-only event panel below the dropdown, showing client, event, venue, dates, etc. live-read from the job row. If the job's info changes upstream (e.g. venue updated on the job), every draft and quote tied to it reflects the change immediately.
+- Display in the quote PDF / list / detail view does a join to `jobs` at render time. No client-side string-matching or stale snapshots.
+
+**Freeze interaction:** because issued quotes are frozen rows in their own right (immutable status, lines, totals, signatures), the only thing that could "change" on a frozen quote is the upstream job. To preserve historical accuracy, jobs themselves should freeze their core content when status advances to `confirmed` (or earlier — when the first quote is issued against them). Status transitions stay editable; client_id/event_name/dates/venue lock down. That gives single-source-of-truth AND audit accuracy without any snapshotting on the quote side.
+
+**Migration:** the column drops on `quotes` happen after `job_id` is backfilled and verified. Existing rows whose `job_id` would resolve to a renamed/updated job get an audit query so a human can verify the join is correct before the source columns are removed.
+
+**Same pattern applies to invoices** — see Section 11.
 
 ### 7. Job Sheets
 
@@ -325,6 +338,8 @@ invoices (
 
 **Freeze:** Once issued, `status != 'draft'` and content columns can't be updated. Revising creates a new invoice row pointing at the parent, just like quotes. The `INV-2026-0423-422-DEP-DEP` corruption pattern becomes mechanically impossible.
 
+**Pull event info from job, do NOT copy.** Same principle as quotes (Section 6). Today's invoice has duplicated `client`, `event_name`, `venue`, `city_state`, `bill_to` columns — drop them from the schema. The new `invoices` row carries `job_id` (and `quote_id` for the source quote), and the invoice PDF / list / detail view reads event info via join. Single source of truth, no drift, no copy-on-generate logic. The job's frozen status (locked when it advances past inquiry/quoted) preserves audit accuracy.
+
 ### 12. Invoice Lines — built from timesheets
 
 **Current:**
@@ -383,17 +398,17 @@ Server-side PDF generation (Puppeteer in a Supabase Edge Function) + transaction
 |---|---|---|
 | `clients` | minor | 3-char `code` constraint |
 | `client_contacts` | NEW | Multi-contact + role |
-| `jobs` (rename of `job_requests`) | rename + extend | Add `job_no` (sequential), `display_code`, expanded `status` enum; drop `client` text; apply event_name discipline. Existing rows become `jobs` rows in place. |
+| `jobs` (rename of `job_requests`) | rename + extend | Add `job_no` (sequential), `display_code`, expanded `status` enum; drop `client` text; apply event_name discipline; freeze content columns once status advances past inquiry/quoted (so quotes/invoices reading from this row stay audit-accurate). Existing rows become `jobs` rows in place. |
 | `shifts` | NEW | Lookup, replace free-text shift labels |
 | `quote_drafts` | NEW | Replaces `quote_draft_workspaces` JSONB |
 | `quote_draft_lines` | NEW | Mirrors `quote_lines` for drafts |
-| `quotes` | rewrite | UUID PK, sequential `quote_no`, `display_code`, `parent_quote_id`, `status` enum, frozen, + `job_id` |
+| `quotes` | rewrite | UUID PK, sequential `quote_no`, `display_code`, `parent_quote_id`, `status` enum, frozen, + `job_id`; **drop duplicated event-info columns** (`client`, `event_name`, `venue`, `city_state`, `start_date`/`end_date`, `start_time`/`end_time`) — pull from `jobs` via FK |
 | `quote_lines` | minor | + `shift_id` FK |
 | `job_sheets` | minor | + `client_id` FK, + `job_id` FK; drop `client` text |
 | `job_sheet_workers` | minor | + `shift_id` FK; UI relabel for slot/assignment |
 | `timesheets` | minor | + `job_id` FK; + `created_at`/`created_by` audit |
 | `timesheet_entries` | minor | + `shift_id` FK; + `status` (submitted/approved/rejected/invoiced/locked); + `submitted_at`/`by`, `approved_at`/`by`, `rejected_at`/`by` audit |
-| `invoices` | rewrite | UUID PK, sequential `invoice_no`, `display_code`, `invoice_type`, `parent_invoice_id`, `source_quote_code`, frozen, + `job_id` FK, FK to `quotes` |
+| `invoices` | rewrite | UUID PK, sequential `invoice_no`, `display_code`, `invoice_type`, `parent_invoice_id`, `source_quote_code`, frozen, + `job_id` FK, FK to `quotes`; **drop duplicated event-info columns** (`client`, `event_name`, `venue`, `city_state`, `bill_to`) — pull from `jobs` via FK |
 | `invoice_lines` | minor | + `shift_id` FK; + `source_kind` audit column |
 
 Tables to drop after migration: `quote_draft_workspaces`. The `-DEP` suffix convention on `invoices.invoice_no` goes away.
