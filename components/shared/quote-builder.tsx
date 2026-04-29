@@ -10,6 +10,7 @@ import {
   getActiveQuote,
   getActiveQuoteDraft,
   getQuoteSeed,
+  loadInvoiceDrafts,
   loadJobRequests,
   loadJobSheets,
   loadPositions,
@@ -747,7 +748,34 @@ export default function QuoteBuilder() {
       return;
     }
 
-    const invoiceId = `inv-${savedQuote.id}`;
+    // Hot-fix (2026-04-29): refuse to generate a new invoice if a non-draft
+    // invoice already exists for this quote. The previous code used a
+    // deterministic invoice id (`inv-${quote.id}`) which meant every new
+    // generation would overwrite the existing invoice — destroying line items
+    // on already-issued or paid invoices via syncInvoiceLines' delete-then-
+    // insert. This is the invoice-side analogue of Connor's quote-overwrite
+    // bug. With unique invoice ids below, accidental collisions are gone, but
+    // the real intent ("I want a new invoice for this quote that isn't a
+    // duplicate of an existing finalized one") deserves a deliberate confirm.
+    const existingInvoices = loadInvoiceDrafts().filter((i) => i.quoteId === savedQuote.id);
+    const existingNonDraft = existingInvoices.find((i) => i.status && i.status !== "draft");
+    if (existingNonDraft) {
+      const proceed = typeof window !== "undefined"
+        ? window.confirm(
+            `An invoice (${existingNonDraft.invoiceNo}) for this quote already exists with status "${existingNonDraft.status}". `
+            + `Generating a new invoice will create an additional row, not modify the existing one. Continue?`
+          )
+        : true;
+      if (!proceed) {
+        setStatusMsg("Invoice generation cancelled.");
+        return;
+      }
+    }
+
+    // Hot-fix (2026-04-29): unique invoice id per generation. Previously this
+    // was `inv-${savedQuote.id}` — deterministic, so re-generating against the
+    // same quote silently overwrote the prior invoice and nuked its line items.
+    const invoiceId = `inv-${Date.now()}-${savedQuote.id.slice(0, 60)}`;
     const issueDate = new Date().toISOString().slice(0, 10);
     const dueDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const invSubtotal = savedQuote.total ?? 0;
