@@ -480,7 +480,16 @@ export default function QuoteBuilder() {
 
   function updateLine(id:number, patch:Partial<Line>) { setLines(lines.map(line => line.id === id ? { ...line, ...patch } : line)); }
   function updateDay(id:number, patch:Partial<DayDetail>) { setDayDetails(dayDetails.map(d => d.id === id ? { ...d, ...patch } : d)); }
-  function currentQuoteId() { return quoteId || `${client || "client"}-${eventName || "event"}-${startDate || Date.now()}`.replace(/\s+/g, "-").toLowerCase(); }
+  function currentQuoteId() {
+    // Hot-fix (2026-04-29): never trust the cached `quoteId` state. It can carry
+    // over from a different draft (the JSONB workspace stores it and reloads on
+    // every draft load), which is what caused the slug-overwrite corruption seen
+    // in 2026-04 (Connor's incident). Only use the cached id when we're editing
+    // a quote that's already saved in the quotes table — i.e. activeSavedQuoteId
+    // is set. In every other case, derive fresh from current content.
+    if (activeSavedQuoteId) return activeSavedQuoteId;
+    return `${client || "client"}-${eventName || "event"}-${startDate || Date.now()}`.replace(/\s+/g, "-").toLowerCase();
+  }
 
   const computed = useMemo(() => lines.map((line, idx) => {
     const row = findRateRowForLine(line);
@@ -677,34 +686,56 @@ export default function QuoteBuilder() {
   }
 
   function saveInvoiceDraft() {
-    const quote = saveQuote();
-    const invoiceId = `inv-${quote.id}`;
+    // Hot-fix (2026-04-29): require an explicitly saved quote before generating
+    // an invoice. Previously this function called saveQuote() as a side effect,
+    // which combined with stale quoteId state could overwrite an unrelated quote
+    // row. Decoupling here means invoice generation is a read of a saved quote,
+    // never a write to the quotes table.
+    if (!activeSavedQuoteId) {
+      const msg = "Please click 'Save Quote' first — invoice generation now requires a saved quote.";
+      if (typeof window !== "undefined") alert(msg);
+      setStatusMsg(msg);
+      return;
+    }
+    const savedQuote = loadQuotes().find((q) => q.id === activeSavedQuoteId);
+    if (!savedQuote) {
+      const msg = "Saved quote not found in cache — please click 'Save Quote' again.";
+      if (typeof window !== "undefined") alert(msg);
+      setStatusMsg(msg);
+      return;
+    }
+
+    const invoiceId = `inv-${savedQuote.id}`;
     const issueDate = new Date().toISOString().slice(0, 10);
     const dueDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const invSubtotal = savedQuote.total ?? 0;
+    const invDeposit = savedQuote.deposit ?? 0;
+    const invAmountDue = invSubtotal - invDeposit;
+
     const invoice: InvoiceDraft = {
       id: invoiceId,
-      quoteId: quote.id,
+      quoteId: savedQuote.id,
       invoiceNo: `INV-${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}${String(new Date().getDate()).padStart(2,"0")}-${String(Math.floor(Math.random()*900)+100)}`,
       issueDate,
       dueDate,
       poNo: "",
-      billTo: client,
-      clientId: clientId || undefined,
-      client,
-      eventName,
-      venue,
-      cityState,
-      lines: quote.lines,
-      subtotal,
-      deposit,
-      amountDue,
-      terms,
+      billTo: savedQuote.client || "",
+      clientId: savedQuote.clientId || undefined,
+      client: savedQuote.client || "",
+      eventName: savedQuote.eventName || "",
+      venue: savedQuote.venue || "",
+      cityState: savedQuote.cityState || "",
+      lines: savedQuote.lines || [],
+      subtotal: invSubtotal,
+      deposit: invDeposit,
+      amountDue: invAmountDue,
+      terms: savedQuote.terms || "",
       notes: "",
       status: "draft",
       paidAmount: 0,
-      linkedJobSheetId,
-      timesheetSummary: timeSummary,
-      rateCardProfileId: activeRateCardProfileId || "",
+      linkedJobSheetId: savedQuote.linkedJobSheetId,
+      timesheetSummary: savedQuote.timesheetSummary,
+      rateCardProfileId: savedQuote.rateCardProfileId || "",
     };
     upsertInvoiceDraft(invoice);
     setActiveInvoice(invoice.id);

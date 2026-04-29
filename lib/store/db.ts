@@ -312,6 +312,24 @@ export function setQuotes(rows: QuoteDraft[]) {
 }
 
 export function upsertQuote(row: QuoteDraft) {
+  // Hot-fix (2026-04-29): collision guard. Refuse to overwrite an existing
+  // quote row whose content belongs to a different client. This is the safety
+  // net against the slug-overwrite bug class — even if a stale `quoteId` ever
+  // slips past the upstream fixes in quote-builder.tsx, a save that would
+  // clobber another client's quote data is blocked here at the DB-write
+  // boundary. Same-client edits (rename, reschedule, typo fix) are allowed.
+  const existing = _cache.quotes.find((r) => r.id === row.id);
+  if (existing) {
+    const existingClientKey = (existing.clientId || existing.client || "").trim().toLowerCase();
+    const incomingClientKey = (row.clientId || row.client || "").trim().toLowerCase();
+    const clientChanged = existingClientKey && incomingClientKey && existingClientKey !== incomingClientKey;
+    if (clientChanged) {
+      const msg = `Quote ID collision: row "${row.id}" already belongs to a different client ("${existing.client}"). Refusing to overwrite with data for "${row.client}". This usually means a stale quote draft is carrying an old slug — reload the page and try again.`;
+      console.error(msg, { existing, attempted: row });
+      if (typeof window !== "undefined") alert(msg);
+      throw new Error(msg);
+    }
+  }
   _cache.quotes = [..._cache.quotes.filter((r) => r.id !== row.id), row];
   sync("quotes", quoteToRow(row));
   syncQuoteLines(row.id, row.lines);
