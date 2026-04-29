@@ -587,6 +587,39 @@ export default function QuoteBuilder() {
   }
 
   function loadSavedQuote(id: string) {
+    // Hot-fix (2026-04-29): handle the "New / Unsaved Quote" empty-string case
+    // properly. Previously this function bailed early when id was "", which
+    // meant picking "New / Unsaved Quote" in the dropdown didn't actually
+    // clear state — activeSavedQuoteId stayed pointing at whatever was loaded
+    // on mount. That made it possible to inadvertently overwrite a different
+    // quote when generating an invoice. Now picking the empty option fully
+    // resets the form.
+    if (!id) {
+      setQuoteId("");
+      setClientId("");
+      setClient("");
+      setEventName("");
+      setVenue("");
+      setCityState("");
+      setStartDate("");
+      setEndDate("");
+      setDefaultStartTime("");
+      setDefaultEndTime("");
+      setExpectedHoursPerDay(10);
+      setLinkedJobRequestId("");
+      setLinkedJobSheetId("");
+      setSignatureName("");
+      setSignedAt("");
+      setLines([emptyLine(rows)]);
+      setDayDetails([]);
+      setActiveSavedQuoteId("");
+      setActiveQuote("");
+      setActiveDraftIdState("");
+      setActiveQuoteDraft("");
+      setDraftName("");
+      setStatusMsg("Started fresh — form cleared.");
+      return;
+    }
     const q = savedQuotes.find((x) => x.id === id);
     if (!q) return;
     setQuoteId(q.id);
