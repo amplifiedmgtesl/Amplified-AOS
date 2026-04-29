@@ -340,6 +340,22 @@ invoices (
 
 **Pull event info from job, do NOT copy.** Same principle as quotes (Section 6). Today's invoice has duplicated `client`, `event_name`, `venue`, `city_state`, `bill_to` columns — drop them from the schema. The new `invoices` row carries `job_id` (and `quote_id` for the source quote), and the invoice PDF / list / detail view reads event info via join. Single source of truth, no drift, no copy-on-generate logic. The job's frozen status (locked when it advances past inquiry/quoted) preserves audit accuracy.
 
+**Correcting a sent / paid invoice.** (Added 2026-04-29 from John's question on workflow.) Once an invoice is sent or paid it is effectively a legal document — admins shouldn't be silently editing it. The new system supports three correction patterns, in priority order:
+
+1. **Revise + Supersede (primary).** Click "Revise" on a frozen invoice → clones the row into a new draft with `parent_invoice_id` set to the original. Admin edits the draft. On "Issue Invoice" the new row becomes active and the original's `status` flips to `superseded`. Both rows stay in the DB; the chain is queryable. This is the everyday correction flow.
+2. **Void.** Click "Void" on a frozen invoice (e.g. it was sent in error to the wrong client, or the job was cancelled) → status flips to `void`. No new row needed. Optional `void_reason` text column. Voided invoices are read-only and excluded from active billing reports but stay visible in audit views.
+3. **Credit memo (future, not in initial rewrite).** A formal accounting "negative invoice" that cancels out specific charges from an already-paid invoice, followed by a new corrected invoice for the right amount. Standard in QuickBooks / Xero. Requires either a `credit_memos` table or an `invoice_kind` discriminator on `invoices`. Add after the freeze + revise pattern is solid in production.
+
+**What goes away:** the current app's "flip status back to draft → edit → flip back" pattern is no longer the corrections path. It loses audit trail, doesn't document why the change was made, and breaks the freeze invariant. The rewrite removes the "edit a frozen row" code path entirely; corrections must go through Revise (+ Supersede) or Void.
+
+**UI affordances on the invoice detail page:**
+- Draft invoices: Edit / Save / Issue / Delete
+- Issued/sent invoices: View / Print / Email / **Revise** / **Void** / Mark as Paid
+- Paid invoices: View / Print / Email / **Revise** / **Void** (warns about already-paid)
+- Superseded / void invoices: View / Print only — no edits, ever
+
+Revisions chain via `parent_invoice_id`. The detail view shows "Rev N — supersedes INV-2026-00042" for revisions and "Superseded by INV-2026-00043" on the parent.
+
 ### 12. Invoice Lines — built from timesheets
 
 **Current:**
