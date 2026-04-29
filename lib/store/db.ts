@@ -372,6 +372,31 @@ export function setInvoiceDrafts(rows: InvoiceDraft[]) {
 }
 
 export function upsertInvoiceDraft(row: InvoiceDraft) {
+  // Hot-fix (2026-04-29): collision guard, mirroring upsertQuote. Refuse to
+  // overwrite an existing invoice row whose content belongs to a different
+  // client OR references a different source quote. This is the safety net
+  // against the invoice-side analogue of Connor's bug — if any code path
+  // ever produces a colliding invoice id, a save that would clobber another
+  // client's billing data (or repoint it to a different quote) is blocked
+  // here at the DB-write boundary. Same-client/same-quote edits (the normal
+  // 'edit invoice' flow from invoice-builder.tsx) pass through unchanged.
+  const existing = _cache.invoiceDrafts.find((r) => r.id === row.id);
+  if (existing) {
+    const existingClientKey = (existing.clientId || existing.client || "").trim().toLowerCase();
+    const incomingClientKey = (row.clientId || row.client || "").trim().toLowerCase();
+    const clientChanged = existingClientKey && incomingClientKey && existingClientKey !== incomingClientKey;
+    const quoteChanged = (existing.quoteId || "") !== (row.quoteId || "")
+      && existing.quoteId && row.quoteId;
+    if (clientChanged || quoteChanged) {
+      const reason = clientChanged
+        ? `belongs to a different client ("${existing.client}" → "${row.client}")`
+        : `references a different source quote ("${existing.quoteId}" → "${row.quoteId}")`;
+      const msg = `Invoice ID collision: row "${row.id}" already exists and ${reason}. Refusing to overwrite. Reload the page and try again.`;
+      console.error(msg, { existing, attempted: row });
+      if (typeof window !== "undefined") alert(msg);
+      throw new Error(msg);
+    }
+  }
   _cache.invoiceDrafts = [..._cache.invoiceDrafts.filter((r) => r.id !== row.id), row];
   sync("invoices", invoiceToRow(row));
   syncInvoiceLines(row.id, row.lines);
