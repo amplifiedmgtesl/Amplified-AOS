@@ -73,7 +73,7 @@ export function getActiveQuoteDraft(): string | null {
 
 export function loadInvoiceDrafts(): InvoiceDraft[] { return db.getInvoiceDrafts(); }
 export function saveInvoiceDrafts(rows: InvoiceDraft[]) { db.setInvoiceDrafts(rows); }
-export function upsertInvoiceDraft(row: InvoiceDraft) { db.upsertInvoiceDraft(row); }
+export function upsertInvoiceDraft(row: InvoiceDraft) { return db.upsertInvoiceDraft(row); }
 
 // Active invoice — UI state, stays in localStorage
 export function setActiveInvoice(id: string) { saveJSON("aes_active_invoice_v2", id); }

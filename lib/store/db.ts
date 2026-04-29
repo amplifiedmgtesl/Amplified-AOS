@@ -238,8 +238,12 @@ async function _loadAll() {
 
 // ─── Sync helpers ─────────────────────────────────────────────────────────────
 
-function sync(table: string, row: object) {
-  supabase
+function sync(table: string, row: object): Promise<{ error: unknown | null }> {
+  // Hot-fix (2026-04-29): return the underlying promise so callers that need
+  // to know whether the save succeeded (e.g. saveInvoiceDraft, which navigates
+  // away on success) can await before deciding next steps. Existing
+  // fire-and-forget callers don't await; they get the same behavior as before.
+  return supabase
     .from(table)
     .upsert(row)
     .then(({ error }) => {
@@ -252,15 +256,10 @@ function sync(table: string, row: object) {
         });
         console.error(`[db] sync error on ${table}: ${msg}`);
         try { console.error("[db] sync error row:", JSON.stringify(row)); } catch {}
-        // Hot-fix (2026-04-29): detect Safari/network-layer failures and warn
-        // the user. "TypeError: Load failed" with empty code/details/hint is
-        // what Supabase JS surfaces when the fetch never reached the server —
-        // Safari blocks cross-origin POST preflights under ITP / privacy
-        // extensions, so writes silently fail in that browser. Without this
-        // warning, the user thinks the save succeeded when nothing happened.
         notifyOnNetworkBlock(error);
       }
-    });
+      return { error: error ?? null };
+    }) as unknown as Promise<{ error: unknown | null }>;
 }
 
 let networkBlockWarned = false;
@@ -404,7 +403,7 @@ export function setInvoiceDrafts(rows: InvoiceDraft[]) {
   }
 }
 
-export function upsertInvoiceDraft(row: InvoiceDraft) {
+export function upsertInvoiceDraft(row: InvoiceDraft): Promise<{ error: unknown | null }> {
   // Hot-fix (2026-04-29): collision guard, mirroring upsertQuote. Refuse to
   // overwrite an existing invoice row whose content belongs to a different
   // client OR references a different source quote. This is the safety net
@@ -431,8 +430,55 @@ export function upsertInvoiceDraft(row: InvoiceDraft) {
     }
   }
   _cache.invoiceDrafts = [..._cache.invoiceDrafts.filter((r) => r.id !== row.id), row];
-  sync("invoices", invoiceToRow(row));
-  syncInvoiceLines(row.id, row.lines);
+  // Hot-fix (2026-04-29): return a Promise that resolves with the first error
+  // from either the invoices upsert or the invoice_lines sync. Lets the
+  // caller (saveInvoiceDraft) await before navigating, so a Safari network
+  // block actually blocks navigation instead of silently failing post-redirect.
+  return Promise.all([
+    sync("invoices", invoiceToRow(row)),
+    syncInvoiceLinesAwaitable(row.id, row.lines),
+  ]).then(([a, b]) => ({ error: a.error || b.error }));
+}
+
+function syncInvoiceLinesAwaitable(invoiceId: string, lines: import("./types").QuoteLine[]): Promise<{ error: unknown | null }> {
+  return supabase
+    .from("invoice_lines")
+    .delete()
+    .eq("invoice_id", invoiceId)
+    .then(({ error }) => {
+      if (error) {
+        const msg = JSON.stringify({
+          message: (error as any).message ?? null,
+          code: (error as any).code ?? null,
+          details: (error as any).details ?? null,
+          hint: (error as any).hint ?? null,
+          invoiceId,
+        });
+        console.error(`[db] delete invoice_lines error: ${msg}`);
+        notifyOnNetworkBlock(error);
+        return { error };
+      }
+      if (lines.length === 0) return { error: null };
+      return supabase
+        .from("invoice_lines")
+        .insert(lines.map((l, i) => invoiceLineToRow(invoiceId, l, i)))
+        .then(({ error: e2 }) => {
+          if (e2) {
+            const msg = JSON.stringify({
+              message: (e2 as any).message ?? null,
+              code: (e2 as any).code ?? null,
+              details: (e2 as any).details ?? null,
+              hint: (e2 as any).hint ?? null,
+              invoiceId,
+              lineCount: lines.length,
+            });
+            console.error(`[db] insert invoice_lines error: ${msg}`);
+            notifyOnNetworkBlock(e2);
+            return { error: e2 };
+          }
+          return { error: null };
+        }) as unknown as Promise<{ error: unknown | null }>;
+    }) as unknown as Promise<{ error: unknown | null }>;
 }
 
 // ─── Job Requests ─────────────────────────────────────────────────────────────

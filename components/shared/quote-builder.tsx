@@ -752,7 +752,7 @@ export default function QuoteBuilder() {
     setStatusMsg("Client rate card loaded.");
   }
 
-  function saveInvoiceDraft() {
+  async function saveInvoiceDraft() {
     // Hot-fix (2026-04-29): require an explicitly saved quote before generating
     // an invoice. Previously this function called saveQuote() as a side effect,
     // which combined with stale quoteId state could overwrite an unrelated quote
@@ -831,7 +831,18 @@ export default function QuoteBuilder() {
       timesheetSummary: savedQuote.timesheetSummary,
       rateCardProfileId: savedQuote.rateCardProfileId || "",
     };
-    upsertInvoiceDraft(invoice);
+    // Hot-fix (2026-04-29): await the save before navigating. Previously this
+    // fired upsertInvoiceDraft and immediately navigated to /invoices — if the
+    // save failed (e.g. Safari blocking the cross-origin POST), the navigation
+    // happened anyway and dropped the user on a page that re-fetched from the
+    // server, replacing the optimistic local cache and losing the invoice.
+    // Now we wait for the save result; on failure we alert and stay put.
+    setStatusMsg("Saving invoice…");
+    const result = await upsertInvoiceDraft(invoice);
+    if (result && result.error) {
+      setStatusMsg("Invoice save failed. See alert / console for details.");
+      return;
+    }
     setActiveInvoice(invoice.id);
     window.location.href = "/invoices";
   }
