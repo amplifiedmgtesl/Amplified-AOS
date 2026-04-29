@@ -586,37 +586,45 @@ export default function QuoteBuilder() {
     return quote;
   }
 
+  // Hot-fix (2026-04-29): full form reset. Used at the top of loadSavedQuote
+  // so picking any option in the saved-quotes dropdown starts from a clean
+  // slate before the picked quote's data is applied. Without this, residual
+  // state (dayDetails, draft pointers, signature info) from the previously-
+  // loaded quote could leak into the new selection.
+  function resetFormState() {
+    setQuoteId("");
+    setClientId("");
+    setClient("");
+    setEventName("");
+    setVenue("");
+    setCityState("");
+    setStartDate("");
+    setEndDate("");
+    setDefaultStartTime("");
+    setDefaultEndTime("");
+    setExpectedHoursPerDay(10);
+    setDepositPct(50);
+    setTerms(loadTerms());
+    setLinkedJobRequestId("");
+    setLinkedJobSheetId("");
+    setSignatureName("");
+    setSignedAt("");
+    setLines([emptyLine(rows)]);
+    setDayDetails([]);
+    setActiveSavedQuoteId("");
+    setActiveQuote("");
+    setActiveDraftIdState("");
+    setActiveQuoteDraft("");
+    setDraftName("");
+  }
+
   function loadSavedQuote(id: string) {
-    // Hot-fix (2026-04-29): handle the "New / Unsaved Quote" empty-string case
-    // properly. Previously this function bailed early when id was "", which
-    // meant picking "New / Unsaved Quote" in the dropdown didn't actually
-    // clear state — activeSavedQuoteId stayed pointing at whatever was loaded
-    // on mount. That made it possible to inadvertently overwrite a different
-    // quote when generating an invoice. Now picking the empty option fully
-    // resets the form.
+    // Always reset first so residual state from a prior selection doesn't
+    // leak into the newly-loaded quote. Picking "New / Unsaved Quote" (id="")
+    // ends here with a fully blank form. Picking a real quote then re-applies
+    // that quote's fields below.
+    resetFormState();
     if (!id) {
-      setQuoteId("");
-      setClientId("");
-      setClient("");
-      setEventName("");
-      setVenue("");
-      setCityState("");
-      setStartDate("");
-      setEndDate("");
-      setDefaultStartTime("");
-      setDefaultEndTime("");
-      setExpectedHoursPerDay(10);
-      setLinkedJobRequestId("");
-      setLinkedJobSheetId("");
-      setSignatureName("");
-      setSignedAt("");
-      setLines([emptyLine(rows)]);
-      setDayDetails([]);
-      setActiveSavedQuoteId("");
-      setActiveQuote("");
-      setActiveDraftIdState("");
-      setActiveQuoteDraft("");
-      setDraftName("");
       setStatusMsg("Started fresh — form cleared.");
       return;
     }
