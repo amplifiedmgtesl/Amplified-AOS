@@ -244,10 +244,6 @@ function sync(table: string, row: object) {
     .upsert(row)
     .then(({ error }) => {
       if (error) {
-        // Hot-fix (2026-04-29): bake error fields into a single string so
-        // Safari's async object GC can't strip them before the dev tools
-        // render the line. JSON.stringify produces a primitive string that
-        // can't be garbage-collected — message/code/details/hint stay visible.
         const msg = JSON.stringify({
           message: (error as any).message ?? null,
           code: (error as any).code ?? null,
@@ -256,8 +252,32 @@ function sync(table: string, row: object) {
         });
         console.error(`[db] sync error on ${table}: ${msg}`);
         try { console.error("[db] sync error row:", JSON.stringify(row)); } catch {}
+        // Hot-fix (2026-04-29): detect Safari/network-layer failures and warn
+        // the user. "TypeError: Load failed" with empty code/details/hint is
+        // what Supabase JS surfaces when the fetch never reached the server —
+        // Safari blocks cross-origin POST preflights under ITP / privacy
+        // extensions, so writes silently fail in that browser. Without this
+        // warning, the user thinks the save succeeded when nothing happened.
+        notifyOnNetworkBlock(error);
       }
     });
+}
+
+let networkBlockWarned = false;
+function notifyOnNetworkBlock(error: unknown) {
+  if (typeof window === "undefined" || networkBlockWarned) return;
+  const m = String((error as any)?.message || "");
+  const isLoadFailed = m.includes("Load failed") || m.includes("Failed to fetch") || m.includes("NetworkError");
+  const hasNoPostgresCode = !((error as any)?.code);
+  if (isLoadFailed && hasNoPostgresCode) {
+    networkBlockWarned = true;
+    alert(
+      "Save blocked at the network layer (no response from the database).\n\n"
+      + "This is usually Safari's privacy/tracking protection blocking cross-origin writes. "
+      + "Open the app in Chrome or Edge instead — saves will work there.\n\n"
+      + "(If you're already in Chrome/Edge, check for ad/privacy blocker extensions or VPN/proxy interference.)"
+    );
+  }
 }
 
 function syncRateState(key: string, value: unknown) {
