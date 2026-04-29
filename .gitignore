@@ -2,3 +2,6 @@ node_modules/
 .next/
 .claude/worktrees/
 
+# Quote/invoice recovery workspace — contains signed client PDFs, extracted data, and recovery scripts.
+# Never commit any of this. Recovery scripts can be reconstructed from project_todo if needed.
+recovery/
