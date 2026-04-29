@@ -799,7 +799,17 @@ export default function QuoteBuilder() {
     // Hot-fix (2026-04-29): unique invoice id per generation. Previously this
     // was `inv-${savedQuote.id}` — deterministic, so re-generating against the
     // same quote silently overwrote the prior invoice and nuked its line items.
-    const invoiceId = `inv-${Date.now()}-${savedQuote.id.slice(0, 60)}`;
+    //
+    // Refinement: if a *draft* invoice already exists for this quote, reuse
+    // its id (so we update it in place rather than creating duplicate drafts).
+    // Drafts are mutable workspace — re-clicking Save Invoice Draft means
+    // "refresh the draft with the latest quote data". Non-draft invoices
+    // (issued/sent/paid) get a new id alongside the protected one — handled
+    // above via the confirm prompt.
+    const existingDraft = existingInvoices.find((i) => !i.status || i.status === "draft");
+    const invoiceId = existingDraft
+      ? existingDraft.id
+      : `inv-${Date.now()}-${savedQuote.id.slice(0, 60)}`;
     const issueDate = new Date().toISOString().slice(0, 10);
     const dueDate = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const invSubtotal = savedQuote.total ?? 0;
