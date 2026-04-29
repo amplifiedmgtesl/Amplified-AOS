@@ -243,7 +243,22 @@ function sync(table: string, row: object) {
     .from(table)
     .upsert(row)
     .then(({ error }) => {
-      if (error) console.error(`[db] sync error on ${table}:`, error);
+      if (error) {
+        // Hot-fix (2026-04-29): stringify error fields explicitly so the real
+        // Postgres error survives Chromium's "Could not fetch properties" GC
+        // wrapper on async error objects. Without this we just see the
+        // wrapper and never the actual code/message/details/hint.
+        console.error(
+          `[db] sync error on ${table}:`,
+          {
+            message: (error as any).message,
+            code: (error as any).code,
+            details: (error as any).details,
+            hint: (error as any).hint,
+            row,
+          }
+        );
+      }
     });
 }
 
@@ -1326,13 +1341,31 @@ function syncInvoiceLines(invoiceId: string, lines: import("./types").QuoteLine[
     .delete()
     .eq("invoice_id", invoiceId)
     .then(({ error }) => {
-      if (error) { console.error("[db] delete invoice_lines error:", error); return; }
+      if (error) {
+        console.error("[db] delete invoice_lines error:", {
+          message: (error as any).message,
+          code: (error as any).code,
+          details: (error as any).details,
+          hint: (error as any).hint,
+          invoiceId,
+        });
+        return;
+      }
       if (lines.length === 0) return;
       supabase
         .from("invoice_lines")
         .insert(lines.map((l, i) => invoiceLineToRow(invoiceId, l, i)))
         .then(({ error: e2 }) => {
-          if (e2) console.error("[db] insert invoice_lines error:", e2);
+          if (e2) {
+            console.error("[db] insert invoice_lines error:", {
+              message: (e2 as any).message,
+              code: (e2 as any).code,
+              details: (e2 as any).details,
+              hint: (e2 as any).hint,
+              invoiceId,
+              lineCount: lines.length,
+            });
+          }
         });
     });
 }
