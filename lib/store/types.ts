@@ -151,7 +151,6 @@ export type JobRequest = {
   city: string;
   state: string;
   cityState: string;
-  googleMapsLink: string;
   receivedDate: string;   // date the inquiry came in; used for YTD stats
   requestDate: string;    // event start date
   endDate?: string;

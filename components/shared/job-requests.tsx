@@ -15,7 +15,7 @@ function today() { return new Date().toISOString().slice(0, 10); }
 
 const BLANK: JobRequest = {
   id: "", clientId: "", client: "", eventName: "", venue: "", venueAddress: "", venueAddress2: "",
-  venueZip: "", city: "", state: "", cityState: "", googleMapsLink: "",
+  venueZip: "", city: "", state: "", cityState: "",
   receivedDate: today(), requestDate: "", endDate: "",
   startTime: "", endTime: "", expectedHours: 10, addToCalendar: true,
   status: "lead", notes: "", attachmentNames: [], packetNotes: "",
@@ -64,11 +64,9 @@ export default function JobRequests() {
   }
 
   function normalized(next: JobRequest): JobRequest {
-    const addr = mapAddress(next);
     return {
       ...next,
       cityState: [next.city, next.state].filter(Boolean).join(", "),
-      googleMapsLink: addr ? `https://maps.google.com/?q=${encodeURIComponent(addr)}` : next.googleMapsLink,
     };
   }
 
@@ -174,7 +172,7 @@ export default function JobRequests() {
     window.open(googleCalendarLink({
       id: row.id, source: "job_request", client: row.client, eventName: row.eventName,
       venue: row.venue, venueAddress: row.venueAddress, city: row.city, state: row.state,
-      cityState: row.cityState, googleMapsLink: row.googleMapsLink,
+      cityState: row.cityState,
       startDate: row.requestDate, endDate: row.endDate || row.requestDate,
       startTime: row.startTime, endTime: row.endTime, notes: row.notes, status: row.status,
     }), "_blank", "noopener,noreferrer");
@@ -445,7 +443,6 @@ export default function JobRequests() {
               </button>
             )}
             <button className="secondary" onClick={cancelEdit}>{editingId ? "Cancel" : "Clear"}</button>
-            {form.googleMapsLink ? <a className="badge" href={form.googleMapsLink} target="_blank" rel="noreferrer">Open Map Link</a> : null}
             {editingId && (
               <button className="secondary" style={{ color: "#c00", marginLeft: "auto" }} onClick={requestDelete}>
                 Delete
