@@ -7,6 +7,11 @@ import { loadJobRequests } from "@/lib/store/app-store";
 import { timeOptions } from "@/lib/store/timekeeping";
 import { supabase } from "@/lib/supabase/client";
 import { US_STATES, JOB_REQUEST_STATUSES } from "@/lib/constants";
+import {
+  uploadJobRequestAttachment,
+  deleteJobRequestAttachment,
+  attachmentDisplayName,
+} from "@/lib/storage/job-request-attachments";
 import type { JobRequest, Client } from "@/lib/store/types";
 
 const TIMES = timeOptions();
@@ -38,6 +43,8 @@ export default function JobRequests() {
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [attachmentMsg, setAttachmentMsg] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.from("clients").select("id, name, code, is_active").order("name")
@@ -147,6 +154,43 @@ export default function JobRequests() {
   function sendToGoogleCalendar() {
     openGoogleCal(form);
     setMsg("Opened Google Calendar template — click Save in Google to add the event.");
+  }
+
+  async function handleAttachmentUpload(files: FileList | null) {
+    if (!files || files.length === 0 || !editingId) return;
+    setUploadingAttachment(true);
+    setAttachmentMsg(null);
+    const newUrls: string[] = [];
+    try {
+      for (const file of Array.from(files)) {
+        const url = await uploadJobRequestAttachment(editingId, file);
+        newUrls.push(url);
+      }
+      const updated = { ...form, attachmentNames: [...(form.attachmentNames ?? []), ...newUrls] };
+      upsertJobRequest(updated);
+      setForm(updated);
+      setRefreshKey((x) => x + 1);
+      setAttachmentMsg(`Uploaded ${newUrls.length} file${newUrls.length !== 1 ? "s" : ""}.`);
+    } catch (err: any) {
+      setAttachmentMsg(`Upload failed: ${err?.message ?? err}`);
+    } finally {
+      setUploadingAttachment(false);
+    }
+  }
+
+  async function handleAttachmentRemove(url: string) {
+    if (!editingId) return;
+    if (!confirm(`Remove "${attachmentDisplayName(url)}"?`)) return;
+    setAttachmentMsg(null);
+    try {
+      await deleteJobRequestAttachment(url);
+      const updated = { ...form, attachmentNames: (form.attachmentNames ?? []).filter((u) => u !== url) };
+      upsertJobRequest(updated);
+      setForm(updated);
+      setRefreshKey((x) => x + 1);
+    } catch (err: any) {
+      setAttachmentMsg(`Remove failed: ${err?.message ?? err}`);
+    }
   }
 
   function saveAndBuildQuote() {
@@ -450,6 +494,83 @@ export default function JobRequests() {
             )}
           </div>
           {msg ? <div className="badge" style={{ marginTop: 12 }}>{msg}</div> : null}
+
+          <div style={{
+            marginTop: 16, paddingTop: 12,
+            borderTop: "1px solid var(--border, #e5e7eb)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 14 }}>Attachments</h3>
+              <span className="muted" style={{ fontSize: 11 }}>
+                Diagrams, maps, scope packets — anything the client sends.
+              </span>
+            </div>
+            {!editingId ? (
+              <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
+                Save the job request first to start adding attachments.
+              </div>
+            ) : (
+              <>
+                {(form.attachmentNames ?? []).length > 0 ? (
+                  <ul style={{ listStyle: "none", padding: 0, margin: 0, marginBottom: 10 }}>
+                    {(form.attachmentNames ?? []).map((url) => (
+                      <li
+                        key={url}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 8,
+                          padding: "6px 8px", borderRadius: 6,
+                          border: "1px solid var(--border, #e5e7eb)",
+                          marginBottom: 4, background: "#fafbfc", fontSize: 13,
+                        }}
+                      >
+                        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          📎 <a href={url} target="_blank" rel="noreferrer" style={{ color: "var(--accent, #2563eb)" }}>
+                            {attachmentDisplayName(url)}
+                          </a>
+                        </span>
+                        <button
+                          className="secondary"
+                          onClick={() => handleAttachmentRemove(url)}
+                          style={{ fontSize: 11, padding: "3px 8px", color: "#c33" }}
+                          title="Remove attachment"
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="muted" style={{ fontSize: 13, padding: "4px 0 10px" }}>No attachments yet.</div>
+                )}
+                <label
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    cursor: uploadingAttachment ? "wait" : "pointer",
+                    padding: "6px 12px", border: "1px dashed var(--border, #b5b9c0)",
+                    borderRadius: 6, fontSize: 13, color: "#3c4043",
+                    opacity: uploadingAttachment ? 0.6 : 1,
+                  }}
+                >
+                  {uploadingAttachment ? "Uploading…" : "+ Upload File(s)"}
+                  <input
+                    type="file"
+                    multiple
+                    style={{ display: "none" }}
+                    disabled={uploadingAttachment}
+                    onChange={(e) => {
+                      void handleAttachmentUpload(e.target.files);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+                {attachmentMsg && (
+                  <span style={{ marginLeft: 12, fontSize: 12, color: attachmentMsg.startsWith("Upload failed") || attachmentMsg.startsWith("Remove failed") ? "#a00" : "#06633a" }}>
+                    {attachmentMsg}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
         </div>
         )}
       </div>
