@@ -123,6 +123,60 @@ export default function RateCardEditor() {
   }
 
   function saveCurrentProfile() {
+    // Uniqueness guard: enforces the same (client_id, lower(name)) constraint
+    // that's set on the DB (migration 20260429h), but with a friendly inline
+    // message instead of a silent server-side rejection.
+    const targetClientForUniq = clientId || null;
+    const targetNameForUniq = (profileName || "Standard").trim().toLowerCase();
+    if (targetClientForUniq) {
+      const collision = profiles.find(
+        (p) =>
+          p.id !== activeProfileId &&
+          (p.clientId ?? null) === targetClientForUniq &&
+          (p.name ?? "Standard").trim().toLowerCase() === targetNameForUniq,
+      );
+      if (collision) {
+        setStatusMsg(
+          `A rate card named "${profileName}" already exists for this client. ` +
+          `Pick a different name (e.g. "Union", "Weekend") or open the existing card and edit it.`,
+        );
+        return;
+      }
+    }
+
+    // Cross-client / cross-name overwrite guard. If the loaded profile has
+    // moved to a different client or had its name changed, treat it as a new
+    // profile rather than silently overwriting the original. Mirrors the
+    // upsertQuote collision check shipped during the Connor hot-fixes.
+    if (activeProfileId) {
+      const original = profiles.find((p) => p.id === activeProfileId);
+      const targetClient = clientId || undefined;
+      const targetName = profileName || "Standard";
+      const movedClient = original && (original.clientId ?? undefined) !== targetClient;
+      const renamed = original && (original.name ?? "Standard") !== targetName;
+      if (movedClient || renamed) {
+        const which = movedClient && renamed ? "client and name" : movedClient ? "client" : "name";
+        const ok = window.confirm(
+          `The ${which} on the loaded rate card has changed.\n\n` +
+          `OK = save as a NEW rate card (recommended; keeps the original intact).\n` +
+          `Cancel = stop and review.`,
+        );
+        if (!ok) return;
+        const now = new Date().toISOString();
+        const id = `ratecard-${Date.now()}`;
+        upsertRateCardProfile({
+          id,
+          clientId: targetClient,
+          clientName: clientName || blankProfileName(),
+          name: targetName,
+          rows, terms, createdAt: now, updatedAt: now,
+        });
+        setActiveRateCardProfileId(id);
+        setStatusMsg("Saved as a new rate card. Original is unchanged.");
+        refreshProfiles();
+        return;
+      }
+    }
     const now = new Date().toISOString();
     const id = activeProfileId || `ratecard-${Date.now()}`;
     upsertRateCardProfile({
@@ -138,6 +192,17 @@ export default function RateCardEditor() {
     setActiveRateCardProfileId(id);
     setStatusMsg("Rate card saved.");
     refreshProfiles();
+  }
+
+  function startNewRateCard() {
+    setActiveRateCardProfileId("");
+    setActiveProfileIdState("");
+    setClientId("");
+    setClientName("");
+    setProfileName("Standard");
+    setRows(DEFAULT_RATE_ROWS);
+    setTerms("");
+    setStatusMsg("New rate card. Pick a client, set the rows, click Save Rate Card.");
   }
 
   function saveAsCopy() {
@@ -172,6 +237,33 @@ export default function RateCardEditor() {
     <div className="grid">
       <div className="card hide-print">
         <h2 className="section-title">Master Rate Editor</h2>
+
+        {/* Row 1 — pick existing or start fresh. Visually separated from the
+            edit form below so it's clear this is a navigation control,
+            not a field on the loaded rate card. */}
+        <div style={{
+          display: "flex", gap: 12, alignItems: "flex-end",
+          padding: "8px 12px", marginBottom: 16,
+          background: "var(--surface2, #f7f7f9)",
+          border: "1px solid var(--border, #e5e7eb)", borderRadius: 8,
+        }}>
+          <div style={{ flex: 1 }}>
+            <small>Saved Rate Cards</small>
+            <select
+              value={activeProfileId}
+              onChange={(e) => openProfile(e.target.value)}
+              style={{ width: "100%" }}
+            >
+              <option value="">— Select a saved rate card —</option>
+              {profiles.map((p) => <option key={p.id} value={p.id}>{p.clientName}{p.name && p.name !== p.clientName ? ` — ${p.name}` : ""}</option>)}
+            </select>
+          </div>
+          <button onClick={startNewRateCard} title="Start a new rate card from defaults">
+            + New Rate Card
+          </button>
+        </div>
+
+        {/* Row 2 — fields belonging to the currently-loaded (or new) rate card. */}
         <div className="grid4">
           <div>
             <small>Client</small>
@@ -187,13 +279,6 @@ export default function RateCardEditor() {
           <div>
             <small>Rate Card Name</small>
             <input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="e.g. Standard, Union, Weekend" />
-          </div>
-          <div>
-            <small>Saved Rate Cards</small>
-            <select value={activeProfileId} onChange={(e) => openProfile(e.target.value)}>
-              <option value="">Current Unsaved Working Card</option>
-              {profiles.map((p) => <option key={p.id} value={p.id}>{p.clientName}{p.name && p.name !== p.clientName ? ` — ${p.name}` : ""}</option>)}
-            </select>
           </div>
           <div className="action-row" style={{ alignItems: "end" }}>
             <button onClick={saveCurrentProfile}>Save Rate Card</button>
