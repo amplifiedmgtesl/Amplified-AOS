@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { upsertClient, mergeClients } from "@/lib/store/app-store";
 import type { Client } from "@/lib/store/types";
+import { ClientContactsTab } from "./client-contacts-tab";
 
 const EMPTY_CLIENT: Omit<Client, "id"> = {
   name: "", code: "", contactName: "", billTo: "", email: "", phone: "",
@@ -37,7 +38,7 @@ export default function ClientMaintenance() {
   const [statusMsg, setStatusMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [showMerge, setShowMerge] = useState(false);
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"job_requests" | "quotes" | "rate_cards" | "calendar_events" | "invoices">("job_requests");
+  const [activeTab, setActiveTab] = useState<"contacts" | "job_requests" | "quotes" | "rate_cards" | "calendar_events" | "invoices">("contacts");
   const [tabData, setTabData] = useState<{
     jobRequests: any[];
     quotes: any[];
@@ -46,6 +47,7 @@ export default function ClientMaintenance() {
     calendarEvents: any[];
     invoices: any[];
   } | null>(null);
+  const [contactsCount, setContactsCount] = useState(0);
   const [mergeSourceId, setMergeSourceId] = useState("");
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [merging, setMerging] = useState(false);
@@ -61,6 +63,7 @@ export default function ClientMaintenance() {
   useEffect(() => { reload(); }, []);
 
   useEffect(() => {
+    setContactsCount(0);
     if (!selectedId) { setTabData(null); return; }
     Promise.all([
       supabase.from("job_requests")
@@ -489,9 +492,9 @@ export default function ClientMaintenance() {
           <div className="card" style={{ marginTop: 16, padding: 0, overflow: "hidden" }}>
             {/* Tab bar */}
             <div style={{ display: "flex", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-              {(["job_requests", "quotes", "rate_cards", "calendar_events", "invoices"] as const).map((tab) => {
-                const labels: Record<string, string> = { job_requests: "Job Requests", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Calendar Events", invoices: "Invoices" };
-                const counts: Record<string, number> = { job_requests: tabData.jobRequests.length, quotes: tabData.quotes.length, rate_cards: tabData.rateCards.length, calendar_events: tabData.calendarEvents.length, invoices: tabData.invoices.length };
+              {(["contacts", "job_requests", "quotes", "rate_cards", "calendar_events", "invoices"] as const).map((tab) => {
+                const labels: Record<string, string> = { contacts: "Contacts", job_requests: "Job Requests", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Calendar Events", invoices: "Invoices" };
+                const counts: Record<string, number> = { contacts: contactsCount, job_requests: tabData.jobRequests.length, quotes: tabData.quotes.length, rate_cards: tabData.rateCards.length, calendar_events: tabData.calendarEvents.length, invoices: tabData.invoices.length };
                 const active = activeTab === tab;
                 return (
                   <button
@@ -516,6 +519,9 @@ export default function ClientMaintenance() {
 
             {/* Tab content */}
             <div style={{ padding: "12px 16px", maxHeight: 280, overflowY: "auto" }}>
+              {activeTab === "contacts" && selectedId && (
+                <ClientContactsTab clientId={selectedId} onCountChange={setContactsCount} />
+              )}
               {activeTab === "job_requests" && (
                 tabData.jobRequests.length === 0
                   ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No job requests.</div>

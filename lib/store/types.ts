@@ -245,6 +245,20 @@ export type Client = {
   isActive: boolean;
 };
 
+export type ClientContactType = "billing" | "quotes" | "job" | "other";
+
+export type ClientContact = {
+  id: string;
+  clientId: string;
+  firstName: string;
+  lastName: string;
+  title?: string;
+  phone?: string;
+  email?: string;
+  type: ClientContactType;
+  isActive: boolean;
+};
+
 export type Position = {
   id: string;
   name: string;
