@@ -33,7 +33,6 @@ export default function JobRequests() {
   const [form, setForm] = useState<JobRequest>({ ...BLANK });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
-  const [syncToGoogleOnSave, setSyncToGoogleOnSave] = useState(true);
   const [clients, setClients] = useState<Client[]>([]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
@@ -140,19 +139,22 @@ export default function JobRequests() {
     if (!form.clientId) { setMsg("Please select a client before saving."); return; }
     const row = normalized({ ...form, id: form.id || `jobreq-${Date.now()}` });
     upsertJobRequest(row);
-    if (row.addToCalendar && syncToGoogleOnSave) openGoogleCal(row);
-    setMsg(row.addToCalendar ? "Saved and sent to calendar workflow." : "Saved.");
+    setMsg("Saved.");
     setMode("edit");
     setEditingId(row.id);
     setForm(row);
     setRefreshKey((x) => x + 1);
   }
 
+  function sendToGoogleCalendar() {
+    openGoogleCal(form);
+    setMsg("Opened Google Calendar template — click Save in Google to add the event.");
+  }
+
   function saveAndBuildQuote() {
     if (!form.clientId) { setMsg("Please select a client before saving."); return; }
     const row = normalized({ ...form, id: form.id || `jobreq-${Date.now()}` });
     upsertJobRequest(row);
-    if (row.addToCalendar && syncToGoogleOnSave) openGoogleCal(row);
     setQuoteSeed({
       linkedJobRequestId: row.id,
       client: row.client,
@@ -204,6 +206,12 @@ export default function JobRequests() {
         return db.localeCompare(da);
       });
   }, [rows, search, statusFilter, clientById]);
+
+  // Once a request leaves Lead status, lock everything except Status itself.
+  // Editing a quoted/booked/lost request would silently mutate downstream
+  // artifacts (the quote built off it, the booked job's terms, etc.).
+  const isLocked = mode === "edit" && form.status !== "lead";
+  const statusLabel = JOB_REQUEST_STATUSES.find((s) => s.value === form.status)?.label ?? form.status;
 
   return (
     <div style={{ display: "flex", gap: 20, alignItems: "flex-start", height: "100%" }}>
@@ -315,10 +323,20 @@ export default function JobRequests() {
             </div>
           )}
 
+          {isLocked && (
+            <div style={{
+              background: "#eef5ff", border: "1px solid #b6cdf0", borderRadius: 8,
+              padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#1e3a8a",
+            }}>
+              🔒 This job request is <strong>{statusLabel}</strong>. Only the Status field can be changed —
+              switch back to <strong>Lead</strong> to edit other fields.
+            </div>
+          )}
+
           <div className="grid4">
             <div>
               <small>Client *</small>
-              <select value={form.clientId ?? ""} onChange={(e) => selectClient(e.target.value)}>
+              <select value={form.clientId ?? ""} disabled={isLocked} onChange={(e) => selectClient(e.target.value)}>
                 <option value="">— Select Client —</option>
                 {activeClients.map((c) => <option key={c.id} value={c.id}>{c.code ? `[${c.code}] ${c.name}` : c.name}</option>)}
                 {/* If editing a record whose client has been deactivated, keep it visible. */}
@@ -327,44 +345,39 @@ export default function JobRequests() {
                 )}
               </select>
             </div>
-            <div><small>Event Name</small><input value={form.eventName} onChange={(e)=>setForm({ ...form, eventName:e.target.value })} /></div>
-            <div><small>Venue</small><input value={form.venue} onChange={(e)=>setForm({ ...form, venue:e.target.value })} /></div>
-            <div><small>Street Address</small><input value={form.venueAddress} onChange={(e)=>setForm({ ...form, venueAddress:e.target.value })} placeholder="e.g. 123 Main St" /></div>
-            <div><small>Suite / Unit</small><input value={form.venueAddress2 ?? ""} onChange={(e)=>setForm({ ...form, venueAddress2:e.target.value })} placeholder="optional" /></div>
-            <div><small>City</small><input value={form.city} onChange={(e)=>setForm({ ...form, city:e.target.value })} /></div>
+            <div><small>Event Name</small><input disabled={isLocked} value={form.eventName} onChange={(e)=>setForm({ ...form, eventName:e.target.value })} /></div>
+            <div><small>Venue</small><input disabled={isLocked} value={form.venue} onChange={(e)=>setForm({ ...form, venue:e.target.value })} /></div>
+            <div><small>Street Address</small><input disabled={isLocked} value={form.venueAddress} onChange={(e)=>setForm({ ...form, venueAddress:e.target.value })} placeholder="e.g. 123 Main St" /></div>
+            <div><small>Suite / Unit</small><input disabled={isLocked} value={form.venueAddress2 ?? ""} onChange={(e)=>setForm({ ...form, venueAddress2:e.target.value })} placeholder="optional" /></div>
+            <div><small>City</small><input disabled={isLocked} value={form.city} onChange={(e)=>setForm({ ...form, city:e.target.value })} /></div>
             <div><small>State</small>
-              <select value={form.state} onChange={(e)=>setForm({ ...form, state:e.target.value })}>
+              <select disabled={isLocked} value={form.state} onChange={(e)=>setForm({ ...form, state:e.target.value })}>
                 <option value="">— Select —</option>
                 {US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}
               </select>
             </div>
-            <div><small>Venue Zip</small><input value={form.venueZip ?? ""} onChange={(e)=>setForm({ ...form, venueZip:e.target.value })} placeholder="00000" /></div>
+            <div><small>Venue Zip</small><input disabled={isLocked} value={form.venueZip ?? ""} onChange={(e)=>setForm({ ...form, venueZip:e.target.value })} placeholder="00000" /></div>
             <div><small>Status</small>
               <select value={form.status} onChange={(e)=>setForm({ ...form, status:e.target.value })}>
                 {JOB_REQUEST_STATUSES.map((s)=><option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
-            <div><small>Request Date</small><input type="date" value={form.receivedDate} onChange={(e)=>setForm({ ...form, receivedDate:e.target.value })} /></div>
-            <div><small>Event Start Date</small><input type="date" value={form.requestDate} onChange={(e)=>setForm({ ...form, requestDate:e.target.value })} /></div>
-            <div><small>Event End Date</small><input type="date" value={form.endDate || ""} onChange={(e)=>setForm({ ...form, endDate:e.target.value })} /></div>
+            <div><small>Request Date</small><input type="date" disabled={isLocked} value={form.receivedDate} onChange={(e)=>setForm({ ...form, receivedDate:e.target.value })} /></div>
+            <div><small>Event Start Date</small><input type="date" disabled={isLocked} value={form.requestDate} onChange={(e)=>setForm({ ...form, requestDate:e.target.value })} /></div>
+            <div><small>Event End Date</small><input type="date" disabled={isLocked} value={form.endDate || ""} onChange={(e)=>setForm({ ...form, endDate:e.target.value })} /></div>
             <div><small>Start Time</small>
-              <select value={form.startTime} onChange={(e)=>setForm({ ...form, startTime:e.target.value })}>
+              <select disabled={isLocked} value={form.startTime} onChange={(e)=>setForm({ ...form, startTime:e.target.value })}>
                 {TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}
               </select>
             </div>
             <div><small>End Time</small>
-              <select value={form.endTime} onChange={(e)=>setForm({ ...form, endTime:e.target.value })}>
+              <select disabled={isLocked} value={form.endTime} onChange={(e)=>setForm({ ...form, endTime:e.target.value })}>
                 {TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}
               </select>
             </div>
-            <div><small>Expected Hours / Day</small><input type="number" value={form.expectedHours || 10} onChange={(e)=>setForm({ ...form, expectedHours:Number(e.target.value || 0) })} /></div>
-            <div><small>Add to Calendar</small>
-              <select value={String(form.addToCalendar)} onChange={(e)=>setForm({ ...form, addToCalendar:e.target.value === "true" })}>
-                <option value="true">Yes</option><option value="false">No</option>
-              </select>
-            </div>
-            <div><small>Add to Google Calendar on Save</small>
-              <select value={String(syncToGoogleOnSave)} onChange={(e)=>setSyncToGoogleOnSave(e.target.value === "true")}>
+            <div><small>Expected Hours / Day</small><input type="number" disabled={isLocked} value={form.expectedHours || 10} onChange={(e)=>setForm({ ...form, expectedHours:Number(e.target.value || 0) })} /></div>
+            <div><small>Show in app calendar</small>
+              <select disabled={isLocked} value={String(form.addToCalendar)} onChange={(e)=>setForm({ ...form, addToCalendar:e.target.value === "true" })}>
                 <option value="true">Yes</option><option value="false">No</option>
               </select>
             </div>
@@ -393,7 +406,7 @@ export default function JobRequests() {
             </div>
           )}
 
-          <div style={{ marginTop: 12 }}><small>Notes</small><textarea value={form.notes} onChange={(e)=>setForm({ ...form, notes:e.target.value })} /></div>
+          <div style={{ marginTop: 12 }}><small>Notes</small><textarea disabled={isLocked} value={form.notes} onChange={(e)=>setForm({ ...form, notes:e.target.value })} /></div>
 
           <div className="action-row" style={{ marginTop: 12 }}>
             <button onClick={save}>Save</button>
@@ -403,8 +416,33 @@ export default function JobRequests() {
                 View Quote
               </button>
             )}
-            {editingId && !form.linkedQuoteId && (
+            {editingId && !form.linkedQuoteId && !isLocked && (
               <button className="secondary" onClick={saveAndBuildQuote}>Build Quote</button>
+            )}
+            {editingId && form.addToCalendar && (
+              <button
+                onClick={sendToGoogleCalendar}
+                title="Open a Google Calendar template prefilled with this event"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 8,
+                  background: "#fff", color: "#3c4043",
+                  border: "1px solid #dadce0", borderRadius: 6,
+                  padding: "6px 14px", fontWeight: 500, fontSize: 13,
+                  boxShadow: "0 1px 2px rgba(60,64,67,0.1)",
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="16" rx="2" fill="#fff" stroke="#dadce0" strokeWidth="1.2" />
+                  <rect x="3" y="5" width="18" height="4" rx="2" fill="#4285f4" />
+                  <rect x="6"  y="11" width="3" height="3" fill="#ea4335" />
+                  <rect x="10.5" y="11" width="3" height="3" fill="#fbbc04" />
+                  <rect x="15" y="11" width="3" height="3" fill="#34a853" />
+                  <rect x="6"  y="15.5" width="3" height="3" fill="#34a853" />
+                  <rect x="10.5" y="15.5" width="3" height="3" fill="#4285f4" />
+                  <rect x="15" y="15.5" width="3" height="3" fill="#ea4335" />
+                </svg>
+                Add to Google Calendar
+              </button>
             )}
             <button className="secondary" onClick={cancelEdit}>{editingId ? "Cancel" : "Clear"}</button>
             {form.googleMapsLink ? <a className="badge" href={form.googleMapsLink} target="_blank" rel="noreferrer">Open Map Link</a> : null}
