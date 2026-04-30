@@ -152,8 +152,22 @@ export default function ClientMaintenance() {
 
   async function saveForm() {
     if (!form || !form.name.trim()) return;
+    const code = (form.code ?? "").trim().toUpperCase();
+    if (code && code.length !== 3) {
+      setStatusMsg({ text: "Client Code must be exactly 3 characters (or left blank).", ok: false });
+      return;
+    }
+    if (code) {
+      const conflict = clients.find(
+        (c) => c.id !== form.id && c.isActive !== false && (c.code ?? "").toUpperCase() === code
+      );
+      if (conflict) {
+        setStatusMsg({ text: `Code "${code}" is already used by "${conflict.name}". Pick a different code.`, ok: false });
+        return;
+      }
+    }
     setSaving(true);
-    upsertClient({ ...form, name: form.name.trim() });
+    upsertClient({ ...form, name: form.name.trim(), code: code || undefined });
     setDirty(false);
     setSaving(false);
     setStatusMsg({ text: "Client saved.", ok: true });
@@ -249,13 +263,6 @@ export default function ClientMaintenance() {
           <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
             {active.length} client{active.length !== 1 ? "s" : ""}
           </div>
-          <button
-            className="secondary"
-            style={{ fontSize: 12, width: "100%" }}
-            onClick={() => { setShowMerge(!showMerge); setStatusMsg(null); }}
-          >
-            {showMerge ? "Hide Merge" : "Merge Duplicates…"}
-          </button>
         </div>
       </div>
 
@@ -339,11 +346,14 @@ export default function ClientMaintenance() {
                 <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Client Code</label>
                 <input
                   value={selectedClient.code ?? ""}
-                  onChange={(e) => updateField("code", e.target.value.toUpperCase())}
+                  onChange={(e) => updateField("code", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
                   placeholder="e.g. JAY"
-                  maxLength={10}
-                  style={{ width: "100%", textTransform: "uppercase" }}
+                  maxLength={3}
+                  style={{ width: "100%", textTransform: "uppercase", fontFamily: "monospace" }}
                 />
+                <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+                  Exactly 3 characters (letters/digits). Used as the prefix on quote display codes.
+                </div>
               </div>
 
               <div>
