@@ -38,6 +38,7 @@ export default function RateCardEditor() {
   const [clientId, setClientId] = useState("");
   const [clientName, setClientName] = useState("");
   const [profileName, setProfileName] = useState("Standard");
+  const [effectiveDate, setEffectiveDate] = useState("");
   const [rows, setRows] = useState<RateRow[]>(DEFAULT_RATE_ROWS);
   const [terms, setTerms] = useState("");
   const [profiles, setProfiles] = useState<RateCardProfile[]>([]);
@@ -57,6 +58,7 @@ export default function RateCardEditor() {
     if (activeProfile) {
       setClientId(activeProfile.clientId ?? "");
       setProfileName(activeProfile.name ?? "Standard");
+      setEffectiveDate(activeProfile.effectiveDate ?? "");
     }
     // Load directly from DB — cache may not be ready at mount time
     Promise.all([
@@ -123,22 +125,27 @@ export default function RateCardEditor() {
   }
 
   function saveCurrentProfile() {
-    // Uniqueness guard: enforces the same (client_id, lower(name)) constraint
-    // that's set on the DB (migration 20260429h), but with a friendly inline
-    // message instead of a silent server-side rejection.
+    // Uniqueness guard: enforces the same (client_id, lower(name), effective_date)
+    // constraint that's set on the DB (migration 20260429i), but with a friendly
+    // inline message instead of a silent server-side rejection.
     const targetClientForUniq = clientId || null;
     const targetNameForUniq = (profileName || "Standard").trim().toLowerCase();
+    const targetDateForUniq = effectiveDate || null;
     if (targetClientForUniq) {
       const collision = profiles.find(
         (p) =>
           p.id !== activeProfileId &&
           (p.clientId ?? null) === targetClientForUniq &&
-          (p.name ?? "Standard").trim().toLowerCase() === targetNameForUniq,
+          (p.name ?? "Standard").trim().toLowerCase() === targetNameForUniq &&
+          (p.effectiveDate ?? null) === targetDateForUniq,
       );
       if (collision) {
+        const dateNote = targetDateForUniq
+          ? ` effective ${targetDateForUniq}`
+          : " (no effective date)";
         setStatusMsg(
-          `A rate card named "${profileName}" already exists for this client. ` +
-          `Pick a different name (e.g. "Union", "Weekend") or open the existing card and edit it.`,
+          `A rate card named "${profileName}"${dateNote} already exists for this client. ` +
+          `Pick a different name or set a different effective date.`,
         );
         return;
       }
@@ -152,10 +159,18 @@ export default function RateCardEditor() {
       const original = profiles.find((p) => p.id === activeProfileId);
       const targetClient = clientId || undefined;
       const targetName = profileName || "Standard";
+      const targetDate = effectiveDate || undefined;
       const movedClient = original && (original.clientId ?? undefined) !== targetClient;
       const renamed = original && (original.name ?? "Standard") !== targetName;
-      if (movedClient || renamed) {
-        const which = movedClient && renamed ? "client and name" : movedClient ? "client" : "name";
+      const dateChanged = original && (original.effectiveDate ?? undefined) !== targetDate;
+      if (movedClient || renamed || dateChanged) {
+        const parts: string[] = [];
+        if (movedClient) parts.push("client");
+        if (renamed) parts.push("name");
+        if (dateChanged) parts.push("effective date");
+        const which = parts.length === 3 ? "client, name, and effective date"
+          : parts.length === 2 ? `${parts[0]} and ${parts[1]}`
+          : parts[0];
         const ok = window.confirm(
           `The ${which} on the loaded rate card has changed.\n\n` +
           `OK = save as a NEW rate card (recommended; keeps the original intact).\n` +
@@ -169,6 +184,7 @@ export default function RateCardEditor() {
           clientId: targetClient,
           clientName: clientName || blankProfileName(),
           name: targetName,
+          effectiveDate: effectiveDate || undefined,
           rows, terms, createdAt: now, updatedAt: now,
         });
         setActiveRateCardProfileId(id);
@@ -184,6 +200,7 @@ export default function RateCardEditor() {
       clientId: clientId || undefined,
       clientName: clientName || blankProfileName(),
       name: profileName || "Standard",
+      effectiveDate: effectiveDate || undefined,
       rows,
       terms,
       createdAt: now,
@@ -200,6 +217,7 @@ export default function RateCardEditor() {
     setClientId("");
     setClientName("");
     setProfileName("Standard");
+    setEffectiveDate("");
     setRows(DEFAULT_RATE_ROWS);
     setTerms("");
     setStatusMsg("New rate card. Pick a client, set the rows, click Save Rate Card.");
@@ -213,6 +231,7 @@ export default function RateCardEditor() {
       clientId: clientId || undefined,
       clientName: clientName || blankProfileName(),
       name: `${profileName || "Standard"} Copy`,
+      effectiveDate: effectiveDate || undefined,
       rows, terms, createdAt: now, updatedAt: now,
     });
     loadProfileIntoCurrent(id);
@@ -229,6 +248,7 @@ export default function RateCardEditor() {
     const profile = profiles.find((p) => p.id === id);
     setClientId(profile?.clientId ?? "");
     setProfileName(profile?.name ?? "Standard");
+    setEffectiveDate(profile?.effectiveDate ?? "");
     refreshProfiles();
     setStatusMsg("Rate card loaded.");
   }
@@ -255,7 +275,11 @@ export default function RateCardEditor() {
               style={{ width: "100%" }}
             >
               <option value="">— Select a saved rate card —</option>
-              {profiles.map((p) => <option key={p.id} value={p.id}>{p.clientName}{p.name && p.name !== p.clientName ? ` — ${p.name}` : ""}</option>)}
+              {profiles.map((p) => {
+                const label = p.clientName + (p.name && p.name !== p.clientName ? ` — ${p.name}` : "");
+                const dateLabel = p.effectiveDate ? ` (effective ${p.effectiveDate})` : "";
+                return <option key={p.id} value={p.id}>{label}{dateLabel}</option>;
+              })}
             </select>
           </div>
           <button onClick={startNewRateCard} title="Start a new rate card from defaults">
@@ -280,6 +304,16 @@ export default function RateCardEditor() {
             <small>Rate Card Name</small>
             <input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="e.g. Standard, Union, Weekend" />
           </div>
+          <div>
+            <small>Effective Date</small>
+            <input
+              type="date"
+              value={effectiveDate}
+              onChange={(e) => setEffectiveDate(e.target.value)}
+              title="Date this rate card becomes effective. Leave blank for an undated card."
+            />
+          </div>
+          <div></div>
           <div className="action-row" style={{ alignItems: "end" }}>
             <button onClick={saveCurrentProfile}>Save Rate Card</button>
             <button className="secondary" onClick={saveAsCopy}>Copy for New Client</button>
