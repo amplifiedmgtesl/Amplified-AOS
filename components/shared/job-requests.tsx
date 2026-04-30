@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -8,8 +7,7 @@ import { loadJobRequests } from "@/lib/store/app-store";
 import { timeOptions } from "@/lib/store/timekeeping";
 import { supabase } from "@/lib/supabase/client";
 import { US_STATES, JOB_REQUEST_STATUSES } from "@/lib/constants";
-import type { JobRequest } from "@/lib/store/types";
-import type { Client } from "@/lib/store/types";
+import type { JobRequest, Client } from "@/lib/store/types";
 
 const TIMES = timeOptions();
 
@@ -23,6 +21,9 @@ const BLANK: JobRequest = {
   status: "lead", notes: "", attachmentNames: [], packetNotes: "",
 };
 
+type StatusFilter = "active" | "all" | "lead" | "quoted" | "booked" | "lost";
+const ACTIVE_STATUSES = new Set(["lead", "quoted", "booked"]);
+
 export default function JobRequests() {
   const [refreshKey, setRefreshKey] = useState(0);
   const rows = useMemo(() => loadJobRequests(), [refreshKey]);
@@ -33,14 +34,26 @@ export default function JobRequests() {
   const [clients, setClients] = useState<Client[]>([]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
 
   useEffect(() => {
-    supabase.from("clients").select("id, name").eq("is_active", true).order("name")
-      .then(({ data }) => setClients((data ?? []).map((r: any) => ({ id: r.id, name: r.name, isActive: true }))));
+    supabase.from("clients").select("id, name, code, is_active").order("name")
+      .then(({ data }) => setClients((data ?? []).map((r: any) => ({
+        id: r.id, name: r.name, code: r.code ?? undefined, isActive: !!r.is_active,
+      }))));
   }, []);
 
+  const clientById = useMemo(() => {
+    const map = new Map<string, Client>();
+    for (const c of clients) map.set(c.id, c);
+    return map;
+  }, [clients]);
+
+  const activeClients = useMemo(() => clients.filter((c) => c.isActive), [clients]);
+
   function selectClient(clientId: string) {
-    const c = clients.find((c) => c.id === clientId);
+    const c = clientById.get(clientId);
     setForm((f) => ({ ...f, clientId, client: c?.name ?? "" }));
   }
 
@@ -57,28 +70,34 @@ export default function JobRequests() {
     };
   }
 
-  function editRow(r: JobRequest) {
+  function selectRow(r: JobRequest) {
     setEditingId(r.id);
     setForm({ ...r });
     setMsg("");
     setDeleteMsg(null);
     setConfirmDeleteId(null);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function cancelEdit() {
+  function startNew() {
     setEditingId(null);
     setForm({ ...BLANK });
     setMsg("");
+    setDeleteMsg(null);
+    setConfirmDeleteId(null);
   }
 
-  async function requestDelete(r: JobRequest) {
+  function cancelEdit() {
+    startNew();
+  }
+
+  async function requestDelete() {
+    if (!editingId) return;
     setDeleteMsg(null);
-    if (r.linkedQuoteId) {
-      setDeleteMsg(`Cannot delete "${r.eventName}" — a quote has been built from this job request.`);
+    if (form.linkedQuoteId) {
+      setDeleteMsg(`Cannot delete "${form.eventName}" — a quote has been built from this job request.`);
       return;
     }
-    setConfirmDeleteId(r.id);
+    setConfirmDeleteId(editingId);
   }
 
   async function confirmDelete() {
@@ -87,6 +106,7 @@ export default function JobRequests() {
     setConfirmDeleteId(null);
     if (err) { setDeleteMsg(err); return; }
     setDeleteMsg(null);
+    startNew();
     setRefreshKey((x) => x + 1);
   }
 
@@ -95,9 +115,9 @@ export default function JobRequests() {
     const row = normalized({ ...form, id: form.id || `jobreq-${Date.now()}` });
     upsertJobRequest(row);
     if (row.addToCalendar && syncToGoogleOnSave) openGoogleCal(row);
-    setMsg(row.addToCalendar ? "Job request saved and sent to calendar workflow." : "Job request saved.");
-    setEditingId(null);
-    setForm({ ...BLANK });
+    setMsg(row.addToCalendar ? "Saved and sent to calendar workflow." : "Saved.");
+    setEditingId(row.id);
+    setForm(row);
     setRefreshKey((x) => x + 1);
   }
 
@@ -131,159 +151,234 @@ export default function JobRequests() {
     }), "_blank", "noopener,noreferrer");
   }
 
-  function buildQuoteFromRow(r: JobRequest) {
-    setQuoteSeed({
-      linkedJobRequestId: r.id, client: r.client, eventName: r.eventName,
-      venue: r.venue, cityState: r.cityState, startDate: r.requestDate,
-      endDate: r.endDate || r.requestDate, startTime: r.startTime, endTime: r.endTime,
-      expectedHoursPerDay: r.expectedHours || 10,
-    });
-    window.location.href = "/quote-builder";
-  }
+  // ── Filtering / sorting for left list ──
+  const visibleRows = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return rows
+      .filter((r) => {
+        if (statusFilter === "active") return ACTIVE_STATUSES.has(r.status);
+        if (statusFilter === "all") return true;
+        return r.status === statusFilter;
+      })
+      .filter((r) => {
+        if (!term) return true;
+        const code = clientById.get(r.clientId)?.code ?? "";
+        return (
+          r.eventName.toLowerCase().includes(term) ||
+          (r.client ?? "").toLowerCase().includes(term) ||
+          code.toLowerCase().includes(term) ||
+          (r.venue ?? "").toLowerCase().includes(term)
+        );
+      })
+      .sort((a, b) => {
+        // Most recent / upcoming first by event start date.
+        const da = a.requestDate || "";
+        const db = b.requestDate || "";
+        return db.localeCompare(da);
+      });
+  }, [rows, search, statusFilter, clientById]);
 
   return (
-    <div className="grid">
-      <div className="card">
-        <h2 className="section-title">{editingId ? "Edit Job Request" : "New Job Request"}</h2>
-        <div className="grid4">
-          <div>
-            <small>Client *</small>
-            <select value={form.clientId ?? ""} onChange={(e) => selectClient(e.target.value)}>
-              <option value="">— Select Client —</option>
-              {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-          <div><small>Event Name</small><input value={form.eventName} onChange={(e)=>setForm({ ...form, eventName:e.target.value })} /></div>
-          <div><small>Venue</small><input value={form.venue} onChange={(e)=>setForm({ ...form, venue:e.target.value })} /></div>
-          <div><small>Venue Address</small><input value={form.venueAddress} onChange={(e)=>setForm({ ...form, venueAddress:e.target.value })} /></div>
-          <div><small>City</small><input value={form.city} onChange={(e)=>setForm({ ...form, city:e.target.value })} /></div>
-          <div><small>State</small>
-            <select value={form.state} onChange={(e)=>setForm({ ...form, state:e.target.value })}>
-              <option value="">— Select —</option>
-              {US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div><small>Venue Zip</small><input value={form.venueZip ?? ""} onChange={(e)=>setForm({ ...form, venueZip:e.target.value })} placeholder="00000" /></div>
-          <div><small>Status</small>
-            <select value={form.status} onChange={(e)=>setForm({ ...form, status:e.target.value })}>
-              {JOB_REQUEST_STATUSES.map((s)=><option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-          </div>
-          <div><small>Request Date</small><input type="date" value={form.receivedDate} onChange={(e)=>setForm({ ...form, receivedDate:e.target.value })} /></div>
-          <div><small>Event Start Date</small><input type="date" value={form.requestDate} onChange={(e)=>setForm({ ...form, requestDate:e.target.value })} /></div>
-          <div><small>Event End Date</small><input type="date" value={form.endDate || ""} onChange={(e)=>setForm({ ...form, endDate:e.target.value })} /></div>
-          <div><small>Start Time</small>
-            <select value={form.startTime} onChange={(e)=>setForm({ ...form, startTime:e.target.value })}>
-              {TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}
-            </select>
-          </div>
-          <div><small>End Time</small>
-            <select value={form.endTime} onChange={(e)=>setForm({ ...form, endTime:e.target.value })}>
-              {TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}
-            </select>
-          </div>
-          <div><small>Expected Hours / Day</small><input type="number" value={form.expectedHours || 10} onChange={(e)=>setForm({ ...form, expectedHours:Number(e.target.value || 0) })} /></div>
-          <div><small>Add to Calendar</small>
-            <select value={String(form.addToCalendar)} onChange={(e)=>setForm({ ...form, addToCalendar:e.target.value === "true" })}>
-              <option value="true">Yes</option><option value="false">No</option>
-            </select>
-          </div>
-          <div><small>Add to Google Calendar on Save</small>
-            <select value={String(syncToGoogleOnSave)} onChange={(e)=>setSyncToGoogleOnSave(e.target.value === "true")}>
-              <option value="true">Yes</option><option value="false">No</option>
-            </select>
+    <div style={{ display: "flex", gap: 20, alignItems: "flex-start", height: "100%" }}>
+      {/* ── Left: list ── */}
+      <div style={{ width: 300, flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search event / client / venue…"
+            style={{ flex: 1 }}
+          />
+          <button onClick={startNew} title="New job request" style={{ whiteSpace: "nowrap" }}>+ New</button>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            style={{ width: "100%", fontSize: 12 }}
+          >
+            <option value="active">Active (Lead + Quoted + Booked)</option>
+            <option value="all">All statuses</option>
+            <option value="lead">Lead only</option>
+            <option value="quoted">Quoted only</option>
+            <option value="booked">Booked only</option>
+            <option value="lost">Lost only</option>
+          </select>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: "calc(100vh - 220px)", overflowY: "auto" }}>
+          {visibleRows.length === 0 ? (
+            <div className="muted" style={{ fontSize: 13, padding: "8px 4px" }}>No matching job requests.</div>
+          ) : (
+            visibleRows.map((r) => {
+              const c = clientById.get(r.clientId);
+              const code = c?.code;
+              const isSelected = editingId === r.id;
+              return (
+                <button
+                  key={r.id}
+                  onClick={() => selectRow(r)}
+                  style={{
+                    textAlign: "left",
+                    background: isSelected ? "var(--accent, #2563eb)" : "transparent",
+                    color: isSelected ? "#fff" : "inherit",
+                    border: "1px solid " + (isSelected ? "var(--accent, #2563eb)" : "var(--border, #e5e7eb)"),
+                    borderRadius: 6, padding: "8px 12px", cursor: "pointer", width: "100%",
+                    fontSize: 13,
+                  }}
+                >
+                  <div style={{ fontWeight: 600, display: "flex", gap: 6, alignItems: "baseline" }}>
+                    <span style={{ fontFamily: "monospace" }}>
+                      {code ? `[${code}]` : (c?.name ?? r.client ?? "?").slice(0, 18)}
+                    </span>
+                    <span style={{ opacity: 0.6 }}>·</span>
+                    <span>{r.requestDate || "no date"}</span>
+                    <span style={{
+                      marginLeft: "auto", fontSize: 10, textTransform: "uppercase", opacity: 0.7,
+                      fontWeight: 500, letterSpacing: 0.4,
+                    }}>{r.status}</span>
+                  </div>
+                  <div style={{
+                    fontSize: 12, opacity: 0.85, marginTop: 2,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }} title={r.eventName}>
+                    {r.eventName || <span style={{ fontStyle: "italic", opacity: 0.7 }}>(no event name)</span>}
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        <div style={{ marginTop: 12, borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: 8 }}>
+          <div className="muted" style={{ fontSize: 11 }}>
+            {visibleRows.length} of {rows.length} job request{rows.length !== 1 ? "s" : ""}
           </div>
         </div>
-        {mapAddress(form) && (
-          <div style={{ marginTop: 12 }}>
-            <small>Venue Map</small>
-            <a
-              href={`https://maps.google.com/?q=${encodeURIComponent(mapAddress(form))}`}
-              target="_blank"
-              rel="noreferrer"
-              title="Open in Maps"
-              style={{ display: "block", marginTop: 4, borderRadius: 8, overflow: "hidden", border: "1px solid var(--border, #e5e7eb)" }}
-            >
-              <iframe
-                src={`https://maps.google.com/maps?q=${encodeURIComponent(mapAddress(form))}&output=embed`}
-                width="100%"
-                height="220"
-                style={{ border: 0, display: "block", pointerEvents: "none" }}
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-              />
-            </a>
-            <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Tap to open in your maps app</div>
-          </div>
-        )}
-        <div style={{ marginTop: 12 }}><small>Notes</small><textarea value={form.notes} onChange={(e)=>setForm({ ...form, notes:e.target.value })} /></div>
-        <div className="action-row" style={{ marginTop: 12 }}>
-          <button onClick={save}>Save Job Request</button>
-          {!editingId && <button className="secondary" onClick={saveAndBuildQuote}>Save + Build Quote</button>}
-          {editingId && <button className="secondary" onClick={cancelEdit}>Cancel</button>}
-          {form.googleMapsLink ? <a className="badge" href={form.googleMapsLink} target="_blank" rel="noreferrer">Open Map Link</a> : null}
-        </div>
-        {msg ? <div className="badge" style={{ marginTop: 12 }}>{msg}</div> : null}
       </div>
 
-      <div className="card">
-        <h2 className="section-title">Saved Job Requests</h2>
+      {/* ── Right: form ── */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="card">
+          <h2 className="section-title">{editingId ? "Edit Job Request" : "New Job Request"}</h2>
 
-        {deleteMsg && (
-          <div style={{ background: "#fff3f3", border: "1px solid #e0a0a0", borderRadius: 8, padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#a00", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            {deleteMsg}
-            <button className="secondary" style={{ fontSize: 12, padding: "2px 8px" }} onClick={() => setDeleteMsg(null)}>✕</button>
-          </div>
-        )}
+          {deleteMsg && (
+            <div style={{ background: "#fff3f3", border: "1px solid #e0a0a0", borderRadius: 8, padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#a00", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              {deleteMsg}
+              <button className="secondary" style={{ fontSize: 12, padding: "2px 8px" }} onClick={() => setDeleteMsg(null)}>✕</button>
+            </div>
+          )}
 
-        {confirmDeleteId && (
-          <div style={{ background: "#fff8e1", border: "1px solid #e0c840", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: "#7a5f00" }}>
-            Delete <strong>{rows.find((r) => r.id === confirmDeleteId)?.eventName}</strong>? This cannot be undone.
-            <div className="action-row" style={{ marginTop: 8 }}>
-              <button style={{ background: "linear-gradient(180deg,#e05,#b00)", color: "#fff" }} onClick={confirmDelete}>Delete</button>
-              <button className="secondary" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+          {confirmDeleteId && (
+            <div style={{ background: "#fff8e1", border: "1px solid #e0c840", borderRadius: 8, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: "#7a5f00" }}>
+              Delete <strong>{form.eventName || "(no event name)"}</strong>? This cannot be undone.
+              <div className="action-row" style={{ marginTop: 8 }}>
+                <button style={{ background: "linear-gradient(180deg,#e05,#b00)", color: "#fff" }} onClick={confirmDelete}>Delete</button>
+                <button className="secondary" onClick={() => setConfirmDeleteId(null)}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          <div className="grid4">
+            <div>
+              <small>Client *</small>
+              <select value={form.clientId ?? ""} onChange={(e) => selectClient(e.target.value)}>
+                <option value="">— Select Client —</option>
+                {activeClients.map((c) => <option key={c.id} value={c.id}>{c.code ? `[${c.code}] ${c.name}` : c.name}</option>)}
+                {/* If editing a record whose client has been deactivated, keep it visible. */}
+                {form.clientId && !activeClients.some((c) => c.id === form.clientId) && clientById.get(form.clientId) && (
+                  <option value={form.clientId}>{clientById.get(form.clientId)?.name} (inactive)</option>
+                )}
+              </select>
+            </div>
+            <div><small>Event Name</small><input value={form.eventName} onChange={(e)=>setForm({ ...form, eventName:e.target.value })} /></div>
+            <div><small>Venue</small><input value={form.venue} onChange={(e)=>setForm({ ...form, venue:e.target.value })} /></div>
+            <div><small>Venue Address</small><input value={form.venueAddress} onChange={(e)=>setForm({ ...form, venueAddress:e.target.value })} /></div>
+            <div><small>City</small><input value={form.city} onChange={(e)=>setForm({ ...form, city:e.target.value })} /></div>
+            <div><small>State</small>
+              <select value={form.state} onChange={(e)=>setForm({ ...form, state:e.target.value })}>
+                <option value="">— Select —</option>
+                {US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div><small>Venue Zip</small><input value={form.venueZip ?? ""} onChange={(e)=>setForm({ ...form, venueZip:e.target.value })} placeholder="00000" /></div>
+            <div><small>Status</small>
+              <select value={form.status} onChange={(e)=>setForm({ ...form, status:e.target.value })}>
+                {JOB_REQUEST_STATUSES.map((s)=><option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
+            <div><small>Request Date</small><input type="date" value={form.receivedDate} onChange={(e)=>setForm({ ...form, receivedDate:e.target.value })} /></div>
+            <div><small>Event Start Date</small><input type="date" value={form.requestDate} onChange={(e)=>setForm({ ...form, requestDate:e.target.value })} /></div>
+            <div><small>Event End Date</small><input type="date" value={form.endDate || ""} onChange={(e)=>setForm({ ...form, endDate:e.target.value })} /></div>
+            <div><small>Start Time</small>
+              <select value={form.startTime} onChange={(e)=>setForm({ ...form, startTime:e.target.value })}>
+                {TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}
+              </select>
+            </div>
+            <div><small>End Time</small>
+              <select value={form.endTime} onChange={(e)=>setForm({ ...form, endTime:e.target.value })}>
+                {TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}
+              </select>
+            </div>
+            <div><small>Expected Hours / Day</small><input type="number" value={form.expectedHours || 10} onChange={(e)=>setForm({ ...form, expectedHours:Number(e.target.value || 0) })} /></div>
+            <div><small>Add to Calendar</small>
+              <select value={String(form.addToCalendar)} onChange={(e)=>setForm({ ...form, addToCalendar:e.target.value === "true" })}>
+                <option value="true">Yes</option><option value="false">No</option>
+              </select>
+            </div>
+            <div><small>Add to Google Calendar on Save</small>
+              <select value={String(syncToGoogleOnSave)} onChange={(e)=>setSyncToGoogleOnSave(e.target.value === "true")}>
+                <option value="true">Yes</option><option value="false">No</option>
+              </select>
             </div>
           </div>
-        )}
 
-        {rows.length === 0 ? (
-          <div className="muted">No job requests yet.</div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Client</th><th>Event</th><th>Venue</th><th>Dates</th>
-                  <th>Times</th><th>Exp Hrs</th><th>Status</th><th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} style={{ background: editingId === r.id ? "var(--surface2, #f0f4ff)" : undefined }}>
-                    <td>{r.client}</td>
-                    <td>{r.eventName}</td>
-                    <td>{r.venue}</td>
-                    <td>{r.requestDate}{r.endDate ? ` to ${r.endDate}` : ""}</td>
-                    <td>{r.startTime}{r.endTime ? ` to ${r.endTime}` : ""}</td>
-                    <td>{r.expectedHours || "-"}</td>
-                    <td>{JOB_REQUEST_STATUSES.find((s)=>s.value===r.status)?.label ?? r.status}</td>
-                    <td>
-                      <div className="action-row">
-                        <button className="secondary" onClick={() => editRow(r)}>Edit</button>
-                        {r.linkedQuoteId ? (
-                          <button className="secondary" onClick={() => { setActiveQuote(r.linkedQuoteId!); window.location.href = "/quote-builder"; }}>View Quote</button>
-                        ) : (
-                          <button className="secondary" onClick={() => buildQuoteFromRow(r)}>Build Quote</button>
-                        )}
-                        <button className="secondary" style={{ color: "#c00" }} onClick={() => requestDelete(r)}>Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {mapAddress(form) && (
+            <div style={{ marginTop: 12 }}>
+              <small>Venue Map</small>
+              <a
+                href={`https://maps.google.com/?q=${encodeURIComponent(mapAddress(form))}`}
+                target="_blank"
+                rel="noreferrer"
+                title="Open in Maps"
+                style={{ display: "block", marginTop: 4, borderRadius: 8, overflow: "hidden", border: "1px solid var(--border, #e5e7eb)" }}
+              >
+                <iframe
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(mapAddress(form))}&output=embed`}
+                  width="100%"
+                  height="220"
+                  style={{ border: 0, display: "block", pointerEvents: "none" }}
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
+              </a>
+              <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Tap to open in your maps app</div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 12 }}><small>Notes</small><textarea value={form.notes} onChange={(e)=>setForm({ ...form, notes:e.target.value })} /></div>
+
+          <div className="action-row" style={{ marginTop: 12 }}>
+            <button onClick={save}>Save</button>
+            {!editingId && <button className="secondary" onClick={saveAndBuildQuote}>Save + Build Quote</button>}
+            {editingId && form.linkedQuoteId && (
+              <button className="secondary" onClick={() => { setActiveQuote(form.linkedQuoteId!); window.location.href = "/quote-builder"; }}>
+                View Quote
+              </button>
+            )}
+            {editingId && !form.linkedQuoteId && (
+              <button className="secondary" onClick={saveAndBuildQuote}>Build Quote</button>
+            )}
+            <button className="secondary" onClick={cancelEdit}>{editingId ? "Cancel" : "Clear"}</button>
+            {form.googleMapsLink ? <a className="badge" href={form.googleMapsLink} target="_blank" rel="noreferrer">Open Map Link</a> : null}
+            {editingId && (
+              <button className="secondary" style={{ color: "#c00", marginLeft: "auto" }} onClick={requestDelete}>
+                Delete
+              </button>
+            )}
           </div>
-        )}
+          {msg ? <div className="badge" style={{ marginTop: 12 }}>{msg}</div> : null}
+        </div>
       </div>
     </div>
   );
