@@ -93,8 +93,20 @@ export default function JobRequests() {
   async function requestDelete() {
     if (!editingId) return;
     setDeleteMsg(null);
-    if (form.linkedQuoteId) {
-      setDeleteMsg(`Cannot delete "${form.eventName}" — a quote has been built from this job request.`);
+    const [qRes, ceRes, jcRes] = await Promise.all([
+      supabase.from("quotes").select("id", { count: "exact", head: true }).eq("linked_job_request_id", editingId),
+      supabase.from("calendar_events").select("id", { count: "exact", head: true }).eq("linked_job_request_id", editingId),
+      supabase.from("job_costing_drafts").select("id", { count: "exact", head: true }).eq("linked_job_request_id", editingId),
+    ]);
+    const qCount = qRes.count ?? 0;
+    const ceCount = ceRes.count ?? 0;
+    const jcCount = jcRes.count ?? 0;
+    const msgs: string[] = [];
+    if (qCount > 0) msgs.push(`${qCount} quote${qCount !== 1 ? "s" : ""}`);
+    if (ceCount > 0) msgs.push(`${ceCount} calendar event${ceCount !== 1 ? "s" : ""}`);
+    if (jcCount > 0) msgs.push(`${jcCount} job costing draft${jcCount !== 1 ? "s" : ""}`);
+    if (msgs.length > 0) {
+      setDeleteMsg(`Cannot delete "${form.eventName || "(no event name)"}" — ${msgs.join(" and ")} reference this job request. Remove or unlink them first.`);
       return;
     }
     setConfirmDeleteId(editingId);
