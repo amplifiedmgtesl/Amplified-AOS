@@ -11,7 +11,10 @@ const TYPES: { value: ClientContactType; label: string }[] = [
   { value: "other", label: "Other" },
 ];
 
-const EMPTY_CONTACT = (clientId: string): Omit<ClientContact, "id"> => ({
+const NEW_ROW_ID = "__new__";
+
+const EMPTY_CONTACT = (clientId: string): ClientContact => ({
+  id: NEW_ROW_ID,
   clientId,
   firstName: "",
   lastName: "",
@@ -36,9 +39,9 @@ function rowToContact(r: any): ClientContact {
   };
 }
 
-function contactToRow(c: ClientContact) {
+function contactToRow(c: ClientContact, persistedId: string) {
   return {
-    id: c.id,
+    id: persistedId,
     client_id: c.clientId,
     first_name: c.firstName.trim(),
     last_name: c.lastName.trim(),
@@ -52,6 +55,9 @@ function contactToRow(c: ClientContact) {
 }
 
 function newId() { return `cct-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`; }
+
+const COL_GRID = "90px 1fr 1fr 130px 1fr 70px";
+const inputStyle: React.CSSProperties = { width: "100%", fontSize: 12, padding: "4px 6px" };
 
 export function ClientContactsTab({
   clientId,
@@ -74,6 +80,7 @@ export function ClientContactsTab({
       .from("client_contacts")
       .select("*")
       .eq("client_id", clientId)
+      .eq("is_active", true)
       .order("type")
       .order("last_name");
     if (error) {
@@ -82,7 +89,7 @@ export function ClientContactsTab({
     } else {
       const list = (data ?? []).map(rowToContact);
       setContacts(list);
-      onCountChange?.(list.filter((c) => c.isActive).length);
+      onCountChange?.(list.length);
     }
     setLoading(false);
   }
@@ -90,16 +97,19 @@ export function ClientContactsTab({
   useEffect(() => { reload(); /* eslint-disable-line react-hooks/exhaustive-deps */ }, [clientId]);
 
   function startAdd() {
-    setDraft({ id: newId(), ...EMPTY_CONTACT(clientId) });
-    setEditingId("__new__");
+    setDraft(EMPTY_CONTACT(clientId));
+    setEditingId(NEW_ROW_ID);
+    setError(null);
   }
   function startEdit(c: ClientContact) {
     setDraft({ ...c });
     setEditingId(c.id);
+    setError(null);
   }
   function cancelEdit() {
     setDraft(null);
     setEditingId(null);
+    setError(null);
   }
 
   async function save() {
@@ -110,7 +120,8 @@ export function ClientContactsTab({
     }
     setSaving(true);
     setError(null);
-    const { error } = await supabase.from("client_contacts").upsert(contactToRow(draft));
+    const persistedId = draft.id === NEW_ROW_ID ? newId() : draft.id;
+    const { error } = await supabase.from("client_contacts").upsert(contactToRow(draft, persistedId));
     setSaving(false);
     if (error) {
       setError(error.message);
@@ -134,91 +145,92 @@ export function ClientContactsTab({
     await reload();
   }
 
-  const activeContacts = contacts.filter((c) => c.isActive);
+  function renderEditRow(d: ClientContact, isNew: boolean) {
+    return (
+      <div
+        key={isNew ? NEW_ROW_ID : d.id}
+        style={{
+          display: "grid", gridTemplateColumns: COL_GRID, gap: 6, alignItems: "center",
+          padding: "6px 4px", background: "#fafbfc", border: "1px solid var(--border, #e5e7eb)", borderRadius: 4,
+        }}
+      >
+        <select value={d.type} onChange={(e) => setDraft({ ...d, type: e.target.value as ClientContactType })} style={inputStyle}>
+          {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <div style={{ display: "flex", gap: 4 }}>
+          <input placeholder="First *" value={d.firstName} onChange={(e) => setDraft({ ...d, firstName: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+          <input placeholder="Last *" value={d.lastName} onChange={(e) => setDraft({ ...d, lastName: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+        </div>
+        <input placeholder="Title" value={d.title ?? ""} onChange={(e) => setDraft({ ...d, title: e.target.value })} style={inputStyle} />
+        <input placeholder="Phone" value={d.phone ?? ""} onChange={(e) => setDraft({ ...d, phone: e.target.value })} style={inputStyle} />
+        <input type="email" placeholder="Email" value={d.email ?? ""} onChange={(e) => setDraft({ ...d, email: e.target.value })} style={inputStyle} />
+        <div style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+          <button onClick={save} disabled={saving} title="Save" style={{ fontSize: 11, padding: "3px 6px" }}>✓</button>
+          <button className="secondary" onClick={cancelEdit} disabled={saving} title="Cancel" style={{ fontSize: 11, padding: "3px 6px" }}>×</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
       {error && (
-        <div style={{ background: "#fff3f3", border: "1px solid #e0a0a0", padding: "8px 12px", borderRadius: 6, fontSize: 13, marginBottom: 10 }}>
+        <div style={{ background: "#fff3f3", border: "1px solid #e0a0a0", padding: "6px 10px", borderRadius: 4, fontSize: 12, marginBottom: 8 }}>
           {error}
         </div>
       )}
 
+      {/* Header row */}
+      <div style={{
+        display: "grid", gridTemplateColumns: COL_GRID, gap: 6, padding: "0 4px 6px",
+        fontSize: 11, color: "#666", fontWeight: 600, borderBottom: "1px solid var(--border, #e5e7eb)",
+      }}>
+        <div>Type</div>
+        <div>Name</div>
+        <div>Title</div>
+        <div>Phone</div>
+        <div>Email</div>
+        <div></div>
+      </div>
+
+      {/* Body */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, padding: "6px 0" }}>
+        {loading ? (
+          <div style={{ color: "#888", fontSize: 12, padding: 8 }}>Loading...</div>
+        ) : contacts.length === 0 && editingId !== NEW_ROW_ID ? (
+          <div style={{ color: "#888", fontSize: 12, textAlign: "center", padding: "12px 0" }}>No contacts yet.</div>
+        ) : (
+          contacts.map((c) =>
+            editingId === c.id && draft
+              ? renderEditRow(draft, false)
+              : (
+                <div
+                  key={c.id}
+                  style={{
+                    display: "grid", gridTemplateColumns: COL_GRID, gap: 6, alignItems: "center",
+                    padding: "5px 4px", borderBottom: "1px solid var(--border-faint, #f1f3f5)",
+                    fontSize: 12,
+                  }}
+                >
+                  <div style={{ textTransform: "capitalize" }}>{c.type}</div>
+                  <div>{c.firstName} {c.lastName}</div>
+                  <div style={{ color: "#555" }}>{c.title || "—"}</div>
+                  <div style={{ color: "#555" }}>{c.phone || "—"}</div>
+                  <div style={{ color: "#555", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.email || "—"}</div>
+                  <div style={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+                    <button className="secondary" onClick={() => startEdit(c)} title="Edit" style={{ fontSize: 11, padding: "3px 6px" }}>✎</button>
+                    <button className="secondary" onClick={() => deactivate(c)} title="Remove" style={{ fontSize: 11, padding: "3px 6px", color: "#c33" }}>×</button>
+                  </div>
+                </div>
+              )
+          )
+        )}
+
+        {editingId === NEW_ROW_ID && draft && renderEditRow(draft, true)}
+      </div>
+
       {!editingId && (
-        <div style={{ marginBottom: 10 }}>
-          <button className="secondary" onClick={startAdd} style={{ fontSize: 12 }}>+ Add Contact</button>
-        </div>
-      )}
-
-      {editingId && draft && (
-        <div className="card" style={{ padding: 12, marginBottom: 12, background: "#fafbfc" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <div>
-              <label style={{ fontSize: 11, display: "block" }}>First Name *</label>
-              <input value={draft.firstName} onChange={(e) => setDraft({ ...draft, firstName: e.target.value })} style={{ width: "100%" }} />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, display: "block" }}>Last Name *</label>
-              <input value={draft.lastName} onChange={(e) => setDraft({ ...draft, lastName: e.target.value })} style={{ width: "100%" }} />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, display: "block" }}>Title</label>
-              <input value={draft.title ?? ""} onChange={(e) => setDraft({ ...draft, title: e.target.value })} style={{ width: "100%" }} />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, display: "block" }}>Type</label>
-              <select value={draft.type} onChange={(e) => setDraft({ ...draft, type: e.target.value as ClientContactType })} style={{ width: "100%" }}>
-                {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: 11, display: "block" }}>Phone</label>
-              <input value={draft.phone ?? ""} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} style={{ width: "100%" }} />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, display: "block" }}>Email</label>
-              <input type="email" value={draft.email ?? ""} onChange={(e) => setDraft({ ...draft, email: e.target.value })} style={{ width: "100%" }} />
-            </div>
-          </div>
-          <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-            <button onClick={save} disabled={saving} style={{ fontSize: 12 }}>{saving ? "Saving..." : "Save"}</button>
-            <button className="secondary" onClick={cancelEdit} disabled={saving} style={{ fontSize: 12 }}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {loading ? (
-        <div style={{ color: "#888", fontSize: 13, padding: 12 }}>Loading...</div>
-      ) : activeContacts.length === 0 ? (
-        <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No contacts yet.</div>
-      ) : (
-        <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ borderBottom: "1px solid var(--border, #e5e7eb)", color: "#666", fontSize: 11 }}>
-              <th style={{ textAlign: "left", padding: "6px 4px" }}>Type</th>
-              <th style={{ textAlign: "left", padding: "6px 4px" }}>Name</th>
-              <th style={{ textAlign: "left", padding: "6px 4px" }}>Title</th>
-              <th style={{ textAlign: "left", padding: "6px 4px" }}>Phone</th>
-              <th style={{ textAlign: "left", padding: "6px 4px" }}>Email</th>
-              <th style={{ width: 80 }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {activeContacts.map((c) => (
-              <tr key={c.id} style={{ borderBottom: "1px solid var(--border-faint, #f1f3f5)" }}>
-                <td style={{ padding: "6px 4px", textTransform: "capitalize" }}>{c.type}</td>
-                <td style={{ padding: "6px 4px" }}>{c.firstName} {c.lastName}</td>
-                <td style={{ padding: "6px 4px", color: "#555" }}>{c.title || "—"}</td>
-                <td style={{ padding: "6px 4px", color: "#555" }}>{c.phone || "—"}</td>
-                <td style={{ padding: "6px 4px", color: "#555" }}>{c.email || "—"}</td>
-                <td style={{ padding: "6px 4px", textAlign: "right" }}>
-                  <button className="secondary" onClick={() => startEdit(c)} style={{ fontSize: 11, marginRight: 4 }}>Edit</button>
-                  <button className="secondary" onClick={() => deactivate(c)} style={{ fontSize: 11, color: "#c33" }}>×</button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <button className="secondary" onClick={startAdd} style={{ fontSize: 12, marginTop: 6 }}>+ Add Contact</button>
       )}
     </div>
   );
