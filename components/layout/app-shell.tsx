@@ -34,6 +34,36 @@ export function AppShell({
   children: ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState<boolean>(false);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
+
+  // Role guard. Crew leaders must never see the admin shell — its nav
+  // exposes the full app (Quotes, Invoices, Rate Card, Employees with
+  // pay info, etc.). Reaching any admin URL (even by clicking a stray
+  // link from /lead/) bounces them back to their crew-leader home.
+  useEffect(() => {
+    let cancelled = false;
+    async function guard() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (cancelled) return;
+      if (!user) { window.location.href = "/login"; return; }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+      if (cancelled) return;
+
+      if (profile?.role === "crew_leader") {
+        window.location.href = "/lead/job-sheets";
+        return;
+      }
+
+      setAuthChecking(false);
+    }
+    guard();
+    return () => { cancelled = true; };
+  }, []);
 
   // Load persisted preference (skipped during SSR to avoid hydration mismatch)
   useEffect(() => {
@@ -52,6 +82,17 @@ export function AppShell({
   async function handleSignOut() {
     await supabase.auth.signOut();
     window.location.href = "/login";
+  }
+
+  // Block render until we know the user is not a crew_leader. Renders
+  // nothing identifying so a page-load flash can't leak admin nav or
+  // page content to a crew leader.
+  if (authChecking) {
+    return (
+      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>
+        <p className="muted">Loading…</p>
+      </div>
+    );
   }
 
   return (
