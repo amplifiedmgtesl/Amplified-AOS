@@ -247,6 +247,29 @@ export type Client = {
 
 export type ClientContactType = "billing" | "quotes" | "job" | "other";
 
+export type JobRequestAttachmentType =
+  | "diagram"
+  | "floor_plan"
+  | "map"
+  | "scope_packet"
+  | "contract"
+  | "photo"
+  | "other";
+
+export type JobRequestAttachment = {
+  id: string;
+  jobRequestId: string;
+  storagePath: string;
+  url: string;
+  fileName: string;
+  description?: string;
+  docType: JobRequestAttachmentType;
+  mimeType?: string;
+  fileSize?: number;
+  uploadedAt: string;
+  isActive: boolean;
+};
+
 export type ClientContact = {
   id: string;
   clientId: string;
