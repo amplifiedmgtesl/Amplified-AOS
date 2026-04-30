@@ -2,6 +2,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { combinedCalendarEvents } from "@/lib/store/calendar";
 import { addWorkerToTimesheet, getActiveJobSheet, getTimesheetByJobSheetId, loadEmployees, loadJobSheets, setActiveJobSheet, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
 import { timeOptions } from "@/lib/store/timekeeping";
@@ -14,6 +15,9 @@ const TIMES = timeOptions();
 
 export default function JobSheets() {
   const POSITIONS = positionNames();
+  const pathname = usePathname();
+  const isLeadContext = pathname?.startsWith("/lead/") ?? false;
+  const timekeepingHref = isLeadContext ? "/lead/timekeeping" : "/timekeeping";
   const [refreshKey, setRefreshKey] = useState(0);
   const sheets = useMemo(() => loadJobSheets(), [refreshKey]);
   const events = useMemo(() => combinedCalendarEvents(), [refreshKey]);
@@ -264,9 +268,11 @@ function addWorkerToLinkedTimesheet(worker: JobSheetWorker) {
               </div>
 
               <div className="action-row hide-print" style={{ marginTop: 12 }}>
-                <a className="badge" href="/timekeeping">Open Linked Timekeeping Sheet</a>
+                <a className="badge" href={timekeepingHref}>Open Linked Timekeeping Sheet</a>
                 <button className="secondary" onClick={() => active.workers.forEach((w) => addWorkerToLinkedTimesheet(w))}>Add All Crew to Timekeeping</button>
-                <a className="badge" href="/employee-directory">Add from Employee Directory</a>
+                {!isLeadContext && (
+                  <a className="badge" href="/employee-directory">Add from Employee Directory</a>
+                )}
                 {active.googleMapsLink ? <a className="badge" href={active.googleMapsLink} target="_blank" rel="noreferrer">Open Google Maps</a> : null}
               </div>
 
