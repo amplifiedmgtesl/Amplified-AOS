@@ -14,7 +14,7 @@ const TIMES = timeOptions();
 function today() { return new Date().toISOString().slice(0, 10); }
 
 const BLANK: JobRequest = {
-  id: "", clientId: "", client: "", eventName: "", venue: "", venueAddress: "",
+  id: "", clientId: "", client: "", eventName: "", venue: "", venueAddress: "", venueAddress2: "",
   venueZip: "", city: "", state: "", cityState: "", googleMapsLink: "",
   receivedDate: today(), requestDate: "", endDate: "",
   startTime: "", endTime: "", expectedHours: 10, addToCalendar: true,
@@ -61,7 +61,7 @@ export default function JobRequests() {
   }
 
   function mapAddress(r: JobRequest): string {
-    return [r.venueAddress, r.city, r.state, r.venueZip].filter(Boolean).join(", ");
+    return [r.venueAddress, r.venueAddress2, r.city, r.state, r.venueZip].filter(Boolean).join(", ");
   }
 
   function normalized(next: JobRequest): JobRequest {
@@ -329,7 +329,8 @@ export default function JobRequests() {
             </div>
             <div><small>Event Name</small><input value={form.eventName} onChange={(e)=>setForm({ ...form, eventName:e.target.value })} /></div>
             <div><small>Venue</small><input value={form.venue} onChange={(e)=>setForm({ ...form, venue:e.target.value })} /></div>
-            <div><small>Venue Address</small><input value={form.venueAddress} onChange={(e)=>setForm({ ...form, venueAddress:e.target.value })} /></div>
+            <div><small>Street Address</small><input value={form.venueAddress} onChange={(e)=>setForm({ ...form, venueAddress:e.target.value })} placeholder="e.g. 123 Main St" /></div>
+            <div><small>Suite / Unit</small><input value={form.venueAddress2 ?? ""} onChange={(e)=>setForm({ ...form, venueAddress2:e.target.value })} placeholder="optional" /></div>
             <div><small>City</small><input value={form.city} onChange={(e)=>setForm({ ...form, city:e.target.value })} /></div>
             <div><small>State</small>
               <select value={form.state} onChange={(e)=>setForm({ ...form, state:e.target.value })}>

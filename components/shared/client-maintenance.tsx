@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { upsertClient, mergeClients } from "@/lib/store/app-store";
 import type { Client } from "@/lib/store/types";
+import { US_STATES } from "@/lib/constants";
 import { ClientContactsTab } from "./client-contacts-tab";
 
 const EMPTY_CLIENT: Omit<Client, "id"> = {
@@ -455,12 +456,14 @@ export default function ClientMaintenance() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 <div>
                   <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>State</label>
-                  <input
+                  <select
                     value={selectedClient.state ?? ""}
                     onChange={(e) => updateField("state", e.target.value)}
-                    placeholder="ST"
                     style={{ width: "100%" }}
-                  />
+                  >
+                    <option value="">— Select —</option>
+                    {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Zip</label>

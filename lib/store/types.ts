@@ -146,6 +146,7 @@ export type JobRequest = {
   eventName: string;
   venue: string;
   venueAddress: string;
+  venueAddress2?: string;
   venueZip?: string;
   city: string;
   state: string;
