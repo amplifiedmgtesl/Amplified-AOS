@@ -24,9 +24,12 @@ const BLANK: JobRequest = {
 type StatusFilter = "active" | "all" | "lead" | "quoted" | "booked" | "lost";
 const ACTIVE_STATUSES = new Set(["lead", "quoted", "booked"]);
 
+type Mode = "none" | "new" | "edit";
+
 export default function JobRequests() {
   const [refreshKey, setRefreshKey] = useState(0);
   const rows = useMemo(() => loadJobRequests(), [refreshKey]);
+  const [mode, setMode] = useState<Mode>("none");
   const [form, setForm] = useState<JobRequest>({ ...BLANK });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
@@ -71,6 +74,7 @@ export default function JobRequests() {
   }
 
   function selectRow(r: JobRequest) {
+    setMode("edit");
     setEditingId(r.id);
     setForm({ ...r });
     setMsg("");
@@ -79,6 +83,16 @@ export default function JobRequests() {
   }
 
   function startNew() {
+    setMode("new");
+    setEditingId(null);
+    setForm({ ...BLANK });
+    setMsg("");
+    setDeleteMsg(null);
+    setConfirmDeleteId(null);
+  }
+
+  function clearForm() {
+    setMode("none");
     setEditingId(null);
     setForm({ ...BLANK });
     setMsg("");
@@ -87,7 +101,7 @@ export default function JobRequests() {
   }
 
   function cancelEdit() {
-    startNew();
+    clearForm();
   }
 
   async function requestDelete() {
@@ -118,7 +132,7 @@ export default function JobRequests() {
     setConfirmDeleteId(null);
     if (err) { setDeleteMsg(err); return; }
     setDeleteMsg(null);
-    startNew();
+    clearForm();
     setRefreshKey((x) => x + 1);
   }
 
@@ -128,6 +142,7 @@ export default function JobRequests() {
     upsertJobRequest(row);
     if (row.addToCalendar && syncToGoogleOnSave) openGoogleCal(row);
     setMsg(row.addToCalendar ? "Saved and sent to calendar workflow." : "Saved.");
+    setMode("edit");
     setEditingId(row.id);
     setForm(row);
     setRefreshKey((x) => x + 1);
@@ -269,10 +284,19 @@ export default function JobRequests() {
         </div>
       </div>
 
-      {/* ── Right: form ── */}
+      {/* ── Right: form or empty state ── */}
       <div style={{ flex: 1, minWidth: 0 }}>
+        {mode === "none" ? (
+          <div className="card" style={{ textAlign: "center", padding: "60px 24px", color: "#888" }}>
+            <div style={{ fontSize: 16, marginBottom: 8 }}>No job request selected.</div>
+            <div style={{ fontSize: 13, marginBottom: 20 }}>
+              Pick one from the list on the left to view or edit it, or start a new one.
+            </div>
+            <button onClick={startNew}>+ New Job Request</button>
+          </div>
+        ) : (
         <div className="card">
-          <h2 className="section-title">{editingId ? "Edit Job Request" : "New Job Request"}</h2>
+          <h2 className="section-title">{mode === "edit" ? "Edit Job Request" : "New Job Request"}</h2>
 
           {deleteMsg && (
             <div style={{ background: "#fff3f3", border: "1px solid #e0a0a0", borderRadius: 8, padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#a00", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -391,6 +415,7 @@ export default function JobRequests() {
           </div>
           {msg ? <div className="badge" style={{ marginTop: 12 }}>{msg}</div> : null}
         </div>
+        )}
       </div>
     </div>
   );
