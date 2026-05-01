@@ -278,19 +278,18 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               {(() => {
                 const showPay = !hidePayAlways && !timesheet.hidePayColumns;
                 // Row-1 colSpans must sum to N where N = row-2 cell count
-                // (10 without pay, 14 with). First/Last Name are no longer
-                // separate columns — the Name picker shows the full name.
+                // (10 without pay, 14 with). First/Last Name + Phone + Email
+                // were removed — Name picker shows the full name and the
+                // employee record holds phone/email.
                 const r1Spans = showPay
-                  ? { pos: 2, emp: 4, phone: 2, email: 2, start: 2, end: 2 }
-                  : { pos: 2, emp: 3, phone: 1, email: 1, start: 1, end: 2 };
+                  ? { pos: 3, emp: 6, start: 2, end: 3 }
+                  : { pos: 2, emp: 5, start: 1, end: 2 };
                 return (
               <table className="timesheet-grid line-table">
                 <thead>
                   <tr>
                     <th colSpan={r1Spans.pos}>Position</th>
                     <th colSpan={r1Spans.emp}>Name</th>
-                    <th colSpan={r1Spans.phone} className="hide-print">Phone</th>
-                    <th colSpan={r1Spans.email} className="hide-print">Email</th>
                     <th colSpan={r1Spans.start}>Start Date</th>
                     <th colSpan={r1Spans.end}>End Date</th>
                     <th rowSpan={2} className="hide-print">Action</th>
@@ -333,8 +332,6 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         />
                         {unlinked ? <div className="unlinked-hint">⚠ Link an employee to enable this row</div> : null}
                       </td>
-                      <td colSpan={r1Spans.phone} className="hide-print"><input className="input-tight" value={row.phone} disabled readOnly title="Pulled from employee record" /></td>
-                      <td colSpan={r1Spans.email} className="hide-print"><input className="input-tight" value={row.email} disabled readOnly title="Pulled from employee record" /></td>
                       <td colSpan={r1Spans.start}><input type="date" className="input-tight" value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} /></td>
                       <td colSpan={r1Spans.end}>
                         <input type="date" className="input-tight" value={row.endDate ?? ""} onChange={(e)=>updateRow(row.id, { endDate: e.target.value })} />
@@ -397,9 +394,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       <td className="sig-cell">Signature (Time IN 1):</td>
                       <td className="sig-blank" colSpan={2}></td>
                       <td className="sig-cell">Signature (Time IN 2):</td>
-                      {/* Remaining cells in the print-visible columns: Meal 2 + 4 hidden hour cells (+ 4 hidden rate cells if pay).
-                          Visible-in-print sig blank only spans Meal 2; hidden cells fill the rest with hide-print. */}
-                      <td className="sig-blank"></td>
+                      <td className="sig-blank" colSpan={2}></td>
                       <td className="hide-print" colSpan={showPay ? 8 : 4}></td>
                     </tr>
                     </Fragment>

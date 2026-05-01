@@ -196,6 +196,19 @@ small,.muted{color:var(--muted)}
     color:#444 !important;
     font-style:italic;
   }
+  /* Override the colored alternating bands. On a sign-in sheet those
+     cream/blue/green/peach colors print like a kid's coloring book.
+     Use a clean white/light-gray alternation per employee block instead. */
+  .timesheet-grid .line-band-0 > td,
+  .timesheet-grid .line-band-2 > td{background:#ffffff !important}
+  .timesheet-grid .line-band-1 > td,
+  .timesheet-grid .line-band-3 > td{background:#f5f5f5 !important}
+  .timesheet-grid .line-row-end > td{
+    border-bottom:1px solid #999 !important;
+  }
+  .timesheet-grid .sig-row > td{
+    background:transparent !important;
+  }
   /* Smaller logos flanking a prominent event name. */
   .timesheet-pdf-header .pdf-logo--small{max-height:34px !important}
   .timesheet-pdf-header .pdf-logo-wrap--small{min-height:38px !important}
