@@ -54,6 +54,7 @@ export function JobRequestDaysSection({
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   // Load positions + specialties once.
   useEffect(() => {
@@ -84,6 +85,8 @@ export function JobRequestDaysSection({
         grouped[c.jobRequestDayId].push(c);
       }
       setCrewByDayId(grouped);
+      // Default-expand if 1 day; collapse all otherwise.
+      setExpandedIds(ds.length <= 1 ? new Set(ds.map((d) => d.id)) : new Set());
     } catch (err: any) {
       setMsg({ text: `Load failed: ${err?.message ?? err}`, ok: false });
     } finally {
@@ -127,10 +130,37 @@ export function JobRequestDaysSection({
       const persisted = await upsertJobRequestDay(newDay);
       setDays((cur) => [...cur, persisted]);
       setCrewByDayId((cur) => ({ ...cur, [persisted.id]: [] }));
+      // Auto-expand new days so user can fill them in immediately.
+      setExpandedIds((cur) => { const n = new Set(cur); n.add(persisted.id); return n; });
       onChange?.();
     } catch (err: any) {
       flash(`Add day failed: ${err?.message ?? err}`, false);
     }
+  }
+
+  function toggleExpanded(id: string) {
+    setExpandedIds((cur) => {
+      const n = new Set(cur);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }
+  function expandAll() { setExpandedIds(new Set(days.map((d) => d.id))); }
+  function collapseAll() { setExpandedIds(new Set()); }
+
+  function dayLabel(d: JobRequestDay): string {
+    const date = d.eventDate;
+    const weekday = date ? new Date(date + "T00:00:00").toLocaleDateString(undefined, { weekday: "short" }) : "";
+    return weekday ? `${weekday} ${date}` : date;
+  }
+  function daySummary(d: JobRequestDay, crewCount: number): string {
+    const bits: string[] = [];
+    if (d.callTime) bits.push(`call ${d.callTime}`);
+    if (d.startTime || d.endTime) bits.push(`${d.startTime || "?"}–${d.endTime || "?"}`);
+    if (d.expectedHours) bits.push(`${d.expectedHours}h`);
+    bits.push(`${crewCount} crew`);
+    if (d.notes) bits.push(d.notes);
+    return bits.join(" · ");
   }
 
   async function patchDay(d: JobRequestDay, patch: Partial<JobRequestDay>) {
@@ -257,14 +287,40 @@ export function JobRequestDaysSection({
             </div>
           )}
 
+          {days.length > 1 && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, fontSize: 12 }}>
+              <span className="muted">{days.length} days</span>
+              <button type="button" className="secondary" onClick={expandAll} style={{ fontSize: 11, padding: "2px 8px" }}>Expand all</button>
+              <button type="button" className="secondary" onClick={collapseAll} style={{ fontSize: 11, padding: "2px 8px" }}>Collapse all</button>
+            </div>
+          )}
+
           {days.map((d, idx) => {
             const prev = idx > 0 ? days[idx - 1] : null;
             const crew = crewByDayId[d.id] ?? [];
+            const isExpanded = expandedIds.has(d.id);
             return (
               <div key={d.id} style={{
                 border: "1px solid var(--border, #e5e7eb)", borderRadius: 8,
-                padding: 10, marginBottom: 10,
+                marginBottom: 10,
               }}>
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(d.id)}
+                  style={{
+                    width: "100%", display: "flex", alignItems: "center", gap: 10,
+                    background: isExpanded ? "var(--surface2, #f7f4ee)" : "transparent",
+                    border: "none", borderRadius: isExpanded ? "8px 8px 0 0" : 8,
+                    padding: "8px 12px", cursor: "pointer", textAlign: "left",
+                    borderBottom: isExpanded ? "1px solid var(--border, #e5e7eb)" : "none",
+                  }}
+                >
+                  <span style={{ fontSize: 12, opacity: 0.6, width: 12 }}>{isExpanded ? "▾" : "▸"}</span>
+                  <strong style={{ fontSize: 13, minWidth: 140 }}>{dayLabel(d)}</strong>
+                  <span className="muted" style={{ fontSize: 12, flex: 1 }}>{daySummary(d, crew.length)}</span>
+                </button>
+                {isExpanded && (
+                <div style={{ padding: 10 }}>
                 <div style={{ display: "grid", gridTemplateColumns: "130px 110px 110px 110px 90px 1fr 80px", gap: 8, alignItems: "end" }}>
                   <div>
                     <small>Date</small>
@@ -419,6 +475,8 @@ export function JobRequestDaysSection({
                     </table>
                   )}
                 </div>
+                </div>
+                )}
               </div>
             );
           })}
