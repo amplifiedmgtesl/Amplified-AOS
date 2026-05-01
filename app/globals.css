@@ -221,24 +221,21 @@ small,.muted{color:var(--muted)}
     -webkit-text-stroke:0 !important;
     text-shadow:none !important;
   }
-  /* Signature boxes inline with the times row. Bordered cells (no underline)
-     sized for a hand signature. */
+  /* Use fixed layout so hidden hour/rate columns don't claim width.
+     Column widths come from <colgroup> (rendered in the JSX). */
+  .timesheet-grid{table-layout:fixed !important;width:100% !important}
+  .timesheet-grid col.col-hidden{width:0 !important}
+  /* Signature box: bordered (no underline), white, tall enough for a pen sig. */
   .timesheet-grid .sig-box{
     border:1px solid #888 !important;
     background:#fff !important;
-    min-width:90px !important;
-    width:90px !important;
-    padding:8px 4px !important;
+    padding:10px 4px !important;
   }
   .timesheet-grid .sig-box-th{
     background:#e0e0e0 !important;
     border:1px solid #888 !important;
     font-size:10px !important;
     text-align:center !important;
-  }
-  /* Time / meal cells don't need to be wide on a sign-in sheet. */
-  .timesheet-grid td:not(.sig-box):not(.hide-print){
-    min-width:55px !important;
   }
   /* Override the colored alternating bands. On a sign-in sheet those
      cream/blue/green/peach colors print like a kid's coloring book.

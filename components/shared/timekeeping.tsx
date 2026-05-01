@@ -274,20 +274,44 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
             <div style={{ overflowX: "auto" }}>
               {(() => {
                 const showPay = !hidePayAlways && !timesheet.hidePayColumns;
-                // Row-1 colSpans must sum to N where N = row-2 cell count.
-                // Row 2 has 12 cells without pay (Sig + 3 times + Sig + 3 times + 4 hidden hours)
+                // Row-1 layout: Position | Name | Start | End | (phantom for
+                // hidden hour/rate cols). Each visible row-1 label spans exactly
+                // 2 row-2 cells so the right edge of End Date aligns with the
+                // right edge of Meal 2 in print (where hour cols are hidden).
+                // Row 2 has 12 cells without pay (Sig+3 times)x2 + 4 hidden hours,
                 // or 16 with pay (+ 4 hidden rate cells).
-                const r1Spans = showPay
-                  ? { pos: 3, emp: 7, start: 3, end: 3 }
-                  : { pos: 2, emp: 5, start: 2, end: 3 };
+                const r1Spans = { pos: 2, emp: 2, start: 2, end: 2 };
+                const phantomSpan = showPay ? 8 : 4;
                 return (
               <table className="timesheet-grid line-table">
+                <colgroup>
+                  <col style={{ width: "18%" }} />{/* Sign IN 1 */}
+                  <col style={{ width: "9%"  }} />{/* Time IN 1 */}
+                  <col style={{ width: "9%"  }} />{/* Time OUT 1 */}
+                  <col style={{ width: "7%"  }} />{/* Meal 1 */}
+                  <col style={{ width: "18%" }} />{/* Sign IN 2 */}
+                  <col style={{ width: "9%"  }} />{/* Time IN 2 */}
+                  <col style={{ width: "9%"  }} />{/* Time OUT 2 */}
+                  <col style={{ width: "21%" }} />{/* Meal 2 (absorbs remaining) */}
+                  <col className="col-hidden" />{/* STD HRS */}
+                  <col className="col-hidden" />{/* OT HRS */}
+                  <col className="col-hidden" />{/* DT HRS */}
+                  <col className="col-hidden" />{/* TOTAL HRS */}
+                  {showPay && <>
+                    <col className="col-hidden" />{/* STD RATE */}
+                    <col className="col-hidden" />{/* OT RATE */}
+                    <col className="col-hidden" />{/* DT RATE */}
+                    <col className="col-hidden" />{/* TOTAL PAY */}
+                  </>}
+                  <col className="col-hidden" />{/* Action */}
+                </colgroup>
                 <thead>
                   <tr>
                     <th colSpan={r1Spans.pos}>Position</th>
                     <th colSpan={r1Spans.emp}>Name</th>
                     <th colSpan={r1Spans.start}>Start Date</th>
                     <th colSpan={r1Spans.end}>End Date</th>
+                    <th colSpan={phantomSpan} className="hide-print"></th>
                     <th rowSpan={2} className="hide-print">Action</th>
                   </tr>
                   <tr>
@@ -351,6 +375,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                           return null;
                         })()}
                       </td>
+                      <td colSpan={phantomSpan} className="hide-print"></td>
                       <td rowSpan={2} className="hide-print" style={{ verticalAlign: "middle" }}>
                         <div className="action-row" style={{ flexDirection: "column", gap: 6 }}>
                           {row.employeeKey && row.status === "submitted" && !hidePayAlways && (
