@@ -1,10 +1,11 @@
-export type TriggerOption = "10" | "11" | "12" | "13" | "14" | "15";
+export type TriggerOption = "none" | "10" | "11" | "12" | "13" | "14" | "15" | "weekly40";
 
 export type RateCardProfile = {
   id: string;
   clientId?: string;   // FK to clients table
   clientName: string;  // kept for fallback/display compat
   name: string;        // descriptive name e.g. "Standard", "Union", "Weekend"
+  effectiveDate?: string; // ISO date (YYYY-MM-DD); rate card applies on/after this date
   rows: RateRow[];
   terms: string;
   createdAt: string;

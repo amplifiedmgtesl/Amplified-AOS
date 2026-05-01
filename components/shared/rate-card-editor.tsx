@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { printWithTitle } from "@/lib/print-with-title";
 import { DEFAULT_RATE_ROWS, type TriggerOption, type RateRow } from "@/lib/rates/defaults";
+import { triggerLabel } from "@/lib/rates/ot-trigger";
 import { positionNames } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
 import type { Client } from "@/lib/store/types";
@@ -23,9 +24,6 @@ import {
 } from "@/lib/rates/storage";
 import type { Position, Specialty } from "@/lib/store/types";
 
-function triggerLabel(value: TriggerOption) {
-  return `OT after ${value} / DT after 15`;
-}
 function blankProfileName() {
   return `Client Rate Card ${new Date().toISOString().slice(0,10)}`;
 }
@@ -38,6 +36,8 @@ export default function RateCardEditor() {
   const [clientId, setClientId] = useState("");
   const [clientName, setClientName] = useState("");
   const [profileName, setProfileName] = useState("Standard");
+  const [effectiveDate, setEffectiveDate] = useState("");
+  const [mode, setMode] = useState<"none" | "new" | "edit">("none");
   const [rows, setRows] = useState<RateRow[]>(DEFAULT_RATE_ROWS);
   const [terms, setTerms] = useState("");
   const [profiles, setProfiles] = useState<RateCardProfile[]>([]);
@@ -57,6 +57,8 @@ export default function RateCardEditor() {
     if (activeProfile) {
       setClientId(activeProfile.clientId ?? "");
       setProfileName(activeProfile.name ?? "Standard");
+      setEffectiveDate(activeProfile.effectiveDate ?? "");
+      setMode("edit");
     }
     // Load directly from DB — cache may not be ready at mount time
     Promise.all([
@@ -123,6 +125,79 @@ export default function RateCardEditor() {
   }
 
   function saveCurrentProfile() {
+    if (mode === "none") {
+      setStatusMsg("Pick a saved rate card or click + New Rate Card before saving.");
+      return;
+    }
+    // Uniqueness guard: enforces the same (client_id, lower(name), effective_date)
+    // constraint that's set on the DB (migration 20260429i), but with a friendly
+    // inline message instead of a silent server-side rejection.
+    const targetClientForUniq = clientId || null;
+    const targetNameForUniq = (profileName || "Standard").trim().toLowerCase();
+    const targetDateForUniq = effectiveDate || null;
+    if (targetClientForUniq) {
+      const collision = profiles.find(
+        (p) =>
+          p.id !== activeProfileId &&
+          (p.clientId ?? null) === targetClientForUniq &&
+          (p.name ?? "Standard").trim().toLowerCase() === targetNameForUniq &&
+          (p.effectiveDate ?? null) === targetDateForUniq,
+      );
+      if (collision) {
+        const dateNote = targetDateForUniq
+          ? ` effective ${targetDateForUniq}`
+          : " (no effective date)";
+        setStatusMsg(
+          `A rate card named "${profileName}"${dateNote} already exists for this client. ` +
+          `Pick a different name or set a different effective date.`,
+        );
+        return;
+      }
+    }
+
+    // Cross-client / cross-name overwrite guard. If the loaded profile has
+    // moved to a different client or had its name changed, treat it as a new
+    // profile rather than silently overwriting the original. Mirrors the
+    // upsertQuote collision check shipped during the Connor hot-fixes.
+    if (activeProfileId) {
+      const original = profiles.find((p) => p.id === activeProfileId);
+      const targetClient = clientId || undefined;
+      const targetName = profileName || "Standard";
+      const targetDate = effectiveDate || undefined;
+      const movedClient = original && (original.clientId ?? undefined) !== targetClient;
+      const renamed = original && (original.name ?? "Standard") !== targetName;
+      const dateChanged = original && (original.effectiveDate ?? undefined) !== targetDate;
+      if (movedClient || renamed || dateChanged) {
+        const parts: string[] = [];
+        if (movedClient) parts.push("client");
+        if (renamed) parts.push("name");
+        if (dateChanged) parts.push("effective date");
+        const which = parts.length === 3 ? "client, name, and effective date"
+          : parts.length === 2 ? `${parts[0]} and ${parts[1]}`
+          : parts[0];
+        const ok = window.confirm(
+          `The ${which} on the loaded rate card has changed.\n\n` +
+          `OK = save as a NEW rate card (recommended; keeps the original intact).\n` +
+          `Cancel = stop and review.`,
+        );
+        if (!ok) return;
+        const now = new Date().toISOString();
+        const id = `ratecard-${Date.now()}`;
+        upsertRateCardProfile({
+          id,
+          clientId: targetClient,
+          clientName: clientName || blankProfileName(),
+          name: targetName,
+          effectiveDate: effectiveDate || undefined,
+          rows, terms, createdAt: now, updatedAt: now,
+        });
+        setActiveRateCardProfileId(id);
+        setMode("edit");
+        setStatusMsg("Saved as a new rate card. Original is unchanged.");
+        refreshProfiles();
+        return;
+      }
+    }
     const now = new Date().toISOString();
     const id = activeProfileId || `ratecard-${Date.now()}`;
     upsertRateCardProfile({
@@ -130,17 +205,36 @@ export default function RateCardEditor() {
       clientId: clientId || undefined,
       clientName: clientName || blankProfileName(),
       name: profileName || "Standard",
+      effectiveDate: effectiveDate || undefined,
       rows,
       terms,
       createdAt: now,
       updatedAt: now,
     });
     setActiveRateCardProfileId(id);
+    setMode("edit");
     setStatusMsg("Rate card saved.");
     refreshProfiles();
   }
 
+  function startNewRateCard() {
+    setActiveRateCardProfileId("");
+    setActiveProfileIdState("");
+    setClientId("");
+    setClientName("");
+    setProfileName("Standard");
+    setEffectiveDate("");
+    setRows(DEFAULT_RATE_ROWS);
+    setTerms("");
+    setMode("new");
+    setStatusMsg("New rate card. Pick a client, set the rows, click Save Rate Card.");
+  }
+
   function saveAsCopy() {
+    if (mode !== "edit" || !activeProfileId) {
+      setStatusMsg("Open a saved rate card first, then click Copy for New Client to duplicate it.");
+      return;
+    }
     const now = new Date().toISOString();
     const id = `ratecard-${Date.now()}`;
     upsertRateCardProfile({
@@ -148,15 +242,31 @@ export default function RateCardEditor() {
       clientId: clientId || undefined,
       clientName: clientName || blankProfileName(),
       name: `${profileName || "Standard"} Copy`,
+      effectiveDate: effectiveDate || undefined,
       rows, terms, createdAt: now, updatedAt: now,
     });
     loadProfileIntoCurrent(id);
     setProfileName(`${profileName || "Standard"} Copy`);
+    setMode("edit");
     setStatusMsg("Rate card copied.");
     refreshProfiles();
   }
 
   function openProfile(id: string) {
+    if (!id) {
+      // User picked the placeholder option — return to "no card selected" state.
+      setActiveRateCardProfileId("");
+      setActiveProfileIdState("");
+      setClientId("");
+      setClientName("");
+      setProfileName("Standard");
+      setEffectiveDate("");
+      setRows(DEFAULT_RATE_ROWS);
+      setTerms("");
+      setMode("none");
+      setStatusMsg("");
+      return;
+    }
     loadProfileIntoCurrent(id);
     setRows(loadRateRows());
     setTerms(loadTerms());
@@ -164,6 +274,8 @@ export default function RateCardEditor() {
     const profile = profiles.find((p) => p.id === id);
     setClientId(profile?.clientId ?? "");
     setProfileName(profile?.name ?? "Standard");
+    setEffectiveDate(profile?.effectiveDate ?? "");
+    setMode("edit");
     refreshProfiles();
     setStatusMsg("Rate card loaded.");
   }
@@ -172,10 +284,41 @@ export default function RateCardEditor() {
     <div className="grid">
       <div className="card hide-print">
         <h2 className="section-title">Master Rate Editor</h2>
+
+        {/* Row 1 — pick existing or start fresh. Visually separated from the
+            edit form below so it's clear this is a navigation control,
+            not a field on the loaded rate card. */}
+        <div style={{
+          display: "flex", gap: 12, alignItems: "flex-end",
+          padding: "8px 12px", marginBottom: 16,
+          background: "var(--surface2, #f7f7f9)",
+          border: "1px solid var(--border, #e5e7eb)", borderRadius: 8,
+        }}>
+          <div style={{ flex: 1 }}>
+            <small>Saved Rate Cards</small>
+            <select
+              value={activeProfileId}
+              onChange={(e) => openProfile(e.target.value)}
+              style={{ width: "100%" }}
+            >
+              <option value="">— Select a saved rate card —</option>
+              {profiles.map((p) => {
+                const label = p.clientName + (p.name && p.name !== p.clientName ? ` — ${p.name}` : "");
+                const dateLabel = p.effectiveDate ? ` (effective ${p.effectiveDate})` : "";
+                return <option key={p.id} value={p.id}>{label}{dateLabel}</option>;
+              })}
+            </select>
+          </div>
+          <button onClick={startNewRateCard} title="Start a new rate card from defaults">
+            + New Rate Card
+          </button>
+        </div>
+
+        {/* Row 2 — fields belonging to the currently-loaded (or new) rate card. */}
         <div className="grid4">
           <div>
             <small>Client</small>
-            <select value={clientId} onChange={(e) => {
+            <select disabled={mode === "none"} value={clientId} onChange={(e) => {
               const c = clients.find((c) => c.id === e.target.value);
               setClientId(e.target.value);
               setClientName(c?.name ?? "");
@@ -186,29 +329,51 @@ export default function RateCardEditor() {
           </div>
           <div>
             <small>Rate Card Name</small>
-            <input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="e.g. Standard, Union, Weekend" />
+            <input disabled={mode === "none"} value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="e.g. Standard, Union, Weekend" />
           </div>
           <div>
-            <small>Saved Rate Cards</small>
-            <select value={activeProfileId} onChange={(e) => openProfile(e.target.value)}>
-              <option value="">Current Unsaved Working Card</option>
-              {profiles.map((p) => <option key={p.id} value={p.id}>{p.clientName}{p.name && p.name !== p.clientName ? ` — ${p.name}` : ""}</option>)}
-            </select>
+            <small>Effective Date</small>
+            <input
+              type="date"
+              disabled={mode === "none"}
+              value={effectiveDate}
+              onChange={(e) => setEffectiveDate(e.target.value)}
+              title="Date this rate card becomes effective. Leave blank for an undated card."
+            />
+          </div>
+          <div></div>
+          <div className="action-row" style={{ alignItems: "end" }}>
+            <button onClick={saveCurrentProfile} disabled={mode === "none"}>Save Rate Card</button>
+            <button
+              className="secondary"
+              onClick={saveAsCopy}
+              disabled={mode !== "edit" || !activeProfileId}
+              title={mode === "edit" && activeProfileId ? "Duplicate this rate card for another client" : "Open a saved rate card first to copy it"}
+            >
+              Copy for New Client
+            </button>
           </div>
           <div className="action-row" style={{ alignItems: "end" }}>
-            <button onClick={saveCurrentProfile}>Save Rate Card</button>
-            <button className="secondary" onClick={saveAsCopy}>Copy for New Client</button>
-          </div>
-          <div className="action-row" style={{ alignItems: "end" }}>
-            <button className="secondary" onClick={addRateRow}>Add Row</button>
-            <button className="secondary" onClick={() => printWithTitle([
-              "Rate Card",
-              profileName,
-              clientName,
-            ])}>Download / Print PDF</button>
+            <button className="secondary" onClick={addRateRow} disabled={mode === "none"}>Add Row</button>
+            <button
+              className="secondary"
+              disabled={mode === "none"}
+              onClick={() => printWithTitle([
+                "Rate Card",
+                profileName,
+                clientName,
+              ])}
+            >
+              Download / Print PDF
+            </button>
           </div>
         </div>
         {statusMsg ? <div className="badge" style={{ marginTop: 12 }}>{statusMsg}</div> : null}
+        {mode === "none" && !statusMsg && (
+          <div className="muted" style={{ marginTop: 12, fontSize: 13, fontStyle: "italic" }}>
+            No rate card loaded. Pick one from the dropdown above, or click <strong>+ New Rate Card</strong> to start fresh.
+          </div>
+        )}
       </div>
 
       <div className="card hide-print">
@@ -225,9 +390,9 @@ export default function RateCardEditor() {
                 const resolvedId = resolveSpecialtyId(row);
                 return (
                   <tr key={index}>
-                    <td><input type="checkbox" checked={row.show} onChange={(e) => updateRow(index, { show: e.target.checked })} /></td>
+                    <td><input type="checkbox" disabled={mode === "none"} checked={row.show} onChange={(e) => updateRow(index, { show: e.target.checked })} /></td>
                     <td>
-                      <select value={row.position} onChange={(e) => {
+                      <select disabled={mode === "none"} value={row.position} onChange={(e) => {
                         const posName = e.target.value;
                         const newSpcs = specialtiesForPosition(posName);
                         const first = newSpcs[0];
@@ -242,7 +407,7 @@ export default function RateCardEditor() {
                       </select>
                     </td>
                     <td>
-                      <select value={resolvedId} onChange={(e) => {
+                      <select disabled={mode === "none"} value={resolvedId} onChange={(e) => {
                         const spc = specialties.find((s) => s.id === e.target.value);
                         updateRow(index, { specialtyId: e.target.value, specialty: spc?.name ?? "" });
                       }}>
@@ -250,22 +415,32 @@ export default function RateCardEditor() {
                         {spcs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                     </td>
-                    <td><input type="number" value={row.hourly} onChange={(e) => updateRow(index, { hourly: Number(e.target.value || 0) })} /></td>
-                    <td><input type="number" value={row.day} onChange={(e) => updateRow(index, { day: Number(e.target.value || 0) })} /></td>
-                    <td><input type="number" value={row.otRate} onChange={(e) => updateRow(index, { otRate: Number(e.target.value || 0) })} /></td>
-                    <td><input type="number" value={row.dtRate} onChange={(e) => updateRow(index, { dtRate: Number(e.target.value || 0) })} /></td>
+                    <td><input type="number" disabled={mode === "none"} value={row.hourly} onChange={(e) => {
+                      const h = Number(e.target.value || 0);
+                      updateRow(index, {
+                        hourly: h,
+                        day: Number((h * 10).toFixed(2)),
+                        otRate: Number((h * 1.5).toFixed(2)),
+                        dtRate: Number((h * 2).toFixed(2)),
+                      });
+                    }} /></td>
+                    <td><input type="number" disabled={mode === "none"} value={row.day} onChange={(e) => updateRow(index, { day: Number(e.target.value || 0) })} /></td>
+                    <td><input type="number" disabled={mode === "none"} value={row.otRate} onChange={(e) => updateRow(index, { otRate: Number(e.target.value || 0) })} /></td>
+                    <td><input type="number" disabled={mode === "none"} value={row.dtRate} onChange={(e) => updateRow(index, { dtRate: Number(e.target.value || 0) })} /></td>
                     <td>
-                      <select value={row.dtAfter} onChange={(e) => updateRow(index, { dtAfter: e.target.value as TriggerOption })}>
+                      <select disabled={mode === "none"} value={row.dtAfter} onChange={(e) => updateRow(index, { dtAfter: e.target.value as TriggerOption })}>
+                        <option value="none">No OT (flat)</option>
                         <option value="10">OT after 10</option>
                         <option value="11">OT after 11</option>
                         <option value="12">OT after 12</option>
                         <option value="13">OT after 13</option>
                         <option value="14">OT after 14</option>
                         <option value="15">OT after 15</option>
+                        <option value="weekly40">OT after 40 / week</option>
                       </select>
                     </td>
-                    <td><input type="number" value={row.travel} onChange={(e) => updateRow(index, { travel: Number(e.target.value || 0) })} /></td>
-                    <td><button className="secondary" style={{ color: "#a00", borderColor: "#e0a0a0", padding: "3px 8px" }} onClick={() => setRows(rows.filter((_, i) => i !== index))}>✕</button></td>
+                    <td><input type="number" disabled={mode === "none"} value={row.travel} onChange={(e) => updateRow(index, { travel: Number(e.target.value || 0) })} /></td>
+                    <td><button className="secondary" disabled={mode === "none"} style={{ color: "#a00", borderColor: "#e0a0a0", padding: "3px 8px" }} onClick={() => setRows(rows.filter((_, i) => i !== index))}>✕</button></td>
                   </tr>
                 );
               })}
@@ -301,7 +476,7 @@ export default function RateCardEditor() {
         <div style={{ marginTop: 20 }}>
           <h3 className="section-title">Terms & Conditions</h3>
           <div className="hide-print">
-            <textarea value={terms} onChange={(e) => setTerms(e.target.value)} style={{ width: "100%", minHeight: "900px", height: "900px", fontSize: "15px", lineHeight: "1.5", padding: "16px", borderRadius: "12px", border: "1px solid #d7c6aa", background: "#fff", resize: "vertical" }} />
+            <textarea disabled={mode === "none"} value={terms} onChange={(e) => setTerms(e.target.value)} style={{ width: "100%", minHeight: "900px", height: "900px", fontSize: "15px", lineHeight: "1.5", padding: "16px", borderRadius: "12px", border: "1px solid #d7c6aa", background: "#fff", resize: "vertical" }} />
           </div>
           <div className="print-terms" style={{ whiteSpace: "pre-wrap", fontSize: "13px", lineHeight: "1.35", padding: "12px 0" }}>{terms}</div>
         </div>

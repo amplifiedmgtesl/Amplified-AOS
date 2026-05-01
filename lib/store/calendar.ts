@@ -28,25 +28,28 @@ export function combinedCalendarEvents(): CalendarEvent[] {
   const requests = loadJobRequests()
     .filter((r) => r.addToCalendar !== false)
     .filter((r) => !["lost", "cancelled", "canceled"].includes(normalizeStatus(r.status)))
-    .map((r) => ({
-      id: r.id,
-      source: "job_request",
-      client: r.client,
-      eventName: r.eventName,
-      venue: r.venue,
-      venueAddress: r.venueAddress,
-      city: r.city,
-      state: r.state,
-      cityState: r.cityState,
-      googleMapsLink: r.googleMapsLink,
-      startDate: r.requestDate,
-      endDate: r.endDate || r.requestDate,
-      startTime: r.startTime || "08:00",
-      endTime: r.endTime || "17:00",
-      notes: r.notes,
-      status: r.status || "lead",
-      lead: r.id,
-    }))
+    .map((r) => {
+      const addr = [r.venueAddress, r.venueAddress2, r.city, r.state, r.venueZip].filter(Boolean).join(", ");
+      return {
+        id: r.id,
+        source: "job_request",
+        client: r.client,
+        eventName: r.eventName,
+        venue: r.venue,
+        venueAddress: r.venueAddress,
+        city: r.city,
+        state: r.state,
+        cityState: r.cityState,
+        googleMapsLink: addr ? `https://maps.google.com/?q=${encodeURIComponent(addr)}` : "",
+        startDate: r.requestDate,
+        endDate: r.endDate || r.requestDate,
+        startTime: r.startTime || "08:00",
+        endTime: r.endTime || "17:00",
+        notes: r.notes,
+        status: r.status || "lead",
+        lead: r.id,
+      };
+    })
     .filter((e) => !deleted.has(e.id));
 
   const quotes = loadQuotes()

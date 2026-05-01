@@ -21,6 +21,7 @@ import {
 import { getActiveRateCardProfileId, loadRateCardProfiles, loadRateRows } from "@/lib/rates/storage";
 import type { Client, InvoiceDraft, JobRequest, Position, QuoteDraft, QuoteLine, Specialty } from "@/lib/store/types";
 import type { RateRow } from "@/lib/rates/defaults";
+import { computeDayHourSplit, formatOtTriggerKind, parseOtTriggerRule, type OtTriggerKind } from "@/lib/rates/ot-trigger";
 
 type RateMode = "hourly" | "day";
 
@@ -57,9 +58,8 @@ function hoursBetween(start: string, end: string) {
   return Number((diff / 60).toFixed(2));
 }
 
-function parseOtTrigger(rule: string) {
-  const m = (rule || "").match(/OT after\s+(\d+(\.\d+)?)/i);
-  return m ? Number(m[1]) : 10;
+function parseOtTrigger(rule: string): OtTriggerKind {
+  return parseOtTriggerRule(rule);
 }
 
 function parseLineMeta(line: QuoteLine): LineMeta {
@@ -97,8 +97,8 @@ function buildServiceKey(meta: LineMeta) {
 }
 
 function buildRule(meta: LineMeta, line: QuoteLine) {
-  const otTrigger = parseOtTrigger(line.rule || "");
-  return `${meta.startTime || "-"} to ${meta.endTime || "-"} | ${meta.rateMode === "hourly" ? "Hourly" : "Day Rate"} | OT after ${otTrigger} / DT after 15`;
+  const triggerFragment = formatOtTriggerKind(parseOtTrigger(line.rule || ""));
+  return `${meta.startTime || "-"} to ${meta.endTime || "-"} | ${meta.rateMode === "hourly" ? "Hourly" : "Day Rate"} | ${triggerFragment}`;
 }
 
 function recalcLineFromMeta(line: QuoteLine, meta: LineMeta): QuoteLine {
@@ -128,9 +128,8 @@ function recalcLineFromMeta(line: QuoteLine, meta: LineMeta): QuoteLine {
   if (meta.rateMode === "hourly") {
     total = (qty * hours * baseHourly) + (holidayHours * dtRate) + travel;
   } else {
-    const otHours = Math.max(0, Math.min(hours, 15) - otTrigger);
-    const dtHours = Math.max(0, hours - 15);
-    const perWorker = baseDay + (otHours * otRate) + (dtHours * dtRate);
+    const split = computeDayHourSplit(hours, otTrigger);
+    const perWorker = baseDay + (split.ot * otRate) + (split.dt * dtRate);
     total = (qty * perWorker) + (holidayHours * dtRate) + travel;
   }
 

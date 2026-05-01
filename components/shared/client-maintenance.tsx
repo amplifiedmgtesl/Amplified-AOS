@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { upsertClient, mergeClients } from "@/lib/store/app-store";
 import type { Client } from "@/lib/store/types";
+import { US_STATES } from "@/lib/constants";
+import { ClientContactsTab } from "./client-contacts-tab";
 
 const EMPTY_CLIENT: Omit<Client, "id"> = {
   name: "", code: "", contactName: "", billTo: "", email: "", phone: "",
@@ -30,6 +32,7 @@ export default function ClientMaintenance() {
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [showInactive, setShowInactive] = useState<"active" | "inactive" | "all">("active");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<Client | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -37,7 +40,7 @@ export default function ClientMaintenance() {
   const [statusMsg, setStatusMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [showMerge, setShowMerge] = useState(false);
   const [confirmDeactivateId, setConfirmDeactivateId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"job_requests" | "quotes" | "rate_cards" | "calendar_events" | "invoices">("job_requests");
+  const [activeTab, setActiveTab] = useState<"contacts" | "job_requests" | "quotes" | "rate_cards" | "calendar_events" | "invoices">("contacts");
   const [tabData, setTabData] = useState<{
     jobRequests: any[];
     quotes: any[];
@@ -46,6 +49,7 @@ export default function ClientMaintenance() {
     calendarEvents: any[];
     invoices: any[];
   } | null>(null);
+  const [contactsCount, setContactsCount] = useState(0);
   const [mergeSourceId, setMergeSourceId] = useState("");
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [merging, setMerging] = useState(false);
@@ -61,6 +65,7 @@ export default function ClientMaintenance() {
   useEffect(() => { reload(); }, []);
 
   useEffect(() => {
+    setContactsCount(0);
     if (!selectedId) { setTabData(null); return; }
     Promise.all([
       supabase.from("job_requests")
@@ -94,7 +99,12 @@ export default function ClientMaintenance() {
   }, [selectedId]);
 
   const active = clients.filter((c) => c.isActive);
-  const filtered = active.filter((c) =>
+  const inactive = clients.filter((c) => !c.isActive);
+  const visible =
+    showInactive === "active" ? active :
+    showInactive === "inactive" ? inactive :
+    clients;
+  const filtered = visible.filter((c) =>
     !search || c.name.toLowerCase().includes(search.toLowerCase()) ||
     (c.contactName ?? "").toLowerCase().includes(search.toLowerCase())
   );
@@ -152,8 +162,22 @@ export default function ClientMaintenance() {
 
   async function saveForm() {
     if (!form || !form.name.trim()) return;
+    const code = (form.code ?? "").trim().toUpperCase();
+    if (code && code.length !== 3) {
+      setStatusMsg({ text: "Client Code must be exactly 3 characters (or left blank).", ok: false });
+      return;
+    }
+    if (code) {
+      const conflict = clients.find(
+        (c) => c.id !== form.id && c.isActive !== false && (c.code ?? "").toUpperCase() === code
+      );
+      if (conflict) {
+        setStatusMsg({ text: `Code "${code}" is already used by "${conflict.name}". Pick a different code.`, ok: false });
+        return;
+      }
+    }
     setSaving(true);
-    upsertClient({ ...form, name: form.name.trim() });
+    upsertClient({ ...form, name: form.name.trim(), code: code || undefined });
     setDirty(false);
     setSaving(false);
     setStatusMsg({ text: "Client saved.", ok: true });
@@ -201,7 +225,7 @@ export default function ClientMaintenance() {
     <div style={{ display: "flex", gap: 20, alignItems: "flex-start", height: "100%" }}>
       {/* ── Left: list ── */}
       <div style={{ width: 280, flexShrink: 0 }}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -209,6 +233,27 @@ export default function ClientMaintenance() {
             style={{ flex: 1 }}
           />
           <button onClick={startNew} title="Add new client" style={{ whiteSpace: "nowrap" }}>+ New</button>
+        </div>
+        <div style={{ display: "flex", gap: 4, marginBottom: 12, fontSize: 11 }}>
+          {(["active", "inactive", "all"] as const).map((opt) => {
+            const count = opt === "active" ? active.length : opt === "inactive" ? inactive.length : clients.length;
+            const isOn = showInactive === opt;
+            return (
+              <button
+                key={opt}
+                onClick={() => setShowInactive(opt)}
+                className="secondary"
+                style={{
+                  flex: 1, padding: "4px 6px", fontSize: 11, textTransform: "capitalize",
+                  background: isOn ? "var(--accent, #2563eb)" : "transparent",
+                  color: isOn ? "#fff" : "inherit",
+                  border: `1px solid ${isOn ? "var(--accent, #2563eb)" : "var(--border, #e5e7eb)"}`,
+                }}
+              >
+                {opt} ({count})
+              </button>
+            );
+          })}
         </div>
 
         {fetchError && (
@@ -249,13 +294,6 @@ export default function ClientMaintenance() {
           <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
             {active.length} client{active.length !== 1 ? "s" : ""}
           </div>
-          <button
-            className="secondary"
-            style={{ fontSize: 12, width: "100%" }}
-            onClick={() => { setShowMerge(!showMerge); setStatusMsg(null); }}
-          >
-            {showMerge ? "Hide Merge" : "Merge Duplicates…"}
-          </button>
         </div>
       </div>
 
@@ -339,11 +377,14 @@ export default function ClientMaintenance() {
                 <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Client Code</label>
                 <input
                   value={selectedClient.code ?? ""}
-                  onChange={(e) => updateField("code", e.target.value.toUpperCase())}
+                  onChange={(e) => updateField("code", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
                   placeholder="e.g. JAY"
-                  maxLength={10}
-                  style={{ width: "100%", textTransform: "uppercase" }}
+                  maxLength={3}
+                  style={{ width: "100%", textTransform: "uppercase", fontFamily: "monospace" }}
                 />
+                <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+                  Exactly 3 characters (letters/digits). Used as the prefix on quote display codes.
+                </div>
               </div>
 
               <div>
@@ -415,12 +456,14 @@ export default function ClientMaintenance() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 <div>
                   <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>State</label>
-                  <input
+                  <select
                     value={selectedClient.state ?? ""}
                     onChange={(e) => updateField("state", e.target.value)}
-                    placeholder="ST"
                     style={{ width: "100%" }}
-                  />
+                  >
+                    <option value="">— Select —</option>
+                    {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>Zip</label>
@@ -462,9 +505,24 @@ export default function ClientMaintenance() {
               {dirty && (
                 <button className="secondary" onClick={cancelEdit}>Cancel</button>
               )}
-              {!dirty && selectedClient.id && (
+              {!dirty && selectedClient.id && selectedClient.isActive && (
                 <button className="secondary" style={{ color: "#c00", marginLeft: "auto" }} onClick={requestDeactivate}>
                   Deactivate
+                </button>
+              )}
+              {!dirty && selectedClient.id && !selectedClient.isActive && (
+                <button
+                  className="secondary"
+                  style={{ color: "#06633a", marginLeft: "auto" }}
+                  onClick={async () => {
+                    if (!form) return;
+                    await upsertClient({ ...form, isActive: true });
+                    setStatusMsg({ text: "Client reactivated.", ok: true });
+                    await reload();
+                    setSelectedId(form.id);
+                  }}
+                >
+                  Reactivate
                 </button>
               )}
             </div>
@@ -479,9 +537,9 @@ export default function ClientMaintenance() {
           <div className="card" style={{ marginTop: 16, padding: 0, overflow: "hidden" }}>
             {/* Tab bar */}
             <div style={{ display: "flex", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-              {(["job_requests", "quotes", "rate_cards", "calendar_events", "invoices"] as const).map((tab) => {
-                const labels: Record<string, string> = { job_requests: "Job Requests", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Calendar Events", invoices: "Invoices" };
-                const counts: Record<string, number> = { job_requests: tabData.jobRequests.length, quotes: tabData.quotes.length, rate_cards: tabData.rateCards.length, calendar_events: tabData.calendarEvents.length, invoices: tabData.invoices.length };
+              {(["contacts", "job_requests", "quotes", "rate_cards", "calendar_events", "invoices"] as const).map((tab) => {
+                const labels: Record<string, string> = { contacts: "Contacts", job_requests: "Job Requests", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Calendar Events", invoices: "Invoices" };
+                const counts: Record<string, number> = { contacts: contactsCount, job_requests: tabData.jobRequests.length, quotes: tabData.quotes.length, rate_cards: tabData.rateCards.length, calendar_events: tabData.calendarEvents.length, invoices: tabData.invoices.length };
                 const active = activeTab === tab;
                 return (
                   <button
@@ -506,6 +564,9 @@ export default function ClientMaintenance() {
 
             {/* Tab content */}
             <div style={{ padding: "12px 16px", maxHeight: 280, overflowY: "auto" }}>
+              {activeTab === "contacts" && selectedId && (
+                <ClientContactsTab clientId={selectedId} onCountChange={setContactsCount} />
+              )}
               {activeTab === "job_requests" && (
                 tabData.jobRequests.length === 0
                   ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No job requests.</div>
