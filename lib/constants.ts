@@ -11,10 +11,11 @@ export const US_STATES = [
 ];
 
 export const JOB_REQUEST_STATUSES = [
-  { value: "lead",   label: "Lead"   },
-  { value: "quoted", label: "Quoted" },
-  { value: "booked", label: "Booked" },
-  { value: "lost",   label: "Lost"   },
+  { value: "lead",      label: "Lead"      },
+  { value: "quoted",    label: "Quoted"    },
+  { value: "booked",    label: "Booked"    },
+  { value: "completed", label: "Completed" },
+  { value: "lost",      label: "Lost"      },
 ] as const;
 
 export type JobRequestStatus = typeof JOB_REQUEST_STATUSES[number]["value"];

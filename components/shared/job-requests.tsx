@@ -24,8 +24,19 @@ const BLANK: JobRequest = {
   status: "lead", notes: "", attachmentNames: [], packetNotes: "",
 };
 
-type StatusFilter = "active" | "all" | "lead" | "quoted" | "booked" | "lost";
+type StatusFilter = "active" | "all" | "lead" | "quoted" | "booked" | "completed" | "lost";
 const ACTIVE_STATUSES = new Set(["lead", "quoted", "booked"]);
+
+// How many days past the event end before a booked row gets a "ready to mark
+// completed" badge. Just a visual nudge — nothing happens automatically.
+const COMPLETED_NUDGE_DAYS = 7;
+
+function daysSince(iso?: string): number | null {
+  if (!iso) return null;
+  const t = Date.parse(iso + "T00:00:00");
+  if (Number.isNaN(t)) return null;
+  return Math.floor((Date.now() - t) / 86400000);
+}
 
 type Mode = "none" | "new" | "edit";
 type SectionTab = "daily" | "crew" | "attachments";
@@ -247,6 +258,7 @@ export default function JobRequests() {
             <option value="lead">Lead only</option>
             <option value="quoted">Quoted only</option>
             <option value="booked">Booked only</option>
+            <option value="completed">Completed only</option>
             <option value="lost">Lost only</option>
           </select>
         </div>
@@ -259,6 +271,9 @@ export default function JobRequests() {
               const c = clientById.get(r.clientId);
               const code = c?.code;
               const isSelected = editingId === r.id;
+              const eventEnd = r.endDate || r.requestDate;
+              const daysPast = r.status === "booked" ? daysSince(eventEnd) : null;
+              const overdue = daysPast !== null && daysPast >= COMPLETED_NUDGE_DAYS;
               return (
                 <button
                   key={r.id}
@@ -289,6 +304,15 @@ export default function JobRequests() {
                   }} title={r.eventName}>
                     {r.eventName || <span style={{ fontStyle: "italic", opacity: 0.7 }}>(no event name)</span>}
                   </div>
+                  {overdue && (
+                    <div style={{
+                      marginTop: 4, fontSize: 11,
+                      color: isSelected ? "#fff" : "#a86400",
+                      fontStyle: "italic",
+                    }} title="Mark this Completed when the event is wrapped up">
+                      ⚠ Event ended {daysPast} day{daysPast === 1 ? "" : "s"} ago — mark Completed?
+                    </div>
+                  )}
                 </button>
               );
             })
