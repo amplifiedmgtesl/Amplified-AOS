@@ -19,7 +19,7 @@ function formatSize(bytes?: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function JobRequestAttachmentsSection({ jobRequestId }: { jobRequestId: string }) {
+export function JobRequestAttachmentsSection({ jobRequestId, hideHeader = false }: { jobRequestId: string; hideHeader?: boolean }) {
   const [items, setItems] = useState<JobRequestAttachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -80,13 +80,18 @@ export function JobRequestAttachmentsSection({ jobRequestId }: { jobRequestId: s
   }
 
   return (
-    <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border, #e5e7eb)" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 14 }}>Attachments</h3>
-        <span className="muted" style={{ fontSize: 11 }}>
-          Diagrams, floor plans, scope packets — anything the client sends.
-        </span>
-      </div>
+    <div style={hideHeader
+      ? { marginTop: 4 }
+      : { marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border, #e5e7eb)" }
+    }>
+      {!hideHeader && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 14 }}>Attachments</h3>
+          <span className="muted" style={{ fontSize: 11 }}>
+            Diagrams, floor plans, scope packets — anything the client sends.
+          </span>
+        </div>
+      )}
 
       {/* Header row */}
       {(loading || items.length > 0) && (

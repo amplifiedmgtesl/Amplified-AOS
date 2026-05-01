@@ -43,10 +43,12 @@ export function JobRequestDaysSection({
   jobRequestId,
   disabled = false,
   onChange,
+  hideHeader = false,
 }: {
   jobRequestId: string;
   disabled?: boolean;
   onChange?: () => void;
+  hideHeader?: boolean;
 }) {
   const [days, setDays] = useState<JobRequestDay[]>([]);
   const [crewByDayId, setCrewByDayId] = useState<Record<string, JobRequestCrewNeed[]>>({});
@@ -258,7 +260,7 @@ export function JobRequestDaysSection({
   // ─── Render ────────────────────────────────────────────────────────────────
   if (!jobRequestId) {
     return (
-      <SectionFrame>
+      <SectionFrame hideHeader={hideHeader}>
         <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
           Save the job request first to start adding days and crew requirements.
         </div>
@@ -267,7 +269,7 @@ export function JobRequestDaysSection({
   }
 
   return (
-    <SectionFrame>
+    <SectionFrame hideHeader={hideHeader}>
       {msg && (
         <div style={{
           background: msg.ok ? "#eef9ee" : "#fff3f3",
@@ -490,15 +492,17 @@ export function JobRequestDaysSection({
   );
 }
 
-function SectionFrame({ children }: { children: React.ReactNode }) {
+function SectionFrame({ children, hideHeader = false }: { children: React.ReactNode; hideHeader?: boolean }) {
   return (
-    <div style={{
-      marginTop: 16, paddingTop: 12,
-      borderTop: "1px solid var(--border, #e5e7eb)",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <h3 style={{ margin: 0, fontSize: 14 }}>Days &amp; Crew Requirements</h3>
-      </div>
+    <div style={hideHeader
+      ? { marginTop: 4 }
+      : { marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border, #e5e7eb)" }
+    }>
+      {!hideHeader && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <h3 style={{ margin: 0, fontSize: 14 }}>Days &amp; Crew Requirements</h3>
+        </div>
+      )}
       {children}
     </div>
   );

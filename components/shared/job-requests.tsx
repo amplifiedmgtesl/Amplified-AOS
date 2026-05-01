@@ -27,6 +27,7 @@ type StatusFilter = "active" | "all" | "lead" | "quoted" | "booked" | "lost";
 const ACTIVE_STATUSES = new Set(["lead", "quoted", "booked"]);
 
 type Mode = "none" | "new" | "edit";
+type SectionTab = "daily" | "crew" | "attachments";
 
 export default function JobRequests() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -40,6 +41,7 @@ export default function JobRequests() {
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [sectionTab, setSectionTab] = useState<SectionTab>("daily");
 
   useEffect(() => {
     supabase.from("clients").select("id, name, code, is_active").order("name")
@@ -453,37 +455,66 @@ export default function JobRequests() {
           </div>
           {msg ? <div className="badge" style={{ marginTop: 12 }}>{msg}</div> : null}
 
-          {editingId ? (
-            <>
-              <JobRequestDaysSection jobRequestId={editingId} disabled={isLocked} />
-              <JobRequestAttachmentsSection jobRequestId={editingId} />
-            </>
-          ) : (
-            <>
-              <div style={{
-                marginTop: 16, paddingTop: 12,
-                borderTop: "1px solid var(--border, #e5e7eb)",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <h3 style={{ margin: 0, fontSize: 14 }}>Days &amp; Crew Requirements</h3>
+          <div style={{ marginTop: 20, borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: 12 }}>
+            <div role="tablist" style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border, #e5e7eb)", marginBottom: 12 }}>
+              {([
+                { id: "daily" as const,       label: "Daily Requirements" },
+                { id: "crew" as const,        label: "Assigned Crew" },
+                { id: "attachments" as const, label: "Attachments" },
+              ]).map((t) => {
+                const active = sectionTab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setSectionTab(t.id)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      borderBottom: active ? "2px solid var(--accent, #2563eb)" : "2px solid transparent",
+                      color: active ? "var(--accent, #2563eb)" : "inherit",
+                      padding: "8px 14px",
+                      fontSize: 13,
+                      fontWeight: active ? 600 : 500,
+                      cursor: "pointer",
+                      marginBottom: -1,
+                    }}
+                  >{t.label}</button>
+                );
+              })}
+            </div>
+
+            {sectionTab === "daily" && (
+              editingId
+                ? <JobRequestDaysSection jobRequestId={editingId} disabled={isLocked} hideHeader />
+                : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
+                    Save the job request first to start adding days and crew requirements.
+                  </div>
+            )}
+
+            {sectionTab === "crew" && (
+              <div style={{ padding: "8px 0" }}>
+                <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+                  Assigned crew will live here once it migrates over from the Job Sheet screen.
                 </div>
-                <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
-                  Save the job request first to start adding days and crew requirements.
+                <div style={{ fontSize: 12, color: "#888", lineHeight: 1.5 }}>
+                  This is where you&apos;ll pick the actual people to fulfill the daily requirements
+                  on the previous tab. Today this lives on <strong>Job Sheets</strong>; that screen will
+                  be retired in a future update.
                 </div>
               </div>
-              <div style={{
-                marginTop: 16, paddingTop: 12,
-                borderTop: "1px solid var(--border, #e5e7eb)",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <h3 style={{ margin: 0, fontSize: 14 }}>Attachments</h3>
-                </div>
-                <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
-                  Save the job request first to start adding attachments.
-                </div>
-              </div>
-            </>
-          )}
+            )}
+
+            {sectionTab === "attachments" && (
+              editingId
+                ? <JobRequestAttachmentsSection jobRequestId={editingId} hideHeader />
+                : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
+                    Save the job request first to start adding attachments.
+                  </div>
+            )}
+          </div>
         </div>
         )}
       </div>
