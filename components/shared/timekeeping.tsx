@@ -47,14 +47,14 @@ function EmployeeAutoFill({
   return (
     <div style={{ position: "relative", minWidth: 170 }}>
       {linked && !query && (
-        <div style={{ fontSize: 11, color: "#2a5a31", marginBottom: 2, whiteSpace: "nowrap" }}>
-          ✓ {linked.employeeKey}
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2, whiteSpace: "nowrap" }}>
+          {linked.fullName}
         </div>
       )}
       <input
-        className="input-tight"
+        className="input-tight hide-print"
         style={{ minWidth: 160 }}
-        placeholder={linked ? linked.fullName : "Search employee…"}
+        placeholder={linked ? "Change employee…" : "Search employee…"}
         value={query}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
@@ -255,14 +255,19 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
       </div>
 
       <div className="invoice-shell">
-        <div className="pdf-header">
-          <div></div>
-          <div className="pdf-title-wrap">
-            <div className="pdf-logo-wrap"><img src="/branding/client-logo.png" alt="Logo" className="pdf-logo" /></div>
-            <h2 className="pdf-title">Timekeeping Sheet</h2>
-            <div className="pdf-subtitle">{currentSheet ? currentSheet.title : "No job sheet selected"}</div>
+        <div className="pdf-header timesheet-pdf-header">
+          <div className="pdf-logo-wrap pdf-logo-wrap--small">
+            <img src="/branding/client-logo.png" alt="Logo" className="pdf-logo pdf-logo--small" />
           </div>
-          <div></div>
+          <div className="pdf-title-wrap">
+            <h2 className="pdf-title pdf-title--compact">Timekeeping Sheet</h2>
+            <div className="pdf-subtitle pdf-subtitle--event">
+              {currentSheet ? currentSheet.title : "No job sheet selected"}
+            </div>
+          </div>
+          <div className="pdf-logo-wrap pdf-logo-wrap--small">
+            <img src="/branding/client-logo.png" alt="Logo" className="pdf-logo pdf-logo--small" />
+          </div>
         </div>
 
         {!timesheet ? (
@@ -272,21 +277,20 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
             <div style={{ overflowX: "auto" }}>
               {(() => {
                 const showPay = !hidePayAlways && !timesheet.hidePayColumns;
-                // Row-1 colSpans sum to N where N = row-2 cell count.
-                // Without pay (N=10): [1,2,1,1,1,2,1,1]  |  With pay (N=14): [2,2,2,2,1,2,1,2]
+                // Row-1 colSpans must sum to N where N = row-2 cell count
+                // (10 without pay, 14 with). First/Last Name are no longer
+                // separate columns — the Name picker shows the full name.
                 const r1Spans = showPay
-                  ? { pos: 2, emp: 2, fn: 2, ln: 2, phone: 1, email: 2, start: 1, end: 2 }
-                  : { pos: 1, emp: 2, fn: 1, ln: 1, phone: 1, email: 2, start: 1, end: 1 };
+                  ? { pos: 2, emp: 4, phone: 2, email: 2, start: 2, end: 2 }
+                  : { pos: 2, emp: 3, phone: 1, email: 1, start: 1, end: 2 };
                 return (
               <table className="timesheet-grid line-table">
                 <thead>
                   <tr>
                     <th colSpan={r1Spans.pos}>Position</th>
-                    <th colSpan={r1Spans.emp}>Employee</th>
-                    <th colSpan={r1Spans.fn}>First Name</th>
-                    <th colSpan={r1Spans.ln}>Last Name</th>
-                    <th colSpan={r1Spans.phone}>Phone</th>
-                    <th colSpan={r1Spans.email}>Email</th>
+                    <th colSpan={r1Spans.emp}>Name</th>
+                    <th colSpan={r1Spans.phone} className="hide-print">Phone</th>
+                    <th colSpan={r1Spans.email} className="hide-print">Email</th>
                     <th colSpan={r1Spans.start}>Start Date</th>
                     <th colSpan={r1Spans.end}>End Date</th>
                     <th rowSpan={2} className="hide-print">Action</th>
@@ -294,8 +298,16 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                   <tr>
                     <th>Time IN 1</th><th>Time OUT 1</th><th>Meal 1</th>
                     <th>Time IN 2</th><th>Time OUT 2</th><th>Meal 2</th>
-                    <th>STD HRS</th><th>OT HRS</th><th>DT HRS</th><th>TOTAL HRS</th>
-                    {showPay ? <><th>STD RATE</th><th>OT RATE</th><th>DT RATE</th><th>TOTAL PAY</th></> : null}
+                    <th className="hide-print">STD HRS</th>
+                    <th className="hide-print">OT HRS</th>
+                    <th className="hide-print">DT HRS</th>
+                    <th className="hide-print">TOTAL HRS</th>
+                    {showPay ? <>
+                      <th className="hide-print">STD RATE</th>
+                      <th className="hide-print">OT RATE</th>
+                      <th className="hide-print">DT RATE</th>
+                      <th className="hide-print">TOTAL PAY</th>
+                    </> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -321,10 +333,8 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         />
                         {unlinked ? <div className="unlinked-hint">⚠ Link an employee to enable this row</div> : null}
                       </td>
-                      <td colSpan={r1Spans.fn}><input className="input-tight" value={row.firstName} disabled readOnly title="Pulled from employee record" /></td>
-                      <td colSpan={r1Spans.ln}><input className="input-tight" value={row.lastName} disabled readOnly title="Pulled from employee record" /></td>
-                      <td colSpan={r1Spans.phone}><input className="input-tight" value={row.phone} disabled readOnly title="Pulled from employee record" /></td>
-                      <td colSpan={r1Spans.email}><input className="input-tight" value={row.email} disabled readOnly title="Pulled from employee record" /></td>
+                      <td colSpan={r1Spans.phone} className="hide-print"><input className="input-tight" value={row.phone} disabled readOnly title="Pulled from employee record" /></td>
+                      <td colSpan={r1Spans.email} className="hide-print"><input className="input-tight" value={row.email} disabled readOnly title="Pulled from employee record" /></td>
                       <td colSpan={r1Spans.start}><input type="date" className="input-tight" value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} /></td>
                       <td colSpan={r1Spans.end}>
                         <input type="date" className="input-tight" value={row.endDate ?? ""} onChange={(e)=>updateRow(row.id, { endDate: e.target.value })} />
@@ -364,22 +374,22 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       </td>
                     </tr>
                     <tr className={`line-row line-row-end ${band}`}>
-                      <td><select className="input-tight" value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
-                      <td>{row.stdHours.toFixed(2)}</td>
-                      <td>{row.otHours.toFixed(2)}</td>
-                      <td>{row.dtHours.toFixed(2)}</td>
-                      <td>{row.totalHours.toFixed(2)}</td>
+                      <td><select className="input-tight" value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn1 || ""}</span></td>
+                      <td><select className="input-tight" value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut1 || ""}</span></td>
+                      <td><select className="input-tight" value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak1Minutes ?? row.lunchMinutes ?? 0}</span></td>
+                      <td><select className="input-tight" value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn2 || ""}</span></td>
+                      <td><select className="input-tight" value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut2 || ""}</span></td>
+                      <td><select className="input-tight" value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak2Minutes ?? 0}</span></td>
+                      <td className="hide-print">{row.stdHours.toFixed(2)}</td>
+                      <td className="hide-print">{row.otHours.toFixed(2)}</td>
+                      <td className="hide-print">{row.dtHours.toFixed(2)}</td>
+                      <td className="hide-print">{row.totalHours.toFixed(2)}</td>
                       {showPay ? (
                         <>
-                          <td><select className="input-tight" value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td><select className="input-tight" value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td><select className="input-tight" value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td>${row.totalPay.toFixed(2)}</td>
+                          <td className="hide-print"><select className="input-tight" value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print"><select className="input-tight" value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print"><select className="input-tight" value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print">${row.totalPay.toFixed(2)}</td>
                         </>
                       ) : null}
                     </tr>
@@ -387,13 +397,16 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       <td className="sig-cell">Signature (Time IN 1):</td>
                       <td className="sig-blank" colSpan={2}></td>
                       <td className="sig-cell">Signature (Time IN 2):</td>
-                      <td className="sig-blank" colSpan={showPay ? 10 : 6}></td>
+                      {/* Remaining cells in the print-visible columns: Meal 2 + 4 hidden hour cells (+ 4 hidden rate cells if pay).
+                          Visible-in-print sig blank only spans Meal 2; hidden cells fill the rest with hide-print. */}
+                      <td className="sig-blank"></td>
+                      <td className="hide-print" colSpan={showPay ? 8 : 4}></td>
                     </tr>
                     </Fragment>
                     );
                   })}
                 </tbody>
-                <tfoot>
+                <tfoot className="hide-print">
                   <tr>
                     <th colSpan={6}>Totals</th>
                     <th>{totals.stdHours.toFixed(2)}</th>
@@ -401,7 +414,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     <th>{totals.dtHours.toFixed(2)}</th>
                     <th>{totals.totalHours.toFixed(2)}</th>
                     {showPay ? <><th></th><th></th><th></th><th>${totals.totalPay.toFixed(2)}</th></> : null}
-                    <th className="hide-print"></th>
+                    <th></th>
                   </tr>
                 </tfoot>
               </table>
