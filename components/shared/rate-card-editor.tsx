@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { printWithTitle } from "@/lib/print-with-title";
 import { DEFAULT_RATE_ROWS, type TriggerOption, type RateRow } from "@/lib/rates/defaults";
+import { triggerLabel } from "@/lib/rates/ot-trigger";
 import { positionNames } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
 import type { Client } from "@/lib/store/types";
@@ -23,9 +24,6 @@ import {
 } from "@/lib/rates/storage";
 import type { Position, Specialty } from "@/lib/store/types";
 
-function triggerLabel(value: TriggerOption) {
-  return `OT after ${value} / DT after 15`;
-}
 function blankProfileName() {
   return `Client Rate Card ${new Date().toISOString().slice(0,10)}`;
 }
@@ -417,18 +415,28 @@ export default function RateCardEditor() {
                         {spcs.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                     </td>
-                    <td><input type="number" disabled={mode === "none"} value={row.hourly} onChange={(e) => updateRow(index, { hourly: Number(e.target.value || 0) })} /></td>
+                    <td><input type="number" disabled={mode === "none"} value={row.hourly} onChange={(e) => {
+                      const h = Number(e.target.value || 0);
+                      updateRow(index, {
+                        hourly: h,
+                        day: Number((h * 10).toFixed(2)),
+                        otRate: Number((h * 1.5).toFixed(2)),
+                        dtRate: Number((h * 2).toFixed(2)),
+                      });
+                    }} /></td>
                     <td><input type="number" disabled={mode === "none"} value={row.day} onChange={(e) => updateRow(index, { day: Number(e.target.value || 0) })} /></td>
                     <td><input type="number" disabled={mode === "none"} value={row.otRate} onChange={(e) => updateRow(index, { otRate: Number(e.target.value || 0) })} /></td>
                     <td><input type="number" disabled={mode === "none"} value={row.dtRate} onChange={(e) => updateRow(index, { dtRate: Number(e.target.value || 0) })} /></td>
                     <td>
                       <select disabled={mode === "none"} value={row.dtAfter} onChange={(e) => updateRow(index, { dtAfter: e.target.value as TriggerOption })}>
+                        <option value="none">No OT (flat)</option>
                         <option value="10">OT after 10</option>
                         <option value="11">OT after 11</option>
                         <option value="12">OT after 12</option>
                         <option value="13">OT after 13</option>
                         <option value="14">OT after 14</option>
                         <option value="15">OT after 15</option>
+                        <option value="weekly40">OT after 40 / week</option>
                       </select>
                     </td>
                     <td><input type="number" disabled={mode === "none"} value={row.travel} onChange={(e) => updateRow(index, { travel: Number(e.target.value || 0) })} /></td>

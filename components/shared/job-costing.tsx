@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getActiveRateCardProfileId, loadRateCardProfiles, loadRateRows } from "@/lib/rates/storage";
+import { computeDayHourSplit, parseOtTriggerRule } from "@/lib/rates/ot-trigger";
 import {
   getActiveJobCosting,
   getTimesheetByJobSheetId,
@@ -98,8 +99,7 @@ function parseQuoteLine(line: QuoteDraft["lines"][number]) {
 }
 
 function parseQuoteOtTrigger(rule: string) {
-  const m = (rule || "").match(/OT after\s+(\d+(?:\.\d+)?)/i);
-  return m ? Number(m[1]) : 10;
+  return parseOtTriggerRule(rule);
 }
 
 function roleFromPosition(position: string) {
@@ -337,9 +337,13 @@ export default function JobCosting() {
       const role = roleFromPosition(meta.position);
       const otTrigger = parseQuoteOtTrigger(line.rule || "");
       const totalHours = Number(line.hours || 0);
-      const quotedOtHours = meta.rateMode === "day" ? Math.max(0, Math.min(totalHours, 15) - otTrigger) : 0;
-      const quotedDtHours = meta.rateMode === "day" ? Math.max(0, totalHours - 15) : 0;
-      const quotedStHours = meta.rateMode === "day" ? Math.min(totalHours, otTrigger) : totalHours;
+      const split = meta.rateMode === "day"
+        ? computeDayHourSplit(totalHours, otTrigger)
+        : { st: totalHours, ot: 0, dt: 0 };
+      const quotedStHours = split.st;
+      const quotedOtHours = split.ot;
+      const quotedDtHours = split.dt;
+      const quotedOtTriggerNum = otTrigger.kind === "daily" ? otTrigger.hours : (otTrigger.kind === "weekly" ? 40 : 0);
       const sourceRate = Number(line.baseHourly || 0);
       const seededPayRate = sourceRate > 0
         ? Math.max(0, roundMoney(((sourceRate * (1 - draft.targetMargin)) - draft.overheadPerHour) / (1 + draft.payrollBurden)))
@@ -350,7 +354,7 @@ export default function JobCosting() {
         role,
         billMode: meta.rateMode,
         quotedBaseDay: Number((line as any).baseDay || 0),
-        quotedOtTrigger: otTrigger,
+        quotedOtTrigger: quotedOtTriggerNum,
         payRate: seededPayRate,
         crewCount: Number(line.qty || 1),
         stHours: quotedStHours,
