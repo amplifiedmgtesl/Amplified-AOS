@@ -8,6 +8,7 @@ import { timeOptions } from "@/lib/store/timekeeping";
 import { supabase } from "@/lib/supabase/client";
 import { US_STATES, JOB_REQUEST_STATUSES } from "@/lib/constants";
 import { JobRequestAttachmentsSection } from "./job-request-attachments-section";
+import { JobRequestDaysSection } from "./job-request-days-section";
 import type { JobRequest, Client } from "@/lib/store/types";
 
 const TIMES = timeOptions();
@@ -453,19 +454,35 @@ export default function JobRequests() {
           {msg ? <div className="badge" style={{ marginTop: 12 }}>{msg}</div> : null}
 
           {editingId ? (
-            <JobRequestAttachmentsSection jobRequestId={editingId} />
+            <>
+              <JobRequestDaysSection jobRequestId={editingId} disabled={isLocked} />
+              <JobRequestAttachmentsSection jobRequestId={editingId} />
+            </>
           ) : (
-            <div style={{
-              marginTop: 16, paddingTop: 12,
-              borderTop: "1px solid var(--border, #e5e7eb)",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <h3 style={{ margin: 0, fontSize: 14 }}>Attachments</h3>
+            <>
+              <div style={{
+                marginTop: 16, paddingTop: 12,
+                borderTop: "1px solid var(--border, #e5e7eb)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <h3 style={{ margin: 0, fontSize: 14 }}>Days &amp; Crew Requirements</h3>
+                </div>
+                <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
+                  Save the job request first to start adding days and crew requirements.
+                </div>
               </div>
-              <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
-                Save the job request first to start adding attachments.
+              <div style={{
+                marginTop: 16, paddingTop: 12,
+                borderTop: "1px solid var(--border, #e5e7eb)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <h3 style={{ margin: 0, fontSize: 14 }}>Attachments</h3>
+                </div>
+                <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
+                  Save the job request first to start adding attachments.
+                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
         )}

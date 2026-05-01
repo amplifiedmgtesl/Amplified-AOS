@@ -165,6 +165,32 @@ export type JobRequest = {
   linkedQuoteId?: string;  // set when a quote is built from this request
 };
 
+// Per-day breakdown of a multi-day job request. The legacy flat columns on
+// job_requests (request_date, end_date, start_time, end_time, expected_hours)
+// are kept in sync from these rows by a DB trigger during Phase 1 of the
+// multi-day refactor.
+export type JobRequestDay = {
+  id: string;
+  jobRequestId: string;
+  eventDate: string;        // YYYY-MM-DD
+  callTime?: string;
+  startTime?: string;
+  endTime?: string;
+  expectedHours?: number;
+  notes?: string;
+  sortOrder: number;
+};
+
+export type JobRequestCrewNeed = {
+  id: string;
+  jobRequestDayId: string;
+  positionId?: string;
+  specialtyId?: string;
+  quantity: number;
+  notes?: string;
+  sortOrder: number;
+};
+
 export type JobSheetWorker = {
   employeeKey: string;
   fullName: string;
