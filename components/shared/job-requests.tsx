@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase/client";
 import { US_STATES, JOB_REQUEST_STATUSES } from "@/lib/constants";
 import { JobRequestAttachmentsSection } from "./job-request-attachments-section";
 import { JobRequestDaysSection } from "./job-request-days-section";
+import { useUserRole } from "@/lib/auth/use-user-role";
 import type { JobRequest, Client } from "@/lib/store/types";
 
 const TIMES = timeOptions();
@@ -42,6 +43,9 @@ export default function JobRequests() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [sectionTab, setSectionTab] = useState<SectionTab>("daily");
+  const role = useUserRole();
+  const isCrewLeader = role === "crew_leader";
+  const timesheetHref = isCrewLeader ? "/lead/timekeeping" : "/timekeeping";
 
   useEffect(() => {
     supabase.from("clients").select("id, name, code, is_active").order("name")
@@ -412,14 +416,25 @@ export default function JobRequests() {
 
           <div className="action-row" style={{ marginTop: 12 }}>
             <button onClick={save}>Save</button>
-            {!editingId && <button className="secondary" onClick={saveAndBuildQuote}>Save + Build Quote</button>}
-            {editingId && form.linkedQuoteId && (
+            {!editingId && !isCrewLeader && (
+              <button className="secondary" onClick={saveAndBuildQuote}>Save + Build Quote</button>
+            )}
+            {editingId && form.linkedQuoteId && !isCrewLeader && (
               <button className="secondary" onClick={() => { setActiveQuote(form.linkedQuoteId!); window.location.href = "/quote-builder"; }}>
                 View Quote
               </button>
             )}
-            {editingId && !form.linkedQuoteId && !isLocked && (
+            {editingId && !form.linkedQuoteId && !isLocked && !isCrewLeader && (
               <button className="secondary" onClick={saveAndBuildQuote}>Build Quote</button>
+            )}
+            {editingId && (
+              <button
+                className="secondary"
+                onClick={() => { window.location.href = timesheetHref; }}
+                title="Open the timesheet for this job"
+              >
+                Timesheet
+              </button>
             )}
             {editingId && form.addToCalendar && (
               <button
