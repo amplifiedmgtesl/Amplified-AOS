@@ -255,18 +255,15 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
       </div>
 
       <div className="invoice-shell">
-        <div className="pdf-header timesheet-pdf-header">
+        <div className="timesheet-pdf-header">
           <div className="pdf-logo-wrap pdf-logo-wrap--small">
             <img src="/branding/client-logo.png" alt="Logo" className="pdf-logo pdf-logo--small" />
           </div>
-          <div className="pdf-title-wrap">
+          <div className="pdf-title-wrap pdf-title-wrap--left">
             <h2 className="pdf-title pdf-title--compact">Timekeeping Sheet</h2>
             <div className="pdf-subtitle pdf-subtitle--event">
               {currentSheet ? currentSheet.title : "No job sheet selected"}
             </div>
-          </div>
-          <div className="pdf-logo-wrap pdf-logo-wrap--small">
-            <img src="/branding/client-logo.png" alt="Logo" className="pdf-logo pdf-logo--small" />
           </div>
         </div>
 

@@ -145,10 +145,20 @@ small,.muted{color:var(--muted)}
 /* Print-only spans showing select values as plain text on the sign-in sheet. */
 .print-time{display:none}
 
-/* Timesheet PDF header: smaller logos on each side, prominent event name. */
-.timesheet-pdf-header .pdf-logo--small{max-height:38px}
-.timesheet-pdf-header .pdf-logo-wrap--small{min-height:42px}
-.timesheet-pdf-header .pdf-title--compact{font-size:24px}
+/* Timesheet PDF header: small logo on the left, prominent event name to its right.
+   Flexbox (not grid) so a narrow viewport can't collapse it into a stack. */
+.timesheet-pdf-header{
+  display:flex;
+  align-items:center;
+  gap:16px;
+  padding-bottom:10px;
+  border-bottom:2px solid var(--sand);
+  margin-bottom:12px;
+}
+.timesheet-pdf-header .pdf-logo--small{max-height:38px;width:auto;object-fit:contain}
+.timesheet-pdf-header .pdf-logo-wrap--small{flex:0 0 auto;display:flex;align-items:center}
+.timesheet-pdf-header .pdf-title-wrap--left{flex:1;text-align:left}
+.timesheet-pdf-header .pdf-title--compact{font-size:24px;margin:0}
 .timesheet-pdf-header .pdf-subtitle--event{
   font-size:20px;
   font-weight:700;
