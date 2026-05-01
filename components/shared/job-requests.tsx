@@ -392,7 +392,17 @@ export default function JobRequests() {
             </div>
             <div><small>Venue Zip</small><input disabled={isLocked} value={form.venueZip ?? ""} onChange={(e)=>setForm({ ...form, venueZip:e.target.value })} placeholder="00000" /></div>
             <div><small>Status</small>
-              <select value={form.status} onChange={(e)=>setForm({ ...form, status:e.target.value })}>
+              <select value={form.status} onChange={(e) => {
+                const next = { ...form, status: e.target.value };
+                setForm(next);
+                // Status auto-saves on change for already-saved records.
+                // New drafts (no id yet) still go through the Save button.
+                if (form.id) {
+                  upsertJobRequest(normalized(next));
+                  setMsg(`Status saved as ${JOB_REQUEST_STATUSES.find((s) => s.value === e.target.value)?.label ?? e.target.value}.`);
+                  setRefreshKey((x) => x + 1);
+                }
+              }}>
                 {JOB_REQUEST_STATUSES.map((s)=><option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
