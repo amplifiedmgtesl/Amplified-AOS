@@ -143,6 +143,8 @@ export default function JobRequests() {
 
   function save() {
     if (!form.clientId) { setMsg("Please select a client before saving."); return; }
+    if (!form.eventName.trim()) { setMsg("Please enter an event name before saving."); return; }
+    if (!form.requestDate) { setMsg("Please pick an event start date before saving."); return; }
     const row = normalized({ ...form, id: form.id || `jobreq-${Date.now()}` });
     upsertJobRequest(row);
     setMsg("Saved.");
@@ -159,6 +161,8 @@ export default function JobRequests() {
 
   function saveAndBuildQuote() {
     if (!form.clientId) { setMsg("Please select a client before saving."); return; }
+    if (!form.eventName.trim()) { setMsg("Please enter an event name before saving."); return; }
+    if (!form.requestDate) { setMsg("Please pick an event start date before saving."); return; }
     const row = normalized({ ...form, id: form.id || `jobreq-${Date.now()}` });
     upsertJobRequest(row);
     setQuoteSeed({
