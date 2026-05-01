@@ -4,6 +4,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { printWithTitle } from "@/lib/print-with-title";
 import { DEFAULT_RATE_ROWS, type RateRow } from "@/lib/rates/defaults";
+import { computeDayHourSplit, formatOtTriggerRule, triggerToKind } from "@/lib/rates/ot-trigger";
 import { getActiveRateCardProfileId, loadClientName, loadProfileIntoCurrent, loadRateCardProfiles, loadRateRows, loadTerms } from "@/lib/rates/storage";
 import { supabase } from "@/lib/supabase/client";
 import {
@@ -105,14 +106,8 @@ function calcLineTotal(hours:number, holidayHours:number, qty:number, row: RateR
   if (rateMode === "hourly") {
     return +((qty * hrs * row.hourly) + (holidayHours * row.dtRate) + travel).toFixed(2);
   }
-  let base = 0;
-  if (hrs <= 10) base = row.day;
-  else {
-    const otStart = Number(row.dtAfter);
-    const otHours = Math.max(0, Math.min(hrs, 15) - otStart);
-    const dtHours = Math.max(0, hrs - 15);
-    base = row.day + (otHours * row.otRate) + (dtHours * row.dtRate);
-  }
+  const split = computeDayHourSplit(hrs, triggerToKind(row.dtAfter));
+  const base = row.day + (split.ot * row.otRate) + (split.dt * row.dtRate);
   return +((qty * base) + (holidayHours * row.dtRate) + travel).toFixed(2);
 }
 
@@ -564,7 +559,7 @@ export default function QuoteBuilder() {
           baseDay: item.row.day,
           otRate: item.row.otRate,
           dtRate: item.row.dtRate,
-          rule: `${item.line.startTime || "-"} to ${item.line.endTime || "-"} | ${item.line.rateMode === "hourly" ? "Hourly" : "Day Rate"} | OT after ${item.row.dtAfter} / DT after 15`,
+          rule: `${item.line.startTime || "-"} to ${item.line.endTime || "-"} | ${item.line.rateMode === "hourly" ? "Hourly" : "Day Rate"} | ${formatOtTriggerRule(item.row.dtAfter)}`,
           total: item.total,
           positionId: item.line.positionId || undefined,
           specialtyId: item.line.specialtyId || undefined,
