@@ -145,6 +145,19 @@ small,.muted{color:var(--muted)}
 /* Print-only spans showing select values as plain text on the sign-in sheet. */
 .print-time{display:none}
 
+/* Signature boxes are part of the times row — empty cells where the
+   crew signs by hand on the printed sheet. On screen they're a thin
+   placeholder so the table layout matches what prints. */
+.timesheet-grid .sig-box{
+  background:#fafafa;
+  min-width:60px;
+}
+.timesheet-grid .sig-box-th{
+  font-size:11px;
+  color:#666;
+  font-style:italic;
+}
+
 /* Timesheet PDF header: small logo on the left, prominent event name to its right.
    Flexbox (not grid) so a narrow viewport can't collapse it into a stack. */
 .timesheet-pdf-header{
@@ -208,17 +221,24 @@ small,.muted{color:var(--muted)}
     -webkit-text-stroke:0 !important;
     text-shadow:none !important;
   }
-  /* Signature row: tall enough for pen, with a clear baseline. */
-  .timesheet-grid .sig-row td{
-    padding:14px 4px !important;
+  /* Signature boxes inline with the times row. Bordered cells (no underline)
+     sized for a hand signature. */
+  .timesheet-grid .sig-box{
+    border:1px solid #888 !important;
+    background:#fff !important;
+    min-width:90px !important;
+    width:90px !important;
+    padding:8px 4px !important;
   }
-  .timesheet-grid .sig-row .sig-blank{
-    border-bottom:1px solid #888 !important;
+  .timesheet-grid .sig-box-th{
+    background:#e0e0e0 !important;
+    border:1px solid #888 !important;
+    font-size:10px !important;
+    text-align:center !important;
   }
-  .timesheet-grid .sig-cell{
-    font-size:9px !important;
-    color:#444 !important;
-    font-style:italic;
+  /* Time / meal cells don't need to be wide on a sign-in sheet. */
+  .timesheet-grid td:not(.sig-box):not(.hide-print){
+    min-width:55px !important;
   }
   /* Override the colored alternating bands. On a sign-in sheet those
      cream/blue/green/peach colors print like a kid's coloring book.
@@ -229,9 +249,6 @@ small,.muted{color:var(--muted)}
   .timesheet-grid .line-band-3 > td{background:#f5f5f5 !important}
   .timesheet-grid .line-row-end > td{
     border-bottom:1px solid #999 !important;
-  }
-  .timesheet-grid .sig-row > td{
-    background:transparent !important;
   }
   /* Smaller logos flanking a prominent event name. */
   .timesheet-pdf-header .pdf-logo--small{max-height:34px !important}
@@ -350,25 +367,10 @@ small,.muted{color:var(--muted)}
 }
 
 
-/* Timesheet signature row — print-only (used on-site to confirm crew arrival) */
-.sig-row{display:none}
 @media print{
-  /* Timesheet keeps its color bands + shows the signature row. Invoice/quote
-     editable tables are already wrapped in .hide-print so their bands never
-     print anyway. */
-  .sig-row{display:table-row !important}
-  .sig-row > td{
-    background:transparent !important;
-    border:none !important;
-    padding:14px 6px 18px !important;
-    font-size:10px;color:#555;
-    vertical-align:top;
-  }
   .timesheet-grid .line-row > td{border-bottom:none}
   .timesheet-grid .line-row-end > td{border-bottom:none}
 }
-/* Force browsers to preserve the row colors on print */
-.line-table,.line-table *{print-color-adjust:exact;-webkit-print-color-adjust:exact}
 
 
 /* ===== Dashboard info-badge tooltips ===== */

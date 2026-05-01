@@ -274,13 +274,12 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
             <div style={{ overflowX: "auto" }}>
               {(() => {
                 const showPay = !hidePayAlways && !timesheet.hidePayColumns;
-                // Row-1 colSpans must sum to N where N = row-2 cell count
-                // (10 without pay, 14 with). First/Last Name + Phone + Email
-                // were removed — Name picker shows the full name and the
-                // employee record holds phone/email.
+                // Row-1 colSpans must sum to N where N = row-2 cell count.
+                // Row 2 has 12 cells without pay (Sig + 3 times + Sig + 3 times + 4 hidden hours)
+                // or 16 with pay (+ 4 hidden rate cells).
                 const r1Spans = showPay
-                  ? { pos: 3, emp: 6, start: 2, end: 3 }
-                  : { pos: 2, emp: 5, start: 1, end: 2 };
+                  ? { pos: 3, emp: 7, start: 3, end: 3 }
+                  : { pos: 2, emp: 5, start: 2, end: 3 };
                 return (
               <table className="timesheet-grid line-table">
                 <thead>
@@ -292,7 +291,9 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     <th rowSpan={2} className="hide-print">Action</th>
                   </tr>
                   <tr>
+                    <th className="sig-box-th">Sign IN 1</th>
                     <th>Time IN 1</th><th>Time OUT 1</th><th>Meal 1</th>
+                    <th className="sig-box-th">Sign IN 2</th>
                     <th>Time IN 2</th><th>Time OUT 2</th><th>Meal 2</th>
                     <th className="hide-print">STD HRS</th>
                     <th className="hide-print">OT HRS</th>
@@ -372,9 +373,11 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       </td>
                     </tr>
                     <tr className={`line-row line-row-end ${band}`}>
+                      <td className="sig-box"></td>
                       <td><select className="input-tight" value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn1 || ""}</span></td>
                       <td><select className="input-tight" value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut1 || ""}</span></td>
                       <td><select className="input-tight" value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak1Minutes ?? row.lunchMinutes ?? 0}</span></td>
+                      <td className="sig-box"></td>
                       <td><select className="input-tight" value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn2 || ""}</span></td>
                       <td><select className="input-tight" value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut2 || ""}</span></td>
                       <td><select className="input-tight" value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak2Minutes ?? 0}</span></td>
@@ -391,20 +394,13 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         </>
                       ) : null}
                     </tr>
-                    <tr className={`sig-row ${band}`}>
-                      <td className="sig-cell">Signature (Time IN 1):</td>
-                      <td className="sig-blank" colSpan={2}></td>
-                      <td className="sig-cell">Signature (Time IN 2):</td>
-                      <td className="sig-blank" colSpan={2}></td>
-                      <td className="hide-print" colSpan={showPay ? 8 : 4}></td>
-                    </tr>
                     </Fragment>
                     );
                   })}
                 </tbody>
                 <tfoot className="hide-print">
                   <tr>
-                    <th colSpan={6}>Totals</th>
+                    <th colSpan={8}>Totals</th>
                     <th>{totals.stdHours.toFixed(2)}</th>
                     <th>{totals.otHours.toFixed(2)}</th>
                     <th>{totals.dtHours.toFixed(2)}</th>
