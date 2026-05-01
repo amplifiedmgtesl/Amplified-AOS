@@ -313,7 +313,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     return (
                     <Fragment key={row.id}>
                     <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}`}>
-                      <td colSpan={r1Spans.pos}><select className="input-tight" value={row.position} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select></td>
+                      <td colSpan={r1Spans.pos}><select className="input-tight" value={row.position} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select><span className="print-time">{row.position || ""}</span></td>
                       <td colSpan={r1Spans.emp}>
                         <EmployeeAutoFill
                           employeeKey={row.employeeKey}
@@ -329,9 +329,13 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         />
                         {unlinked ? <div className="unlinked-hint">⚠ Link an employee to enable this row</div> : null}
                       </td>
-                      <td colSpan={r1Spans.start}><input type="date" className="input-tight" value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} /></td>
+                      <td colSpan={r1Spans.start}>
+                        <input type="date" className="input-tight" value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} />
+                        <span className="print-time">{row.workDate || ""}</span>
+                      </td>
                       <td colSpan={r1Spans.end}>
                         <input type="date" className="input-tight" value={row.endDate ?? ""} onChange={(e)=>updateRow(row.id, { endDate: e.target.value })} />
+                        <span className="print-time">{row.endDate || ""}</span>
                         {(() => {
                           const in1 = parseMinutes(row.timeIn1 ?? "");
                           const out1 = parseMinutes(row.timeOut1 ?? "");
@@ -414,7 +418,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               })()}
             </div>
 
-            <div style={{ marginTop: 16 }}>
+            <div className="hide-print" style={{ marginTop: 16 }}>
               <h3 className="section-title">Labor Summary for Quotes</h3>
               <p className="muted" style={{ fontSize: 12, marginTop: -6, marginBottom: 8 }}>
                 All entries on this job, regardless of approval status — useful for validating actuals vs. the quote.
@@ -441,7 +445,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               </div>
             </div>
 
-            <div style={{ marginTop: 16 }}>
+            <div className="hide-print" style={{ marginTop: 16 }}>
               <h3 className="section-title">Labor Summary for Invoices</h3>
               <p className="muted" style={{ fontSize: 12, marginTop: -6, marginBottom: 8 }}>
                 Approved entries only — this is what "Pull labor actuals from timesheets" uses on the invoice.

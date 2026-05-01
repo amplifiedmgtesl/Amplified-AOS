@@ -169,6 +169,13 @@ small,.muted{color:var(--muted)}
 }
 
 @media print{
+  /* In print, sticky positioning gets weird (banner can render mid-page).
+     Force it to a normal block at the top of the document, smaller. */
+  .env-banner{
+    position:static !important;
+    font-size:9px !important;
+    padding:2px 8px !important;
+  }
   .timesheet-grid{table-layout:auto;width:100%}
   .timesheet-grid th,.timesheet-grid td{
     padding:5px 4px !important;
@@ -187,12 +194,19 @@ small,.muted{color:var(--muted)}
     font-size:11px !important;
     font-weight:500;
   }
-  /* Repeating headers across pages. */
+  /* Repeating headers across pages with high-contrast text. The default
+     gold-on-cream styling printed as ghost text. */
   .timesheet-grid thead{display:table-header-group !important}
   .timesheet-grid th{
-    background:#f5efe2 !important;
+    background:#e0e0e0 !important;
+    color:#000 !important;
     font-weight:700 !important;
-    border-bottom:2px solid #8a6f3a !important;
+    font-size:10px !important;
+    text-transform:uppercase !important;
+    letter-spacing:.04em !important;
+    border:1px solid #888 !important;
+    -webkit-text-stroke:0 !important;
+    text-shadow:none !important;
   }
   /* Signature row: tall enough for pen, with a clear baseline. */
   .timesheet-grid .sig-row td{
