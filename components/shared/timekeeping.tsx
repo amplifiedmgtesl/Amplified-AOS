@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { printWithTitle } from "@/lib/print-with-title";
 import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames, loadEmployees, getPendingStaffEntries, approveStaffEntry, rejectStaffEntry, setEntryApproved } from "@/lib/store/app-store";
 import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
@@ -109,9 +109,11 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   const [jobSheetId, setJobSheetId] = useState(activeSheetId);
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
   const [dayFilter, setDayFilter] = useState<string>("all");
-  // Per-employee collapse state on the editing view. Print mode forces all
-  // expanded via @media print (the summary row is print-hidden).
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  // Per-day collapse state on the editing view. Print mode forces all expanded
+  // (via @media print) and hides the day-separator header rows.
+  const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
+  // Convenience alias for the in-memory rows of the active timesheet.
+  const allRows = useMemo(() => timesheet?.rows ?? [], [timesheet]);
 
   useEffect(() => {
     if (!jobSheetId) return;
@@ -125,25 +127,41 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     setDayFilter("all");
   }, [jobSheetId, refreshKey]);
 
-  // When the timesheet loads, default-collapse if multi-day, default-expand if
-  // single-day. Run when the rows or distinct-day count changes.
-  useEffect(() => {
-    if (!timesheet) { setExpandedIds(new Set()); return; }
-    const dates = new Set<string>();
-    for (const r of timesheet.rows) if (r.workDate) dates.add(r.workDate);
-    const isMultiDay = dates.size > 1;
-    setExpandedIds(isMultiDay ? new Set() : new Set(timesheet.rows.map((r) => r.id)));
-  }, [timesheet?.id, timesheet?.rows.length]);
+  // Group rows by workDate (with a "no-date" bucket for blank ones), days
+  // sorted ascending. The editing UI renders one collapsible card per day.
+  const dayGroups = useMemo(() => {
+    const map = new Map<string, typeof allRows>();
+    for (const r of allRows) {
+      const k = r.workDate || "no-date";
+      const list = map.get(k) ?? [];
+      list.push(r);
+      map.set(k, list);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => {
+      if (a === "no-date") return 1;
+      if (b === "no-date") return -1;
+      return a.localeCompare(b);
+    });
+  }, [allRows]);
 
-  function toggleExpanded(id: string) {
-    setExpandedIds((prev) => {
+  // Default-collapse all days if multi-day; expand the only day if single-day.
+  useEffect(() => {
+    if (dayGroups.length > 1) {
+      setCollapsedDays(new Set(dayGroups.map(([d]) => d)));
+    } else {
+      setCollapsedDays(new Set());
+    }
+  }, [timesheet?.id, dayGroups.length]);
+
+  function toggleDay(day: string) {
+    setCollapsedDays((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(day)) next.delete(day); else next.add(day);
       return next;
     });
   }
-  function expandAll()   { setExpandedIds(new Set(timesheet?.rows.map((r) => r.id) ?? [])); }
-  function collapseAll() { setExpandedIds(new Set()); }
+  function expandAll()   { setCollapsedDays(new Set()); }
+  function collapseAll() { setCollapsedDays(new Set(dayGroups.map(([d]) => d))); }
 
   useEffect(() => {
     if (!jobSheetId) { setPendingEntries([]); return; }
@@ -254,11 +272,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     return Array.from(set).sort();
   }, [timesheet]);
 
-  // Screen always shows all rows. The day filter only affects what prints
-  // (via the inline @media print style block below). This keeps the on-screen
-  // editing experience uncluttered while letting the user pick which day to
-  // print as a sign-in sheet.
-  const allRows = useMemo(() => timesheet?.rows ?? [], [timesheet]);
+  // (allRows is declared earlier — used by both day grouping and the table render.)
 
   return (
     <div className="grid">
@@ -420,42 +434,51 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     </> : null}
                   </tr>
                 </thead>
-                {allRows.map((row, idx) => {
+                {dayGroups.map(([day, dayRows]) => {
+                  const isCollapsed = collapsedDays.has(day);
+                  const dayLabel = day === "no-date"
+                    ? "(no date)"
+                    : (() => {
+                        const d = new Date(day + "T00:00:00");
+                        const wd = d.toLocaleDateString(undefined, { weekday: "short" });
+                        return `${wd} ${day}`;
+                      })();
+                  const statusMix = dayRows.reduce((acc, r) => {
+                    acc[r.status] = (acc[r.status] || 0) + 1;
+                    return acc;
+                  }, {} as Record<string, number>);
+                  return (
+                  <Fragment key={day}>
+                    <tbody className="day-separator">
+                      <tr onClick={() => toggleDay(day)} style={{ cursor: "pointer" }}>
+                        <td colSpan={totalCols} style={{
+                          padding: "10px 14px",
+                          background: isCollapsed ? "#f7f4ee" : "var(--accent, #2563eb)",
+                          color: isCollapsed ? "inherit" : "#fff",
+                          borderBottom: "2px solid #333",
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                            <span style={{ fontSize: 14, width: 14 }}>{isCollapsed ? "▸" : "▾"}</span>
+                            <strong style={{ fontSize: 14 }}>{dayLabel}</strong>
+                            <span style={{ fontSize: 12, opacity: 0.85 }}>
+                              · {dayRows.length} crew member{dayRows.length === 1 ? "" : "s"}
+                            </span>
+                            <span style={{ fontSize: 12, opacity: 0.85 }}>
+                              {statusMix.approved ? `· ${statusMix.approved} approved ` : ""}
+                              {statusMix.submitted ? `· ${statusMix.submitted} pending ` : ""}
+                              {statusMix.rejected ? `· ${statusMix.rejected} rejected ` : ""}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                    {dayRows.map((row, dayIdx) => {
+                    const idx = allRows.indexOf(row);
                     const band = `line-band-${idx % 4}`;
                     const unlinked = !row.employeeKey;
-                    const isExpanded = expandedIds.has(row.id);
-                    const linkedEmp = row.employeeKey ? employees.find((e) => e.employeeKey === row.employeeKey) : null;
-                    const displayName = (linkedEmp?.fullName || [row.firstName, row.lastName].filter(Boolean).join(" ") || "").trim();
-                    const dateLabel = row.workDate
-                      ? (row.endDate && row.endDate !== row.workDate ? `${row.workDate} → ${row.endDate}` : row.workDate)
-                      : "(no date)";
-                    const timeLabel = (row.timeIn1 || row.timeOut1)
-                      ? `${row.timeIn1 || "?"}–${row.timeOut1 || "?"}${row.timeIn2 || row.timeOut2 ? ` · ${row.timeIn2 || "?"}–${row.timeOut2 || "?"}` : ""}`
-                      : "";
-                    const collapsedClass = isExpanded ? "" : "is-collapsed";
                     return (
-                    <tbody key={row.id} className="line-employee" data-day={row.workDate || "no-date"}>
-                    <tr className="employee-summary-row" onClick={() => toggleExpanded(row.id)}>
-                      <td colSpan={totalCols} style={{
-                        cursor: "pointer",
-                        padding: "8px 12px",
-                        background: isExpanded ? "var(--surface2, #f7f4ee)" : "#fff",
-                        borderBottom: isExpanded ? "1px solid var(--border, #e5e7eb)" : "2px solid #333",
-                      }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 12, opacity: 0.6, width: 12 }}>{isExpanded ? "▾" : "▸"}</span>
-                          <strong style={{ fontSize: 13, minWidth: 140 }}>{displayName || <em style={{ opacity: 0.6 }}>(unnamed)</em>}</strong>
-                          <span className="muted" style={{ fontSize: 12, minWidth: 90 }}>{row.position || "—"}</span>
-                          <span className="muted" style={{ fontSize: 12, minWidth: 110 }}>{dateLabel}</span>
-                          <span className="muted" style={{ fontSize: 12, flex: 1 }}>{timeLabel}</span>
-                          {row.status === "approved" && <span className="badge pill-green" style={{ fontSize: 10 }}>Approved</span>}
-                          {row.status === "rejected" && <span className="badge" style={{ fontSize: 10, background: "#fde8e8", color: "#c0392b" }}>Rejected</span>}
-                          {row.status === "submitted" && <span className="badge" style={{ fontSize: 10, background: "#e8f0fe", color: "#1a56c4" }}>Pending</span>}
-                          {unlinked && <span className="badge" style={{ fontSize: 10, background: "#fff3e0", color: "#a05a00" }}>⚠ unlinked</span>}
-                        </div>
-                      </td>
-                    </tr>
-                    <tr className={`line-row ${band} ${collapsedClass}${unlinked ? " line-unlinked" : ""}`}>
+                    <tbody key={row.id} className={`line-employee ${isCollapsed ? "is-collapsed-day" : ""}`} data-day={row.workDate || "no-date"}>
+                    <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}`}>
                       <td colSpan={r1Spans.emp}>
                         <EmployeeAutoFill
                           employeeKey={row.employeeKey}
@@ -516,7 +539,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         </div>
                       </td>
                     </tr>
-                    <tr className={`line-row line-row-end ${band} ${collapsedClass}`}>
+                    <tr className={`line-row line-row-end ${band}`}>
                       <td className="sig-box"></td>
                       <td><select className="input-tight" value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn1 || ""}</span></td>
                       <td><select className="input-tight" value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut1 || ""}</span></td>
@@ -540,7 +563,10 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     </tr>
                     </tbody>
                     );
-                  })}
+                    })}
+                  </Fragment>
+                  );
+                })}
                 <tfoot className="hide-print">
                   <tr>
                     <th colSpan={8}>Totals</th>

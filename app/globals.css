@@ -145,14 +145,15 @@ small,.muted{color:var(--muted)}
 /* Print-only spans showing select values as plain text on the sign-in sheet. */
 .print-time{display:none}
 
-/* Per-employee collapse on the timekeeping editing view. The summary row
-   is the always-visible header; the data rows toggle hidden via .is-collapsed.
-   In print, every row expands and the summary row hides. */
-.timesheet-grid .employee-summary-row td:hover{background:#efe8d6 !important}
-.timesheet-grid tr.is-collapsed{display:none}
+/* Per-day collapse on the timekeeping editing view. Each day gets a
+   header row inside .day-separator (always visible on screen, hidden in
+   print). When collapsed, the .line-employee tbodies for that day get
+   .is-collapsed-day which hides them. Print forces everything expanded. */
+.timesheet-grid .day-separator td{font-weight:700;letter-spacing:.02em}
+.timesheet-grid tbody.is-collapsed-day{display:none}
 @media print{
-  .timesheet-grid .employee-summary-row{display:none !important}
-  .timesheet-grid tr.is-collapsed{display:table-row !important}
+  .timesheet-grid .day-separator{display:none !important}
+  .timesheet-grid tbody.is-collapsed-day{display:table-row-group !important}
 }
 
 /* Signature boxes are part of the times row — empty cells where the
