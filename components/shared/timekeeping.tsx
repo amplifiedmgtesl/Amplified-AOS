@@ -21,10 +21,12 @@ function EmployeeAutoFill({
   employeeKey,
   employees,
   onSelect,
+  fallbackName,
 }: {
   employeeKey?: string | null;
   employees: EmployeeRecord[];
   onSelect: (emp: EmployeeRecord) => void;
+  fallbackName?: string;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -47,14 +49,19 @@ function EmployeeAutoFill({
   return (
     <div style={{ position: "relative", minWidth: 170 }}>
       {linked && !query && (
-        <div style={{ fontSize: 11, color: "#2a5a31", marginBottom: 2, whiteSpace: "nowrap" }}>
-          ✓ {linked.employeeKey}
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2, whiteSpace: "nowrap" }}>
+          {linked.fullName}
+        </div>
+      )}
+      {!linked && fallbackName && !query && (
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#a05a00", marginBottom: 2, whiteSpace: "nowrap" }} title="No employee linked — pick one from the list">
+          {fallbackName} <span style={{ fontWeight: 400, fontStyle: "italic", fontSize: 11, color: "#a05a00" }}>(unlinked)</span>
         </div>
       )}
       <input
-        className="input-tight"
+        className="input-tight hide-print"
         style={{ minWidth: 160 }}
-        placeholder={linked ? linked.fullName : "Search employee…"}
+        placeholder={linked ? "Change employee…" : (fallbackName ? `Link "${fallbackName}"…` : "Search employee…")}
         value={query}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
@@ -101,6 +108,12 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   const activeSheetId = getActiveJobSheet() || sheets[0]?.id || "";
   const [jobSheetId, setJobSheetId] = useState(activeSheetId);
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
+  const [dayFilter, setDayFilter] = useState<string>("all");
+  // Per-day collapse state on the editing view. Print mode forces all expanded
+  // (via @media print) and hides the day-separator header rows.
+  const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
+  // Convenience alias for the in-memory rows of the active timesheet.
+  const allRows = useMemo(() => timesheet?.rows ?? [], [timesheet]);
 
   useEffect(() => {
     if (!jobSheetId) return;
@@ -111,7 +124,44 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     } else if (sheet) {
       setTimesheet({ id: `timesheet-${sheet.id}`, jobSheetId: sheet.id, title: sheet.title, hidePayColumns: false, rows: [] });
     }
+    setDayFilter("all");
   }, [jobSheetId, refreshKey]);
+
+  // Group rows by workDate (with a "no-date" bucket for blank ones), days
+  // sorted ascending. The editing UI renders one collapsible card per day.
+  const dayGroups = useMemo(() => {
+    const map = new Map<string, typeof allRows>();
+    for (const r of allRows) {
+      const k = r.workDate || "no-date";
+      const list = map.get(k) ?? [];
+      list.push(r);
+      map.set(k, list);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => {
+      if (a === "no-date") return 1;
+      if (b === "no-date") return -1;
+      return a.localeCompare(b);
+    });
+  }, [allRows]);
+
+  // Default-collapse all days if multi-day; expand the only day if single-day.
+  useEffect(() => {
+    if (dayGroups.length > 1) {
+      setCollapsedDays(new Set(dayGroups.map(([d]) => d)));
+    } else {
+      setCollapsedDays(new Set());
+    }
+  }, [timesheet?.id, dayGroups.length]);
+
+  function toggleDay(day: string) {
+    setCollapsedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(day)) next.delete(day); else next.add(day);
+      return next;
+    });
+  }
+  function expandAll()   { setCollapsedDays(new Set()); }
+  function collapseAll() { setCollapsedDays(new Set(dayGroups.map(([d]) => d))); }
 
   useEffect(() => {
     if (!jobSheetId) { setPendingEntries([]); return; }
@@ -211,6 +261,19 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     }, { stdHours:0, otHours:0, dtHours:0, totalHours:0, totalPay:0 });
   }, [timesheet]);
 
+  // Unique dates touched by any row (workDate + endDate covers cross-midnight
+   // shifts), oldest first. Used by the day filter.
+  const availableDays = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of timesheet?.rows ?? []) {
+      if (r.workDate) set.add(r.workDate);
+      if (r.endDate)  set.add(r.endDate);
+    }
+    return Array.from(set).sort();
+  }, [timesheet]);
+
+  // (allRows is declared earlier — used by both day grouping and the table render.)
+
   return (
     <div className="grid">
       <div className="card hide-print">
@@ -239,11 +302,30 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               </div>
             </div>
           )}
-          <div className="action-row" style={{ alignItems: "end" }}>
+          <div style={{
+            border: "1px solid var(--line, #d7c6aa)",
+            borderRadius: 12,
+            padding: "10px 14px",
+            background: "var(--cream, #fbf6ee)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}>
+            <strong style={{ fontSize: 12, opacity: 0.75 }}>📄 Print / Export</strong>
+            {availableDays.length > 0 && (
+              <div>
+                <small>Print which day?</small>
+                <select value={dayFilter} onChange={(e) => setDayFilter(e.target.value)}>
+                  <option value="all">All days{availableDays.length > 1 ? ` (${availableDays.length})` : ""}</option>
+                  {availableDays.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+            )}
             <button onClick={() => printWithTitle([
               "Timesheet",
               currentSheet?.title,
               currentSheet?.client,
+              dayFilter !== "all" ? dayFilter : undefined,
             ])}>Download / Print PDF</button>
           </div>
         </div>
@@ -251,18 +333,37 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
           <button onClick={addWorkersFromJobSheet} disabled={!currentSheet}>Add Crew from Job Sheet</button>
           <button className="secondary" onClick={addManualCrew} disabled={!timesheet}>Add Manual Crew</button>
           <button className="secondary" onClick={addBlankRow} disabled={!timesheet}>Add Blank Row</button>
+          {timesheet && timesheet.rows.length > 0 && (
+            <>
+              <span style={{ flex: 1 }} />
+              <button className="secondary" onClick={expandAll} style={{ fontSize: 12, padding: "4px 10px" }}>Expand all</button>
+              <button className="secondary" onClick={collapseAll} style={{ fontSize: 12, padding: "4px 10px" }}>Collapse all</button>
+            </>
+          )}
         </div>
       </div>
 
+      {dayFilter !== "all" && (
+        <style>{`
+          @media print {
+            .timesheet-grid tbody.line-employee[data-day]:not([data-day="${dayFilter}"]) {
+              display: none !important;
+            }
+          }
+        `}</style>
+      )}
+
       <div className="invoice-shell">
-        <div className="pdf-header">
-          <div></div>
-          <div className="pdf-title-wrap">
-            <div className="pdf-logo-wrap"><img src="/branding/client-logo.png" alt="Logo" className="pdf-logo" /></div>
-            <h2 className="pdf-title">Timekeeping Sheet</h2>
-            <div className="pdf-subtitle">{currentSheet ? currentSheet.title : "No job sheet selected"}</div>
+        <div className="timesheet-pdf-header">
+          <div className="pdf-logo-wrap pdf-logo-wrap--small">
+            <img src="/branding/client-logo.png" alt="Logo" className="pdf-logo pdf-logo--small" />
           </div>
-          <div></div>
+          <div className="pdf-title-wrap pdf-title-wrap--left">
+            <h2 className="pdf-title pdf-title--compact">Timekeeping Sheet</h2>
+            <div className="pdf-subtitle pdf-subtitle--event">
+              {currentSheet ? currentSheet.title : "No job sheet selected"}
+            </div>
+          </div>
         </div>
 
         {!timesheet ? (
@@ -272,44 +373,117 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
             <div style={{ overflowX: "auto" }}>
               {(() => {
                 const showPay = !hidePayAlways && !timesheet.hidePayColumns;
-                // Row-1 colSpans sum to N where N = row-2 cell count.
-                // Without pay (N=10): [1,2,1,1,1,2,1,1]  |  With pay (N=14): [2,2,2,2,1,2,1,2]
-                const r1Spans = showPay
-                  ? { pos: 2, emp: 2, fn: 2, ln: 2, phone: 1, email: 2, start: 1, end: 2 }
-                  : { pos: 1, emp: 2, fn: 1, ln: 1, phone: 1, email: 2, start: 1, end: 1 };
+                // Row-1 layout: Position | Name | Start | End | (phantom for
+                // hidden hour/rate cols). Each visible row-1 label spans exactly
+                // 2 row-2 cells so the right edge of End Date aligns with the
+                // right edge of Meal 2 in print (where hour cols are hidden).
+                // Row 2 has 12 cells without pay (Sig+3 times)x2 + 4 hidden hours,
+                // or 16 with pay (+ 4 hidden rate cells).
+                const r1Spans = { pos: 2, emp: 2, start: 2, end: 2 };
+                const phantomSpan = showPay ? 8 : 4;
+                // Total table column count for the per-employee summary
+                // row's colSpan: 12 visible + 4 hidden hours + 4 hidden rate
+                // (if pay) + 1 action = 13 (no pay) or 17 (with pay).
+                const totalCols = (showPay ? 16 : 12) + 1;
                 return (
               <table className="timesheet-grid line-table">
+                <colgroup>
+                  <col style={{ width: "18%" }} />{/* Sign IN 1 */}
+                  <col style={{ width: "9%"  }} />{/* Time IN 1 */}
+                  <col style={{ width: "9%"  }} />{/* Time OUT 1 */}
+                  <col style={{ width: "7%"  }} />{/* Meal 1 */}
+                  <col style={{ width: "18%" }} />{/* Sign IN 2 */}
+                  <col style={{ width: "9%"  }} />{/* Time IN 2 */}
+                  <col style={{ width: "9%"  }} />{/* Time OUT 2 */}
+                  <col style={{ width: "21%" }} />{/* Meal 2 (absorbs remaining) */}
+                  <col className="col-hidden" />{/* STD HRS */}
+                  <col className="col-hidden" />{/* OT HRS */}
+                  <col className="col-hidden" />{/* DT HRS */}
+                  <col className="col-hidden" />{/* TOTAL HRS */}
+                  {showPay && <>
+                    <col className="col-hidden" />{/* STD RATE */}
+                    <col className="col-hidden" />{/* OT RATE */}
+                    <col className="col-hidden" />{/* DT RATE */}
+                    <col className="col-hidden" />{/* TOTAL PAY */}
+                  </>}
+                  <col className="col-hidden" />{/* Action */}
+                </colgroup>
                 <thead>
                   <tr>
+                    <th colSpan={r1Spans.emp}>Name</th>
                     <th colSpan={r1Spans.pos}>Position</th>
-                    <th colSpan={r1Spans.emp}>Employee</th>
-                    <th colSpan={r1Spans.fn}>First Name</th>
-                    <th colSpan={r1Spans.ln}>Last Name</th>
-                    <th colSpan={r1Spans.phone}>Phone</th>
-                    <th colSpan={r1Spans.email}>Email</th>
                     <th colSpan={r1Spans.start}>Start Date</th>
                     <th colSpan={r1Spans.end}>End Date</th>
+                    <th colSpan={phantomSpan} className="hide-print"></th>
                     <th rowSpan={2} className="hide-print">Action</th>
                   </tr>
                   <tr>
+                    <th className="sig-box-th">Sign IN 1</th>
                     <th>Time IN 1</th><th>Time OUT 1</th><th>Meal 1</th>
+                    <th className="sig-box-th">Sign IN 2</th>
                     <th>Time IN 2</th><th>Time OUT 2</th><th>Meal 2</th>
-                    <th>STD HRS</th><th>OT HRS</th><th>DT HRS</th><th>TOTAL HRS</th>
-                    {showPay ? <><th>STD RATE</th><th>OT RATE</th><th>DT RATE</th><th>TOTAL PAY</th></> : null}
+                    <th className="hide-print">STD HRS</th>
+                    <th className="hide-print">OT HRS</th>
+                    <th className="hide-print">DT HRS</th>
+                    <th className="hide-print">TOTAL HRS</th>
+                    {showPay ? <>
+                      <th className="hide-print">STD RATE</th>
+                      <th className="hide-print">OT RATE</th>
+                      <th className="hide-print">DT RATE</th>
+                      <th className="hide-print">TOTAL PAY</th>
+                    </> : null}
                   </tr>
                 </thead>
-                <tbody>
-                  {timesheet.rows.map((row, idx) => {
+                {dayGroups.map(([day, dayRows]) => {
+                  const isCollapsed = collapsedDays.has(day);
+                  const dayLabel = day === "no-date"
+                    ? "(no date)"
+                    : (() => {
+                        const d = new Date(day + "T00:00:00");
+                        const wd = d.toLocaleDateString(undefined, { weekday: "short" });
+                        return `${wd} ${day}`;
+                      })();
+                  const statusMix = dayRows.reduce((acc, r) => {
+                    acc[r.status] = (acc[r.status] || 0) + 1;
+                    return acc;
+                  }, {} as Record<string, number>);
+                  return (
+                  <Fragment key={day}>
+                    <tbody className="day-separator">
+                      <tr onClick={() => toggleDay(day)} style={{ cursor: "pointer" }}>
+                        <td colSpan={totalCols} style={{
+                          padding: "10px 14px",
+                          background: isCollapsed ? "#f7f4ee" : "var(--accent, #2563eb)",
+                          color: isCollapsed ? "inherit" : "#fff",
+                          borderBottom: "2px solid #333",
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                            <span style={{ fontSize: 14, width: 14 }}>{isCollapsed ? "▸" : "▾"}</span>
+                            <strong style={{ fontSize: 14 }}>{dayLabel}</strong>
+                            <span style={{ fontSize: 12, opacity: 0.85 }}>
+                              · {dayRows.length} crew member{dayRows.length === 1 ? "" : "s"}
+                            </span>
+                            <span style={{ fontSize: 12, opacity: 0.85 }}>
+                              {statusMix.approved ? `· ${statusMix.approved} approved ` : ""}
+                              {statusMix.submitted ? `· ${statusMix.submitted} pending ` : ""}
+                              {statusMix.rejected ? `· ${statusMix.rejected} rejected ` : ""}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                    {dayRows.map((row, dayIdx) => {
+                    const idx = allRows.indexOf(row);
                     const band = `line-band-${idx % 4}`;
                     const unlinked = !row.employeeKey;
                     return (
-                    <Fragment key={row.id}>
+                    <tbody key={row.id} className={`line-employee ${isCollapsed ? "is-collapsed-day" : ""}`} data-day={row.workDate || "no-date"}>
                     <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}`}>
-                      <td colSpan={r1Spans.pos}><select className="input-tight" value={row.position} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select></td>
                       <td colSpan={r1Spans.emp}>
                         <EmployeeAutoFill
                           employeeKey={row.employeeKey}
                           employees={employees}
+                          fallbackName={[row.firstName, row.lastName].filter(Boolean).join(" ")}
                           onSelect={(emp) => updateRow(row.id, {
                             employeeKey: emp.employeeKey,
                             firstName: emp.firstName || emp.fullName.split(" ")[0] || "",
@@ -321,13 +495,14 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         />
                         {unlinked ? <div className="unlinked-hint">⚠ Link an employee to enable this row</div> : null}
                       </td>
-                      <td colSpan={r1Spans.fn}><input className="input-tight" value={row.firstName} disabled readOnly title="Pulled from employee record" /></td>
-                      <td colSpan={r1Spans.ln}><input className="input-tight" value={row.lastName} disabled readOnly title="Pulled from employee record" /></td>
-                      <td colSpan={r1Spans.phone}><input className="input-tight" value={row.phone} disabled readOnly title="Pulled from employee record" /></td>
-                      <td colSpan={r1Spans.email}><input className="input-tight" value={row.email} disabled readOnly title="Pulled from employee record" /></td>
-                      <td colSpan={r1Spans.start}><input type="date" className="input-tight" value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} /></td>
+                      <td colSpan={r1Spans.pos}><select className="input-tight" value={row.position} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select><span className="print-time">{row.position || ""}</span></td>
+                      <td colSpan={r1Spans.start}>
+                        <input type="date" className="input-tight" value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} />
+                        <span className="print-time">{row.workDate || ""}</span>
+                      </td>
                       <td colSpan={r1Spans.end}>
                         <input type="date" className="input-tight" value={row.endDate ?? ""} onChange={(e)=>updateRow(row.id, { endDate: e.target.value })} />
+                        <span className="print-time">{row.endDate || ""}</span>
                         {(() => {
                           const in1 = parseMinutes(row.timeIn1 ?? "");
                           const out1 = parseMinutes(row.timeOut1 ?? "");
@@ -342,6 +517,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                           return null;
                         })()}
                       </td>
+                      <td colSpan={phantomSpan} className="hide-print"></td>
                       <td rowSpan={2} className="hide-print" style={{ verticalAlign: "middle" }}>
                         <div className="action-row" style={{ flexDirection: "column", gap: 6 }}>
                           {row.employeeKey && row.status === "submitted" && !hidePayAlways && (
@@ -364,44 +540,42 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       </td>
                     </tr>
                     <tr className={`line-row line-row-end ${band}`}>
-                      <td><select className="input-tight" value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select></td>
-                      <td><select className="input-tight" value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select></td>
-                      <td>{row.stdHours.toFixed(2)}</td>
-                      <td>{row.otHours.toFixed(2)}</td>
-                      <td>{row.dtHours.toFixed(2)}</td>
-                      <td>{row.totalHours.toFixed(2)}</td>
+                      <td className="sig-box"></td>
+                      <td><select className="input-tight" value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn1 || ""}</span></td>
+                      <td><select className="input-tight" value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut1 || ""}</span></td>
+                      <td><select className="input-tight" value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak1Minutes ?? row.lunchMinutes ?? 0}</span></td>
+                      <td className="sig-box"></td>
+                      <td><select className="input-tight" value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn2 || ""}</span></td>
+                      <td><select className="input-tight" value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut2 || ""}</span></td>
+                      <td><select className="input-tight" value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak2Minutes ?? 0}</span></td>
+                      <td className="hide-print">{row.stdHours.toFixed(2)}</td>
+                      <td className="hide-print">{row.otHours.toFixed(2)}</td>
+                      <td className="hide-print">{row.dtHours.toFixed(2)}</td>
+                      <td className="hide-print">{row.totalHours.toFixed(2)}</td>
                       {showPay ? (
                         <>
-                          <td><select className="input-tight" value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td><select className="input-tight" value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td><select className="input-tight" value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td>${row.totalPay.toFixed(2)}</td>
+                          <td className="hide-print"><select className="input-tight" value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print"><select className="input-tight" value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print"><select className="input-tight" value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print">${row.totalPay.toFixed(2)}</td>
                         </>
                       ) : null}
                     </tr>
-                    <tr className={`sig-row ${band}`}>
-                      <td className="sig-cell">Signature (Time IN 1):</td>
-                      <td className="sig-blank" colSpan={2}></td>
-                      <td className="sig-cell">Signature (Time IN 2):</td>
-                      <td className="sig-blank" colSpan={showPay ? 10 : 6}></td>
-                    </tr>
-                    </Fragment>
+                    </tbody>
                     );
-                  })}
-                </tbody>
-                <tfoot>
+                    })}
+                  </Fragment>
+                  );
+                })}
+                <tfoot className="hide-print">
                   <tr>
-                    <th colSpan={6}>Totals</th>
+                    <th colSpan={8}>Totals</th>
                     <th>{totals.stdHours.toFixed(2)}</th>
                     <th>{totals.otHours.toFixed(2)}</th>
                     <th>{totals.dtHours.toFixed(2)}</th>
                     <th>{totals.totalHours.toFixed(2)}</th>
                     {showPay ? <><th></th><th></th><th></th><th>${totals.totalPay.toFixed(2)}</th></> : null}
-                    <th className="hide-print"></th>
+                    <th></th>
                   </tr>
                 </tfoot>
               </table>
@@ -409,7 +583,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               })()}
             </div>
 
-            <div style={{ marginTop: 16 }}>
+            <div className="hide-print" style={{ marginTop: 16 }}>
               <h3 className="section-title">Labor Summary for Quotes</h3>
               <p className="muted" style={{ fontSize: 12, marginTop: -6, marginBottom: 8 }}>
                 All entries on this job, regardless of approval status — useful for validating actuals vs. the quote.
@@ -436,7 +610,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               </div>
             </div>
 
-            <div style={{ marginTop: 16 }}>
+            <div className="hide-print" style={{ marginTop: 16 }}>
               <h3 className="section-title">Labor Summary for Invoices</h3>
               <p className="muted" style={{ fontSize: 12, marginTop: -6, marginBottom: 8 }}>
                 Approved entries only — this is what "Pull labor actuals from timesheets" uses on the invoice.
