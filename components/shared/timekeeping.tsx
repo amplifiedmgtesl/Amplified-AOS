@@ -101,6 +101,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   const activeSheetId = getActiveJobSheet() || sheets[0]?.id || "";
   const [jobSheetId, setJobSheetId] = useState(activeSheetId);
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
+  const [dayFilter, setDayFilter] = useState<string>("all");
 
   useEffect(() => {
     if (!jobSheetId) return;
@@ -111,6 +112,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     } else if (sheet) {
       setTimesheet({ id: `timesheet-${sheet.id}`, jobSheetId: sheet.id, title: sheet.title, hidePayColumns: false, rows: [] });
     }
+    setDayFilter("all");
   }, [jobSheetId, refreshKey]);
 
   useEffect(() => {
@@ -211,6 +213,20 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     }, { stdHours:0, otHours:0, dtHours:0, totalHours:0, totalPay:0 });
   }, [timesheet]);
 
+  // Unique workDates across the rows, oldest first. Used by the day filter.
+  const availableDays = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of timesheet?.rows ?? []) if (r.workDate) set.add(r.workDate);
+    return Array.from(set).sort();
+  }, [timesheet]);
+
+  // Rows filtered to the selected day. "all" = no filter.
+  const visibleRows = useMemo(() => {
+    if (!timesheet) return [];
+    if (dayFilter === "all") return timesheet.rows;
+    return timesheet.rows.filter((r) => r.workDate === dayFilter);
+  }, [timesheet, dayFilter]);
+
   return (
     <div className="grid">
       <div className="card hide-print">
@@ -239,11 +255,21 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               </div>
             </div>
           )}
+          {availableDays.length > 1 && (
+            <div>
+              <small>Print / View Day</small>
+              <select value={dayFilter} onChange={(e) => setDayFilter(e.target.value)}>
+                <option value="all">All days ({availableDays.length})</option>
+                {availableDays.map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          )}
           <div className="action-row" style={{ alignItems: "end" }}>
             <button onClick={() => printWithTitle([
               "Timesheet",
               currentSheet?.title,
               currentSheet?.client,
+              dayFilter !== "all" ? dayFilter : undefined,
             ])}>Download / Print PDF</button>
           </div>
         </div>
@@ -331,7 +357,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     </> : null}
                   </tr>
                 </thead>
-                {timesheet.rows.map((row, idx) => {
+                {visibleRows.map((row, idx) => {
                     const band = `line-band-${idx % 4}`;
                     const unlinked = !row.employeeKey;
                     return (
