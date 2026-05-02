@@ -1,7 +1,7 @@
 
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { printWithTitle } from "@/lib/print-with-title";
 import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames, loadEmployees, getPendingStaffEntries, approveStaffEntry, rejectStaffEntry, setEntryApproved } from "@/lib/store/app-store";
 import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
@@ -307,8 +307,8 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                 </colgroup>
                 <thead>
                   <tr>
-                    <th colSpan={r1Spans.pos}>Position</th>
                     <th colSpan={r1Spans.emp}>Name</th>
+                    <th colSpan={r1Spans.pos}>Position</th>
                     <th colSpan={r1Spans.start}>Start Date</th>
                     <th colSpan={r1Spans.end}>End Date</th>
                     <th colSpan={phantomSpan} className="hide-print"></th>
@@ -331,14 +331,12 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     </> : null}
                   </tr>
                 </thead>
-                <tbody>
-                  {timesheet.rows.map((row, idx) => {
+                {timesheet.rows.map((row, idx) => {
                     const band = `line-band-${idx % 4}`;
                     const unlinked = !row.employeeKey;
                     return (
-                    <Fragment key={row.id}>
+                    <tbody key={row.id} className="line-employee">
                     <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}`}>
-                      <td colSpan={r1Spans.pos}><select className="input-tight" value={row.position} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select><span className="print-time">{row.position || ""}</span></td>
                       <td colSpan={r1Spans.emp}>
                         <EmployeeAutoFill
                           employeeKey={row.employeeKey}
@@ -354,6 +352,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         />
                         {unlinked ? <div className="unlinked-hint">⚠ Link an employee to enable this row</div> : null}
                       </td>
+                      <td colSpan={r1Spans.pos}><select className="input-tight" value={row.position} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select><span className="print-time">{row.position || ""}</span></td>
                       <td colSpan={r1Spans.start}>
                         <input type="date" className="input-tight" value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} />
                         <span className="print-time">{row.workDate || ""}</span>
@@ -419,10 +418,9 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         </>
                       ) : null}
                     </tr>
-                    </Fragment>
+                    </tbody>
                     );
                   })}
-                </tbody>
                 <tfoot className="hide-print">
                   <tr>
                     <th colSpan={8}>Totals</th>

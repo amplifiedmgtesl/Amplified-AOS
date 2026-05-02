@@ -245,7 +245,14 @@ small,.muted{color:var(--muted)}
   .timesheet-grid .line-band-1 > td,
   .timesheet-grid .line-band-3 > td{background:#f5f5f5 !important}
   .timesheet-grid .line-row-end > td{
-    border-bottom:1px solid #999 !important;
+    border-bottom:2px solid #333 !important;
+  }
+  /* Keep the two rows of an employee on the same page. Each employee is
+     wrapped in its own <tbody> so this avoids splitting that pair across
+     a page break. */
+  .timesheet-grid tbody.line-employee{
+    break-inside:avoid !important;
+    page-break-inside:avoid !important;
   }
   /* Smaller logos flanking a prominent event name. */
   .timesheet-pdf-header .pdf-logo--small{max-height:34px !important}
