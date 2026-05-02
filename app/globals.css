@@ -145,6 +145,16 @@ small,.muted{color:var(--muted)}
 /* Print-only spans showing select values as plain text on the sign-in sheet. */
 .print-time{display:none}
 
+/* Per-employee collapse on the timekeeping editing view. The summary row
+   is the always-visible header; the data rows toggle hidden via .is-collapsed.
+   In print, every row expands and the summary row hides. */
+.timesheet-grid .employee-summary-row td:hover{background:#efe8d6 !important}
+.timesheet-grid tr.is-collapsed{display:none}
+@media print{
+  .timesheet-grid .employee-summary-row{display:none !important}
+  .timesheet-grid tr.is-collapsed{display:table-row !important}
+}
+
 /* Signature boxes are part of the times row — empty cells where the
    crew signs by hand on the printed sheet. On screen they're a thin
    placeholder so the table layout matches what prints. */

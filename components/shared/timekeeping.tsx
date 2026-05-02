@@ -109,6 +109,9 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   const [jobSheetId, setJobSheetId] = useState(activeSheetId);
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
   const [dayFilter, setDayFilter] = useState<string>("all");
+  // Per-employee collapse state on the editing view. Print mode forces all
+  // expanded via @media print (the summary row is print-hidden).
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!jobSheetId) return;
@@ -121,6 +124,26 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     }
     setDayFilter("all");
   }, [jobSheetId, refreshKey]);
+
+  // When the timesheet loads, default-collapse if multi-day, default-expand if
+  // single-day. Run when the rows or distinct-day count changes.
+  useEffect(() => {
+    if (!timesheet) { setExpandedIds(new Set()); return; }
+    const dates = new Set<string>();
+    for (const r of timesheet.rows) if (r.workDate) dates.add(r.workDate);
+    const isMultiDay = dates.size > 1;
+    setExpandedIds(isMultiDay ? new Set() : new Set(timesheet.rows.map((r) => r.id)));
+  }, [timesheet?.id, timesheet?.rows.length]);
+
+  function toggleExpanded(id: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function expandAll()   { setExpandedIds(new Set(timesheet?.rows.map((r) => r.id) ?? [])); }
+  function collapseAll() { setExpandedIds(new Set()); }
 
   useEffect(() => {
     if (!jobSheetId) { setPendingEntries([]); return; }
@@ -296,6 +319,13 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
           <button onClick={addWorkersFromJobSheet} disabled={!currentSheet}>Add Crew from Job Sheet</button>
           <button className="secondary" onClick={addManualCrew} disabled={!timesheet}>Add Manual Crew</button>
           <button className="secondary" onClick={addBlankRow} disabled={!timesheet}>Add Blank Row</button>
+          {timesheet && timesheet.rows.length > 0 && (
+            <>
+              <span style={{ flex: 1 }} />
+              <button className="secondary" onClick={expandAll} style={{ fontSize: 12, padding: "4px 10px" }}>Expand all</button>
+              <button className="secondary" onClick={collapseAll} style={{ fontSize: 12, padding: "4px 10px" }}>Collapse all</button>
+            </>
+          )}
         </div>
       </div>
 
@@ -337,6 +367,10 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                 // or 16 with pay (+ 4 hidden rate cells).
                 const r1Spans = { pos: 2, emp: 2, start: 2, end: 2 };
                 const phantomSpan = showPay ? 8 : 4;
+                // Total table column count for the per-employee summary
+                // row's colSpan: 12 visible + 4 hidden hours + 4 hidden rate
+                // (if pay) + 1 action = 13 (no pay) or 17 (with pay).
+                const totalCols = (showPay ? 16 : 12) + 1;
                 return (
               <table className="timesheet-grid line-table">
                 <colgroup>
@@ -389,9 +423,39 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                 {allRows.map((row, idx) => {
                     const band = `line-band-${idx % 4}`;
                     const unlinked = !row.employeeKey;
+                    const isExpanded = expandedIds.has(row.id);
+                    const linkedEmp = row.employeeKey ? employees.find((e) => e.employeeKey === row.employeeKey) : null;
+                    const displayName = (linkedEmp?.fullName || [row.firstName, row.lastName].filter(Boolean).join(" ") || "").trim();
+                    const dateLabel = row.workDate
+                      ? (row.endDate && row.endDate !== row.workDate ? `${row.workDate} → ${row.endDate}` : row.workDate)
+                      : "(no date)";
+                    const timeLabel = (row.timeIn1 || row.timeOut1)
+                      ? `${row.timeIn1 || "?"}–${row.timeOut1 || "?"}${row.timeIn2 || row.timeOut2 ? ` · ${row.timeIn2 || "?"}–${row.timeOut2 || "?"}` : ""}`
+                      : "";
+                    const collapsedClass = isExpanded ? "" : "is-collapsed";
                     return (
                     <tbody key={row.id} className="line-employee" data-day={row.workDate || "no-date"}>
-                    <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}`}>
+                    <tr className="employee-summary-row" onClick={() => toggleExpanded(row.id)}>
+                      <td colSpan={totalCols} style={{
+                        cursor: "pointer",
+                        padding: "8px 12px",
+                        background: isExpanded ? "var(--surface2, #f7f4ee)" : "#fff",
+                        borderBottom: isExpanded ? "1px solid var(--border, #e5e7eb)" : "2px solid #333",
+                      }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 12, opacity: 0.6, width: 12 }}>{isExpanded ? "▾" : "▸"}</span>
+                          <strong style={{ fontSize: 13, minWidth: 140 }}>{displayName || <em style={{ opacity: 0.6 }}>(unnamed)</em>}</strong>
+                          <span className="muted" style={{ fontSize: 12, minWidth: 90 }}>{row.position || "—"}</span>
+                          <span className="muted" style={{ fontSize: 12, minWidth: 110 }}>{dateLabel}</span>
+                          <span className="muted" style={{ fontSize: 12, flex: 1 }}>{timeLabel}</span>
+                          {row.status === "approved" && <span className="badge pill-green" style={{ fontSize: 10 }}>Approved</span>}
+                          {row.status === "rejected" && <span className="badge" style={{ fontSize: 10, background: "#fde8e8", color: "#c0392b" }}>Rejected</span>}
+                          {row.status === "submitted" && <span className="badge" style={{ fontSize: 10, background: "#e8f0fe", color: "#1a56c4" }}>Pending</span>}
+                          {unlinked && <span className="badge" style={{ fontSize: 10, background: "#fff3e0", color: "#a05a00" }}>⚠ unlinked</span>}
+                        </div>
+                      </td>
+                    </tr>
+                    <tr className={`line-row ${band} ${collapsedClass}${unlinked ? " line-unlinked" : ""}`}>
                       <td colSpan={r1Spans.emp}>
                         <EmployeeAutoFill
                           employeeKey={row.employeeKey}
@@ -452,7 +516,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         </div>
                       </td>
                     </tr>
-                    <tr className={`line-row line-row-end ${band}`}>
+                    <tr className={`line-row line-row-end ${band} ${collapsedClass}`}>
                       <td className="sig-box"></td>
                       <td><select className="input-tight" value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn1 || ""}</span></td>
                       <td><select className="input-tight" value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut1 || ""}</span></td>
