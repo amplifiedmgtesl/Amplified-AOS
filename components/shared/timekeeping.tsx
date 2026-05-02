@@ -21,10 +21,12 @@ function EmployeeAutoFill({
   employeeKey,
   employees,
   onSelect,
+  fallbackName,
 }: {
   employeeKey?: string | null;
   employees: EmployeeRecord[];
   onSelect: (emp: EmployeeRecord) => void;
+  fallbackName?: string;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -51,10 +53,15 @@ function EmployeeAutoFill({
           {linked.fullName}
         </div>
       )}
+      {!linked && fallbackName && !query && (
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#a05a00", marginBottom: 2, whiteSpace: "nowrap" }} title="No employee linked — pick one from the list">
+          {fallbackName} <span style={{ fontWeight: 400, fontStyle: "italic", fontSize: 11, color: "#a05a00" }}>(unlinked)</span>
+        </div>
+      )}
       <input
         className="input-tight hide-print"
         style={{ minWidth: 160 }}
-        placeholder={linked ? "Change employee…" : "Search employee…"}
+        placeholder={linked ? "Change employee…" : (fallbackName ? `Link "${fallbackName}"…` : "Search employee…")}
         value={query}
         onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
@@ -213,10 +220,14 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     }, { stdHours:0, otHours:0, dtHours:0, totalHours:0, totalPay:0 });
   }, [timesheet]);
 
-  // Unique workDates across the rows, oldest first. Used by the day filter.
+  // Unique dates touched by any row (workDate + endDate covers cross-midnight
+   // shifts), oldest first. Used by the day filter.
   const availableDays = useMemo(() => {
     const set = new Set<string>();
-    for (const r of timesheet?.rows ?? []) if (r.workDate) set.add(r.workDate);
+    for (const r of timesheet?.rows ?? []) {
+      if (r.workDate) set.add(r.workDate);
+      if (r.endDate)  set.add(r.endDate);
+    }
     return Array.from(set).sort();
   }, [timesheet]);
 
@@ -255,11 +266,11 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               </div>
             </div>
           )}
-          {availableDays.length > 1 && (
+          {availableDays.length > 0 && (
             <div>
               <small>Print / View Day</small>
               <select value={dayFilter} onChange={(e) => setDayFilter(e.target.value)}>
-                <option value="all">All days ({availableDays.length})</option>
+                <option value="all">All days{availableDays.length > 1 ? ` (${availableDays.length})` : ""}</option>
                 {availableDays.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
@@ -367,6 +378,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         <EmployeeAutoFill
                           employeeKey={row.employeeKey}
                           employees={employees}
+                          fallbackName={[row.firstName, row.lastName].filter(Boolean).join(" ")}
                           onSelect={(emp) => updateRow(row.id, {
                             employeeKey: emp.employeeKey,
                             firstName: emp.firstName || emp.fullName.split(" ")[0] || "",
