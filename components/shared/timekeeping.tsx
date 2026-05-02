@@ -231,12 +231,11 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     return Array.from(set).sort();
   }, [timesheet]);
 
-  // Rows filtered to the selected day. "all" = no filter.
-  const visibleRows = useMemo(() => {
-    if (!timesheet) return [];
-    if (dayFilter === "all") return timesheet.rows;
-    return timesheet.rows.filter((r) => r.workDate === dayFilter);
-  }, [timesheet, dayFilter]);
+  // Screen always shows all rows. The day filter only affects what prints
+  // (via the inline @media print style block below). This keeps the on-screen
+  // editing experience uncluttered while letting the user pick which day to
+  // print as a sign-in sheet.
+  const allRows = useMemo(() => timesheet?.rows ?? [], [timesheet]);
 
   return (
     <div className="grid">
@@ -266,16 +265,25 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               </div>
             </div>
           )}
-          {availableDays.length > 0 && (
-            <div>
-              <small>Print / View Day</small>
-              <select value={dayFilter} onChange={(e) => setDayFilter(e.target.value)}>
-                <option value="all">All days{availableDays.length > 1 ? ` (${availableDays.length})` : ""}</option>
-                {availableDays.map((d) => <option key={d} value={d}>{d}</option>)}
-              </select>
-            </div>
-          )}
-          <div className="action-row" style={{ alignItems: "end" }}>
+          <div style={{
+            border: "1px solid var(--line, #d7c6aa)",
+            borderRadius: 12,
+            padding: "10px 14px",
+            background: "var(--cream, #fbf6ee)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+          }}>
+            <strong style={{ fontSize: 12, opacity: 0.75 }}>📄 Print / Export</strong>
+            {availableDays.length > 0 && (
+              <div>
+                <small>Print which day?</small>
+                <select value={dayFilter} onChange={(e) => setDayFilter(e.target.value)}>
+                  <option value="all">All days{availableDays.length > 1 ? ` (${availableDays.length})` : ""}</option>
+                  {availableDays.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+            )}
             <button onClick={() => printWithTitle([
               "Timesheet",
               currentSheet?.title,
@@ -290,6 +298,16 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
           <button className="secondary" onClick={addBlankRow} disabled={!timesheet}>Add Blank Row</button>
         </div>
       </div>
+
+      {dayFilter !== "all" && (
+        <style>{`
+          @media print {
+            .timesheet-grid tbody.line-employee[data-day]:not([data-day="${dayFilter}"]) {
+              display: none !important;
+            }
+          }
+        `}</style>
+      )}
 
       <div className="invoice-shell">
         <div className="timesheet-pdf-header">
@@ -368,11 +386,11 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     </> : null}
                   </tr>
                 </thead>
-                {visibleRows.map((row, idx) => {
+                {allRows.map((row, idx) => {
                     const band = `line-band-${idx % 4}`;
                     const unlinked = !row.employeeKey;
                     return (
-                    <tbody key={row.id} className="line-employee">
+                    <tbody key={row.id} className="line-employee" data-day={row.workDate || "no-date"}>
                     <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}`}>
                       <td colSpan={r1Spans.emp}>
                         <EmployeeAutoFill
