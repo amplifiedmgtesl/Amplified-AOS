@@ -10,6 +10,7 @@ import { US_STATES, JOB_REQUEST_STATUSES } from "@/lib/constants";
 import { JobRequestAttachmentsSection } from "./job-request-attachments-section";
 import { JobRequestDaysSection } from "./job-request-days-section";
 import { useUserRole } from "@/lib/auth/use-user-role";
+import { computeJobNo, defaultEventAbbr, sanitizeEventAbbr } from "@/lib/jobs/job-no";
 import type { JobRequest, Client } from "@/lib/store/types";
 
 const TIMES = timeOptions();
@@ -22,6 +23,7 @@ const BLANK: JobRequest = {
   receivedDate: today(), requestDate: "", endDate: "",
   startTime: "", endTime: "", expectedHours: 10, addToCalendar: true,
   status: "lead", notes: "", attachmentNames: [], packetNotes: "",
+  jobNo: undefined, eventAbbr: undefined,
 };
 
 type StatusFilter = "active" | "all" | "lead" | "quoted" | "booked" | "completed" | "lost";
@@ -156,7 +158,12 @@ export default function JobRequests() {
     if (!form.clientId) { setMsg("Please select a client before saving."); return; }
     if (!form.eventName.trim()) { setMsg("Please enter an event name before saving."); return; }
     if (!form.requestDate) { setMsg("Please pick an event start date before saving."); return; }
-    const row = normalized({ ...form, id: form.id || `jobreq-${Date.now()}` });
+    const row = normalized({
+      ...form,
+      id: form.id || `jobreq-${Date.now()}`,
+      eventAbbr: effectiveEventAbbr || undefined,
+      jobNo: liveJobNo || undefined,
+    });
     upsertJobRequest(row);
     setMsg("Saved.");
     setMode("edit");
@@ -174,7 +181,12 @@ export default function JobRequests() {
     if (!form.clientId) { setMsg("Please select a client before saving."); return; }
     if (!form.eventName.trim()) { setMsg("Please enter an event name before saving."); return; }
     if (!form.requestDate) { setMsg("Please pick an event start date before saving."); return; }
-    const row = normalized({ ...form, id: form.id || `jobreq-${Date.now()}` });
+    const row = normalized({
+      ...form,
+      id: form.id || `jobreq-${Date.now()}`,
+      eventAbbr: effectiveEventAbbr || undefined,
+      jobNo: liveJobNo || undefined,
+    });
     upsertJobRequest(row);
     setQuoteSeed({
       linkedJobRequestId: row.id,
@@ -232,6 +244,20 @@ export default function JobRequests() {
   // Editing a quoted/booked/lost request would silently mutate downstream
   // artifacts (the quote built off it, the booked job's terms, etc.).
   const isLocked = mode === "edit" && form.status !== "lead";
+
+  // The effective event abbreviation: user override wins; otherwise auto-
+  // derive from the event_name (uppercase, alphanumeric only, ≤8 chars).
+  const effectiveEventAbbr = form.eventAbbr || defaultEventAbbr(form.eventName);
+
+  // Live-computed job_no based on current form state. Displayed at the top of
+  // the editor as a readonly label and persisted on save. Recomputes
+  // automatically as any source field changes.
+  const liveJobNo = useMemo(() => computeJobNo({
+    startDate: form.requestDate,
+    endDate: form.endDate,
+    clientCode: form.clientId ? clientById.get(form.clientId)?.code : undefined,
+    eventAbbr: effectiveEventAbbr,
+  }), [form.requestDate, form.endDate, form.clientId, effectiveEventAbbr, clientById]);
   const statusLabel = JOB_REQUEST_STATUSES.find((s) => s.value === form.status)?.label ?? form.status;
 
   return (
@@ -287,22 +313,30 @@ export default function JobRequests() {
                     fontSize: 13,
                   }}
                 >
-                  <div style={{ fontWeight: 600, display: "flex", gap: 6, alignItems: "baseline" }}>
-                    <span style={{ fontFamily: "monospace" }}>
-                      {code ? `[${code}]` : (c?.name ?? r.client ?? "?").slice(0, 18)}
-                    </span>
+                  <div style={{
+                    fontFamily: "monospace", fontSize: 12, fontWeight: 700,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    letterSpacing: 0.3,
+                  }} title={r.jobNo || ""}>
+                    {r.jobNo || <span style={{ fontStyle: "italic", opacity: 0.6, fontWeight: 400 }}>(no job #)</span>}
+                  </div>
+                  <div style={{
+                    display: "flex", gap: 6, alignItems: "baseline", marginTop: 3,
+                    fontSize: 12,
+                  }}>
+                    <span style={{ opacity: 0.85 }}>{code ? `[${code}]` : (c?.name ?? r.client ?? "?").slice(0, 18)}</span>
                     <span style={{ opacity: 0.6 }}>·</span>
-                    <span>{r.requestDate || "no date"}</span>
+                    <span style={{ opacity: 0.85 }}>{r.requestDate || "no date"}</span>
                     <span style={{
                       marginLeft: "auto", fontSize: 10, textTransform: "uppercase", opacity: 0.7,
                       fontWeight: 500, letterSpacing: 0.4,
                     }}>{r.status}</span>
                   </div>
                   <div style={{
-                    fontSize: 12, opacity: 0.85, marginTop: 2,
+                    fontSize: 11, opacity: 0.75, marginTop: 2,
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   }} title={r.eventName}>
-                    {r.eventName || <span style={{ fontStyle: "italic", opacity: 0.7 }}>(no event name)</span>}
+                    {r.eventName || <span style={{ fontStyle: "italic", opacity: 0.5 }}>(no event name)</span>}
                   </div>
                   {overdue && (
                     <div style={{
@@ -339,6 +373,28 @@ export default function JobRequests() {
         ) : (
         <div className="card">
           <h2 className="section-title">{mode === "edit" ? "Edit Job Request" : "New Job Request"}</h2>
+
+          <div style={{
+            background: "var(--cream, #fbf6ee)",
+            border: "1px solid var(--line, #d7c6aa)",
+            borderRadius: 10,
+            padding: "8px 14px",
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "baseline",
+            gap: 12,
+            flexWrap: "wrap",
+          }}>
+            <small style={{ opacity: 0.7 }}>Job #</small>
+            <strong style={{ fontFamily: "monospace", fontSize: 15, letterSpacing: 0.4 }}>
+              {liveJobNo ?? <span style={{ opacity: 0.5, fontWeight: 400, fontStyle: "italic" }}>
+                will be assigned once Client + Event Name + Start Date are set
+              </span>}
+            </strong>
+            {isLocked && liveJobNo && (
+              <span className="badge" style={{ fontSize: 10, background: "#eef5ff", color: "#1e3a8a" }}>locked</span>
+            )}
+          </div>
 
           {deleteMsg && (
             <div style={{ background: "#fff3f3", border: "1px solid #e0a0a0", borderRadius: 8, padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#a00", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -380,6 +436,17 @@ export default function JobRequests() {
               </select>
             </div>
             <div><small>Event Name</small><input disabled={isLocked} value={form.eventName} onChange={(e)=>setForm({ ...form, eventName:e.target.value })} /></div>
+            <div>
+              <small>Event Abbr <span style={{ opacity: 0.6 }}>(8 chars, used in Job #)</span></small>
+              <input
+                disabled={isLocked}
+                value={form.eventAbbr ?? ""}
+                onChange={(e) => setForm({ ...form, eventAbbr: sanitizeEventAbbr(e.target.value) })}
+                placeholder={defaultEventAbbr(form.eventName) || "auto"}
+                maxLength={8}
+                style={{ fontFamily: "monospace", textTransform: "uppercase" }}
+              />
+            </div>
             <div><small>Venue</small><input disabled={isLocked} value={form.venue} onChange={(e)=>setForm({ ...form, venue:e.target.value })} /></div>
             <div><small>Street Address</small><input disabled={isLocked} value={form.venueAddress} onChange={(e)=>setForm({ ...form, venueAddress:e.target.value })} placeholder="e.g. 123 Main St" /></div>
             <div><small>Suite / Unit</small><input disabled={isLocked} value={form.venueAddress2 ?? ""} onChange={(e)=>setForm({ ...form, venueAddress2:e.target.value })} placeholder="optional" /></div>

@@ -163,6 +163,13 @@ export type JobRequest = {
   attachmentNames: string[];
   packetNotes: string;
   linkedQuoteId?: string;  // set when a quote is built from this request
+  // The user-facing identifier (display code). Auto-recomputed from
+  // request_date/end_date/client.code/event_abbr while status='lead', then
+  // stable. See project_todo.md ("Display-code naming convention").
+  jobNo?: string;
+  // The 8-char abbreviation that fills the EVENT slot of job_no.
+  // Auto-derived from event_name on first save; user can override.
+  eventAbbr?: string;
 };
 
 // Per-day breakdown of a multi-day job request. The legacy flat columns on

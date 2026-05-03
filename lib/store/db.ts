@@ -1029,6 +1029,8 @@ function rowToJobRequest(r: any): JobRequest {
     attachmentNames: r.attachment_names ?? [],
     packetNotes: r.packet_notes ?? "",
     linkedQuoteId: r.linked_quote_id ?? undefined,
+    jobNo: r.job_no ?? undefined,
+    eventAbbr: r.event_abbr ?? undefined,
   };
 }
 
@@ -1526,6 +1528,8 @@ function jobRequestToRow(j: JobRequest) {
     attachment_names: j.attachmentNames,
     packet_notes: j.packetNotes,
     linked_quote_id: j.linkedQuoteId ?? null,
+    job_no: j.jobNo ?? null,
+    event_abbr: j.eventAbbr ?? null,
   };
 }
 
