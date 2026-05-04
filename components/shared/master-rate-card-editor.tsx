@@ -24,6 +24,7 @@ const MASTER_PROFILE_NAME = "Master Default";
 export default function MasterRateCardEditor() {
   const POSITIONS = positionNames();
   const [rows, setRows] = useState<RateRow[]>([]);
+  const [terms, setTerms] = useState("");
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +52,7 @@ export default function MasterRateCardEditor() {
       // Find the master profile in the in-memory cache.
       const profiles = loadRateCardProfiles();
       const master = profiles.find((p) => p.id === MASTER_PROFILE_ID);
+      setTerms(master?.terms ?? "");
       if (master?.rows?.length) {
         // Resolve specialtyId on legacy rows that came in with no explicit ID.
         setRows(master.rows.map((r) => {
@@ -107,7 +109,7 @@ export default function MasterRateCardEditor() {
         clientName: MASTER_PROFILE_NAME,
         name: MASTER_PROFILE_NAME,
         rows,
-        terms: "",
+        terms,
         createdAt: now,
         updatedAt: now,
       });
@@ -234,6 +236,22 @@ export default function MasterRateCardEditor() {
         <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
           {rows.length} row{rows.length === 1 ? "" : "s"} ({visibleRows.length} visible). Click <strong>Save Master Default</strong> above to persist.
         </div>
+      </div>
+
+      <div className="card">
+        <h3 className="section-title" style={{ marginTop: 0 }}>Master Default Terms & Conditions</h3>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+          Default terms text used on quotes that don't have a client-specific rate card with its own terms. Edit and click <strong>Save Master Default</strong> above to persist.
+        </div>
+        <textarea
+          value={terms}
+          onChange={(e) => setTerms(e.target.value)}
+          style={{
+            width: "100%", minHeight: 400, fontSize: 14, lineHeight: 1.5,
+            padding: 12, borderRadius: 8, border: "1px solid #d7c6aa",
+            background: "#fff", resize: "vertical",
+          }}
+        />
       </div>
     </div>
   );
