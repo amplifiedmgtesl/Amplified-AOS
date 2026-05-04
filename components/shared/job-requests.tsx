@@ -10,8 +10,10 @@ import { US_STATES, JOB_REQUEST_STATUSES } from "@/lib/constants";
 import { JobRequestAttachmentsSection } from "./job-request-attachments-section";
 import { JobRequestDaysSection } from "./job-request-days-section";
 import { JobRequestCrewSection } from "./job-request-crew-section";
+import { JobPrintSheet } from "./job-print-sheet";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { computeJobNo, defaultEventAbbr, sanitizeEventAbbr } from "@/lib/jobs/job-no";
+import { printWithTitle } from "@/lib/print-with-title";
 import type { JobRequest, Client } from "@/lib/store/types";
 
 const TIMES = timeOptions();
@@ -298,7 +300,7 @@ export default function JobRequests() {
   return (
     <div style={{ display: "flex", gap: 20, alignItems: "flex-start", height: "100%" }}>
       {/* ── Left: list ── */}
-      <div style={{ width: 300, flexShrink: 0 }}>
+      <div className="hide-print" style={{ width: 300, flexShrink: 0 }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
           <input
             value={search}
@@ -406,7 +408,7 @@ export default function JobRequests() {
             <button onClick={startNew}>+ New Job</button>
           </div>
         ) : (
-        <div className="card">
+        <div className="card hide-print">
           <h2 className="section-title">{mode === "edit" ? "Edit Job" : "New Job"}</h2>
 
           <div style={{
@@ -585,6 +587,15 @@ export default function JobRequests() {
                 Timesheet
               </button>
             )}
+            {editingId && (
+              <button
+                className="secondary"
+                onClick={() => printWithTitle(["Job", form.jobNo || form.eventName, form.client])}
+                title="Print a one-page summary of this job"
+              >
+                Print PDF
+              </button>
+            )}
             {editingId && form.addToCalendar && (
               <button
                 onClick={sendToGoogleCalendar}
@@ -676,6 +687,9 @@ export default function JobRequests() {
           </div>
         </div>
         )}
+
+        {/* Print-only summary; rendered hidden on screen, fully laid out in print. */}
+        {editingId && <JobPrintSheet form={form} />}
       </div>
     </div>
   );

@@ -487,6 +487,138 @@ td, th {
 
 
 
+/* ===== JOB PRINT SHEET (Jobs editor → Download / Print PDF) ===== */
+/* Hidden on screen; @media print reveals it as a single-column layout. */
+.job-print-sheet { display: none; }
+
+@media print {
+  .job-print-sheet {
+    display: block;
+    font-family: Arial, Helvetica, sans-serif;
+    color: #1a1a1a;
+    font-size: 11pt;
+    line-height: 1.4;
+  }
+  .job-print-sheet .jps-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #8a6f3a;
+    margin-bottom: 14px;
+  }
+  .job-print-sheet .jps-logo {
+    max-height: 50px;
+    width: auto;
+    object-fit: contain;
+  }
+  .job-print-sheet .jps-title-block { flex: 1; }
+  .job-print-sheet .jps-job-no {
+    font-family: monospace;
+    font-size: 11pt;
+    color: #666;
+    letter-spacing: 0.5px;
+  }
+  .job-print-sheet .jps-event-name {
+    font-size: 18pt;
+    margin: 2px 0 4px;
+    color: #1a1a1a;
+    font-weight: 700;
+  }
+  .job-print-sheet .jps-meta {
+    font-size: 10pt;
+    color: #444;
+  }
+  .job-print-sheet .jps-section {
+    page-break-inside: avoid;
+    margin-top: 14px;
+  }
+  .job-print-sheet .jps-section h2 {
+    font-size: 12pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8a6f3a;
+    border-bottom: 1px solid #d7c6aa;
+    padding-bottom: 3px;
+    margin: 0 0 8px;
+  }
+  .job-print-sheet .jps-kv { font-size: 10pt; }
+  .job-print-sheet .jps-day {
+    page-break-inside: avoid;
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    background: #f8f5ee;
+    border: 1px solid #d7c6aa;
+    border-radius: 4px;
+  }
+  .job-print-sheet .jps-day-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .job-print-sheet .jps-day-header h3 {
+    font-size: 11pt;
+    margin: 0;
+    color: #1a1a1a;
+  }
+  .job-print-sheet .jps-day-meta {
+    font-size: 9pt;
+    color: #555;
+  }
+  .job-print-sheet .jps-day-notes {
+    font-size: 9pt;
+    color: #555;
+    font-style: italic;
+    margin-top: 4px;
+  }
+  .job-print-sheet .jps-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.5pt;
+    margin-top: 4px;
+  }
+  .job-print-sheet .jps-table th {
+    background: #e0e0e0;
+    color: #000;
+    text-align: left;
+    padding: 4px 6px;
+    border: 1px solid #888;
+    font-weight: 700;
+  }
+  .job-print-sheet .jps-table td {
+    padding: 4px 6px;
+    border: 1px solid #c0c0c0;
+    background: #fff;
+  }
+  .job-print-sheet .jps-total-row td {
+    background: #efe8d6 !important;
+    font-weight: 700;
+  }
+  .job-print-sheet .jps-empty {
+    font-size: 10pt;
+    font-style: italic;
+    color: #777;
+    padding: 4px 0;
+  }
+  .job-print-sheet .jps-notes {
+    font-size: 10pt;
+    white-space: pre-wrap;
+    background: #fafafa;
+    border-left: 3px solid #d7c6aa;
+    padding: 8px 12px;
+  }
+  .job-print-sheet .jps-footer {
+    margin-top: 16px;
+    padding-top: 8px;
+    border-top: 1px solid #ccc;
+    font-size: 8pt;
+    color: #888;
+    text-align: center;
+  }
+}
+
+
 /* ===== QUOTE COVER PAGE ===== */
 .quote-cover-page {
   display: none;
