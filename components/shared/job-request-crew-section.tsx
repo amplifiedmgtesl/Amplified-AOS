@@ -16,7 +16,7 @@ import type {
   Position,
   Specialty,
 } from "@/lib/store/types";
-import type { EmployeeRecord } from "@/lib/store/types";
+import { EmployeePicker } from "./employee-picker";
 
 function newAssignmentId(): string {
   return `jra-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -35,33 +35,23 @@ export function JobRequestCrewSection({
   const [assignmentsByDay, setAssignmentsByDay] = useState<Record<string, JobRequestAssignment[]>>({});
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
-  const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
-  // Load lookups once.
+  // Load positions + specialties once. Employees are loaded by EmployeePicker
+  // on first focus (search-on-type, scales to thousands).
   useEffect(() => {
     Promise.all([
       supabase.from("positions").select("*").eq("is_active", true).order("sort_order"),
       supabase.from("specialties").select("*").eq("is_active", true).order("sort_order"),
-      supabase.from("employees").select("employee_key, full_name, first_name, last_name, email, phone, type").order("full_name"),
-    ]).then(([posRes, spcRes, empRes]) => {
+    ]).then(([posRes, spcRes]) => {
       setPositions((posRes.data ?? []).map((r: any) => ({
         id: r.id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active,
       })));
       setSpecialties((spcRes.data ?? []).map((r: any) => ({
         id: r.id, positionId: r.position_id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active,
       })));
-      setEmployees((empRes.data ?? []).map((r: any) => ({
-        employeeKey: r.employee_key,
-        fullName: r.full_name ?? "",
-        firstName: r.first_name ?? "",
-        lastName: r.last_name ?? "",
-        email: r.email ?? "",
-        phone: r.phone ?? "",
-        type: (r.type === "staff" || r.type === "contractor" ? r.type : "contractor"),
-      } as EmployeeRecord)));
     });
   }, []);
 
@@ -98,12 +88,6 @@ export function JobRequestCrewSection({
     }
     return map;
   }, [specialties]);
-
-  const employeesByKey = useMemo(() => {
-    const m = new Map<string, EmployeeRecord>();
-    for (const e of employees) m.set(e.employeeKey, e);
-    return m;
-  }, [employees]);
 
   function flash(text: string, ok = true) {
     setMsg({ text, ok });
@@ -304,19 +288,11 @@ export function JobRequestCrewSection({
                             return (
                               <tr key={a.id}>
                                 <td>
-                                  <select
+                                  <EmployeePicker
+                                    employeeKey={a.employeeKey}
                                     disabled={disabled}
-                                    value={a.employeeKey ?? ""}
-                                    onChange={(e) => patchAssignment(d.id, a, { employeeKey: e.target.value || undefined })}
-                                  >
-                                    <option value="">— Select —</option>
-                                    {employees.map((emp) => (
-                                      <option key={emp.employeeKey} value={emp.employeeKey}>{emp.fullName}</option>
-                                    ))}
-                                    {a.employeeKey && !employeesByKey.has(a.employeeKey) && (
-                                      <option value={a.employeeKey}>{a.employeeKey} (missing employee)</option>
-                                    )}
-                                  </select>
+                                    onSelect={(emp) => patchAssignment(d.id, a, { employeeKey: emp.employeeKey })}
+                                  />
                                 </td>
                                 <td>
                                   <select
