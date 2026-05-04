@@ -198,6 +198,21 @@ export type JobRequestCrewNeed = {
   sortOrder: number;
 };
 
+// One row per (day, employee) on a job. The actual person scheduled to
+// work that day vs the crew_needs entries (which are unfilled targets).
+// Replaces job_sheet_workers as the canonical assignment source once
+// timekeeping is rewired to source crew from here.
+export type JobRequestAssignment = {
+  id: string;
+  jobRequestDayId: string;
+  employeeKey?: string;
+  positionId?: string;
+  specialtyId?: string;
+  confirmed: boolean;
+  notes?: string;
+  sortOrder: number;
+};
+
 export type JobSheetWorker = {
   employeeKey: string;
   fullName: string;

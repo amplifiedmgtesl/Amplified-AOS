@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase/client";
 import { US_STATES, JOB_REQUEST_STATUSES } from "@/lib/constants";
 import { JobRequestAttachmentsSection } from "./job-request-attachments-section";
 import { JobRequestDaysSection } from "./job-request-days-section";
+import { JobRequestCrewSection } from "./job-request-crew-section";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { computeJobNo, defaultEventAbbr, sanitizeEventAbbr } from "@/lib/jobs/job-no";
 import type { JobRequest, Client } from "@/lib/store/types";
@@ -615,16 +616,11 @@ export default function JobRequests() {
             )}
 
             {sectionTab === "crew" && (
-              <div style={{ padding: "8px 0" }}>
-                <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
-                  Assigned crew will live here once it migrates over from the Job Sheet screen.
-                </div>
-                <div style={{ fontSize: 12, color: "#888", lineHeight: 1.5 }}>
-                  This is where you&apos;ll pick the actual people to fulfill the daily requirements
-                  on the previous tab. Today this lives on <strong>Job Sheets</strong>; that screen will
-                  be retired in a future update.
-                </div>
-              </div>
+              editingId
+                ? <JobRequestCrewSection jobRequestId={editingId} disabled={isLocked} hideHeader />
+                : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
+                    Save the job request first to start assigning crew.
+                  </div>
             )}
 
             {sectionTab === "attachments" && (
