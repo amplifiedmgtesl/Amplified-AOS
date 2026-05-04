@@ -15,6 +15,53 @@ export type PickerEmployee = {
   state?: string;
 };
 
+// Module-level cache so multiple EmployeePicker instances on the same page
+// share one load (a multi-day job's Assigned Crew tab can have dozens).
+// Lives until full page reload.
+let employeesCache: PickerEmployee[] | null = null;
+let employeesPromise: Promise<PickerEmployee[]> | null = null;
+
+async function loadAllEmployees(): Promise<PickerEmployee[]> {
+  if (employeesCache !== null) return employeesCache;
+  if (employeesPromise) return employeesPromise;
+  employeesPromise = (async () => {
+    const PAGE = 1000;
+    const all: any[] = [];
+    let start = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { data, error } = await supabase
+        .from("employees")
+        .select("employee_key, full_name, first_name, last_name, email, phone, city, state")
+        .eq("is_deleted", false)
+        .order("full_name")
+        .range(start, start + PAGE - 1);
+      if (error) throw error;
+      const rows = data ?? [];
+      all.push(...rows);
+      if (rows.length < PAGE) break;
+      start += PAGE;
+      if (start > 50000) break;
+    }
+    employeesCache = all.map((r: any) => ({
+      employeeKey: r.employee_key,
+      fullName: r.full_name ?? "",
+      firstName: r.first_name ?? "",
+      lastName: r.last_name ?? "",
+      email: r.email ?? "",
+      phone: r.phone ?? "",
+      city: r.city ?? "",
+      state: r.state ?? "",
+    }));
+    return employeesCache;
+  })();
+  try {
+    return await employeesPromise;
+  } finally {
+    employeesPromise = null;
+  }
+}
+
 /**
  * Search-as-you-type employee picker. Designed for screens where the user
  * needs to find ONE employee out of thousands.
@@ -53,42 +100,24 @@ export function EmployeePicker({
     [employeeKey, employees],
   );
 
-  // Lazy-load on first focus. Avoids loading thousands of rows for every
-  // crew-needs row that may never get touched. Paginates through Supabase's
-  // default 1000-row cap so the full directory is searchable regardless of
-  // size.
+  // If a row already has an employeeKey on mount, load the directory so the
+  // linked tile can render its name + contact info. Without this the picker
+  // shows a blank search input even though the assignment is saved.
+  useEffect(() => {
+    if (employeeKey && employees === null && !loading) {
+      void ensureLoaded();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employeeKey]);
+
+  // Pulls from the module-level cache; first picker on the page does the
+  // fetch, all others share it.
   async function ensureLoaded() {
     if (employees !== null || loading) return;
     setLoading(true);
     try {
-      const PAGE = 1000;
-      const all: any[] = [];
-      let start = 0;
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const { data, error } = await supabase
-          .from("employees")
-          .select("employee_key, full_name, first_name, last_name, email, phone, city, state")
-          .eq("is_deleted", false)
-          .order("full_name")
-          .range(start, start + PAGE - 1);
-        if (error) throw error;
-        const rows = data ?? [];
-        all.push(...rows);
-        if (rows.length < PAGE) break;
-        start += PAGE;
-        if (start > 50000) break; // safety stop
-      }
-      setEmployees(all.map((r: any) => ({
-        employeeKey: r.employee_key,
-        fullName: r.full_name ?? "",
-        firstName: r.first_name ?? "",
-        lastName: r.last_name ?? "",
-        email: r.email ?? "",
-        phone: r.phone ?? "",
-        city: r.city ?? "",
-        state: r.state ?? "",
-      })));
+      const list = await loadAllEmployees();
+      setEmployees(list);
     } catch (err) {
       console.error("EmployeePicker: failed to load employees", err);
       setEmployees([]);
