@@ -2,7 +2,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { IMPORTED_EMPLOYEES } from "@/lib/data/employees";
 import { deleteEmployee, getActiveEmployee, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, loadTimesheets, setActiveEmployee, upsertEmployee } from "@/lib/store/app-store";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { uploadProfilePicture, uploadEmployeeDocument, deleteEmployeeAsset } from "@/lib/storage/employee-assets";
@@ -11,20 +10,12 @@ import type { EmployeeDocument, EmployeeRecord } from "@/lib/store/types";
 
 type Employee = EmployeeRecord;
 
-// Returns employees from Supabase cache. Falls back to including the hardcoded
-// import list until the one-time migration to Supabase has been completed.
-function mergedEmployees() {
+// Employees come from the Supabase cache. The legacy IMPORTED_EMPLOYEES
+// constant fallback (47K-line hardcoded array) was removed 2026-05-04 —
+// the one-time migration is done; the DB is the source of truth.
+function activeEmployees() {
   const deleted = new Set(loadDeletedEmployeeKeys());
-  const fromDb = loadEmployees().filter((e) => !deleted.has(e.employeeKey));
-  // If Supabase already has records, use only those (migration done).
-  if (fromDb.length > 0) return fromDb;
-  // Pre-migration fallback: blend hardcoded list with any local additions.
-  const imported = (IMPORTED_EMPLOYEES as unknown as EmployeeRecord[])
-    .map((e) => ({ ...e, type: "contractor" as const, source: "imported" }))
-    .filter((e) => !deleted.has(e.employeeKey));
-  const map = new Map<string, EmployeeRecord>();
-  imported.forEach((e) => map.set(e.employeeKey, e));
-  return Array.from(map.values());
+  return loadEmployees().filter((e) => !deleted.has(e.employeeKey));
 }
 
 export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hidePay?: boolean } = {}) {
@@ -42,7 +33,7 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
   const [csvText, setCsvText] = useState("");
   const [historyModal, setHistoryModal] = useState<"jobs" | "timesheets" | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const employees = useMemo(() => mergedEmployees(), [refreshKey]);
+  const employees = useMemo(() => activeEmployees(), [refreshKey]);
   const activeEmployeeKey = getActiveEmployee() || employees[0]?.employeeKey || "";
   const activeEmployee = employees.find((e) => e.employeeKey === activeEmployeeKey) || null;
 

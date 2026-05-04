@@ -2,10 +2,8 @@
 import type { TimeEntry, Timesheet } from "./types";
 import { durationMinutes } from "../time-utils";
 
-export const POSITIONS = [
-  "Stagehand","Rigger","Rigger 1","Audio Technician","Lighting Technician","Video Technician",
-  "Fork Op","Camera Op","Operations","Lead","Other"
-];
+// Note: legacy hardcoded POSITIONS list removed 2026-05-04. Position names
+// now come from the positions table via positionNames() in app-store.ts.
 
 export function timeOptions() {
   const out: string[] = [""];
