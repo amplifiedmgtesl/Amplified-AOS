@@ -224,10 +224,18 @@ export default function RateCardEditor() {
     setClientName("");
     setProfileName("Standard");
     setEffectiveDate("");
-    setRows(DEFAULT_RATE_ROWS);
+    // Seed from the Master Default profile if it exists; fall back to the
+    // hardcoded constant so brand-new dev databases or partial migrations
+    // still produce a usable starter card.
+    const masterDefault = profiles.find((p) => p.id === "ratecard-master-default");
+    setRows(masterDefault?.rows && masterDefault.rows.length > 0 ? masterDefault.rows : DEFAULT_RATE_ROWS);
     setTerms("");
     setMode("new");
-    setStatusMsg("New rate card. Pick a client, set the rows, click Save Rate Card.");
+    setStatusMsg(
+      masterDefault?.rows && masterDefault.rows.length > 0
+        ? "New rate card seeded from Master Default. Pick a client, adjust rows, click Save Rate Card."
+        : "New rate card. Pick a client, set the rows, click Save Rate Card."
+    );
   }
 
   function saveAsCopy() {
@@ -302,11 +310,14 @@ export default function RateCardEditor() {
               style={{ width: "100%" }}
             >
               <option value="">— Select a saved rate card —</option>
-              {profiles.map((p) => {
-                const label = p.clientName + (p.name && p.name !== p.clientName ? ` — ${p.name}` : "");
-                const dateLabel = p.effectiveDate ? ` (effective ${p.effectiveDate})` : "";
-                return <option key={p.id} value={p.id}>{label}{dateLabel}</option>;
-              })}
+              {profiles
+                // The Master Default profile is edited via Maintenance, not picked here.
+                .filter((p) => p.id !== "ratecard-master-default")
+                .map((p) => {
+                  const label = p.clientName + (p.name && p.name !== p.clientName ? ` — ${p.name}` : "");
+                  const dateLabel = p.effectiveDate ? ` (effective ${p.effectiveDate})` : "";
+                  return <option key={p.id} value={p.id}>{label}{dateLabel}</option>;
+                })}
             </select>
           </div>
           <button onClick={startNewRateCard} title="Start a new rate card from defaults">
