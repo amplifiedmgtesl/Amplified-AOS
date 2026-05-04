@@ -263,6 +263,9 @@ export default function JobRequests() {
   // Editing a quoted/booked/lost request would silently mutate downstream
   // artifacts (the quote built off it, the booked job's terms, etc.).
   const isLocked = mode === "edit" && form.status !== "lead";
+  // Crew assignments stay editable through Booked — that's when scheduling
+  // actually happens. Only lock once the job is closed out (Completed/Lost).
+  const isCrewLocked = mode === "edit" && (form.status === "completed" || form.status === "lost");
 
   // The effective event abbreviation: user override wins; otherwise auto-
   // derive from the event_name (uppercase, alphanumeric only, ≤8 chars).
@@ -437,8 +440,9 @@ export default function JobRequests() {
               background: "#eef5ff", border: "1px solid #b6cdf0", borderRadius: 8,
               padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#1e3a8a",
             }}>
-              🔒 This job is <strong>{statusLabel}</strong>. Only the Status field can be changed —
-              switch back to <strong>Lead</strong> to edit other fields.
+              🔒 This job is <strong>{statusLabel}</strong>. Status and the <strong>Assigned Crew</strong> tab
+              stay editable{form.status === "booked" ? " (booked jobs still need crew scheduling)" : ""};
+              everything else is locked. Switch back to <strong>Lead</strong> to edit other fields.
             </div>
           )}
 
@@ -635,7 +639,7 @@ export default function JobRequests() {
 
             {sectionTab === "crew" && (
               editingId
-                ? <JobRequestCrewSection jobRequestId={editingId} disabled={isLocked} hideHeader />
+                ? <JobRequestCrewSection jobRequestId={editingId} disabled={isCrewLocked} hideHeader />
                 : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
                     Save the job first to start assigning crew.
                   </div>
