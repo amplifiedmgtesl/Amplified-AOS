@@ -22,6 +22,7 @@ export default function QuoteDetail({ id }: { id: string }) {
   const router = useRouter();
   const [quote, setQuote] = useState<QuoteDraft | null>(null);
   const [job, setJob] = useState<any | null>(null);
+  const [supersededBy, setSupersededBy] = useState<{ id: string; quoteNo: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [signOpen, setSignOpen] = useState(false);
@@ -47,6 +48,18 @@ export default function QuoteDetail({ id }: { id: string }) {
         if (q.jobRequestId) {
           const j = await supabase.from("job_requests").select("*").eq("id", q.jobRequestId).maybeSingle();
           if (!cancelled) setJob(j.data ?? null);
+        }
+        // Find the child quote that superseded this one, if any.
+        const child = await supabase
+          .from("quotes")
+          .select("id, quote_no")
+          .eq("parent_quote_id", q.id)
+          .eq("is_draft", false)
+          .order("revision_no", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!cancelled && child.data) {
+          setSupersededBy({ id: child.data.id, quoteNo: child.data.quote_no });
         }
         setLoading(false);
       })
@@ -127,6 +140,12 @@ export default function QuoteDetail({ id }: { id: string }) {
             <>
               <div className="muted" style={{ marginTop: 8 }}>Revises</div>
               <div><Link className="badge" href={`/quotes/${quote.parentQuoteId}`}>Previous revision</Link></div>
+            </>
+          ) : null}
+          {supersededBy ? (
+            <>
+              <div className="muted" style={{ marginTop: 8 }}>Superseded by</div>
+              <div><Link className="badge" href={`/quotes/${supersededBy.id}`}>{supersededBy.quoteNo || "Newer revision →"}</Link></div>
             </>
           ) : null}
           {job?.id ? (
