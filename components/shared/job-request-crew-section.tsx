@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import {
   loadJobRequestDays,
+  loadCrewNeedsForRequest,
 } from "@/lib/storage/job-request-days";
 import {
   loadAssignmentsForRequest,
@@ -13,6 +14,7 @@ import {
 import type {
   JobRequestDay,
   JobRequestAssignment,
+  JobRequestCrewNeed,
   Position,
   Specialty,
 } from "@/lib/store/types";
@@ -35,6 +37,7 @@ export function JobRequestCrewSection({
   const [assignmentsByDay, setAssignmentsByDay] = useState<Record<string, JobRequestAssignment[]>>({});
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [crewNeedsByDay, setCrewNeedsByDay] = useState<Record<string, JobRequestCrewNeed[]>>({});
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -56,19 +59,31 @@ export function JobRequestCrewSection({
   }, []);
 
   async function reload() {
-    if (!jobRequestId) { setDays([]); setAssignmentsByDay({}); setLoading(false); return; }
+    if (!jobRequestId) { setDays([]); setAssignmentsByDay({}); setCrewNeedsByDay({}); setLoading(false); return; }
     setLoading(true);
     try {
       const ds = await loadJobRequestDays(jobRequestId);
       setDays(ds);
-      const all = await loadAssignmentsForRequest(jobRequestId);
+      const [allAsg, allNeeds] = await Promise.all([
+        loadAssignmentsForRequest(jobRequestId),
+        loadCrewNeedsForRequest(jobRequestId),
+      ]);
       const grouped: Record<string, JobRequestAssignment[]> = {};
       for (const d of ds) grouped[d.id] = [];
-      for (const a of all) {
+      for (const a of allAsg) {
         if (!grouped[a.jobRequestDayId]) grouped[a.jobRequestDayId] = [];
         grouped[a.jobRequestDayId].push(a);
       }
       setAssignmentsByDay(grouped);
+
+      const groupedNeeds: Record<string, JobRequestCrewNeed[]> = {};
+      for (const d of ds) groupedNeeds[d.id] = [];
+      for (const n of allNeeds) {
+        if (!groupedNeeds[n.jobRequestDayId]) groupedNeeds[n.jobRequestDayId] = [];
+        groupedNeeds[n.jobRequestDayId].push(n);
+      }
+      setCrewNeedsByDay(groupedNeeds);
+
       setExpandedIds(ds.length <= 1 ? new Set(ds.map((d) => d.id)) : new Set());
     } catch (err: any) {
       setMsg({ text: `Load failed: ${err?.message ?? err}`, ok: false });
@@ -214,8 +229,33 @@ export function JobRequestCrewSection({
           {days.map((d, idx) => {
             const isExpanded = expandedIds.has(d.id);
             const crew = assignmentsByDay[d.id] ?? [];
+            const needs = crewNeedsByDay[d.id] ?? [];
             const confirmedCount = crew.filter((c) => c.confirmed).length;
             const prev = idx > 0 ? days[idx - 1] : null;
+
+            // Spec adherence per position: aggregate need + confirmed by
+            // position id (NULL key for positionless rows).
+            type Stat = { need: number; confirmed: number };
+            const byPosition = new Map<string, Stat>();
+            for (const n of needs) {
+              const k = n.positionId || "(none)";
+              const s = byPosition.get(k) ?? { need: 0, confirmed: 0 };
+              s.need += n.quantity || 0;
+              byPosition.set(k, s);
+            }
+            for (const a of crew.filter((x) => x.confirmed)) {
+              const k = a.positionId || "(none)";
+              const s = byPosition.get(k) ?? { need: 0, confirmed: 0 };
+              s.confirmed += 1;
+              byPosition.set(k, s);
+            }
+            let totalNeed = 0, totalConfirmed = 0, deficit = 0, extras = 0;
+            for (const s of byPosition.values()) {
+              totalNeed += s.need;
+              totalConfirmed += Math.min(s.need, s.confirmed); // counts only spec-fulfilling
+              if (s.confirmed < s.need) deficit += s.need - s.confirmed;
+              if (s.confirmed > s.need) extras += s.confirmed - s.need;
+            }
             return (
               <div key={d.id} style={{
                 border: "1px solid var(--border, #e5e7eb)", borderRadius: 8,
@@ -235,8 +275,30 @@ export function JobRequestCrewSection({
                 >
                   <span style={{ fontSize: 12, opacity: 0.85, width: 12 }}>{isExpanded ? "▾" : "▸"}</span>
                   <strong style={{ fontSize: 14, minWidth: 140 }}>{dayLabel(d)}</strong>
-                  <span style={{ fontSize: 12, flex: 1, opacity: 0.85 }}>
-                    {crew.length} assigned{confirmedCount > 0 ? ` · ${confirmedCount} confirmed` : ""}
+                  <span style={{ fontSize: 12, flex: 1, opacity: 0.9, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    {totalNeed > 0 && (
+                      <span>{totalConfirmed}/{totalNeed} spec filled</span>
+                    )}
+                    {totalNeed === 0 && crew.length > 0 && (
+                      <span>{crew.length} assigned (no spec set)</span>
+                    )}
+                    {confirmedCount > 0 && totalNeed === 0 && (
+                      <span>· {confirmedCount} confirmed</span>
+                    )}
+                    {deficit > 0 && (
+                      <span style={{
+                        background: isExpanded ? "rgba(255,255,255,0.2)" : "#fef3e8",
+                        color: isExpanded ? "#fff" : "#9a3412",
+                        borderRadius: 999, padding: "1px 8px", fontWeight: 700,
+                      }}>−{deficit} short</span>
+                    )}
+                    {extras > 0 && (
+                      <span style={{
+                        background: isExpanded ? "rgba(255,255,255,0.2)" : "#eef5ff",
+                        color: isExpanded ? "#fff" : "#1e3a8a",
+                        borderRadius: 999, padding: "1px 8px", fontWeight: 700,
+                      }}>+{extras} extra</span>
+                    )}
                   </span>
                 </button>
 
