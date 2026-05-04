@@ -51,18 +51,32 @@ export function EmployeePicker({
   );
 
   // Lazy-load on first focus. Avoids loading thousands of rows for every
-  // crew-needs row that may never get touched.
+  // crew-needs row that may never get touched. Paginates through Supabase's
+  // default 1000-row cap so the full directory is searchable regardless of
+  // size.
   async function ensureLoaded() {
     if (employees !== null || loading) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("employees")
-        .select("employee_key, full_name, first_name, last_name, email, phone, city, state")
-        .eq("is_deleted", false)
-        .order("full_name");
-      if (error) throw error;
-      setEmployees((data ?? []).map((r: any) => ({
+      const PAGE = 1000;
+      const all: any[] = [];
+      let start = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { data, error } = await supabase
+          .from("employees")
+          .select("employee_key, full_name, first_name, last_name, email, phone, city, state")
+          .eq("is_deleted", false)
+          .order("full_name")
+          .range(start, start + PAGE - 1);
+        if (error) throw error;
+        const rows = data ?? [];
+        all.push(...rows);
+        if (rows.length < PAGE) break;
+        start += PAGE;
+        if (start > 50000) break; // safety stop
+      }
+      setEmployees(all.map((r: any) => ({
         employeeKey: r.employee_key,
         fullName: r.full_name ?? "",
         firstName: r.first_name ?? "",
