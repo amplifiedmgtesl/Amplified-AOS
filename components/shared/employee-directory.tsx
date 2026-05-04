@@ -3,7 +3,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { IMPORTED_EMPLOYEES } from "@/lib/data/employees";
-import { addWorkerToTimesheet, deleteEmployee, getActiveEmployee, getActiveJobSheet, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, loadTimesheets, setActiveEmployee, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
+import { deleteEmployee, getActiveEmployee, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, loadTimesheets, setActiveEmployee, upsertEmployee } from "@/lib/store/app-store";
+import { useUserRole } from "@/lib/auth/use-user-role";
 import { uploadProfilePicture, uploadEmployeeDocument, deleteEmployeeAsset } from "@/lib/storage/employee-assets";
 import { US_STATES } from "@/lib/constants";
 import type { EmployeeDocument, EmployeeRecord } from "@/lib/store/types";
@@ -26,7 +27,11 @@ function mergedEmployees() {
   return Array.from(map.values());
 }
 
-export default function EmployeeDirectory() {
+export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hidePay?: boolean } = {}) {
+  // Belt + suspenders: even if this component somehow renders inside an
+  // admin shell, force-hide pay if the viewer is a crew_leader.
+  const viewerRole = useUserRole();
+  const hidePay = hidePayProp || viewerRole === "crew_leader";
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("");
   const [cityFilter, setCityFilter] = useState("");
@@ -34,12 +39,9 @@ export default function EmployeeDirectory() {
   const [typeFilter, setTypeFilter] = useState("");
   const [sortAZ, setSortAZ] = useState<"A-Z"|"Z-A">("A-Z");
   const [refreshKey, setRefreshKey] = useState(0);
-  const [role, setRole] = useState("Crew");
   const [csvText, setCsvText] = useState("");
   const [historyModal, setHistoryModal] = useState<"jobs" | "timesheets" | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const activeSheetId = getActiveJobSheet();
-  const activeSheet = loadJobSheets().find((s) => s.id === activeSheetId) || null;
   const employees = useMemo(() => mergedEmployees(), [refreshKey]);
   const activeEmployeeKey = getActiveEmployee() || employees[0]?.employeeKey || "";
   const activeEmployee = employees.find((e) => e.employeeKey === activeEmployeeKey) || null;
@@ -80,48 +82,6 @@ export default function EmployeeDirectory() {
     });
     return rows;
   }, [query, stateFilter, cityFilter, statusFilter, typeFilter, sortAZ, employees]);
-
-  function addToCurrentJob(employee: Employee) {
-    if (!activeSheet) return;
-    const exists = activeSheet.workers.some((w) => w.employeeKey === employee.employeeKey);
-    if (exists) return;
-    upsertJobSheet({
-      ...activeSheet,
-      workers: [
-        ...activeSheet.workers,
-        {
-          employeeKey: employee.employeeKey,
-          fullName: employee.fullName,
-          firstName: employee.firstName || employee.fullName.split(" ")[0] || "",
-          lastName: employee.lastName || employee.fullName.split(" ").slice(1).join(" "),
-          stateCode: employee.stateCode || "",
-          phone: employee.phone || "",
-          email: employee.email || "",
-          role,
-          confirmed: false
-        }
-      ]
-    });
-    setRefreshKey((x) => x + 1);
-  }
-
-
-function addToCurrentTimesheet(employee: Employee) {
-  if (!activeSheet) return;
-  const worker = {
-    employeeKey: employee.employeeKey,
-    fullName: employee.fullName,
-    firstName: employee.firstName || employee.fullName.split(" ")[0] || "",
-    lastName: employee.lastName || employee.fullName.split(" ").slice(1).join(" "),
-    stateCode: employee.stateCode || "",
-    phone: employee.phone || "",
-    email: employee.email || "",
-    role,
-    confirmed: false
-  };
-  addWorkerToTimesheet(activeSheet.id, worker);
-  setRefreshKey((x) => x + 1);
-}
 
   function startNewEmployee() {
     const key = `emp-${Date.now()}`;
@@ -258,8 +218,6 @@ function addToCurrentTimesheet(employee: Employee) {
           <div><small>Status</small><select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)}><option value="">All status</option>{statuses.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>Employment Type</small><select value={typeFilter} onChange={(e)=>setTypeFilter(e.target.value)}><option value="">All types</option>{types.map((s)=><option key={s} value={s}>{s}</option>)}<option value="__blank__">— Not set —</option></select></div>
           <div><small>Name Sort</small><select value={sortAZ} onChange={(e)=>setSortAZ(e.target.value as "A-Z"|"Z-A")}><option value="A-Z">A-Z</option><option value="Z-A">Z-A</option></select></div>
-          <div><small>Role to assign</small><input value={role} onChange={(e)=>setRole(e.target.value)} /></div>
-          <div className="list-card"><strong>Current Job Sheet</strong><div className="muted">{activeSheet ? activeSheet.title : "No active job sheet selected"}</div></div>
         </div>
       </div>
 
@@ -388,10 +346,12 @@ function addToCurrentTimesheet(employee: Employee) {
                 {tsWithEntries.length === 0
                   ? <div className="muted">No timesheet entries found for this employee.</div>
                   : (
-                    <div className="grid3">
+                    <div className={hidePay ? "grid2" : "grid3"}>
                       <div className="metric-card"><div className="metric-label">Timesheets</div><div className="metric-value">{tsWithEntries.length}</div></div>
                       <div className="metric-card"><div className="metric-label">Total Hours</div><div className="metric-value">{totalHours.toFixed(1)}</div></div>
-                      <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
+                      {!hidePay && (
+                        <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
+                      )}
                     </div>
                   )
                 }
@@ -433,8 +393,6 @@ function addToCurrentTimesheet(employee: Employee) {
                     <td>
                       <div className="action-row">
                         <button className="secondary" onClick={() => { setActiveEmployee(e.employeeKey); setRefreshKey((x)=>x+1); }}>Open Profile</button>
-                        <button className="secondary" onClick={() => addToCurrentJob(e)} disabled={!activeSheet}>Add to Current Job Sheet</button>
-                        <button className="secondary" onClick={() => addToCurrentTimesheet(e)} disabled={!activeSheet}>Add to Current Timekeeping</button>
                         <button className="secondary" onClick={() => { deleteEmployee(e.employeeKey); setRefreshKey((x)=>x+1); }}>Delete</button>
                       </div>
                     </td>
@@ -500,13 +458,15 @@ function addToCurrentTimesheet(employee: Employee) {
               const totalPay   = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalPay, 0), 0);
               return (
                 <>
-                  <div className="grid3" style={{ marginBottom: 16 }}>
+                  <div className={hidePay ? "grid2" : "grid3"} style={{ marginBottom: 16 }}>
                     <div className="metric-card"><div className="metric-label">Timesheets</div><div className="metric-value">{tsWithEntries.length}</div></div>
                     <div className="metric-card"><div className="metric-label">Total Hours</div><div className="metric-value">{totalHours.toFixed(1)}</div></div>
-                    <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
+                    {!hidePay && (
+                      <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
+                    )}
                   </div>
                   <table>
-                    <thead><tr><th>Timesheet</th><th>Position</th><th>Std Hrs</th><th>OT Hrs</th><th>DT Hrs</th><th>Total Hrs</th><th>Total Pay</th></tr></thead>
+                    <thead><tr><th>Timesheet</th><th>Position</th><th>Std Hrs</th><th>OT Hrs</th><th>DT Hrs</th><th>Total Hrs</th>{!hidePay && <th>Total Pay</th>}</tr></thead>
                     <tbody>
                       {tsWithEntries.map(({ ts, entries }) =>
                         entries.map((r) => (
@@ -517,7 +477,7 @@ function addToCurrentTimesheet(employee: Employee) {
                             <td>{r.otHours.toFixed(1)}</td>
                             <td>{r.dtHours.toFixed(1)}</td>
                             <td>{r.totalHours.toFixed(1)}</td>
-                            <td>${r.totalPay.toFixed(2)}</td>
+                            {!hidePay && <td>${r.totalPay.toFixed(2)}</td>}
                           </tr>
                         ))
                       )}

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { useUserRole } from "@/lib/auth/use-user-role";
 
 export type PickerEmployee = {
   employeeKey: string;
@@ -44,6 +45,8 @@ export function EmployeePicker({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const role = useUserRole();
+  const addEmployeeHref = role === "crew_leader" ? "/lead/employees" : "/employee-directory";
 
   const linked = useMemo(
     () => (employeeKey && employees ? employees.find((e) => e.employeeKey === employeeKey) : null),
@@ -196,6 +199,7 @@ export function EmployeePicker({
       {advancedOpen && employees && (
         <EmployeeSearchModal
           employees={employees}
+          addEmployeeHref={addEmployeeHref}
           onSelect={(emp) => {
             onSelect(emp);
             setAdvancedOpen(false);
@@ -269,7 +273,7 @@ export function EmployeePicker({
                   : `${employees.length} employees`}
               </span>
               <a
-                href="/employee-directory"
+                href={addEmployeeHref}
                 target="_blank"
                 rel="noreferrer"
                 style={{ color: "var(--accent, #2563eb)", fontWeight: 600 }}
@@ -291,10 +295,12 @@ function EmployeeSearchModal({
   employees,
   onSelect,
   onClose,
+  addEmployeeHref,
 }: {
   employees: PickerEmployee[];
   onSelect: (emp: PickerEmployee) => void;
   onClose: () => void;
+  addEmployeeHref: string;
 }) {
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
@@ -362,7 +368,7 @@ function EmployeeSearchModal({
           {filtered.length === 0 ? (
             <div className="muted" style={{ padding: "20px 0", textAlign: "center", fontSize: 13 }}>
               No employees match.{" "}
-              <a href="/employee-directory" target="_blank" rel="noreferrer" style={{ color: "var(--accent, #2563eb)", fontWeight: 600 }}>+ Add new employee ↗</a>
+              <a href={addEmployeeHref} target="_blank" rel="noreferrer" style={{ color: "var(--accent, #2563eb)", fontWeight: 600 }}>+ Add new employee ↗</a>
             </div>
           ) : (
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
@@ -397,7 +403,7 @@ function EmployeeSearchModal({
         </div>
 
         <div style={{ padding: "10px 18px", borderTop: "1px solid var(--border, #e5e7eb)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fbf6ee" }}>
-          <a href="/employee-directory" target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "var(--accent, #2563eb)", fontWeight: 600 }}>+ Add new employee ↗</a>
+          <a href={addEmployeeHref} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "var(--accent, #2563eb)", fontWeight: 600 }}>+ Add new employee ↗</a>
           <button type="button" onClick={onClose} className="secondary">Cancel</button>
         </div>
       </div>
