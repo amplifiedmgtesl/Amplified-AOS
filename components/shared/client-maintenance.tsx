@@ -538,7 +538,7 @@ export default function ClientMaintenance() {
             {/* Tab bar */}
             <div style={{ display: "flex", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
               {(["contacts", "job_requests", "quotes", "rate_cards", "calendar_events", "invoices"] as const).map((tab) => {
-                const labels: Record<string, string> = { contacts: "Contacts", job_requests: "Job Requests", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Calendar Events", invoices: "Invoices" };
+                const labels: Record<string, string> = { contacts: "Contacts", job_requests: "Jobs", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Calendar Events", invoices: "Invoices" };
                 const counts: Record<string, number> = { contacts: contactsCount, job_requests: tabData.jobRequests.length, quotes: tabData.quotes.length, rate_cards: tabData.rateCards.length, calendar_events: tabData.calendarEvents.length, invoices: tabData.invoices.length };
                 const active = activeTab === tab;
                 return (
@@ -581,8 +581,18 @@ export default function ClientMaintenance() {
                       </thead>
                       <tbody>
                         {tabData.jobRequests.map((r) => (
-                          <tr key={r.id} style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap", fontFamily: "monospace", fontWeight: 600 }}>
+                          <tr
+                            key={r.id}
+                            onClick={() => { window.location.href = `/job-requests?id=${encodeURIComponent(r.id)}`; }}
+                            style={{
+                              borderBottom: "1px solid var(--border, #e5e7eb)",
+                              cursor: "pointer",
+                            }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--surface2, #f7f4ee)"; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = ""; }}
+                            title="Open this job"
+                          >
+                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap", fontFamily: "monospace", fontWeight: 600, color: "var(--accent, #2563eb)" }}>
                               {r.job_no ?? <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>—</span>}
                             </td>
                             <td style={{ padding: "5px 8px 5px 0" }} title={r.event_name ?? ""}>{r.event_name ?? "—"}</td>

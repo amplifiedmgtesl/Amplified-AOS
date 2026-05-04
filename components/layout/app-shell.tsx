@@ -5,10 +5,17 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 
+// Order roughly follows the lifecycle: see what's happening (Dashboard,
+// Calendar) → who you're working with (Clients) → the work itself (Jobs) →
+// pricing (Quotes, Invoices, Rate Card) → execution (Job Sheets, Timekeeping)
+// → review/finance (Timesheet Review, Job Costing) → roster + admin.
+// "/job-requests" route is kept as-is for now (rename to /jobs is part of
+// Phase B in the system rewrite); only the label says "Jobs".
 const nav = [
   ["/dashboard", "🏠", "Dashboard"],
   ["/master-calendar", "🗓️", "Calendar"],
   ["/clients", "🏢", "Clients"],
+  ["/job-requests", "📨", "Jobs"],
   ["/quote-builder", "🧾", "Quote Builder"],
   ["/invoices", "💵", "Invoices"],
   ["/rate-card", "📋", "Rate Card"],
@@ -17,7 +24,6 @@ const nav = [
   ["/timekeeping/review", "✅", "Timesheet Review"],
   ["/job-costing", "📈", "Job Costing"],
   ["/employee-directory", "👥", "Employees"],
-  ["/job-requests", "📨", "Job Requests"],
   // ["/call-sheets", "📞", "Call Sheets"],  // Hidden — duplicate of Job Sheets. Code kept under app/call-sheets/ but excluded from nav + analysis.
   ["/maintenance", "⚙️", "Maintenance"],
 ] as const;

@@ -68,6 +68,24 @@ export default function JobRequests() {
       }))));
   }, []);
 
+  // Deep-link: /job-requests?id=<jobreq-id> auto-opens that record. Lets the
+  // Client Maintenance "Jobs" tab (and other places) link directly to a job.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const wantId = params.get("id");
+    if (!wantId) return;
+    const target = rows.find((r) => r.id === wantId);
+    if (target && target.id !== editingId) {
+      setMode("edit");
+      setEditingId(target.id);
+      setForm({ ...target });
+      setMsg("");
+    }
+    // Run only when rows arrive (the reload from cache is sync, so this fires once early).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows.length]);
+
   const clientById = useMemo(() => {
     const map = new Map<string, Client>();
     for (const c of clients) map.set(c.id, c);
@@ -139,7 +157,7 @@ export default function JobRequests() {
     if (ceCount > 0) msgs.push(`${ceCount} calendar event${ceCount !== 1 ? "s" : ""}`);
     if (jcCount > 0) msgs.push(`${jcCount} job costing draft${jcCount !== 1 ? "s" : ""}`);
     if (msgs.length > 0) {
-      setDeleteMsg(`Cannot delete "${form.eventName || "(no event name)"}" — ${msgs.join(" and ")} reference this job request. Remove or unlink them first.`);
+      setDeleteMsg(`Cannot delete "${form.eventName || "(no event name)"}" — ${msgs.join(" and ")} reference this job. Remove or unlink them first.`);
       return;
     }
     setConfirmDeleteId(editingId);
@@ -272,7 +290,7 @@ export default function JobRequests() {
             placeholder="Search event / client / venue…"
             style={{ flex: 1 }}
           />
-          <button onClick={startNew} title="New job request" style={{ whiteSpace: "nowrap" }}>+ New</button>
+          <button onClick={startNew} title="New job" style={{ whiteSpace: "nowrap" }}>+ New</button>
         </div>
         <div style={{ marginBottom: 12 }}>
           <select
@@ -292,7 +310,7 @@ export default function JobRequests() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: "calc(100vh - 220px)", overflowY: "auto" }}>
           {visibleRows.length === 0 ? (
-            <div className="muted" style={{ fontSize: 13, padding: "8px 4px" }}>No matching job requests.</div>
+            <div className="muted" style={{ fontSize: 13, padding: "8px 4px" }}>No matching jobs.</div>
           ) : (
             visibleRows.map((r) => {
               const c = clientById.get(r.clientId);
@@ -356,7 +374,7 @@ export default function JobRequests() {
 
         <div style={{ marginTop: 12, borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: 8 }}>
           <div className="muted" style={{ fontSize: 11 }}>
-            {visibleRows.length} of {rows.length} job request{rows.length !== 1 ? "s" : ""}
+            {visibleRows.length} of {rows.length} job{rows.length !== 1 ? "s" : ""}
           </div>
         </div>
       </div>
@@ -365,15 +383,15 @@ export default function JobRequests() {
       <div style={{ flex: 1, minWidth: 0 }}>
         {mode === "none" ? (
           <div className="card" style={{ textAlign: "center", padding: "60px 24px", color: "#888" }}>
-            <div style={{ fontSize: 16, marginBottom: 8 }}>No job request selected.</div>
+            <div style={{ fontSize: 16, marginBottom: 8 }}>No job selected.</div>
             <div style={{ fontSize: 13, marginBottom: 20 }}>
               Pick one from the list on the left to view or edit it, or start a new one.
             </div>
-            <button onClick={startNew}>+ New Job Request</button>
+            <button onClick={startNew}>+ New Job</button>
           </div>
         ) : (
         <div className="card">
-          <h2 className="section-title">{mode === "edit" ? "Edit Job Request" : "New Job Request"}</h2>
+          <h2 className="section-title">{mode === "edit" ? "Edit Job" : "New Job"}</h2>
 
           <div style={{
             background: "var(--cream, #fbf6ee)",
@@ -419,7 +437,7 @@ export default function JobRequests() {
               background: "#eef5ff", border: "1px solid #b6cdf0", borderRadius: 8,
               padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#1e3a8a",
             }}>
-              🔒 This job request is <strong>{statusLabel}</strong>. Only the Status field can be changed —
+              🔒 This job is <strong>{statusLabel}</strong>. Only the Status field can be changed —
               switch back to <strong>Lead</strong> to edit other fields.
             </div>
           )}
@@ -611,7 +629,7 @@ export default function JobRequests() {
               editingId
                 ? <JobRequestDaysSection jobRequestId={editingId} disabled={isLocked} hideHeader />
                 : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
-                    Save the job request first to start adding days and crew requirements.
+                    Save the job first to start adding days and crew requirements.
                   </div>
             )}
 
@@ -619,7 +637,7 @@ export default function JobRequests() {
               editingId
                 ? <JobRequestCrewSection jobRequestId={editingId} disabled={isLocked} hideHeader />
                 : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
-                    Save the job request first to start assigning crew.
+                    Save the job first to start assigning crew.
                   </div>
             )}
 
@@ -627,7 +645,7 @@ export default function JobRequests() {
               editingId
                 ? <JobRequestAttachmentsSection jobRequestId={editingId} hideHeader />
                 : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
-                    Save the job request first to start adding attachments.
+                    Save the job first to start adding attachments.
                   </div>
             )}
           </div>
