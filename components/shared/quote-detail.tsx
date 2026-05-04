@@ -110,7 +110,8 @@ export default function QuoteDetail({ id }: { id: string }) {
         <h2 className="section-title" style={{ margin: 0, flex: 1 }}>
           {quote.quoteNo || `Quote ${quote.id.slice(0, 12)}`}
           <span className="badge" style={{ marginLeft: 12 }}>{statusLabel}</span>
-          {quote.revisionNo > 1 ? <span className="muted" style={{ marginLeft: 8 }}>Rev {quote.revisionNo}</span> : null}
+          {/* Revision indicator already encoded in the quote_no suffix
+              (e.g. _EST_REV1). No redundant badge needed. */}
         </h2>
         <Link href="/quotes" className="badge">← All Quotes</Link>
       </div>
