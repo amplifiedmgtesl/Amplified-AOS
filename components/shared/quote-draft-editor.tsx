@@ -139,9 +139,12 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
 
   // Compute the quote_no that the issue RPC will assign. Mirrors the SQL in
   // issue_quote_draft. Updates if the parent job's job_no changes during lead.
+  // Suffix uses revision count (REV1 = first revision, REV2 = second, ...).
+  // parentRevisionNo is the parent's version number (e.g. 1 for original);
+  // this draft's revision_count = parentRevisionNo (same value as count).
   const projectedQuoteNo = job?.job_no
     ? quote.parentQuoteId && parentRevisionNo !== null
-      ? `${job.job_no}_EST_REV${parentRevisionNo + 1}`
+      ? `${job.job_no}_EST_REV${parentRevisionNo}`
       : `${job.job_no}_EST`
     : null;
 

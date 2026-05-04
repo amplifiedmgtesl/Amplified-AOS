@@ -36,7 +36,9 @@ BEGIN
     SELECT revision_no INTO v_revision_no
       FROM quotes WHERE id = v_quote.parent_quote_id FOR UPDATE;
     v_revision_no := v_revision_no + 1;
-    v_quote_no := v_job.job_no || '_EST_REV' || v_revision_no::text;
+    -- Suffix uses revision count (revision_no - 1): first revision -> _REV1,
+    -- second -> _REV2, etc. The original quote (no parent) gets no suffix.
+    v_quote_no := v_job.job_no || '_EST_REV' || (v_revision_no - 1)::text;
 
     UPDATE quotes
        SET status = 'superseded',

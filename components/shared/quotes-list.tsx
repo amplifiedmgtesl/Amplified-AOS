@@ -70,7 +70,8 @@ export default function QuotesList() {
               if (!jobNo) continue;
               if (d.parentQuoteId) {
                 const parentRev = parentsById.get(d.parentQuoteId);
-                if (parentRev !== undefined) proj[d.id] = `${jobNo}_EST_REV${parentRev + 1}`;
+                // Suffix uses revision count: first revision (parent.rev=1) -> REV1.
+                if (parentRev !== undefined) proj[d.id] = `${jobNo}_EST_REV${parentRev}`;
               } else {
                 proj[d.id] = `${jobNo}_EST`;
               }
