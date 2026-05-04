@@ -188,6 +188,7 @@ export default function JobRequests() {
     if (!form.clientId) { setMsg("Please select a client before saving."); return; }
     if (!form.eventName.trim()) { setMsg("Please enter an event name before saving."); return; }
     if (!form.requestDate) { setMsg("Please pick an event start date before saving."); return; }
+    if (form.endDate && form.endDate < form.requestDate) { setMsg("End date can't be before the start date."); return; }
     const row = normalized({
       ...form,
       id: form.id || `jobreq-${Date.now()}`,
@@ -211,6 +212,7 @@ export default function JobRequests() {
     if (!form.clientId) { setMsg("Please select a client before saving."); return; }
     if (!form.eventName.trim()) { setMsg("Please enter an event name before saving."); return; }
     if (!form.requestDate) { setMsg("Please pick an event start date before saving."); return; }
+    if (form.endDate && form.endDate < form.requestDate) { setMsg("End date can't be before the start date."); return; }
     const row = normalized({
       ...form,
       id: form.id || `jobreq-${Date.now()}`,
@@ -509,7 +511,15 @@ export default function JobRequests() {
             </div>
             <div><small>Request Date</small><input type="date" disabled={isLocked} value={form.receivedDate} onChange={(e)=>setForm({ ...form, receivedDate:e.target.value })} /></div>
             <div><small>Event Start Date</small><input type="date" disabled={isLocked} value={form.requestDate} onChange={(e)=>setForm({ ...form, requestDate:e.target.value })} /></div>
-            <div><small>Event End Date</small><input type="date" disabled={isLocked} value={form.endDate || ""} onChange={(e)=>setForm({ ...form, endDate:e.target.value })} /></div>
+            <div>
+              <small>Event End Date</small>
+              <input type="date" disabled={isLocked} min={form.requestDate || undefined} value={form.endDate || ""} onChange={(e)=>setForm({ ...form, endDate:e.target.value })} />
+              {form.endDate && form.requestDate && form.endDate < form.requestDate && (
+                <div style={{ fontSize: 11, color: "#c2410c", marginTop: 2 }}>
+                  ⚠ End date is before start date.
+                </div>
+              )}
+            </div>
             <div><small>Start Time</small>
               <select disabled={isLocked} value={form.startTime} onChange={(e)=>setForm({ ...form, startTime:e.target.value })}>
                 {TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}
@@ -642,7 +652,7 @@ export default function JobRequests() {
 
             {sectionTab === "daily" && (
               editingId
-                ? <JobRequestDaysSection jobRequestId={editingId} disabled={isLocked} hideHeader />
+                ? <JobRequestDaysSection jobRequestId={editingId} disabled={isLocked} hideHeader jobStartDate={form.requestDate} />
                 : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
                     Save the job first to start adding days and crew requirements.
                   </div>

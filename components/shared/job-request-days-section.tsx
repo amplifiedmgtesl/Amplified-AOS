@@ -44,11 +44,19 @@ export function JobRequestDaysSection({
   disabled = false,
   onChange,
   hideHeader = false,
+  jobStartDate,
 }: {
   jobRequestId: string;
   disabled?: boolean;
   onChange?: () => void;
   hideHeader?: boolean;
+  /**
+   * The parent job's start date (request_date), used as the default
+   * for the FIRST day added. Subsequent days default to "day-after-last".
+   * Picker stays unrestricted so users can add setup/prep days before
+   * the event date or buffer days after.
+   */
+  jobStartDate?: string;
 }) {
   const [days, setDays] = useState<JobRequestDay[]>([]);
   const [crewByDayId, setCrewByDayId] = useState<Record<string, JobRequestCrewNeed[]>>({});
@@ -115,8 +123,12 @@ export function JobRequestDaysSection({
 
   // ─── Day actions ───────────────────────────────────────────────────────────
   async function addDay() {
-    const lastDate = days.length > 0 ? days[days.length - 1].eventDate : todayISO();
-    const proposed = days.length === 0 ? todayISO() : nextDayISO(lastDate);
+    // First day defaults to the parent job's start date if known (so a fresh
+    // multi-day job lands on the right day immediately). Subsequent days roll
+    // forward by one. The picker itself stays unrestricted — users can
+    // back-date for setup days or move forward for buffer/cleanup days.
+    const lastDate = days.length > 0 ? days[days.length - 1].eventDate : (jobStartDate || todayISO());
+    const proposed = days.length === 0 ? (jobStartDate || todayISO()) : nextDayISO(lastDate);
     if (days.some((d) => d.eventDate === proposed)) {
       flash(`A day with date ${proposed} already exists.`, false);
       return;
