@@ -136,7 +136,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     <div className="card">
       <div className="action-row" style={{ marginBottom: 12, alignItems: "baseline" }}>
         <h2 className="section-title" style={{ margin: 0, flex: 1 }}>
-          Draft Quote
+          Draft Quote {job?.job_no ? <>for <code>{job.job_no}</code></> : null}
           <span className="badge" style={{ marginLeft: 12 }}>Draft</span>
           {quote.parentQuoteId ? (
             <span className="muted" style={{ marginLeft: 8 }}>Revision of <Link href={`/quotes/${quote.parentQuoteId}`}>parent</Link></span>
@@ -146,6 +146,9 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
           {saving === "saving" ? "Saving…" : saving === "saved" ? "Saved ✓" : ""}
         </span>
         <Link href="/quotes" className="badge">← All Quotes</Link>
+      </div>
+      <div className="muted" style={{ marginBottom: 12, fontSize: 13 }}>
+        On issue, this draft becomes <code>{job?.job_no ? `${job.job_no}_EST` : "(job_no)_EST"}</code>{quote.parentQuoteId ? ` (or _EST_REV${quote.revisionNo})` : ""}.
       </div>
 
       {/* Read-only event panel — pulled from joined job_request */}
