@@ -69,7 +69,7 @@ export default function ClientMaintenance() {
     if (!selectedId) { setTabData(null); return; }
     Promise.all([
       supabase.from("job_requests")
-        .select("id, received_date, request_date, end_date, venue, status, linked_quote_id")
+        .select("id, job_no, event_name, received_date, request_date, end_date, venue, status, linked_quote_id")
         .eq("client_id", selectedId).order("received_date", { ascending: false }),
       supabase.from("quotes")
         .select("id, event_name, start_date, end_date, status, total")
@@ -573,8 +573,8 @@ export default function ClientMaintenance() {
                   : <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                       <thead>
                         <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Received</th>
-                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Event Date</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Job #</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Event</th>
                           <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Venue</th>
                           <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Status</th>
                         </tr>
@@ -582,8 +582,10 @@ export default function ClientMaintenance() {
                       <tbody>
                         {tabData.jobRequests.map((r) => (
                           <tr key={r.id} style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{r.received_date ?? "—"}</td>
-                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{r.request_date ?? "—"}{r.end_date && r.end_date !== r.request_date ? ` – ${r.end_date}` : ""}</td>
+                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap", fontFamily: "monospace", fontWeight: 600 }}>
+                              {r.job_no ?? <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>—</span>}
+                            </td>
+                            <td style={{ padding: "5px 8px 5px 0" }} title={r.event_name ?? ""}>{r.event_name ?? "—"}</td>
                             <td style={{ padding: "5px 8px 5px 0" }}>{r.venue ?? "—"}</td>
                             <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>
                               {r.linked_quote_id
