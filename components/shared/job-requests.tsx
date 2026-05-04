@@ -70,21 +70,32 @@ export default function JobRequests() {
 
   // Deep-link: /job-requests?id=<jobreq-id> auto-opens that record. Lets the
   // Client Maintenance "Jobs" tab (and other places) link directly to a job.
+  // Runs once on mount; strips the param from the URL afterwards so later
+  // state changes (e.g. saving a new job that grows rows.length) don't
+  // re-trigger and snap the user back to the deep-linked record.
+  const [deepLinkHandled, setDeepLinkHandled] = useState(false);
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (deepLinkHandled || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const wantId = params.get("id");
-    if (!wantId) return;
+    if (!wantId) { setDeepLinkHandled(true); return; }
     const target = rows.find((r) => r.id === wantId);
-    if (target && target.id !== editingId) {
+    if (target) {
       setMode("edit");
       setEditingId(target.id);
       setForm({ ...target });
       setMsg("");
+      // Clean the URL so a refresh / future save doesn't bounce back here.
+      window.history.replaceState({}, "", window.location.pathname);
+      setDeepLinkHandled(true);
+    } else if (rows.length > 0) {
+      // Rows have loaded but the requested id isn't there — give up rather
+      // than waiting forever for a row that doesn't exist.
+      window.history.replaceState({}, "", window.location.pathname);
+      setDeepLinkHandled(true);
     }
-    // Run only when rows arrive (the reload from cache is sync, so this fires once early).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows.length]);
+  }, [rows.length, deepLinkHandled]);
 
   const clientById = useMemo(() => {
     const map = new Map<string, Client>();
