@@ -94,15 +94,57 @@ export function EmployeePicker({
     }
   }
 
+  const RESULT_CAP = 50;
+
   const results = useMemo(() => {
     if (!employees) return [];
     const q = query.trim().toLowerCase();
-    if (!q) return employees.slice(0, 12);
+    if (!q) return employees.slice(0, RESULT_CAP);
+    const tokens = q.split(/\s+/).filter(Boolean);
+
+    // Score each token-vs-employee match: higher = better fit. Word-prefix
+    // in the name beats substring; substring in name beats substring in
+    // email; both beat phone/city/state. Token must score >0 to qualify;
+    // an employee qualifies only when EVERY token scores >0.
+    function tokenScore(t: string, e: PickerEmployee): number {
+      const fullLower = e.fullName.toLowerCase();
+      const nameWords = fullLower.split(/\s+/);
+      if (nameWords.some((w) => w.startsWith(t))) return 100;
+      if (fullLower.includes(t)) return 50;
+      if ((e.email || "").toLowerCase().includes(t)) return 20;
+      if (
+        (e.phone || "").toLowerCase().includes(t) ||
+        (e.city || "").toLowerCase().includes(t) ||
+        (e.state || "").toLowerCase().includes(t)
+      ) return 10;
+      return 0;
+    }
+
+    type Scored = { e: PickerEmployee; score: number };
+    const scored: Scored[] = [];
+    for (const e of employees) {
+      let total = 0;
+      let matchedAll = true;
+      for (const t of tokens) {
+        const s = tokenScore(t, e);
+        if (s === 0) { matchedAll = false; break; }
+        total += s;
+      }
+      if (matchedAll) scored.push({ e, score: total });
+    }
+    scored.sort((a, b) => b.score - a.score || a.e.fullName.localeCompare(b.e.fullName));
+    return scored.slice(0, RESULT_CAP).map((s) => s.e);
+  }, [employees, query]);
+
+  const totalMatches = useMemo(() => {
+    if (!employees) return 0;
+    const q = query.trim().toLowerCase();
+    if (!q) return employees.length;
     const tokens = q.split(/\s+/).filter(Boolean);
     return employees.filter((e) => {
       const hay = [e.fullName, e.email, e.phone, e.city, e.state].filter(Boolean).join(" ").toLowerCase();
       return tokens.every((t) => hay.includes(t));
-    }).slice(0, 12);
+    }).length;
   }, [employees, query]);
 
   return (
@@ -199,7 +241,9 @@ export function EmployeePicker({
               alignItems: "center",
             }}>
               <span style={{ color: "#666" }}>
-                {results.length} of {employees.length}{query ? " matching" : " employees"}
+                {query
+                  ? `${results.length} shown · ${totalMatches} total matches`
+                  : `${employees.length} employees`}
               </span>
               <a
                 href="/employee-directory"
