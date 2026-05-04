@@ -74,6 +74,19 @@ export default function QuoteDetail({ id }: { id: string }) {
 
   async function onRevise() {
     if (!quote) return;
+    // Stronger confirmation when revising a signed quote — that's effectively
+    // amending a contract. The signed version stays in the DB as superseded
+    // (the audit trail is preserved), but the user should know what they're
+    // doing.
+    if (quote.status === "signed") {
+      const ok = confirm(
+        "This quote has been signed by the client. Creating a revision will:\n" +
+        "  • Supersede the signed version (it stays in the DB as 'superseded')\n" +
+        "  • Create a new unsigned revision that the client must re-sign\n\n" +
+        "Continue?"
+      );
+      if (!ok) return;
+    }
     try {
       const newDraft = await createDraftFromRevision(quote.id);
       router.push(`/quotes/${newDraft.id}/edit`);
