@@ -202,14 +202,20 @@ export async function loadQuote(id: string): Promise<QuoteDraft | null> {
 // ─── Rate card selection ─────────────────────────────────────────────────────
 
 /** Pick the rate card profile effective for the given client + job start date.
- *  Most recent client-specific card whose effective_date is <= job start; falls
- *  back to master default filtered the same way. */
+ *  Lookup order:
+ *    1. Most recent client-specific card with effective_date <= jobStartDate
+ *    2. Most recent client-specific card with NULL effective_date (legacy)
+ *    3. Master default with effective_date <= jobStartDate
+ *    4. Master default with NULL effective_date (legacy fallback)
+ *    5. Any client-specific card (date-blind last resort)
+ *    6. Master default (date-blind last resort)
+ *  Returns null only if no rate card exists at all anywhere. */
 export async function pickRateCardForJob(
   clientId: string | null | undefined,
   jobStartDate: string,
 ): Promise<{ id: string; rows: any[] } | null> {
-  // 1. Try client-specific card
-  if (clientId) {
+  // 1. Client-specific, effective on/before job
+  if (clientId && jobStartDate) {
     const r = await supabase
       .from("rate_card_profiles")
       .select("*")
@@ -219,24 +225,67 @@ export async function pickRateCardForJob(
       .limit(1)
       .maybeSingle();
     if (r.error) throw r.error;
-    if (r.data) {
-      const rows = await loadRateCardRows(r.data.id);
-      return { id: r.data.id, rows };
-    }
+    if (r.data) return { id: r.data.id, rows: await loadRateCardRows(r.data.id) };
   }
-  // 2. Master default
-  const m = await supabase
+  // 2. Client-specific, NULL effective_date (legacy)
+  if (clientId) {
+    const r = await supabase
+      .from("rate_card_profiles")
+      .select("*")
+      .eq("client_id", clientId)
+      .is("effective_date", null)
+      .limit(1)
+      .maybeSingle();
+    if (r.error) throw r.error;
+    if (r.data) return { id: r.data.id, rows: await loadRateCardRows(r.data.id) };
+  }
+  // 3. Master default, effective on/before job
+  if (jobStartDate) {
+    const m = await supabase
+      .from("rate_card_profiles")
+      .select("*")
+      .eq("id", "ratecard-master-default")
+      .lte("effective_date", jobStartDate)
+      .order("effective_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (m.error) throw m.error;
+    if (m.data) return { id: m.data.id, rows: await loadRateCardRows(m.data.id) };
+  }
+  // 4. Master default, NULL effective_date
+  const m2 = await supabase
     .from("rate_card_profiles")
     .select("*")
     .eq("id", "ratecard-master-default")
-    .lte("effective_date", jobStartDate)
-    .order("effective_date", { ascending: false })
+    .is("effective_date", null)
     .limit(1)
     .maybeSingle();
-  if (m.error) throw m.error;
-  if (!m.data) return null;
-  const rows = await loadRateCardRows(m.data.id);
-  return { id: m.data.id, rows };
+  if (m2.error) throw m2.error;
+  if (m2.data) return { id: m2.data.id, rows: await loadRateCardRows(m2.data.id) };
+
+  // 5. Any client-specific card (date-blind)
+  if (clientId) {
+    const r = await supabase
+      .from("rate_card_profiles")
+      .select("*")
+      .eq("client_id", clientId)
+      .order("effective_date", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    if (r.error) throw r.error;
+    if (r.data) return { id: r.data.id, rows: await loadRateCardRows(r.data.id) };
+  }
+  // 6. Master default (date-blind)
+  const m3 = await supabase
+    .from("rate_card_profiles")
+    .select("*")
+    .eq("id", "ratecard-master-default")
+    .limit(1)
+    .maybeSingle();
+  if (m3.error) throw m3.error;
+  if (m3.data) return { id: m3.data.id, rows: await loadRateCardRows(m3.data.id) };
+
+  return null;
 }
 
 async function loadRateCardRows(profileId: string): Promise<any[]> {
