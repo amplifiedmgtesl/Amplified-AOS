@@ -10,12 +10,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { loadQuotes, displayStatus, type QuoteFilters } from "@/lib/store/quotes";
+import { supabase } from "@/lib/supabase/client";
 import type { QuoteDraft } from "@/lib/store/types";
 
 type StatusFilter = "active" | "drafts" | "issued" | "signed" | "superseded" | "all";
 
 export default function QuotesList() {
   const [rows, setRows] = useState<QuoteDraft[]>([]);
+  /** projected quote_no per draft id, computed for display on the list */
+  const [projections, setProjections] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
@@ -34,7 +37,7 @@ export default function QuotesList() {
     if (statusFilter === "all") filters.hideSuperseded = false;
 
     loadQuotes(filters)
-      .then((data) => {
+      .then(async (data) => {
         if (cancelled) return;
         // Apply secondary status filter for issued/signed/superseded since loadQuotes
         // doesn't filter by exact status value.
@@ -43,6 +46,40 @@ export default function QuotesList() {
         if (statusFilter === "signed") filtered = filtered.filter((q) => q.status === "signed");
         if (statusFilter === "superseded") filtered = filtered.filter((q) => q.status === "superseded");
         setRows(filtered);
+
+        // Compute projected quote_no for drafts. Need parent job_no + (for revisions)
+        // parent revision_no. Batch-fetch.
+        const drafts = filtered.filter((q) => q.isDraft);
+        if (drafts.length > 0) {
+          const jobIds = Array.from(new Set(drafts.map((q) => q.jobRequestId).filter(Boolean) as string[]));
+          const parentIds = Array.from(new Set(drafts.map((q) => q.parentQuoteId).filter(Boolean) as string[]));
+          const [jobsRes, parentsRes] = await Promise.all([
+            jobIds.length > 0
+              ? supabase.from("job_requests").select("id, job_no").in("id", jobIds)
+              : Promise.resolve({ data: [], error: null }),
+            parentIds.length > 0
+              ? supabase.from("quotes").select("id, revision_no").in("id", parentIds)
+              : Promise.resolve({ data: [], error: null }),
+          ]);
+          if (!cancelled) {
+            const jobsById = new Map((jobsRes.data ?? []).map((j: any) => [j.id, j.job_no]));
+            const parentsById = new Map((parentsRes.data ?? []).map((p: any) => [p.id, p.revision_no]));
+            const proj: Record<string, string> = {};
+            for (const d of drafts) {
+              const jobNo = d.jobRequestId ? jobsById.get(d.jobRequestId) : null;
+              if (!jobNo) continue;
+              if (d.parentQuoteId) {
+                const parentRev = parentsById.get(d.parentQuoteId);
+                if (parentRev !== undefined) proj[d.id] = `${jobNo}_EST_REV${parentRev + 1}`;
+              } else {
+                proj[d.id] = `${jobNo}_EST`;
+              }
+            }
+            setProjections(proj);
+          }
+        } else {
+          setProjections({});
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -111,10 +148,14 @@ export default function QuotesList() {
               <tr><td colSpan={7} className="muted">No quotes match.</td></tr>
             ) : visible.map((q) => {
               const href = q.isDraft ? `/quotes/${q.id}/edit` : `/quotes/${q.id}`;
+              const labelQuoteNo =
+                q.quoteNo ||
+                projections[q.id] ||
+                (q.isDraft ? "— Draft —" : q.id.slice(0, 12));
               return (
                 <tr key={q.id}>
                   <td><span className="badge">{displayStatus(q)}</span></td>
-                  <td><Link href={href}>{q.quoteNo || (q.isDraft ? "— Draft —" : q.id.slice(0, 12))}</Link></td>
+                  <td><Link href={href}>{labelQuoteNo}</Link></td>
                   <td>{q.client || "—"}</td>
                   <td>{q.eventName || "—"}</td>
                   <td>{q.startDate || "—"}</td>

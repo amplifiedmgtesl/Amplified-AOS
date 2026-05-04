@@ -27,6 +27,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
   const router = useRouter();
   const [quote, setQuote] = useState<QuoteDraft | null>(null);
   const [job, setJob] = useState<any | null>(null);
+  const [parentRevisionNo, setParentRevisionNo] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +52,10 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         if (q.jobRequestId) {
           const j = await supabase.from("job_requests").select("*").eq("id", q.jobRequestId).maybeSingle();
           if (!cancelled) setJob(j.data ?? null);
+        }
+        if (q.parentQuoteId) {
+          const p = await supabase.from("quotes").select("revision_no").eq("id", q.parentQuoteId).maybeSingle();
+          if (!cancelled) setParentRevisionNo(p.data?.revision_no ?? null);
         }
         setLoading(false);
       })
@@ -132,11 +137,19 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
   if (error) return <div className="muted">{error}</div>;
   if (!quote) return null;
 
+  // Compute the quote_no that the issue RPC will assign. Mirrors the SQL in
+  // issue_quote_draft. Updates if the parent job's job_no changes during lead.
+  const projectedQuoteNo = job?.job_no
+    ? quote.parentQuoteId && parentRevisionNo !== null
+      ? `${job.job_no}_EST_REV${parentRevisionNo + 1}`
+      : `${job.job_no}_EST`
+    : null;
+
   return (
     <div className="card">
       <div className="action-row" style={{ marginBottom: 12, alignItems: "baseline" }}>
         <h2 className="section-title" style={{ margin: 0, flex: 1 }}>
-          Draft Quote {job?.job_no ? <>for <code>{job.job_no}</code></> : null}
+          {projectedQuoteNo ? <code>{projectedQuoteNo}</code> : "Draft Quote"}
           <span className="badge" style={{ marginLeft: 12 }}>Draft</span>
           {quote.parentQuoteId ? (
             <span className="muted" style={{ marginLeft: 8 }}>Revision of <Link href={`/quotes/${quote.parentQuoteId}`}>parent</Link></span>
@@ -148,7 +161,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         <Link href="/quotes" className="badge">← All Quotes</Link>
       </div>
       <div className="muted" style={{ marginBottom: 12, fontSize: 13 }}>
-        On issue, this draft becomes <code>{job?.job_no ? `${job.job_no}_EST` : "(job_no)_EST"}</code>{quote.parentQuoteId ? ` (or _EST_REV${quote.revisionNo})` : ""}.
+        Projected quote # — finalized when you click Issue Quote. {!job?.job_no ? "Job has no job_no yet; finish the job request first." : null}
       </div>
 
       {/* Read-only event panel — pulled from joined job_request */}
