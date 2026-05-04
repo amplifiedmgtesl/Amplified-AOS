@@ -64,6 +64,31 @@ export default function JobRequests() {
   const isCrewLeader = role === "crew_leader";
   const timesheetHref = isCrewLeader ? "/lead/timekeeping" : "/timekeeping";
 
+  // Quote state for the currently-edited job. Drives the Create/Continue/View
+  // button logic — see the action row below.
+  const [openDraftId, setOpenDraftId] = useState<string | null>(null);
+  const [latestIssuedId, setLatestIssuedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!editingId) { setOpenDraftId(null); setLatestIssuedId(null); return; }
+    let cancelled = false;
+    supabase
+      .from("quotes")
+      .select("id, is_draft, status, parent_quote_id, updated_at")
+      .eq("job_request_id", editingId)
+      .order("updated_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error("[job-requests] quote state load failed:", error); return; }
+        const rows = data ?? [];
+        const draft = rows.find((r: any) => r.is_draft);
+        const issuedNonSuperseded = rows.find((r: any) => !r.is_draft && r.status !== "superseded");
+        setOpenDraftId(draft?.id ?? null);
+        setLatestIssuedId(issuedNonSuperseded?.id ?? null);
+      });
+    return () => { cancelled = true; };
+  }, [editingId, refreshKey]);
+
   useEffect(() => {
     supabase.from("clients").select("id, name, code, is_active").order("name")
       .then(({ data }) => setClients((data ?? []).map((r: any) => ({
@@ -591,21 +616,40 @@ export default function JobRequests() {
 
           <div className="action-row" style={{ marginTop: 12 }}>
             <button onClick={save}>Save</button>
+            {/* New-quote entry point. The button label/action adapts to existing
+                quote state for this job:
+                  - Open draft exists  → "Continue Draft" (route to editor)
+                  - Issued quote exists → "View Quote" (route to detail; user
+                                          revises from there if needed)
+                  - Otherwise           → "Create Quote" (fresh draft) */}
             {!editingId && !isCrewLeader && (
               <>
                 <button className="secondary" onClick={saveAndBuildQuote}>Save + Build Quote (legacy)</button>
                 <button onClick={saveAndCreateQuoteNew}>Save + Create Quote</button>
               </>
             )}
-            {editingId && form.linkedQuoteId && !isCrewLeader && (
-              <button className="secondary" onClick={() => { setActiveQuote(form.linkedQuoteId!); window.location.href = "/quote-builder"; }}>
-                View Quote
-              </button>
-            )}
-            {editingId && !form.linkedQuoteId && !isLocked && !isCrewLeader && (
+            {editingId && !isCrewLeader && (
               <>
-                <button className="secondary" onClick={saveAndBuildQuote}>Build Quote (legacy)</button>
-                <button onClick={saveAndCreateQuoteNew}>Create Quote</button>
+                {openDraftId ? (
+                  <button onClick={() => { window.location.href = `/quotes/${openDraftId}/edit`; }}>
+                    Continue Draft
+                  </button>
+                ) : latestIssuedId ? (
+                  <button onClick={() => { window.location.href = `/quotes/${latestIssuedId}`; }}>
+                    View Quote
+                  </button>
+                ) : !isLocked ? (
+                  <button onClick={saveAndCreateQuoteNew}>Create Quote</button>
+                ) : null}
+                {/* Legacy paths kept until the rewrite is fully migrated */}
+                {form.linkedQuoteId ? (
+                  <button className="secondary" onClick={() => { setActiveQuote(form.linkedQuoteId!); window.location.href = "/quote-builder"; }}>
+                    View Quote (legacy)
+                  </button>
+                ) : null}
+                {!form.linkedQuoteId && !isLocked ? (
+                  <button className="secondary" onClick={saveAndBuildQuote}>Build Quote (legacy)</button>
+                ) : null}
               </>
             )}
             {editingId && (
