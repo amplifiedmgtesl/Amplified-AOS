@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { setQuoteSeed, upsertJobRequest, deleteJobRequest, setActiveQuote } from "@/lib/store/app-store";
+import { createDraftFromJob } from "@/lib/store/quotes";
 import { googleCalendarLink } from "@/lib/store/calendar";
 import { loadJobRequests } from "@/lib/store/app-store";
 import { timeOptions } from "@/lib/store/timekeeping";
@@ -235,6 +236,29 @@ export default function JobRequests() {
       expectedHoursPerDay: row.expectedHours || 10,
     });
     window.location.href = "/quote-builder";
+  }
+
+  /** New-flow quote creation (Phase A rewrite). Saves the job request first
+   *  (same as the legacy path) then routes through lib/store/quotes.ts to
+   *  create a draft row tied to job_request_id, and opens the new editor. */
+  async function saveAndCreateQuoteNew() {
+    if (!form.clientId) { setMsg("Please select a client before saving."); return; }
+    if (!form.eventName.trim()) { setMsg("Please enter an event name before saving."); return; }
+    if (!form.requestDate) { setMsg("Please pick an event start date before saving."); return; }
+    if (form.endDate && form.endDate < form.requestDate) { setMsg("End date can't be before the start date."); return; }
+    const row = normalized({
+      ...form,
+      id: form.id || `jobreq-${Date.now()}`,
+      eventAbbr: effectiveEventAbbr || undefined,
+      jobNo: liveJobNo || undefined,
+    });
+    upsertJobRequest(row);
+    try {
+      const draft = await createDraftFromJob(row.id);
+      window.location.href = `/quotes/${draft.id}/edit`;
+    } catch (err: any) {
+      setMsg(`Failed to create draft: ${err.message || err}`);
+    }
   }
 
   function openGoogleCal(row: JobRequest) {
@@ -568,7 +592,10 @@ export default function JobRequests() {
           <div className="action-row" style={{ marginTop: 12 }}>
             <button onClick={save}>Save</button>
             {!editingId && !isCrewLeader && (
-              <button className="secondary" onClick={saveAndBuildQuote}>Save + Build Quote</button>
+              <>
+                <button className="secondary" onClick={saveAndBuildQuote}>Save + Build Quote (legacy)</button>
+                <button onClick={saveAndCreateQuoteNew}>Save + Create Quote</button>
+              </>
             )}
             {editingId && form.linkedQuoteId && !isCrewLeader && (
               <button className="secondary" onClick={() => { setActiveQuote(form.linkedQuoteId!); window.location.href = "/quote-builder"; }}>
@@ -576,7 +603,10 @@ export default function JobRequests() {
               </button>
             )}
             {editingId && !form.linkedQuoteId && !isLocked && !isCrewLeader && (
-              <button className="secondary" onClick={saveAndBuildQuote}>Build Quote</button>
+              <>
+                <button className="secondary" onClick={saveAndBuildQuote}>Build Quote (legacy)</button>
+                <button onClick={saveAndCreateQuoteNew}>Create Quote</button>
+              </>
             )}
             {editingId && (
               <button
