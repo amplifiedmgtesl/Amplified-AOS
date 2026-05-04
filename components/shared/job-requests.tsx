@@ -634,11 +634,13 @@ export default function JobRequests() {
                   <button onClick={() => { window.location.href = `/quotes/${openDraftId}/edit`; }}>
                     Continue Draft
                   </button>
-                ) : latestIssuedId ? (
+                ) : null}
+                {latestIssuedId ? (
                   <button onClick={() => { window.location.href = `/quotes/${latestIssuedId}`; }}>
                     View Quote
                   </button>
-                ) : !isLocked ? (
+                ) : null}
+                {!openDraftId && !latestIssuedId && !isLocked ? (
                   <button onClick={saveAndCreateQuoteNew}>Create Quote</button>
                 ) : null}
                 {/* Legacy paths kept until the rewrite is fully migrated */}
