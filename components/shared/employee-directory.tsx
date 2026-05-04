@@ -4,9 +4,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { deleteEmployee, getActiveEmployee, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, loadTimesheets, setActiveEmployee, upsertEmployee } from "@/lib/store/app-store";
 import { useUserRole } from "@/lib/auth/use-user-role";
-import { uploadProfilePicture, uploadEmployeeDocument, deleteEmployeeAsset } from "@/lib/storage/employee-assets";
+import { uploadProfilePicture, deleteEmployeeAsset } from "@/lib/storage/employee-assets";
+import {
+  loadDocuments as loadEmployeeDocs,
+  uploadDocument as uploadEmployeeDoc,
+  removeDocument as removeEmployeeDoc,
+  type EmployeeDocument as EmployeeDocRow,
+} from "@/lib/storage/employee-documents";
 import { US_STATES } from "@/lib/constants";
-import type { EmployeeDocument, EmployeeRecord } from "@/lib/store/types";
+import type { EmployeeRecord } from "@/lib/store/types";
 
 type Employee = EmployeeRecord;
 
@@ -33,9 +39,20 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
   const [csvText, setCsvText] = useState("");
   const [historyModal, setHistoryModal] = useState<"jobs" | "timesheets" | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [employeeDocs, setEmployeeDocs] = useState<EmployeeDocRow[]>([]);
   const employees = useMemo(() => activeEmployees(), [refreshKey]);
   const activeEmployeeKey = getActiveEmployee() || employees[0]?.employeeKey || "";
   const activeEmployee = employees.find((e) => e.employeeKey === activeEmployeeKey) || null;
+
+  // Load this employee's documents when the selection changes.
+  useEffect(() => {
+    if (!activeEmployee) { setEmployeeDocs([]); return; }
+    let cancelled = false;
+    loadEmployeeDocs(activeEmployee.employeeKey)
+      .then((docs) => { if (!cancelled) setEmployeeDocs(docs); })
+      .catch((err) => { console.error("[employee-directory] doc load failed:", err); if (!cancelled) setEmployeeDocs([]); });
+    return () => { cancelled = true; };
+  }, [activeEmployee?.employeeKey, refreshKey]);
 
   useEffect(() => {
     if (!getActiveEmployee() && employees[0]) setActiveEmployee(employees[0].employeeKey);
@@ -79,7 +96,7 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
     const blank: EmployeeRecord = {
       employeeKey: key, fullName: "", firstName: "", lastName: "", phone: "", email: "",
       stateCode: "", state: "", city: "", address: "", employmentType: "", status: "",
-      type: "contractor", notes: "", documents: [], source: "local",
+      type: "contractor", notes: "", source: "local",
     };
     upsertEmployee(blank);
     setActiveEmployee(key);
@@ -120,7 +137,7 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
         address: get("address"), employmentType: get("employment type"),
         status: get("status"),
         type: get("type") === "staff" ? "staff" : "contractor",
-        source: "local", documents: []
+        source: "local"
       });
     });
     setCsvText("");
@@ -142,14 +159,12 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
 
   async function updateActiveDocuments(files: FileList | null) {
     if (!activeEmployee || !files?.length) return;
-    const docs: EmployeeDocument[] = [...(activeEmployee.documents || [])];
     try {
+      const added: EmployeeDocRow[] = [];
       for (const file of Array.from(files)) {
-        const publicUrl = await uploadEmployeeDocument(activeEmployee.employeeKey, file);
-        docs.push({ id: `doc-${Date.now()}-${file.name}`, name: file.name, dataUrl: publicUrl });
+        added.push(await uploadEmployeeDoc(activeEmployee.employeeKey, file));
       }
-      upsertEmployee({ ...activeEmployee, documents: docs, source: "local" });
-      setRefreshKey((x) => x + 1);
+      setEmployeeDocs((cur) => [...added, ...cur]);
     } catch (err) {
       console.error("[employee-directory] document upload failed:", err);
       alert("Failed to upload one or more documents. Check console for details.");
@@ -176,19 +191,16 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
 
   async function removeActiveDocument(docId: string) {
     if (!activeEmployee) return;
-    const doc = (activeEmployee.documents || []).find((d) => d.id === docId);
+    const doc = employeeDocs.find((d) => d.id === docId);
     if (!doc) return;
-    if (!confirm(`Delete "${doc.name}"?`)) return;
-    if (doc.dataUrl) {
-      try {
-        await deleteEmployeeAsset(doc.dataUrl);
-      } catch (err) {
-        console.error("[employee-directory] failed to remove document from storage:", err);
-      }
+    if (!confirm(`Delete "${doc.fileName}"?`)) return;
+    try {
+      await removeEmployeeDoc(doc);
+      setEmployeeDocs((cur) => cur.filter((d) => d.id !== docId));
+    } catch (err) {
+      console.error("[employee-directory] failed to remove document:", err);
+      alert("Failed to delete document. Check console for details.");
     }
-    const nextDocs = (activeEmployee.documents || []).filter((d) => d.id !== docId);
-    upsertEmployee({ ...activeEmployee, documents: nextDocs, source: "local" });
-    setRefreshKey((x) => x + 1);
   }
 
   return (
@@ -277,15 +289,15 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
             <h3 className="section-title">Certificates / ID / Files</h3>
             <div className="hide-print"><input type="file" multiple onChange={(e)=>updateActiveDocuments(e.target.files)} /></div>
             <div style={{ marginTop: 10 }}>
-              {(activeEmployee.documents || []).length === 0 ? (
+              {employeeDocs.length === 0 ? (
                 <div className="muted">No files uploaded yet.</div>
               ) : (
                 <div className="grid">
-                  {(activeEmployee.documents || []).map((doc) => (
+                  {employeeDocs.map((doc) => (
                     <div key={doc.id} className="list-card">
-                      <strong>{doc.name}</strong>
+                      <strong>{doc.fileName}</strong>
                       <div className="action-row" style={{ marginTop: 8, gap: 8 }}>
-                        {doc.dataUrl ? <a className="badge" href={doc.dataUrl} target="_blank" rel="noreferrer">View File</a> : null}
+                        {doc.url ? <a className="badge" href={doc.url} target="_blank" rel="noreferrer">View File</a> : null}
                         <button type="button" className="secondary" onClick={() => removeActiveDocument(doc.id)} style={{ fontSize: 12, padding: "4px 10px" }}>Delete</button>
                       </div>
                     </div>

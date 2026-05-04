@@ -1189,7 +1189,6 @@ function rowToEmployee(r: any): EmployeeRecord {
     address: r.address ?? undefined,  // street address; legacy full address lives in r.address_donotuse (not mapped)
     notes: r.notes ?? undefined,
     profilePicture: r.profile_picture ?? undefined,
-    documents: r.documents ?? undefined,
     source: r.source ?? undefined,
   };
 }
@@ -1579,7 +1578,6 @@ function employeeToRow(e: EmployeeRecord, isDeleted: boolean) {
     address: e.address ?? null,
     notes: e.notes ?? null,
     profile_picture: e.profilePicture ?? null,
-    documents: e.documents ?? [],
     source: e.source ?? null,
     is_deleted: isDeleted,
   };

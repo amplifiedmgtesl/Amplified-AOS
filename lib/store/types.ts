@@ -244,6 +244,9 @@ export type JobSheet = {
   workers: JobSheetWorker[];
 };
 
+// Legacy type — kept exported so any straggler imports compile, but no longer
+// part of EmployeeRecord. Documents now live in the employee_documents table;
+// see lib/storage/employee-documents.ts for the canonical types.
 export type EmployeeDocument = {
   id: string;
   name: string;
@@ -272,7 +275,6 @@ export type EmployeeRecord = {
   address?: string;  // street address — matches Client.address. Old single-string addresses live in address_donotuse in DB (not mapped).
   notes?: string;
   profilePicture?: string;
-  documents?: EmployeeDocument[];
   source?: string;
 };
 
