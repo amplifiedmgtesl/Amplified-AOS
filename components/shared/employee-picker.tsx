@@ -95,28 +95,22 @@ export function EmployeePicker({
   }
 
   const RESULT_CAP = 50;
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
+  // Inline picker filters by NAME only — keeps the dropdown simple. For
+  // wider search (city / phone / email / etc.) the user clicks the 🔍
+  // button to open EmployeeSearchModal.
   const results = useMemo(() => {
     if (!employees) return [];
     const q = query.trim().toLowerCase();
     if (!q) return employees.slice(0, RESULT_CAP);
     const tokens = q.split(/\s+/).filter(Boolean);
 
-    // Score each token-vs-employee match: higher = better fit. Word-prefix
-    // in the name beats substring; substring in name beats substring in
-    // email; both beat phone/city/state. Token must score >0 to qualify;
-    // an employee qualifies only when EVERY token scores >0.
     function tokenScore(t: string, e: PickerEmployee): number {
       const fullLower = e.fullName.toLowerCase();
       const nameWords = fullLower.split(/\s+/);
       if (nameWords.some((w) => w.startsWith(t))) return 100;
       if (fullLower.includes(t)) return 50;
-      if ((e.email || "").toLowerCase().includes(t)) return 20;
-      if (
-        (e.phone || "").toLowerCase().includes(t) ||
-        (e.city || "").toLowerCase().includes(t) ||
-        (e.state || "").toLowerCase().includes(t)
-      ) return 10;
       return 0;
     }
 
@@ -142,8 +136,8 @@ export function EmployeePicker({
     if (!q) return employees.length;
     const tokens = q.split(/\s+/).filter(Boolean);
     return employees.filter((e) => {
-      const hay = [e.fullName, e.email, e.phone, e.city, e.state].filter(Boolean).join(" ").toLowerCase();
-      return tokens.every((t) => hay.includes(t));
+      const fullLower = e.fullName.toLowerCase();
+      return tokens.every((t) => fullLower.includes(t));
     }).length;
   }, [employees, query]);
 
@@ -171,15 +165,44 @@ export function EmployeePicker({
         </div>
       )}
       {(!linked || open) && (
-        <input
-          autoFocus={open}
-          disabled={disabled}
-          value={query}
-          placeholder={linked ? `Change from ${linked.fullName}…` : placeholder}
-          onFocus={() => { setOpen(true); void ensureLoaded(); }}
-          onChange={(e) => setQuery(e.target.value)}
-          onBlur={() => setTimeout(() => setOpen(false), 200)}
-          style={{ width: "100%", fontSize: 12, padding: "5px 8px" }}
+        <div style={{ display: "flex", gap: 4, alignItems: "stretch" }}>
+          <input
+            autoFocus={open}
+            disabled={disabled}
+            value={query}
+            placeholder={linked ? `Change from ${linked.fullName}…` : "Search by name…"}
+            onFocus={() => { setOpen(true); void ensureLoaded(); }}
+            onChange={(e) => setQuery(e.target.value)}
+            onBlur={() => setTimeout(() => setOpen(false), 200)}
+            style={{ flex: 1, fontSize: 12, padding: "5px 8px" }}
+          />
+          <button
+            type="button"
+            disabled={disabled}
+            onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onClick={() => { setAdvancedOpen(true); void ensureLoaded(); }}
+            title="Search by city, state, phone, email…"
+            style={{
+              padding: "0 10px",
+              fontSize: 14,
+              border: "1px solid var(--line, #d7c6aa)",
+              background: "#fff",
+              borderRadius: 6,
+              cursor: disabled ? "default" : "pointer",
+            }}
+          >🔍</button>
+        </div>
+      )}
+      {advancedOpen && employees && (
+        <EmployeeSearchModal
+          employees={employees}
+          onSelect={(emp) => {
+            onSelect(emp);
+            setAdvancedOpen(false);
+            setQuery("");
+            setOpen(false);
+          }}
+          onClose={() => setAdvancedOpen(false)}
         />
       )}
       {open && !disabled && (
@@ -256,6 +279,128 @@ export function EmployeePicker({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Advanced search modal ─────────────────────────────────────────────────
+// Opens from the 🔍 button. Lets the user filter by independent fields:
+// name, city, state, phone, email — useful when the name alone isn't enough
+// to find the right person (similar names, or "the only Devan in Cleveland").
+function EmployeeSearchModal({
+  employees,
+  onSelect,
+  onClose,
+}: {
+  employees: PickerEmployee[];
+  onSelect: (emp: PickerEmployee) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+
+  // ESC closes
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const filtered = useMemo(() => {
+    function matches(haystack: string | undefined, needle: string): boolean {
+      if (!needle.trim()) return true;
+      return (haystack || "").toLowerCase().includes(needle.trim().toLowerCase());
+    }
+    return employees.filter((e) =>
+      matches(e.fullName, name) &&
+      matches(e.city, city) &&
+      matches(e.state, state) &&
+      matches((e.phone || "").replace(/[^0-9]/g, ""), phone.replace(/[^0-9]/g, "")) &&
+      matches(e.email, email)
+    ).slice(0, 200);
+  }, [employees, name, city, state, phone, email]);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+        zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "min(900px, 95vw)", maxHeight: "90vh", overflow: "hidden",
+          background: "#fff", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+          display: "flex", flexDirection: "column",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+          <h3 style={{ margin: 0, fontSize: 15 }}>Search Employees</h3>
+          <button type="button" onClick={onClose} style={{ background: "transparent", border: "none", fontSize: 18, cursor: "pointer" }} title="Close (esc)">✕</button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 80px 1fr 1fr", gap: 8, padding: "12px 18px", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+          <div><small>Name</small><input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="any part of the name" /></div>
+          <div><small>City</small><input value={city} onChange={(e) => setCity(e.target.value)} /></div>
+          <div><small>State</small><input value={state} onChange={(e) => setState(e.target.value)} placeholder="OH" maxLength={4} /></div>
+          <div><small>Phone</small><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="any part" /></div>
+          <div><small>Email</small><input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="any part" /></div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "0 18px" }}>
+          <div style={{ fontSize: 11, color: "#666", padding: "8px 0" }}>
+            {filtered.length === employees.length
+              ? `${filtered.length} employees`
+              : `${filtered.length} match${filtered.length === 1 ? "" : "es"}`}
+            {filtered.length === 200 && " (cap reached — refine filters)"}
+          </div>
+          {filtered.length === 0 ? (
+            <div className="muted" style={{ padding: "20px 0", textAlign: "center", fontSize: 13 }}>
+              No employees match.{" "}
+              <a href="/employee-directory" target="_blank" rel="noreferrer" style={{ color: "var(--accent, #2563eb)", fontWeight: 600 }}>+ Add new employee ↗</a>
+            </div>
+          ) : (
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ position: "sticky", top: 0, background: "#fff", color: "#666", fontSize: 11, borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+                  <th style={{ textAlign: "left", padding: "6px 8px 6px 0", fontWeight: 600 }}>Name</th>
+                  <th style={{ textAlign: "left", padding: "6px 8px 6px 0", fontWeight: 600 }}>Email</th>
+                  <th style={{ textAlign: "left", padding: "6px 8px 6px 0", fontWeight: 600 }}>Phone</th>
+                  <th style={{ textAlign: "left", padding: "6px 8px 6px 0", fontWeight: 600 }}>City</th>
+                  <th style={{ textAlign: "left", padding: "6px 8px 6px 0", fontWeight: 600 }}>State</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((e) => (
+                  <tr
+                    key={e.employeeKey}
+                    onClick={() => onSelect(e)}
+                    style={{ cursor: "pointer", borderBottom: "1px solid #f1f3f5" }}
+                    onMouseEnter={(ev) => { (ev.currentTarget as HTMLElement).style.background = "#fbf6ee"; }}
+                    onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = ""; }}
+                  >
+                    <td style={{ padding: "8px 8px 8px 0", fontWeight: 600 }}>{e.fullName}</td>
+                    <td style={{ padding: "8px 8px 8px 0", color: "#444" }}>{e.email || "—"}</td>
+                    <td style={{ padding: "8px 8px 8px 0", color: "#444" }}>{e.phone || "—"}</td>
+                    <td style={{ padding: "8px 8px 8px 0", color: "#444" }}>{e.city || "—"}</td>
+                    <td style={{ padding: "8px 8px 8px 0", color: "#444" }}>{e.state || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div style={{ padding: "10px 18px", borderTop: "1px solid var(--border, #e5e7eb)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fbf6ee" }}>
+          <a href="/employee-directory" target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "var(--accent, #2563eb)", fontWeight: 600 }}>+ Add new employee ↗</a>
+          <button type="button" onClick={onClose} className="secondary">Cancel</button>
+        </div>
+      </div>
     </div>
   );
 }
