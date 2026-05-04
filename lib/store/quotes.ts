@@ -18,6 +18,7 @@
 
 import { supabase } from "@/lib/supabase/client";
 import type { QuoteDraft, QuoteLine, JobRequest } from "./types";
+import { DEFAULT_TERMS } from "@/lib/rates/defaults";
 
 // ─── ID generation ───────────────────────────────────────────────────────────
 
@@ -213,7 +214,7 @@ export async function loadQuote(id: string): Promise<QuoteDraft | null> {
 export async function pickRateCardForJob(
   clientId: string | null | undefined,
   jobStartDate: string,
-): Promise<{ id: string; rows: any[] } | null> {
+): Promise<{ id: string; rows: any[]; terms: string | null } | null> {
   // 1. Client-specific, effective on/before job
   if (clientId && jobStartDate) {
     const r = await supabase
@@ -225,7 +226,7 @@ export async function pickRateCardForJob(
       .limit(1)
       .maybeSingle();
     if (r.error) throw r.error;
-    if (r.data) return { id: r.data.id, rows: await loadRateCardRows(r.data.id) };
+    if (r.data) return { id: r.data.id, rows: await loadRateCardRows(r.data.id), terms: r.data.terms ?? null };
   }
   // 2. Client-specific, NULL effective_date (legacy)
   if (clientId) {
@@ -237,7 +238,7 @@ export async function pickRateCardForJob(
       .limit(1)
       .maybeSingle();
     if (r.error) throw r.error;
-    if (r.data) return { id: r.data.id, rows: await loadRateCardRows(r.data.id) };
+    if (r.data) return { id: r.data.id, rows: await loadRateCardRows(r.data.id), terms: r.data.terms ?? null };
   }
   // 3. Master default, effective on/before job
   if (jobStartDate) {
@@ -250,7 +251,7 @@ export async function pickRateCardForJob(
       .limit(1)
       .maybeSingle();
     if (m.error) throw m.error;
-    if (m.data) return { id: m.data.id, rows: await loadRateCardRows(m.data.id) };
+    if (m.data) return { id: m.data.id, rows: await loadRateCardRows(m.data.id), terms: m.data.terms ?? null };
   }
   // 4. Master default, NULL effective_date
   const m2 = await supabase
@@ -261,7 +262,7 @@ export async function pickRateCardForJob(
     .limit(1)
     .maybeSingle();
   if (m2.error) throw m2.error;
-  if (m2.data) return { id: m2.data.id, rows: await loadRateCardRows(m2.data.id) };
+  if (m2.data) return { id: m2.data.id, rows: await loadRateCardRows(m2.data.id), terms: m2.data.terms ?? null };
 
   // 5. Any client-specific card (date-blind)
   if (clientId) {
@@ -273,7 +274,7 @@ export async function pickRateCardForJob(
       .limit(1)
       .maybeSingle();
     if (r.error) throw r.error;
-    if (r.data) return { id: r.data.id, rows: await loadRateCardRows(r.data.id) };
+    if (r.data) return { id: r.data.id, rows: await loadRateCardRows(r.data.id), terms: r.data.terms ?? null };
   }
   // 6. Master default (date-blind)
   const m3 = await supabase
@@ -283,7 +284,7 @@ export async function pickRateCardForJob(
     .limit(1)
     .maybeSingle();
   if (m3.error) throw m3.error;
-  if (m3.data) return { id: m3.data.id, rows: await loadRateCardRows(m3.data.id) };
+  if (m3.data) return { id: m3.data.id, rows: await loadRateCardRows(m3.data.id), terms: m3.data.terms ?? null };
 
   return null;
 }
@@ -343,6 +344,18 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
     throw new Error("No applicable rate card found (no client card, no master default).");
   }
 
+  // Terms: prefer the picked rate card's terms; fall back to the global default.
+  // Mirrors the legacy quote-builder's loadProfileIntoCurrent + loadTerms logic.
+  let terms = rateCard.terms || "";
+  if (!terms) {
+    const globalTerms = await supabase
+      .from("app_rate_state")
+      .select("value")
+      .eq("key", "terms")
+      .maybeSingle();
+    terms = globalTerms.data?.value || DEFAULT_TERMS;
+  }
+
   const draftId = newQuoteId();
   const draft: QuoteDraft = {
     id: draftId,
@@ -359,7 +372,7 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
     deposit: 0,
     status: null,
     notes: "",
-    terms: "",
+    terms,
     lines: [],
     isDraft: true,
     jobRequestId: jobRequestId,
