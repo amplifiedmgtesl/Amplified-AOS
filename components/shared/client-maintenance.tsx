@@ -70,7 +70,7 @@ export default function ClientMaintenance() {
     Promise.all([
       supabase.from("job_requests")
         .select("id, job_no, event_name, received_date, request_date, end_date, venue, status, linked_quote_id")
-        .eq("client_id", selectedId).order("received_date", { ascending: false }),
+        .eq("client_id", selectedId).order("request_date", { ascending: false, nullsFirst: false }),
       supabase.from("quotes")
         .select("id, event_name, start_date, end_date, status, total")
         .eq("client_id", selectedId).order("start_date", { ascending: false }),
