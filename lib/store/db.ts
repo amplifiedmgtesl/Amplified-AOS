@@ -953,7 +953,7 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     expectedHoursPerDay: r.expected_hours_per_day ?? undefined,
     total: r.total ?? 0,
     deposit: r.deposit ?? 0,
-    status: r.status ?? "draft",
+    status: r.status ?? null,
     notes: r.notes ?? "",
     lines: lineRows.map(rowToQuoteLine),
     terms: r.terms ?? "",
@@ -962,7 +962,22 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     timesheetSummary: r.timesheet_summary ?? undefined,
     signatureName: r.signature_name ?? undefined,
     signedAt: r.signed_at ?? undefined,
+    signedBy: r.signed_by ?? undefined,
     rateCardProfileId: r.rate_card_profile_id ?? undefined,
+    // New fields from quote rewrite Phase A:
+    isDraft: r.is_draft ?? true,
+    jobRequestId: r.job_request_id ?? undefined,
+    parentQuoteId: r.parent_quote_id ?? undefined,
+    quoteNo: r.quote_no ?? undefined,
+    revisionNo: r.revision_no ?? 1,
+    issuedAt: r.issued_at ?? undefined,
+    issuedBy: r.issued_by ?? undefined,
+    supersededAt: r.superseded_at ?? undefined,
+    supersededBy: r.superseded_by ?? undefined,
+    createdAt: r.created_at ?? undefined,
+    updatedAt: r.updated_at ?? undefined,
+    createdBy: r.created_by ?? undefined,
+    updatedBy: r.updated_by ?? undefined,
   };
 }
 

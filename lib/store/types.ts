@@ -87,6 +87,12 @@ export type Timesheet = {
   rows: TimeEntry[];
 };
 
+// Quote shape — covers both drafts (is_draft=true, status=null) and frozen rows
+// (is_draft=false, status=issued|signed|superseded). See docs/quote-rewrite-plan.md.
+//
+// Existing legacy fields (client/eventName/venue/etc.) are populated by the
+// issue_quote_draft RPC at issue time; on drafts they may be NULL while the UI
+// reads live from the joined job_request.
 export type QuoteDraft = {
   id: string;
   clientId?: string;
@@ -101,16 +107,39 @@ export type QuoteDraft = {
   expectedHoursPerDay?: number;
   total: number;
   deposit: number;
-  status: string;
+  /** issued | signed | superseded — NULL while is_draft=true */
+  status: string | null;
   notes: string;
   lines: QuoteLine[];
   terms: string;
+  /** Legacy text column — superseded by jobRequestId FK. Read-only after rewrite. */
   linkedJobRequestId?: string;
+  /** Legacy — job_sheets being phased out. */
   linkedJobSheetId?: string;
   timesheetSummary?: Array<{ position: string; workers: number; stdHours: number; otHours: number; dtHours: number; totalHours: number; totalPay: number; }>;
   signatureName?: string;
   signedAt?: string;
+  signedBy?: string;
   rateCardProfileId?: string;
+  // ─── New fields (quote rewrite Phase A) ────────────────────────────────────
+  /** True while editable; false once issued. Frozen rows can't have content updated. */
+  isDraft: boolean;
+  /** FK to job_requests(id). Required for new drafts; legacy orphans may be NULL. */
+  jobRequestId?: string;
+  /** Set on revision drafts pointing at the parent frozen quote. */
+  parentQuoteId?: string;
+  /** AES_YYMMDDDD_CLI_EVENT_EST[_REVN] — populated at issue time, frozen forever. */
+  quoteNo?: string;
+  revisionNo: number;
+  issuedAt?: string;
+  issuedBy?: string;
+  supersededAt?: string;
+  supersededBy?: string;
+  // Audit columns
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
 };
 
 export type InvoiceDraft = {

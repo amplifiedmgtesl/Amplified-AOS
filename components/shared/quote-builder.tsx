@@ -599,6 +599,10 @@ export default function QuoteBuilder() {
       signatureName,
       signedAt,
       rateCardProfileId: activeRateCardProfileId || "",
+      // New fields (quote rewrite Phase A) — legacy quote-builder save path is
+      // a transitional placeholder; new code goes through lib/store/quotes.ts.
+      isDraft: false,
+      revisionNo: 1,
     };
     upsertQuote(quote);
     setActiveQuote(quote.id);
