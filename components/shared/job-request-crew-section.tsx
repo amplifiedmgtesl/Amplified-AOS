@@ -242,15 +242,16 @@ export function JobRequestCrewSection({
                   onClick={() => toggleExpanded(d.id)}
                   style={{
                     width: "100%", display: "flex", alignItems: "center", gap: 10,
-                    background: isExpanded ? "var(--surface2, #f7f4ee)" : "transparent",
+                    background: isExpanded ? "var(--accent, #2563eb)" : "#f7f4ee",
+                    color: isExpanded ? "#fff" : "#1a1a1a",
                     border: "none", borderRadius: isExpanded ? "8px 8px 0 0" : 8,
-                    padding: "8px 12px", cursor: "pointer", textAlign: "left",
+                    padding: "10px 14px", cursor: "pointer", textAlign: "left",
                     borderBottom: isExpanded ? "1px solid var(--border, #e5e7eb)" : "none",
                   }}
                 >
-                  <span style={{ fontSize: 12, opacity: 0.6, width: 12 }}>{isExpanded ? "▾" : "▸"}</span>
-                  <strong style={{ fontSize: 13, minWidth: 140 }}>{dayLabel(d)}</strong>
-                  <span className="muted" style={{ fontSize: 12, flex: 1 }}>
+                  <span style={{ fontSize: 12, opacity: 0.85, width: 12 }}>{isExpanded ? "▾" : "▸"}</span>
+                  <strong style={{ fontSize: 14, minWidth: 140 }}>{dayLabel(d)}</strong>
+                  <span style={{ fontSize: 12, flex: 1, opacity: 0.85 }}>
                     {crew.length} assigned{confirmedCount > 0 ? ` · ${confirmedCount} confirmed` : ""}
                   </span>
                 </button>
