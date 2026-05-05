@@ -35,6 +35,7 @@ function rowToCrewNeed(r: any): JobRequestCrewNeed {
     positionId: r.position_id ?? undefined,
     specialtyId: r.specialty_id ?? undefined,
     quantity: r.quantity ?? 1,
+    hours: r.hours ?? undefined,
     notes: r.notes ?? undefined,
     sortOrder: r.sort_order ?? 0,
   };
@@ -61,6 +62,7 @@ function crewNeedToRow(c: JobRequestCrewNeed): Record<string, unknown> {
     position_id: c.positionId || null,
     specialty_id: c.specialtyId || null,
     quantity: c.quantity ?? 1,
+    hours: c.hours ?? null,
     notes: c.notes || null,
     sort_order: c.sortOrder ?? 0,
   };

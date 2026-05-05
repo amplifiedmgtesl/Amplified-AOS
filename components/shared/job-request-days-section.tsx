@@ -299,10 +299,15 @@ export function JobRequestDaysSection({
   // ─── Crew need actions ─────────────────────────────────────────────────────
   async function addCrewNeed(dayId: string) {
     const existing = crewByDayId[dayId] ?? [];
+    // Default hours from the day's expected_hours so the user always sees a
+    // concrete number on screen. They can override per row.
+    const day = days.find((d) => d.id === dayId);
+    const defaultHours = day?.expectedHours ?? 10;
     const need: JobRequestCrewNeed = {
       id: newCrewNeedId(),
       jobRequestDayId: dayId,
       quantity: 1,
+      hours: defaultHours,
       sortOrder: existing.length,
     };
     try {
@@ -493,7 +498,9 @@ export function JobRequestDaysSection({
                         <tr>
                           <th style={{ textAlign: "left" }}>Position</th>
                           <th style={{ textAlign: "left" }}>Specialty</th>
-                          <th style={{ textAlign: "left", width: 70 }}>Qty</th>
+                          <th style={{ textAlign: "left", width: 60 }}>Qty</th>
+                          <th style={{ textAlign: "left", width: 70 }}>Hours</th>
+                          <th style={{ textAlign: "right", width: 80 }}>Total Hrs</th>
                           <th style={{ textAlign: "left" }}>Notes</th>
                           <th style={{ width: 24, textAlign: "center" }} title="Rate card">⚠</th>
                           <th style={{ width: 30 }}></th>
@@ -541,6 +548,20 @@ export function JobRequestDaysSection({
                                   value={c.quantity}
                                   onChange={(e) => patchCrewNeed(d.id, c, { quantity: Number(e.target.value || 0) })}
                                 />
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={0.5}
+                                  disabled={disabled}
+                                  value={c.hours ?? d.expectedHours ?? 0}
+                                  onChange={(e) => patchCrewNeed(d.id, c, { hours: Number(e.target.value || 0) })}
+                                  title="Hours per crew member for this position on this day. Defaults from the day's expected hours."
+                                />
+                              </td>
+                              <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                                {((c.quantity || 0) * (c.hours ?? d.expectedHours ?? 0)).toFixed(1)}
                               </td>
                               <td>
                                 <input

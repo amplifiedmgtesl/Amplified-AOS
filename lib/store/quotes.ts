@@ -437,8 +437,12 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
         const rate = need.specialty_id
           ? rateCard.rows.find((rr: any) => rr.specialty_id === need.specialty_id)
           : undefined;
+        // hours: prefer the per-need override; fall back to the day's expected
+        // hours; final fallback 0 (user fills in on the line).
+        const hours = need.hours ?? day.expected_hours ?? 0;
         draft.lines.push(buildLineFromRate(rate, {
           qty: need.quantity,
+          hours,
           quoteDate: day.event_date,
           startTime: day.start_time,
           endTime: day.end_time,
@@ -578,6 +582,7 @@ function buildLineFromRate(
   rate: any | undefined,
   opts: {
     qty: number;
+    hours?: number;
     quoteDate?: string;
     startTime?: string;
     endTime?: string;
@@ -593,10 +598,18 @@ function buildLineFromRate(
   // Prefer explicitly-passed names; fall back to rate row's denormalized text.
   const department = opts.department ?? rate?.position ?? undefined;
   const specialty = opts.specialty ?? rate?.specialty ?? undefined;
+  const hours = opts.hours ?? 0;
+  // Recompute total now that hours can come in from crew_needs (was always 0
+  // before, so total was always 0 at seed time and the editor would fix it).
+  const baseHourly = rate?.hourly ?? 0;
+  const baseDay = rate?.day ?? 0;
+  const total = (rate?.rate_mode === "day" || (baseDay > 0 && hours === 0))
+    ? (opts.qty || 0) * baseDay
+    : (opts.qty || 0) * hours * baseHourly;
   return {
     serviceKey:   "",
     qty:          opts.qty,
-    hours:        0,
+    hours,
     holidayHours: 0,
     travel:       0,
     baseHourly:   rate?.hourly  ?? 0,
@@ -604,7 +617,7 @@ function buildLineFromRate(
     otRate:       rate?.ot_rate ?? 0,
     dtRate:       rate?.dt_rate ?? 0,
     rule:         rate?.rule_string ?? "",
-    total:        0,
+    total,
     positionId:   opts.positionId,
     specialtyId:  opts.specialtyId,
     department,

@@ -226,6 +226,10 @@ export type JobRequestCrewNeed = {
   positionId?: string;
   specialtyId?: string;
   quantity: number;
+  /** Hours for this position on this day. Defaults from the day's expected_hours
+   *  on create, but can be overridden per row (e.g., 4 hr audio call vs 10 hr
+   *  general crew on the same day). Used by the quote-create flow as line.hours. */
+  hours?: number;
   notes?: string;
   sortOrder: number;
 };
