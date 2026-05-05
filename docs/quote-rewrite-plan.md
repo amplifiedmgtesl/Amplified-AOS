@@ -333,6 +333,12 @@ ALTER TABLE quotes DROP COLUMN IF EXISTS timesheet_summary;      -- recompute fr
 
 -- Denormalized reverse-link on job_requests, superseded by quotes.job_request_id FK.
 ALTER TABLE job_requests DROP COLUMN IF EXISTS linked_quote_id;
+
+-- Denormalized name snapshots on quote_lines, superseded by specialty_id FK
+-- lookup. quote_lines.position_id likewise redundant (specialty FK implies it).
+ALTER TABLE quote_lines DROP COLUMN IF EXISTS department;
+ALTER TABLE quote_lines DROP COLUMN IF EXISTS specialty;
+ALTER TABLE quote_lines DROP COLUMN IF EXISTS position_id;
 ```
 
 Rationale:

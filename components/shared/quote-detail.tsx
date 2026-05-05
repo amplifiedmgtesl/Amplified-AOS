@@ -23,6 +23,8 @@ export default function QuoteDetail({ id }: { id: string }) {
   const [quote, setQuote] = useState<QuoteDraft | null>(null);
   const [job, setJob] = useState<any | null>(null);
   const [supersededBy, setSupersededBy] = useState<{ id: string; quoteNo: string | null } | null>(null);
+  const [positionsById, setPositionsById] = useState<Map<string, string>>(new Map());
+  const [specialtiesById, setSpecialtiesById] = useState<Map<string, { name: string; positionId: string }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [signOpen, setSignOpen] = useState(false);
@@ -45,6 +47,16 @@ export default function QuoteDetail({ id }: { id: string }) {
           return;
         }
         setQuote(q);
+        // Load positions + specialties so line display can resolve FK -> name
+        // without depending on the legacy denormalized text columns.
+        const [posRes, spcRes] = await Promise.all([
+          supabase.from("positions").select("id, name"),
+          supabase.from("specialties").select("id, name, position_id"),
+        ]);
+        if (!cancelled) {
+          setPositionsById(new Map((posRes.data ?? []).map((p: any) => [p.id, p.name])));
+          setSpecialtiesById(new Map((spcRes.data ?? []).map((s: any) => [s.id, { name: s.name, positionId: s.position_id }])));
+        }
         if (q.jobRequestId) {
           const j = await supabase.from("job_requests").select("*").eq("id", q.jobRequestId).maybeSingle();
           if (!cancelled) setJob(j.data ?? null);
@@ -192,11 +204,19 @@ export default function QuoteDetail({ id }: { id: string }) {
           <tbody>
             {quote.lines.length === 0 ? (
               <tr><td colSpan={15} className="muted">No line items.</td></tr>
-            ) : quote.lines.map((l, i) => (
+            ) : quote.lines.map((l, i) => {
+              // Resolve names from FK lookups (legacy text fields phasing out).
+              const spc = l.specialtyId ? specialtiesById.get(l.specialtyId) : undefined;
+              const positionName = (spc ? positionsById.get(spc.positionId) : undefined)
+                ?? (l.positionId ? positionsById.get(l.positionId) : undefined)
+                ?? l.department  // legacy fallback
+                ?? "—";
+              const specialtyName = spc?.name ?? l.specialty ?? "—";
+              return (
               <tr key={i}>
                 <td>{l.quoteDate || "—"}</td>
-                <td>{l.department || "—"}</td>
-                <td>{l.specialty || "—"}</td>
+                <td>{positionName}</td>
+                <td>{specialtyName}</td>
                 <td>{l.shiftLabel || "—"}</td>
                 <td>{l.qty}</td>
                 <td>{l.hours}</td>
@@ -210,7 +230,8 @@ export default function QuoteDetail({ id }: { id: string }) {
                 <td>{l.rateMode || "hourly"}</td>
                 <td style={{ fontVariantNumeric: "tabular-nums" }}>${l.total.toFixed(2)}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

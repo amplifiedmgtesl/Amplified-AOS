@@ -26,8 +26,29 @@ import {
   deleteDraft,
   pickRateCardForJob,
 } from "@/lib/store/quotes";
-import type { QuoteDraft, QuoteLine } from "@/lib/store/types";
+import type { QuoteDraft, QuoteLine, Position, Specialty } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
+
+/** OT-trigger options + their canonical rule strings.
+ *  Mirror of rate-card-editor.tsx triggerLabel() so the picker on a quote
+ *  line stays consistent with what's offered on the rate card. */
+const OT_TRIGGER_OPTIONS: Array<{ value: string; label: string; rule: string }> = [
+  { value: "none",     label: "No OT (flat)",   rule: "No OT" },
+  { value: "10",       label: "OT after 10",    rule: "OT after 10 / DT after 15" },
+  { value: "11",       label: "OT after 11",    rule: "OT after 11 / DT after 15" },
+  { value: "12",       label: "OT after 12",    rule: "OT after 12 / DT after 15" },
+  { value: "13",       label: "OT after 13",    rule: "OT after 13 / DT after 15" },
+  { value: "14",       label: "OT after 14",    rule: "OT after 14 / DT after 15" },
+  { value: "15",       label: "OT after 15",    rule: "OT after 15 / DT after 15" },
+  { value: "weekly40", label: "OT after 40/wk", rule: "OT after 40 / week" },
+];
+
+/** Map a stored rule string back to a trigger option for the dropdown. */
+function ruleToTriggerValue(rule: string | undefined): string {
+  if (!rule) return "12";
+  const match = OT_TRIGGER_OPTIONS.find((o) => o.rule === rule);
+  return match?.value ?? "12";
+}
 
 type DayInfo = {
   /** id of the job_request_day row, or a synthetic key for single-day jobs */
@@ -47,6 +68,8 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
   const [parentRevisionNo, setParentRevisionNo] = useState<number | null>(null);
   const [rateCardRows, setRateCardRows] = useState<any[]>([]);
   const [allProfiles, setAllProfiles] = useState<any[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +99,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         setQuote(q);
 
         // Load related data in parallel
-        const [jobRes, daysRes, profilesRes] = await Promise.all([
+        const [jobRes, daysRes, profilesRes, posRes, spcRes] = await Promise.all([
           q.jobRequestId
             ? supabase.from("job_requests").select("*").eq("id", q.jobRequestId).maybeSingle()
             : Promise.resolve({ data: null, error: null }),
@@ -84,12 +107,20 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
             ? supabase.from("job_request_days").select("*").eq("job_request_id", q.jobRequestId).order("sort_order")
             : Promise.resolve({ data: [], error: null }),
           supabase.from("rate_card_profiles").select("*").order("name"),
+          supabase.from("positions").select("*").eq("is_active", true).order("sort_order"),
+          supabase.from("specialties").select("*").eq("is_active", true).order("sort_order"),
         ]);
         if (cancelled) return;
 
         const jobRow = jobRes.data;
         setJob(jobRow);
         setAllProfiles(profilesRes.data ?? []);
+        setPositions((posRes.data ?? []).map((r: any) => ({
+          id: r.id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active,
+        })));
+        setSpecialties((spcRes.data ?? []).map((r: any) => ({
+          id: r.id, positionId: r.position_id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active,
+        })));
 
         // Build the day list. If no day rows, synthesize a single day from the job.
         const dayRows = (daysRes.data ?? []) as any[];
@@ -358,25 +389,53 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     });
   }
 
-  const renderLineRow = (line: QuoteLine, globalIndex: number) => (
+  const renderLineRow = (line: QuoteLine, globalIndex: number) => {
+    // Specialty is authoritative — derive position from specialty.position_id
+    // when present. Falls back to the line's own positionId for legacy lines.
+    const lineSpecialty = line.specialtyId ? specialties.find((s) => s.id === line.specialtyId) : undefined;
+    const effectivePositionId = lineSpecialty?.positionId ?? line.positionId;
+    const lineSpecialties = effectivePositionId
+      ? specialties.filter((s) => s.positionId === effectivePositionId)
+      : [];
+    return (
     <tr key={globalIndex} style={linesWithStaleRates.has(globalIndex) ? { background: "#fff8e1" } : undefined}>
       <td>
-        <input
-          type="text"
-          value={line.department || ""}
-          onChange={(e) => updateLine(globalIndex, { department: e.target.value })}
-          placeholder="Position"
-          style={{ width: "100%", minWidth: 110 }}
-        />
+        <select
+          value={effectivePositionId || ""}
+          onChange={(e) => {
+            // Picking position alone doesn't fully identify a rate — the user
+            // still has to pick specialty next. Clear specialty since it's
+            // position-scoped.
+            updateLine(globalIndex, {
+              positionId: e.target.value || undefined,
+              specialtyId: undefined,
+            });
+          }}
+          style={{ width: "100%", minWidth: 130 }}
+        >
+          <option value="">— Select —</option>
+          {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
       </td>
       <td>
-        <input
-          type="text"
-          value={line.specialty || ""}
-          onChange={(e) => updateLine(globalIndex, { specialty: e.target.value })}
-          placeholder="Specialty"
-          style={{ width: "100%", minWidth: 110 }}
-        />
+        <select
+          value={line.specialtyId || ""}
+          onChange={(e) => {
+            // Specialty is the authoritative FK — position is derived. We
+            // intentionally don't write to the legacy department/specialty
+            // text columns here; display always looks up by ID.
+            const spc = specialties.find((s) => s.id === e.target.value);
+            updateLine(globalIndex, {
+              specialtyId: e.target.value || undefined,
+              positionId: spc?.positionId ?? line.positionId,
+            });
+          }}
+          disabled={!effectivePositionId}
+          style={{ width: "100%", minWidth: 130 }}
+        >
+          <option value="">— Select —</option>
+          {lineSpecialties.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
       </td>
       <td>
         <input
@@ -388,26 +447,33 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
           style={{ width: "100%", minWidth: 90 }}
         />
       </td>
-      <td><input type="number" value={line.qty} onChange={(e) => updateLine(globalIndex, { qty: parseFloat(e.target.value) || 0 })} style={{ width: 50 }} /></td>
-      <td><input type="number" value={line.hours} onChange={(e) => updateLine(globalIndex, { hours: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.5" /></td>
-      <td><input type="number" value={line.holidayHours} onChange={(e) => updateLine(globalIndex, { holidayHours: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.5" title="Hours billed at 2x the regular hourly rate" /></td>
-      <td><input type="number" value={line.travel} onChange={(e) => updateLine(globalIndex, { travel: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="Per-crew travel charge" /></td>
-      <td><input type="number" value={line.baseHourly} onChange={(e) => updateLine(globalIndex, { baseHourly: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} step="0.01" /></td>
-      <td><input type="number" value={line.baseDay} onChange={(e) => updateLine(globalIndex, { baseDay: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} step="0.01" /></td>
-      <td><input type="number" value={line.otRate} onChange={(e) => updateLine(globalIndex, { otRate: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="OT rate — informational; OT computed at timesheet time" /></td>
-      <td><input type="number" value={line.dtRate} onChange={(e) => updateLine(globalIndex, { dtRate: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="DT rate — informational; DT computed at timesheet time" /></td>
+      <td><input className="num" type="number" value={line.qty} onChange={(e) => updateLine(globalIndex, { qty: parseFloat(e.target.value) || 0 })} style={{ width: 50 }} /></td>
+      <td><input className="num" type="number" value={line.hours} onChange={(e) => updateLine(globalIndex, { hours: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.5" /></td>
+      <td><input className="num" type="number" value={line.holidayHours} onChange={(e) => updateLine(globalIndex, { holidayHours: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.5" title="Hours billed at 2x the regular hourly rate" /></td>
+      <td><input className="num" type="number" value={line.travel} onChange={(e) => updateLine(globalIndex, { travel: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="Per-crew travel charge" /></td>
+      <td><input className="num" type="number" value={line.baseHourly} onChange={(e) => updateLine(globalIndex, { baseHourly: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} step="0.01" /></td>
+      <td><input className="num" type="number" value={line.baseDay} onChange={(e) => updateLine(globalIndex, { baseDay: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} step="0.01" /></td>
+      <td><input className="num" type="number" value={line.otRate} onChange={(e) => updateLine(globalIndex, { otRate: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="OT rate — informational; OT computed at timesheet time" /></td>
+      <td><input className="num" type="number" value={line.dtRate} onChange={(e) => updateLine(globalIndex, { dtRate: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="DT rate — informational; DT computed at timesheet time" /></td>
       <td>
-        <input
-          type="text"
-          value={line.rule || ""}
-          onChange={(e) => updateLine(globalIndex, { rule: e.target.value })}
-          placeholder="OT trigger"
-          title='OT/DT rule, e.g. "OT after 12 / DT after 15"'
-          style={{ width: "100%", minWidth: 130, fontSize: 11 }}
-        />
+        <select
+          value={ruleToTriggerValue(line.rule)}
+          onChange={(e) => {
+            const opt = OT_TRIGGER_OPTIONS.find((o) => o.value === e.target.value);
+            if (opt) updateLine(globalIndex, { rule: opt.rule });
+          }}
+          title="OT/DT trigger. Stored as the formatted rule string on the line."
+          style={{ minWidth: 130 }}
+        >
+          {OT_TRIGGER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
       </td>
       <td>
-        <select value={line.rateMode || "hourly"} onChange={(e) => updateLine(globalIndex, { rateMode: e.target.value })} style={{ fontSize: 12 }}>
+        <select
+          value={line.rateMode || "hourly"}
+          onChange={(e) => updateLine(globalIndex, { rateMode: e.target.value })}
+          style={{ minWidth: 80 }}
+        >
           <option value="hourly">hourly</option>
           <option value="day">day</option>
         </select>
@@ -416,6 +482,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       <td><button className="secondary" onClick={() => deleteLine(globalIndex)} style={{ fontSize: 12, padding: "4px 8px" }}>×</button></td>
     </tr>
   );
+  };
 
   return (
     <div className="card">
