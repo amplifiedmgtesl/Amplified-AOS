@@ -91,6 +91,9 @@ export default function QuotePdfView({ id }: { id: string }) {
   const [company, setCompany] = useState<CompanySettings | null>(null);
   const [positionsById, setPositionsById] = useState<Map<string, string>>(new Map());
   const [specialtiesById, setSpecialtiesById] = useState<Map<string, { name: string; positionId: string }>>(new Map());
+  /** Rate card profile + rows used for the appendix Rate Schedule. */
+  const [rateScheduleRows, setRateScheduleRows] = useState<any[]>([]);
+  const [rateScheduleProfileName, setRateScheduleProfileName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -127,6 +130,21 @@ export default function QuotePdfView({ id }: { id: string }) {
           if (!cancelled) setClient(cRes.data as LoadedClient | null);
         }
 
+        // Load the rate card profile + its rows for the appendix Rate Schedule.
+        if (q.rateCardProfileId) {
+          const [profileRes, rowsRes] = await Promise.all([
+            supabase.from("rate_card_profiles").select("name, client_name").eq("id", q.rateCardProfileId).maybeSingle(),
+            supabase.from("rate_card_profile_rows").select("*").eq("profile_id", q.rateCardProfileId).order("sort_order"),
+          ]);
+          if (!cancelled) {
+            const p = profileRes.data;
+            setRateScheduleProfileName(p
+              ? (p.client_name ? `${p.client_name} — ${p.name}` : p.name)
+              : "");
+            setRateScheduleRows(rowsRes.data ?? []);
+          }
+        }
+
         setLoading(false);
       } catch (err: any) {
         if (cancelled) return;
@@ -158,6 +176,11 @@ export default function QuotePdfView({ id }: { id: string }) {
     group.subtotal += line.total || 0;
   }
   const dayGroups = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+  // Show the holiday-hours column in basic mode only when at least one line
+  // actually has holiday hours. Keeps the table tight when nobody booked
+  // a holiday, surfaces it clearly when they did.
+  const anyHoliday = quote.lines.some((l) => (l.holidayHours || 0) > 0);
 
   const dateRange =
     job?.request_date && job?.end_date && job.end_date !== job.request_date
@@ -275,7 +298,9 @@ export default function QuotePdfView({ id }: { id: string }) {
                   <th>Shift</th>
                   <th className="num">Qty</th>
                   <th className="num">Hrs</th>
-                  {detail === "full" ? <th className="num">Hol</th> : null}
+                  {/* Basic: holiday only when present anywhere on the quote.
+                      Full: always show. */}
+                  {(detail === "full" || anyHoliday) ? <th className="num">Hol</th> : null}
                   {detail === "full" ? <th className="num">Travel</th> : null}
                   <th className="num">{detail === "full" ? "$/hr" : "Rate"}</th>
                   {detail === "full" ? <th className="num">$/day</th> : null}
@@ -297,7 +322,7 @@ export default function QuotePdfView({ id }: { id: string }) {
                       <td>{line.shiftLabel || ""}</td>
                       <td className="num">{line.qty}</td>
                       <td className="num">{line.rateMode === "day" || !line.hours ? "—" : line.hours}</td>
-                      {detail === "full" ? <td className="num">{line.holidayHours || ""}</td> : null}
+                      {(detail === "full" || anyHoliday) ? <td className="num">{line.holidayHours || ""}</td> : null}
                       {detail === "full" ? <td className="num">{line.travel ? fmtMoney(line.travel) : ""}</td> : null}
                       <td className="num">{detail === "full" ? fmtMoney(line.baseHourly) : basicRateDisplay}</td>
                       {detail === "full" ? <td className="num">{fmtMoney(line.baseDay)}</td> : null}
@@ -330,6 +355,53 @@ export default function QuotePdfView({ id }: { id: string }) {
           </tbody>
         </table>
       </section>
+
+      {/* ─── Rate Schedule (appendix) ─────────────────────────────────────── */}
+      {rateScheduleRows.length > 0 ? (
+        <section className="rate-schedule">
+          <h3>Rate Schedule {rateScheduleProfileName ? <span className="schedule-profile">— {rateScheduleProfileName}</span> : null}</h3>
+          <div className="schedule-note">
+            Rates this quote is based on. Add-on services beyond the line items above are billed at these rates unless otherwise quoted.
+          </div>
+          <table className="schedule-table">
+            <thead>
+              <tr>
+                <th>Position</th>
+                <th>Specialty</th>
+                <th className="num">Hourly</th>
+                <th className="num">Day</th>
+                <th className="num">OT</th>
+                <th className="num">DT</th>
+                <th>Rule</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rateScheduleRows.map((r) => {
+                const spc = r.specialty_id ? specialtiesById.get(r.specialty_id) : undefined;
+                const positionName = (spc ? positionsById.get(spc.positionId) : undefined) ?? "—";
+                const specialtyName = spc?.name ?? "—";
+                const ruleText = (() => {
+                  if (r.dt_after === "none") return "No OT (flat)";
+                  if (r.dt_after === "weekly40") return "OT after 40/wk";
+                  if (r.dt_after) return `OT after ${r.dt_after} / DT after 15`;
+                  return "";
+                })();
+                return (
+                  <tr key={r.id}>
+                    <td>{positionName}</td>
+                    <td>{specialtyName}</td>
+                    <td className="num">{fmtMoney(r.hourly)}</td>
+                    <td className="num">{fmtMoney(r.day)}</td>
+                    <td className="num">{fmtMoney(r.ot_rate)}</td>
+                    <td className="num">{fmtMoney(r.dt_rate)}</td>
+                    <td className="rule-cell">{ruleText}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
 
       {/* ─── Terms ────────────────────────────────────────────────────────── */}
       {quote.terms ? (
@@ -603,6 +675,52 @@ export default function QuotePdfView({ id }: { id: string }) {
           padding: 10px;
           color: #6c6358;
           font-style: italic;
+        }
+
+        /* ─── Rate Schedule appendix ──────────────────────────────────── */
+        .rate-schedule {
+          margin-top: 22px;
+          break-inside: avoid;
+        }
+        .rate-schedule h3 {
+          margin: 0 0 4px 0;
+          font-size: 9.5pt;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          color: #6c6358;
+          border-bottom: 1px solid #d7c6aa;
+          padding-bottom: 3px;
+        }
+        .rate-schedule .schedule-profile {
+          text-transform: none;
+          letter-spacing: normal;
+          color: #6c6358;
+          font-weight: 400;
+          font-size: 9pt;
+        }
+        .rate-schedule .schedule-note {
+          font-size: 8.5pt;
+          color: #6c6358;
+          font-style: italic;
+          margin: 4px 0 6px 0;
+        }
+        .schedule-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 9pt;
+        }
+        .schedule-table th, .schedule-table td {
+          padding: 3px 6px;
+          border-bottom: 1px solid #ead7b8;
+        }
+        .schedule-table th {
+          text-align: left;
+          font-weight: 600;
+          color: #6c6358;
+        }
+        .schedule-table th.num, .schedule-table td.num {
+          text-align: right;
+          font-variant-numeric: tabular-nums;
         }
 
         /* ─── Terms ───────────────────────────────────────────────────── */
