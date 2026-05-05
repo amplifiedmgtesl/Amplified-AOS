@@ -22,6 +22,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { loadQuote } from "@/lib/store/quotes";
 import { loadCompanySettings, type CompanySettings } from "@/lib/store/company-settings";
 import type { QuoteDraft } from "@/lib/store/types";
@@ -78,6 +79,12 @@ function fmtDate(s: string | undefined | null): string {
 }
 
 export default function QuotePdfView({ id }: { id: string }) {
+  const searchParams = useSearchParams();
+  // ?orientation=landscape — wider page, fits more columns. Default portrait.
+  // ?detail=full — show all line fields (holiday, travel, OT, DT, rule).
+  //   Default basic (Position / Specialty / Shift / Qty / Hrs / Rate / Total).
+  const orientation = (searchParams?.get("orientation") === "landscape") ? "landscape" : "portrait";
+  const detail = (searchParams?.get("detail") === "full") ? "full" : "basic";
   const [quote, setQuote] = useState<QuoteDraft | null>(null);
   const [job, setJob] = useState<LoadedJob | null>(null);
   const [client, setClient] = useState<LoadedClient | null>(null);
@@ -268,13 +275,19 @@ export default function QuotePdfView({ id }: { id: string }) {
                   <th>Shift</th>
                   <th className="num">Qty</th>
                   <th className="num">Hrs</th>
-                  <th className="num">Rate</th>
+                  {detail === "full" ? <th className="num">Hol</th> : null}
+                  {detail === "full" ? <th className="num">Travel</th> : null}
+                  <th className="num">{detail === "full" ? "$/hr" : "Rate"}</th>
+                  {detail === "full" ? <th className="num">$/day</th> : null}
+                  {detail === "full" ? <th className="num">OT</th> : null}
+                  {detail === "full" ? <th className="num">DT</th> : null}
+                  {detail === "full" ? <th>Rule</th> : null}
                   <th className="num">Total</th>
                 </tr>
               </thead>
               <tbody>
                 {g.lines.map(({ line, positionName, specialtyName }, i) => {
-                  const rateDisplay = line.rateMode === "day" || (line.baseDay > 0 && !line.hours)
+                  const basicRateDisplay = line.rateMode === "day" || (line.baseDay > 0 && !line.hours)
                     ? `${fmtMoney(line.baseDay)} / day`
                     : `${fmtMoney(line.baseHourly)} / hr`;
                   return (
@@ -284,7 +297,13 @@ export default function QuotePdfView({ id }: { id: string }) {
                       <td>{line.shiftLabel || ""}</td>
                       <td className="num">{line.qty}</td>
                       <td className="num">{line.rateMode === "day" || !line.hours ? "—" : line.hours}</td>
-                      <td className="num">{rateDisplay}</td>
+                      {detail === "full" ? <td className="num">{line.holidayHours || ""}</td> : null}
+                      {detail === "full" ? <td className="num">{line.travel ? fmtMoney(line.travel) : ""}</td> : null}
+                      <td className="num">{detail === "full" ? fmtMoney(line.baseHourly) : basicRateDisplay}</td>
+                      {detail === "full" ? <td className="num">{fmtMoney(line.baseDay)}</td> : null}
+                      {detail === "full" ? <td className="num">{fmtMoney(line.otRate)}</td> : null}
+                      {detail === "full" ? <td className="num">{fmtMoney(line.dtRate)}</td> : null}
+                      {detail === "full" ? <td className="rule-cell">{line.rule || ""}</td> : null}
                       <td className="num">{fmtMoney(line.total)}</td>
                     </tr>
                   );
@@ -344,13 +363,48 @@ export default function QuotePdfView({ id }: { id: string }) {
         </div>
       </section>
 
-      {/* ─── Print button (hidden on print) ───────────────────────────────── */}
+      {/* ─── Print button + view-mode toggles (hidden on print) ─────────── */}
       <div className="print-actions hide-print">
         <button onClick={() => window.print()} style={{ padding: "8px 16px", fontSize: 14 }}>
           Print / Save as PDF
         </button>
+        <div style={{ marginLeft: 16, display: "inline-flex", gap: 8, alignItems: "center", fontSize: 12 }}>
+          <label>
+            Orientation:{" "}
+            <select
+              value={orientation}
+              onChange={(e) => {
+                const params = new URLSearchParams(searchParams?.toString() ?? "");
+                if (e.target.value === "portrait") params.delete("orientation");
+                else params.set("orientation", e.target.value);
+                window.location.search = params.toString();
+              }}
+              style={{ fontSize: 12 }}
+            >
+              <option value="portrait">Portrait</option>
+              <option value="landscape">Landscape</option>
+            </select>
+          </label>
+          <label>
+            Detail:{" "}
+            <select
+              value={detail}
+              onChange={(e) => {
+                const params = new URLSearchParams(searchParams?.toString() ?? "");
+                if (e.target.value === "basic") params.delete("detail");
+                else params.set("detail", e.target.value);
+                window.location.search = params.toString();
+              }}
+              style={{ fontSize: 12 }}
+            >
+              <option value="basic">Basic (customer-facing)</option>
+              <option value="full">Full (all fields)</option>
+            </select>
+          </label>
+        </div>
         <span className="muted" style={{ marginLeft: 12, fontSize: 12 }}>
-          Tip: in the print dialog, choose "Save as PDF" as the destination, and uncheck "Headers and footers" for a clean output.
+          Tip: in the print dialog, choose "Save as PDF" and uncheck "Headers and footers".
+          {orientation === "landscape" ? " Set the dialog's paper orientation to Landscape too." : ""}
         </span>
       </div>
 
@@ -359,11 +413,11 @@ export default function QuotePdfView({ id }: { id: string }) {
         .quote-pdf {
           background: #fff;
           color: #181410;
-          max-width: 8.5in;
+          max-width: ${orientation === "landscape" ? "11in" : "8.5in"};
           margin: 24px auto;
           padding: 0.5in 0.6in 0.7in;
           font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-          font-size: 11pt;
+          font-size: ${orientation === "landscape" ? "10pt" : "11pt"};
           line-height: 1.4;
           position: relative;
         }
@@ -531,6 +585,10 @@ export default function QuotePdfView({ id }: { id: string }) {
           padding: 4px 6px;
           border-bottom: 1px solid #ead7b8;
         }
+        .lines-table .rule-cell {
+          font-size: 8.5pt;
+          color: #6c6358;
+        }
         .lines-table th {
           text-align: left;
           font-weight: 600;
@@ -614,6 +672,14 @@ export default function QuotePdfView({ id }: { id: string }) {
           .day-group {
             break-inside: avoid;
           }
+        }
+      `}</style>
+      {/* @page rules can't live inside styled-jsx so they go in a plain
+          <style> tag. Drives the browser print dialog's default paper orientation. */}
+      <style>{`
+        @page {
+          size: letter ${orientation};
+          margin: 0.4in 0.55in 0.5in;
         }
       `}</style>
     </div>
