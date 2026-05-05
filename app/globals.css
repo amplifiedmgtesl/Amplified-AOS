@@ -723,3 +723,16 @@ td, th {
     page-break-inside: avoid;
   }
 }
+
+/* Hide spinner arrows on all numeric inputs. They take up horizontal space
+   in dense tables (quote line editors, daily requirements, etc.) and the
+   AOS workflow doesn't use them — users type values directly. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
