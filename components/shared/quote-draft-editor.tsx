@@ -96,7 +96,19 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         if (cancelled) return;
         if (!q) { setError(`Quote not found: ${id}`); setLoading(false); return; }
         if (!q.isDraft) { router.replace(`/quotes/${id}`); return; }
-        setQuote(q);
+        // Recompute totals on every load. Handles drafts saved before the
+        // total-seeding fix (where quote.total was 0 even though lines had
+        // computed values). Doesn't write back here — the next user edit
+        // will trigger autosave with the corrected total.
+        const recomputedTotal = Math.round(
+          q.lines.reduce((s, l) => s + (l.total || 0), 0) * 100,
+        ) / 100;
+        const pct = q.depositPct ?? 0;
+        const recomputedDeposit = Math.round(recomputedTotal * (pct / 100) * 100) / 100;
+        const corrected = (recomputedTotal !== q.total || recomputedDeposit !== q.deposit)
+          ? { ...q, total: recomputedTotal, deposit: recomputedDeposit }
+          : q;
+        setQuote(corrected);
 
         // Load related data in parallel
         const [jobRes, daysRes, profilesRes, posRes, spcRes] = await Promise.all([
@@ -545,6 +557,42 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         ) : (
           <div className="muted">No job_request linked.</div>
         )}
+      </div>
+
+      {/* Totals summary — duplicated up top for long quotes where the user
+          would otherwise have to scroll past every line to see the bottom. */}
+      <div
+        style={{
+          marginBottom: 16,
+          padding: "10px 14px",
+          background: "#fbf4e8",
+          border: "1px solid #d7c6aa",
+          borderRadius: 8,
+          display: "flex",
+          gap: 24,
+          flexWrap: "wrap",
+          alignItems: "baseline",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        <div>
+          <div className="muted" style={{ fontSize: 11 }}>Subtotal</div>
+          <div style={{ fontSize: 18, fontWeight: 600 }}>${(quote.total ?? 0).toFixed(2)}</div>
+        </div>
+        <div>
+          <div className="muted" style={{ fontSize: 11 }}>Deposit ({quote.depositPct ?? 0}%)</div>
+          <div style={{ fontSize: 18, fontWeight: 600 }}>${(quote.deposit ?? 0).toFixed(2)}</div>
+        </div>
+        <div>
+          <div className="muted" style={{ fontSize: 11 }}>Balance Due</div>
+          <div style={{ fontSize: 18, fontWeight: 600 }}>
+            ${(Math.round(((quote.total ?? 0) - (quote.deposit ?? 0)) * 100) / 100).toFixed(2)}
+          </div>
+        </div>
+        <div style={{ marginLeft: "auto" }}>
+          <div className="muted" style={{ fontSize: 11 }}>Lines</div>
+          <div style={{ fontSize: 16 }}>{quote.lines.length}</div>
+        </div>
       </div>
 
       {/* Quote-specific fields */}
