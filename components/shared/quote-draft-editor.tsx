@@ -96,19 +96,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         if (cancelled) return;
         if (!q) { setError(`Quote not found: ${id}`); setLoading(false); return; }
         if (!q.isDraft) { router.replace(`/quotes/${id}`); return; }
-        // Recompute totals on every load. Handles drafts saved before the
-        // total-seeding fix (where quote.total was 0 even though lines had
-        // computed values). Doesn't write back here — the next user edit
-        // will trigger autosave with the corrected total.
-        const recomputedTotal = Math.round(
-          q.lines.reduce((s, l) => s + (l.total || 0), 0) * 100,
-        ) / 100;
-        const pct = q.depositPct ?? 0;
-        const recomputedDeposit = Math.round(recomputedTotal * (pct / 100) * 100) / 100;
-        const corrected = (recomputedTotal !== q.total || recomputedDeposit !== q.deposit)
-          ? { ...q, total: recomputedTotal, deposit: recomputedDeposit }
-          : q;
-        setQuote(corrected);
+        setQuote(q);
 
         // Load related data in parallel
         const [jobRes, daysRes, profilesRes, posRes, spcRes] = await Promise.all([
@@ -337,12 +325,16 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       return merged;
     });
 
+    const newTotal = money(recomputeTotals(newLines));
+    const pct = quote.depositPct ?? 0;
+    const newDeposit = money(newTotal * (pct / 100));
     setRateCardRows(newRows);
     setQuote({
       ...quote,
       rateCardProfileId: newProfileId,
       lines: newLines,
-      total: recomputeTotals(newLines),
+      total: newTotal,
+      deposit: newDeposit,
     });
   }
 
