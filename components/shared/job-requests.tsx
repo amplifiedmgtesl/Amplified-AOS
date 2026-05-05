@@ -69,9 +69,20 @@ export default function JobRequests() {
   const [openDraftId, setOpenDraftId] = useState<string | null>(null);
   const [latestIssuedId, setLatestIssuedId] = useState<string | null>(null);
 
-  // Display the applicable rate card right on the job header so the admin
-  // sees what rates a quote off this job will use, before they create one.
+  // Display + override the applicable rate card right on the job header so the
+  // admin sees what rates a quote off this job will use, and can pin a
+  // specific card if the auto-resolved one isn't right.
   const [applicableRateCardLabel, setApplicableRateCardLabel] = useState<string>("");
+  const [allRateCardProfiles, setAllRateCardProfiles] = useState<Array<{ id: string; name: string; client_name: string | null; effective_date: string | null }>>([]);
+
+  useEffect(() => {
+    supabase
+      .from("rate_card_profiles")
+      .select("id, name, client_name, effective_date")
+      .order("client_name", { ascending: true, nullsFirst: false })
+      .order("name")
+      .then(({ data }) => setAllRateCardProfiles(data ?? []));
+  }, []);
 
   useEffect(() => {
     if (!editingId) { setOpenDraftId(null); setLatestIssuedId(null); return; }
@@ -516,13 +527,27 @@ export default function JobRequests() {
             {isLocked && liveJobNo && (
               <span className="badge" style={{ fontSize: 10, background: "#eef5ff", color: "#1e3a8a" }}>locked</span>
             )}
-            {applicableRateCardLabel ? (
-              <>
-                <span style={{ opacity: 0.4 }}>·</span>
-                <small style={{ opacity: 0.7 }}>Rate card</small>
-                <span style={{ fontSize: 13 }} title="Will be used when a quote is created off this job">{applicableRateCardLabel}</span>
-              </>
-            ) : null}
+            <span style={{ opacity: 0.4 }}>·</span>
+            <small style={{ opacity: 0.7 }}>Rate card</small>
+            <select
+              disabled={isLocked}
+              value={form.rateCardProfileId ?? ""}
+              onChange={(e) => setForm({ ...form, rateCardProfileId: e.target.value || undefined })}
+              title="Pin a rate card to this job (overrides auto-resolution by client + date). Quote create uses this."
+              style={{ fontSize: 13, maxWidth: 360 }}
+            >
+              <option value="">
+                — Auto{applicableRateCardLabel ? ` (${applicableRateCardLabel})` : ""} —
+              </option>
+              {allRateCardProfiles.map((p) => {
+                const label = [p.client_name, p.name].filter(Boolean).join(" — ");
+                return (
+                  <option key={p.id} value={p.id}>
+                    {label}{p.effective_date ? ` (eff ${p.effective_date})` : ""}
+                  </option>
+                );
+              })}
+            </select>
           </div>
 
           {deleteMsg && (

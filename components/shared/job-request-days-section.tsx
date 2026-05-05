@@ -88,7 +88,8 @@ export function JobRequestDaysSection({
 
   // Load the applicable rate card for this job and build a set of available
   // (position_id, specialty_id) pairs so the requirements UI can warn about
-  // needs that won't have rates when a quote is generated.
+  // needs that won't have rates when a quote is generated. Honors the job's
+  // pinned rate_card_profile_id override; falls back to auto-resolution.
   useEffect(() => {
     if (!jobRequestId) { setRateCardPairs(new Set()); setRateCardName(""); return; }
     let cancelled = false;
@@ -96,23 +97,41 @@ export function JobRequestDaysSection({
       try {
         const jobRes = await supabase
           .from("job_requests")
-          .select("client_id, request_date")
+          .select("client_id, request_date, rate_card_profile_id")
           .eq("id", jobRequestId)
           .maybeSingle();
         if (cancelled || !jobRes.data) return;
-        const card = await pickRateCardForJob(
-          jobRes.data.client_id,
-          jobRes.data.request_date || jobStartDate || todayISO(),
-        );
-        if (cancelled || !card) return;
+        let cardId: string | null = null;
+        let cardRows: any[] = [];
+        if (jobRes.data.rate_card_profile_id) {
+          // Pinned override
+          const [profileRes, rowsRes] = await Promise.all([
+            supabase.from("rate_card_profiles").select("*").eq("id", jobRes.data.rate_card_profile_id).maybeSingle(),
+            supabase.from("rate_card_profile_rows").select("*").eq("profile_id", jobRes.data.rate_card_profile_id).order("sort_order"),
+          ]);
+          if (cancelled) return;
+          if (profileRes.data) {
+            cardId = profileRes.data.id;
+            cardRows = rowsRes.data ?? [];
+          }
+        }
+        if (!cardId) {
+          const card = await pickRateCardForJob(
+            jobRes.data.client_id,
+            jobRes.data.request_date || jobStartDate || todayISO(),
+          );
+          if (cancelled || !card) return;
+          cardId = card.id;
+          cardRows = card.rows;
+        }
         const profileRes = await supabase
           .from("rate_card_profiles")
           .select("name, client_name")
-          .eq("id", card.id)
+          .eq("id", cardId)
           .maybeSingle();
         if (cancelled) return;
         const pairs = new Set<string>();
-        for (const r of card.rows) {
+        for (const r of cardRows) {
           pairs.add(`${r.position_id ?? ""}|${r.specialty_id ?? ""}`);
         }
         setRateCardPairs(pairs);
@@ -120,7 +139,7 @@ export function JobRequestDaysSection({
           ? (profileRes.data.client_name
               ? `${profileRes.data.client_name} — ${profileRes.data.name}`
               : profileRes.data.name)
-          : card.id);
+          : cardId);
       } catch (err) {
         console.error("[job-request-days-section] rate card lookup failed:", err);
       }

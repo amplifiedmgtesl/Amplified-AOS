@@ -1046,6 +1046,7 @@ function rowToJobRequest(r: any): JobRequest {
     linkedQuoteId: r.linked_quote_id ?? undefined,
     jobNo: r.job_no ?? undefined,
     eventAbbr: r.event_abbr ?? undefined,
+    rateCardProfileId: r.rate_card_profile_id ?? undefined,
   };
 }
 
@@ -1544,6 +1545,7 @@ function jobRequestToRow(j: JobRequest) {
     linked_quote_id: j.linkedQuoteId ?? null,
     job_no: j.jobNo ?? null,
     event_abbr: j.eventAbbr ?? null,
+    rate_card_profile_id: j.rateCardProfileId ?? null,
   };
 }
 

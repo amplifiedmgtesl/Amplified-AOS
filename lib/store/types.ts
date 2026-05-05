@@ -199,6 +199,9 @@ export type JobRequest = {
   // The 8-char abbreviation that fills the EVENT slot of job_no.
   // Auto-derived from event_name on first save; user can override.
   eventAbbr?: string;
+  // Override of which rate card the quote-create flow will use. NULL = auto
+  // (effective-date-aware lookup keyed off client_id + request_date).
+  rateCardProfileId?: string;
 };
 
 // Per-day breakdown of a multi-day job request. The legacy flat columns on

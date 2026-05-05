@@ -362,7 +362,29 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
     (specialtiesRes.data ?? []).map((s: any) => [s.id, s.name]),
   );
 
-  const rateCard = await pickRateCardForJob(job.client_id, job.request_date);
+  // Honor the job's pinned rate_card_profile_id if set; otherwise auto-resolve
+  // by client + start date.
+  let rateCard: { id: string; rows: any[]; terms: string | null } | null = null;
+  if (job.rate_card_profile_id) {
+    const pinnedRes = await supabase
+      .from("rate_card_profiles")
+      .select("*")
+      .eq("id", job.rate_card_profile_id)
+      .maybeSingle();
+    if (pinnedRes.error) throw pinnedRes.error;
+    if (pinnedRes.data) {
+      const rows = await supabase
+        .from("rate_card_profile_rows")
+        .select("*")
+        .eq("profile_id", pinnedRes.data.id)
+        .order("sort_order");
+      if (rows.error) throw rows.error;
+      rateCard = { id: pinnedRes.data.id, rows: rows.data ?? [], terms: pinnedRes.data.terms ?? null };
+    }
+  }
+  if (!rateCard) {
+    rateCard = await pickRateCardForJob(job.client_id, job.request_date);
+  }
   if (!rateCard) {
     throw new Error("No applicable rate card found (no client card, no master default).");
   }
