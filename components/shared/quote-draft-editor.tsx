@@ -832,6 +832,9 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
           {saving === "saving" ? "Saving…" : "Save Draft"}
         </button>
         <button onClick={onIssue}>Issue Quote</button>
+        <button className="secondary" onClick={() => window.open(`/quotes/${quote.id}/pdf`, "_blank")}>
+          Preview PDF
+        </button>
         <button className="secondary" onClick={onDelete}>Delete</button>
       </div>
     </div>

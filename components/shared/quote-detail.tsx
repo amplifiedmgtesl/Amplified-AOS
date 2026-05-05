@@ -249,7 +249,7 @@ export default function QuoteDetail({ id }: { id: string }) {
 
       {/* Action bar */}
       <div className="action-row" style={{ marginTop: 16 }}>
-        <button onClick={() => window.print()}>Print</button>
+        <button onClick={() => window.open(`/quotes/${quote.id}/pdf`, "_blank")}>Print / PDF</button>
         {!isSuperseded && !isSigned ? (
           <button className="secondary" onClick={() => setSignOpen(true)}>Mark Signed</button>
         ) : null}
