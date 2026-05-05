@@ -15,7 +15,6 @@ import { blankTimeEntry, computeTimeEntry } from "./timekeeping";
 import type {
   CalendarEvent,
   QuoteDraft,
-  QuoteDraftWorkspace,
   InvoiceDraft,
   JobRequest,
   JobSheet,
@@ -24,9 +23,6 @@ import type {
   JobCostingDraft,
   JobSheetWorker,
 } from "./types";
-
-// Re-export QuoteDraftWorkspace so existing imports from this file still work.
-export type { QuoteDraftWorkspace };
 
 // ─── Calendar Events ──────────────────────────────────────────────────────────
 
@@ -45,29 +41,14 @@ export function saveEventProfile(
 
 // ─── Quotes ───────────────────────────────────────────────────────────────────
 
+// loadQuotes (sync, cache-backed) is kept for legacy invoice-builder reads.
+// New code paths use lib/store/quotes.ts (async, direct to Supabase).
+// Goes away when Phase C ships.
 export function loadQuotes(): QuoteDraft[] { return db.getQuotes(); }
-export function saveQuotes(rows: QuoteDraft[]) { db.setQuotes(rows); }
-export function upsertQuote(row: QuoteDraft) { db.upsertQuote(row); }
 
 // Active quote — UI state, stays in localStorage
 export function setActiveQuote(id: string) { saveJSON("aes_active_quote_v1", id); }
 export function getActiveQuote(): string | null { return loadJSON<string | null>("aes_active_quote_v1", null); }
-
-// Quote seed — transient pre-fill data, stays in localStorage
-export function setQuoteSeed(seed: Partial<QuoteDraft> | null) { saveJSON("aes_quote_seed_v2", seed); }
-export function getQuoteSeed(): Partial<QuoteDraft> | null {
-  return loadJSON<Partial<QuoteDraft> | null>("aes_quote_seed_v2", null);
-}
-
-// ─── Quote Draft Workspaces ───────────────────────────────────────────────────
-
-export function loadQuoteDraftWorkspaces(): QuoteDraftWorkspace[] { return db.getQuoteDraftWorkspaces(); }
-export function saveQuoteDraftWorkspaces(rows: QuoteDraftWorkspace[]) { db.setQuoteDraftWorkspaces(rows); }
-export function upsertQuoteDraftWorkspace(row: QuoteDraftWorkspace) { db.upsertQuoteDraftWorkspace(row); }
-export function setActiveQuoteDraft(id: string) { saveJSON("aes_active_quote_draft_v1", id); }
-export function getActiveQuoteDraft(): string | null {
-  return loadJSON<string | null>("aes_active_quote_draft_v1", null);
-}
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 

@@ -18,7 +18,6 @@
 
 import { supabase } from "@/lib/supabase/client";
 import type { QuoteDraft, QuoteLine, JobRequest } from "./types";
-import { DEFAULT_TERMS } from "@/lib/rates/defaults";
 
 // ─── ID generation ───────────────────────────────────────────────────────────
 
@@ -46,7 +45,6 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     endDate: r.end_date ?? "",
     startTime: r.start_time ?? "",
     endTime: r.end_time ?? "",
-    expectedHoursPerDay: r.expected_hours_per_day ?? undefined,
     total: r.total ?? 0,
     deposit: r.deposit ?? 0,
     depositPct: r.deposit_pct ?? undefined,
@@ -92,10 +90,7 @@ function rowToQuoteLine(r: any): QuoteLine {
     dtRate:       r.dt_rate       ?? 0,
     rule:         r.rule          ?? "",
     total:        r.total         ?? 0,
-    positionId:   r.position_id   ?? undefined,
     specialtyId:  r.specialty_id  ?? undefined,
-    department:   r.department    ?? undefined,
-    specialty:    r.specialty     ?? undefined,
     shiftLabel:   r.shift_label   ?? undefined,
     quoteDate:    r.quote_date    ?? undefined,
     endDate:      r.end_date      ?? undefined,
@@ -119,7 +114,6 @@ function quoteToDraftRow(q: QuoteDraft) {
     end_date:               q.endDate || null,
     start_time:             q.startTime || null,
     end_time:               q.endTime || null,
-    expected_hours_per_day: q.expectedHoursPerDay ?? null,
     total:                  q.total ?? 0,
     deposit:                q.deposit ?? 0,
     deposit_pct:            q.depositPct ?? null,
@@ -139,6 +133,8 @@ function quoteToDraftRow(q: QuoteDraft) {
 }
 
 function quoteLineToRow(quoteId: string, l: QuoteLine, index: number, existingId?: string) {
+  // Note: position_id, department, specialty are deprecated — display always
+  // looks up via specialty_id FK. Dropped from the table by migration 20260505b.
   return {
     id:            existingId ?? newLineId(),
     quote_id:      quoteId,
@@ -154,10 +150,7 @@ function quoteLineToRow(quoteId: string, l: QuoteLine, index: number, existingId
     dt_rate:       l.dtRate,
     rule:          l.rule,
     total:         l.total,
-    position_id:   l.positionId  ?? null,
     specialty_id:  l.specialtyId ?? null,
-    department:    l.department  ?? null,
-    specialty:     l.specialty   ?? null,
     shift_label:   l.shiftLabel  ?? null,
     quote_date:    l.quoteDate   ?? null,
     end_date:      l.endDate     ?? null,
@@ -404,7 +397,10 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
       .select("value")
       .eq("key", "terms")
       .maybeSingle();
-    terms = globalTerms.data?.value || DEFAULT_TERMS;
+    // Final fallback is an empty string. Master rate card should always have
+    // populated terms (seeded by migration 20260504g), so this only matters if
+    // someone explicitly clears them.
+    terms = globalTerms.data?.value || "";
   }
 
   const draftId = newQuoteId();

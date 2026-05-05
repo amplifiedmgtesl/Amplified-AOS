@@ -7,7 +7,7 @@
 
 import * as db from "../store/db";
 import { loadJSON, saveJSON } from "../store/local";
-import { DEFAULT_RATE_ROWS, DEFAULT_TERMS, type RateRow, type RateCardProfile } from "./defaults";
+import { DEFAULT_RATE_ROWS, type RateRow, type RateCardProfile } from "./defaults";
 
 // Re-export types so existing imports from this file still work.
 export type { RateRow, RateCardProfile };

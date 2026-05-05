@@ -1,1 +1,0 @@
-import { AppShell } from "@/components/layout/app-shell"; import QuoteBuilder from "@/components/shared/quote-builder"; export default function Page(){ return <AppShell title="Quote Builder" subtitle="Detailed client billing breakdown using rate-card pricing and optional timekeeping detail."><QuoteBuilder /></AppShell>; }

@@ -104,7 +104,6 @@ export type QuoteDraft = {
   endDate: string;
   startTime: string;
   endTime: string;
-  expectedHoursPerDay?: number;
   total: number;
   deposit: number;
   /** Deposit percentage of subtotal (0-100). Stored separately from `deposit`
@@ -198,7 +197,8 @@ export type JobRequest = {
   notes: string;
   attachmentNames: string[];
   packetNotes: string;
-  linkedQuoteId?: string;  // set when a quote is built from this request
+  // linkedQuoteId removed 2026-05-05 — replaced by reverse FK lookup via
+  // quotes.job_request_id (more reliable, no denormalization drift).
   // The user-facing identifier (display code). Auto-recomputed from
   // request_date/end_date/client.code/event_abbr while status='lead', then
   // stable. See project_todo.md ("Display-code naming convention").
@@ -434,13 +434,8 @@ export type JobCostingLine = {
   manualDtOverride?: boolean;
 };
 
-export type QuoteDraftWorkspace = {
-  id: string;
-  clientId?: string;
-  name: string;
-  updatedAt: string;
-  data: any;
-};
+// QuoteDraftWorkspace type retired 2026-05-05. Drafts now live directly on
+// the quotes table (is_draft=true) — no separate JSONB workspace blob.
 
 export type JobCostingDraft = {
   id: string;

@@ -13,7 +13,6 @@ import { supabase } from "../supabase/client";
 import type {
   CalendarEvent,
   QuoteDraft,
-  QuoteDraftWorkspace,
   InvoiceDraft,
   JobRequest,
   JobSheet,
@@ -24,7 +23,7 @@ import type {
   Specialty,
   Client,
 } from "./types";
-import { DEFAULT_RATE_ROWS, DEFAULT_TERMS, type RateCardProfile, type RateRow } from "../rates/defaults";
+import { DEFAULT_RATE_ROWS, type RateCardProfile, type RateRow } from "../rates/defaults";
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 
@@ -34,7 +33,6 @@ interface Cache {
   deletedEventIds: string[];
   eventProfiles: Record<string, { notes: string; attachmentNames: string[] }>;
   quotes: QuoteDraft[];
-  quoteDraftWorkspaces: QuoteDraftWorkspace[];
   invoiceDrafts: InvoiceDraft[];
   jobRequests: JobRequest[];
   jobSheets: JobSheet[];
@@ -57,7 +55,6 @@ const _cache: Cache = {
   deletedEventIds: [],
   eventProfiles: {},
   quotes: [],
-  quoteDraftWorkspaces: [],
   invoiceDrafts: [],
   jobRequests: [],
   jobSheets: [],
@@ -66,7 +63,7 @@ const _cache: Cache = {
   deletedEmployeeKeys: [],
   jobCostingDrafts: [],
   rateRows: DEFAULT_RATE_ROWS,
-  terms: DEFAULT_TERMS,
+  terms: "",
   clientName: "",
   rateCardProfiles: [],
   positions: [],
@@ -121,7 +118,6 @@ async function _loadAll() {
   const [
     eventsRes,
     quotesRes,
-    workspacesRes,
     invoicesRes,
     quoteLinesRes,
     invoiceLinesRes,
@@ -141,7 +137,6 @@ async function _loadAll() {
   ] = await Promise.all([
     supabase.from("calendar_events").select("*"),
     supabase.from("quotes").select("*"),
-    supabase.from("quote_draft_workspaces").select("*"),
     supabase.from("invoices").select("*"),
     supabase.from("quote_lines").select("*").order("sort_order"),
     supabase.from("invoice_lines").select("*").order("sort_order"),
@@ -180,7 +175,6 @@ async function _loadAll() {
   }
   _cache.quotes = (quotesRes.data ?? []).map((r) => rowToQuote(r, quoteLinesByQuoteId.get(r.id) ?? []));
 
-  _cache.quoteDraftWorkspaces = (workspacesRes.data ?? []).map(rowToWorkspace);
 
   const invoiceLinesByInvoiceId = new Map<string, any[]>();
   for (const l of (invoiceLinesRes.data ?? [])) {
@@ -335,61 +329,13 @@ export function saveEventProfile(eventId: string, data: { notes: string; attachm
 
 export function getQuotes() { return _cache.quotes; }
 
-export function setQuotes(rows: QuoteDraft[]) {
-  _cache.quotes = rows;
-  for (const r of rows) {
-    sync("quotes", quoteToRow(r));
-    syncQuoteLines(r.id, r.lines);
-  }
-}
-
-export function upsertQuote(row: QuoteDraft) {
-  // Hot-fix (2026-04-29): collision guard. Refuse to overwrite an existing
-  // quote row whose content belongs to a different client. This is the safety
-  // net against the slug-overwrite bug class — even if a stale `quoteId` ever
-  // slips past the upstream fixes in quote-builder.tsx, a save that would
-  // clobber another client's quote data is blocked here at the DB-write
-  // boundary. Same-client edits (rename, reschedule, typo fix) are allowed.
-  const existing = _cache.quotes.find((r) => r.id === row.id);
-  if (existing) {
-    const existingClientKey = (existing.clientId || existing.client || "").trim().toLowerCase();
-    const incomingClientKey = (row.clientId || row.client || "").trim().toLowerCase();
-    const clientChanged = existingClientKey && incomingClientKey && existingClientKey !== incomingClientKey;
-    if (clientChanged) {
-      const msg = `Quote ID collision: row "${row.id}" already belongs to a different client ("${existing.client}"). Refusing to overwrite with data for "${row.client}". This usually means a stale quote draft is carrying an old slug — reload the page and try again.`;
-      console.error(msg, { existing, attempted: row });
-      if (typeof window !== "undefined") alert(msg);
-      throw new Error(msg);
-    }
-  }
-  _cache.quotes = [..._cache.quotes.filter((r) => r.id !== row.id), row];
-  sync("quotes", quoteToRow(row));
-  syncQuoteLines(row.id, row.lines);
-  // Write reverse link back to job request
-  if (row.linkedJobRequestId) {
-    supabase.from("job_requests").update({ linked_quote_id: row.id }).eq("id", row.linkedJobRequestId).then(() => {});
-    _cache.jobRequests = _cache.jobRequests.map((r) =>
-      r.id === row.linkedJobRequestId ? { ...r, linkedQuoteId: row.id } : r
-    );
-  }
-}
-
-// ─── Quote Draft Workspaces ───────────────────────────────────────────────────
-
-export function getQuoteDraftWorkspaces() { return _cache.quoteDraftWorkspaces; }
-
-export function setQuoteDraftWorkspaces(rows: QuoteDraftWorkspace[]) {
-  _cache.quoteDraftWorkspaces = rows;
-  for (const r of rows) sync("quote_draft_workspaces", workspaceToRow(r));
-}
-
-export function upsertQuoteDraftWorkspace(row: QuoteDraftWorkspace) {
-  const next = [row, ..._cache.quoteDraftWorkspaces.filter((r) => r.id !== row.id)].sort(
-    (a, b) => b.updatedAt.localeCompare(a.updatedAt)
-  );
-  _cache.quoteDraftWorkspaces = next;
-  sync("quote_draft_workspaces", workspaceToRow(row));
-}
+// ─── Quote write paths retired ────────────────────────────────────────────────
+// upsertQuote, setQuotes, the quote_draft_workspaces helpers, and the
+// rowToWorkspace/workspaceToRow conversions all moved out as part of the
+// quote rewrite (2026-05-05 cleanup). All quote writes go through
+// lib/store/quotes.ts now (async, direct to Supabase, freeze-trigger backed).
+// _cache.quotes is still hydrated by initStore for legacy invoice-builder
+// reads via getQuotes() / loadQuotes(); that goes away with Phase C.
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
@@ -498,7 +444,15 @@ export function upsertJobRequest(row: JobRequest) {
 export async function deleteJobRequest(id: string): Promise<string | null> {
   const row = _cache.jobRequests.find((r) => r.id === id);
   if (!row) return null;
-  if (row.linkedQuoteId) return "Cannot delete — a quote has been built from this job request.";
+  // Block delete if any non-superseded quote (draft or frozen) references this job.
+  // Replaces the old job_requests.linked_quote_id check now that the column is dropped.
+  const { count, error: countErr } = await supabase
+    .from("quotes")
+    .select("id", { count: "exact", head: true })
+    .eq("job_request_id", id)
+    .or("status.is.null,status.neq.superseded");
+  if (countErr) return countErr.message;
+  if ((count ?? 0) > 0) return "Cannot delete — a quote has been built from this job request.";
   const { error } = await supabase.from("job_requests").delete().eq("id", id);
   if (error) return error.message;
   _cache.jobRequests = _cache.jobRequests.filter((r) => r.id !== id);
@@ -950,7 +904,6 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     endDate: r.end_date ?? "",
     startTime: r.start_time ?? "",
     endTime: r.end_time ?? "",
-    expectedHoursPerDay: r.expected_hours_per_day ?? undefined,
     total: r.total ?? 0,
     deposit: r.deposit ?? 0,
     depositPct: r.deposit_pct ?? undefined,
@@ -981,16 +934,6 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     updatedAt: r.updated_at ?? undefined,
     createdBy: r.created_by ?? undefined,
     updatedBy: r.updated_by ?? undefined,
-  };
-}
-
-function rowToWorkspace(r: any): QuoteDraftWorkspace {
-  return {
-    id: r.id,
-    clientId: r.client_id ?? undefined,
-    name: r.name ?? "",
-    updatedAt: r.updated_at ?? "",
-    data: r.data ?? {},
   };
 }
 
@@ -1046,7 +989,6 @@ function rowToJobRequest(r: any): JobRequest {
     notes: r.notes ?? "",
     attachmentNames: r.attachment_names ?? [],
     packetNotes: r.packet_notes ?? "",
-    linkedQuoteId: r.linked_quote_id ?? undefined,
     jobNo: r.job_no ?? undefined,
     eventAbbr: r.event_abbr ?? undefined,
     rateCardProfileId: r.rate_card_profile_id ?? undefined,
@@ -1345,35 +1287,6 @@ function rowToInvoiceLine(r: any): import("./types").QuoteLine {
   return rowToQuoteLine(r);
 }
 
-function quoteLineToRow(quoteId: string, l: import("./types").QuoteLine, index: number) {
-  return {
-    id:            `${quoteId}_${index}`,
-    quote_id:      quoteId,
-    sort_order:    index,
-    service_key:   l.serviceKey,
-    qty:           l.qty,
-    hours:         l.hours,
-    holiday_hours: l.holidayHours,
-    travel:        l.travel,
-    base_hourly:   l.baseHourly,
-    base_day:      l.baseDay,
-    ot_rate:       l.otRate,
-    dt_rate:       l.dtRate,
-    rule:          l.rule,
-    total:         l.total,
-    position_id:   l.positionId  ?? null,
-    specialty_id:  l.specialtyId ?? null,
-    department:    l.department  ?? null,
-    specialty:     l.specialty   ?? null,
-    shift_label:   l.shiftLabel  ?? null,
-    quote_date:    l.quoteDate   ?? null,
-    end_date:      l.endDate     ?? null,
-    start_time:    l.startTime   ?? null,
-    end_time:      l.endTime     ?? null,
-    rate_mode:     l.rateMode    ?? null,
-  };
-}
-
 function invoiceLineToRow(invoiceId: string, l: import("./types").QuoteLine, index: number) {
   return {
     id:            `${invoiceId}_${index}`,
@@ -1401,23 +1314,6 @@ function invoiceLineToRow(invoiceId: string, l: import("./types").QuoteLine, ind
     end_time:      l.endTime     ?? null,
     rate_mode:     l.rateMode    ?? null,
   };
-}
-
-function syncQuoteLines(quoteId: string, lines: import("./types").QuoteLine[]) {
-  supabase
-    .from("quote_lines")
-    .delete()
-    .eq("quote_id", quoteId)
-    .then(({ error }) => {
-      if (error) { console.error("[db] delete quote_lines error:", error); return; }
-      if (lines.length === 0) return;
-      supabase
-        .from("quote_lines")
-        .insert(lines.map((l, i) => quoteLineToRow(quoteId, l, i)))
-        .then(({ error: e2 }) => {
-          if (e2) console.error("[db] insert quote_lines error:", e2);
-        });
-    });
 }
 
 function syncInvoiceLines(invoiceId: string, lines: import("./types").QuoteLine[]) {
@@ -1455,43 +1351,6 @@ function syncInvoiceLines(invoiceId: string, lines: import("./types").QuoteLine[
           }
         });
     });
-}
-
-function quoteToRow(q: QuoteDraft) {
-  return {
-    id: q.id,
-    client_id: q.clientId ?? null,
-    client: q.client,
-    event_name: q.eventName,
-    venue: q.venue,
-    city_state: q.cityState,
-    start_date: q.startDate,
-    end_date: q.endDate,
-    start_time: q.startTime,
-    end_time: q.endTime,
-    expected_hours_per_day: q.expectedHoursPerDay ?? null,
-    total: q.total,
-    deposit: q.deposit,
-    status: q.status,
-    notes: q.notes,
-    terms: q.terms,
-    linked_job_request_id: q.linkedJobRequestId ?? null,
-    linked_job_sheet_id: q.linkedJobSheetId ?? null,
-    timesheet_summary: q.timesheetSummary ?? null,
-    signature_name: q.signatureName ?? null,
-    signed_at: q.signedAt ?? null,
-    rate_card_profile_id: q.rateCardProfileId ?? null,
-  };
-}
-
-function workspaceToRow(w: QuoteDraftWorkspace) {
-  return {
-    id: w.id,
-    client_id: w.clientId ?? null,
-    name: w.name,
-    updated_at: w.updatedAt,
-    data: w.data,
-  };
 }
 
 function invoiceToRow(inv: InvoiceDraft) {
@@ -1545,7 +1404,6 @@ function jobRequestToRow(j: JobRequest) {
     notes: j.notes,
     attachment_names: j.attachmentNames,
     packet_notes: j.packetNotes,
-    linked_quote_id: j.linkedQuoteId ?? null,
     job_no: j.jobNo ?? null,
     event_abbr: j.eventAbbr ?? null,
     rate_card_profile_id: j.rateCardProfileId ?? null,
@@ -1832,7 +1690,6 @@ export async function mergeClients(sourceId: string, targetId: string): Promise<
   await supabase.from("job_requests").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("rate_card_profiles").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("quotes").update({ client_id: target.id }).eq("client_id", source.id);
-  await supabase.from("quote_draft_workspaces").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("calendar_events").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("invoices").update({ client_id: target.id }).eq("client_id", source.id);
   for (const t of ["quotes", "invoices"] as const) {

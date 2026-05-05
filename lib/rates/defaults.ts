@@ -63,15 +63,6 @@ export const DEFAULT_RATE_ROWS: RateRow[] = [
   makeRow("spc-10-04","Operations","Steward",34,340),
   makeRow("spc-10-05","Operations","Crew Chief",42,420),
 ];
-export const DEFAULT_TERMS = `Billing Structure:
-All positions are billed at a five (5) hour minimum per shift.
-Day rates are based on ten (10) hour shifts.
-
-OT may be triggered after ten (10), eleven (11), twelve (12), thirteen (13), fourteen (14), or fifteen (15) hours, based on the selected position structure.
-DT is billed only after fifteen (15) hours.
-
-Travel may be added per position as quoted.
-
-Overtime is billed at 1.5 times the regular hourly rate after 40 worked hours in a contiguous work week. The standard work week runs Sunday through Saturday.
-
-Holiday hours are billed at 2.0 times the regular hourly rate. Recognized holidays include Christmas Eve, Christmas Day, New Year's Eve, New Year's Day, Easter, Memorial Day, Independence Day, and Thanksgiving Day.`;
+// DEFAULT_TERMS removed 2026-05-05 — terms now live in the master rate card
+// profile (seeded by migration 20260504g) and per-client rate card profiles.
+// New quote flow reads from rate_card_profiles.terms with empty-string fallback.
