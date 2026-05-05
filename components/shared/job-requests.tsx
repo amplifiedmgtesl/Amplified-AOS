@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { setQuoteSeed, upsertJobRequest, deleteJobRequest, setActiveQuote } from "@/lib/store/app-store";
-import { createDraftFromJob } from "@/lib/store/quotes";
+import { createDraftFromJob, pickRateCardForJob } from "@/lib/store/quotes";
 import { googleCalendarLink } from "@/lib/store/calendar";
 import { loadJobRequests } from "@/lib/store/app-store";
 import { timeOptions } from "@/lib/store/timekeeping";
@@ -69,6 +69,10 @@ export default function JobRequests() {
   const [openDraftId, setOpenDraftId] = useState<string | null>(null);
   const [latestIssuedId, setLatestIssuedId] = useState<string | null>(null);
 
+  // Display the applicable rate card right on the job header so the admin
+  // sees what rates a quote off this job will use, before they create one.
+  const [applicableRateCardLabel, setApplicableRateCardLabel] = useState<string>("");
+
   useEffect(() => {
     if (!editingId) { setOpenDraftId(null); setLatestIssuedId(null); return; }
     let cancelled = false;
@@ -88,6 +92,38 @@ export default function JobRequests() {
       });
     return () => { cancelled = true; };
   }, [editingId, refreshKey]);
+
+  // Resolve the applicable rate card for the form's current client + start
+  // date. Re-runs as the user changes either field so the displayed label
+  // tracks live.
+  useEffect(() => {
+    if (!form.clientId || !form.requestDate) { setApplicableRateCardLabel(""); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const card = await pickRateCardForJob(form.clientId, form.requestDate);
+        if (cancelled) return;
+        if (!card) { setApplicableRateCardLabel("(no rate card)"); return; }
+        const profileRes = await supabase
+          .from("rate_card_profiles")
+          .select("name, client_name, effective_date")
+          .eq("id", card.id)
+          .maybeSingle();
+        if (cancelled) return;
+        const p = profileRes.data;
+        if (!p) { setApplicableRateCardLabel(card.id); return; }
+        const parts: string[] = [];
+        if (p.client_name) parts.push(p.client_name);
+        parts.push(p.name);
+        const label = parts.join(" — ");
+        setApplicableRateCardLabel(p.effective_date ? `${label} (eff ${p.effective_date})` : label);
+      } catch (err) {
+        console.error("[job-requests] rate card lookup failed:", err);
+        setApplicableRateCardLabel("");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [form.clientId, form.requestDate]);
 
   useEffect(() => {
     supabase.from("clients").select("id, name, code, is_active").order("name")
@@ -480,6 +516,13 @@ export default function JobRequests() {
             {isLocked && liveJobNo && (
               <span className="badge" style={{ fontSize: 10, background: "#eef5ff", color: "#1e3a8a" }}>locked</span>
             )}
+            {applicableRateCardLabel ? (
+              <>
+                <span style={{ opacity: 0.4 }}>·</span>
+                <small style={{ opacity: 0.7 }}>Rate card</small>
+                <span style={{ fontSize: 13 }} title="Will be used when a quote is created off this job">{applicableRateCardLabel}</span>
+              </>
+            ) : null}
           </div>
 
           {deleteMsg && (
