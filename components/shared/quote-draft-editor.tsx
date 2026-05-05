@@ -51,7 +51,17 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
   const [addLineOpen, setAddLineOpen] = useState<string | null>(null); // day.id when open
+  const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
   const skipNextAutosaveRef = useRef(true); // skip the autosave that would fire from initial setQuote
+
+  function toggleDayCollapsed(dayId: string) {
+    setCollapsedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(dayId)) next.delete(dayId);
+      else next.add(dayId);
+      return next;
+    });
+  }
 
   // ── Load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -444,7 +454,27 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       </div>
 
       {/* Lines per day */}
-      <h3 className="section-title">Line items</h3>
+      <div className="action-row" style={{ alignItems: "baseline", marginBottom: 8 }}>
+        <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Line items</h3>
+        {days.length > 1 ? (
+          <>
+            <button
+              className="secondary"
+              onClick={() => setCollapsedDays(new Set(days.map((d) => d.id)))}
+              style={{ fontSize: 12 }}
+            >
+              Collapse all
+            </button>
+            <button
+              className="secondary"
+              onClick={() => setCollapsedDays(new Set())}
+              style={{ fontSize: 12 }}
+            >
+              Expand all
+            </button>
+          </>
+        ) : null}
+      </div>
       {linesWithStaleRates.size > 0 ? (
         <div className="muted" style={{ background: "#fff8e1", padding: 8, borderRadius: 6, marginBottom: 8, fontSize: 13 }}>
           ⚠ {linesWithStaleRates.size} line(s) have positions that don't exist in the current rate card profile. They keep their existing rates (highlighted in yellow).
@@ -454,20 +484,39 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       {days.map((day, dayIndex) => {
         const dayLines = linesByDay.get(day.date) ?? [];
         const prevDay = dayIndex > 0 ? days[dayIndex - 1] : null;
+        const isCollapsed = collapsedDays.has(day.id);
+        const dayTotal = dayLines.reduce((s, { line }) => s + (line.total || 0), 0);
         return (
           <div key={day.id} className="card" style={{ marginBottom: 12, background: "rgba(0,0,0,0.015)" }}>
-            <div className="action-row" style={{ marginBottom: 8, alignItems: "baseline" }}>
-              <h4 style={{ margin: 0, flex: 1 }}>{day.label}</h4>
-              {prevDay && dayLines.length === 0 ? (
+            <div className="action-row" style={{ marginBottom: isCollapsed ? 0 : 8, alignItems: "baseline" }}>
+              <button
+                onClick={() => toggleDayCollapsed(day.id)}
+                style={{
+                  background: "none", border: "none", padding: 0, marginRight: 8,
+                  cursor: "pointer", fontSize: 14, color: "inherit",
+                }}
+                title={isCollapsed ? "Expand" : "Collapse"}
+              >
+                {isCollapsed ? "▶" : "▼"}
+              </button>
+              <h4 style={{ margin: 0, flex: 1 }}>
+                {day.label}
+                <span className="muted" style={{ marginLeft: 8, fontSize: 13, fontWeight: "normal" }}>
+                  · {dayLines.length} line{dayLines.length === 1 ? "" : "s"} · ${dayTotal.toFixed(2)}
+                </span>
+              </h4>
+              {!isCollapsed && prevDay && dayLines.length === 0 ? (
                 <button className="secondary" onClick={() => copyFromPreviousDay(day, prevDay)} style={{ fontSize: 12 }}>
                   Copy from {prevDay.label}
                 </button>
               ) : null}
-              <button className="secondary" onClick={() => setAddLineOpen(addLineOpen === day.id ? null : day.id)} style={{ fontSize: 12 }}>
-                {addLineOpen === day.id ? "Cancel" : "+ Add Line"}
-              </button>
+              {!isCollapsed ? (
+                <button className="secondary" onClick={() => setAddLineOpen(addLineOpen === day.id ? null : day.id)} style={{ fontSize: 12 }}>
+                  {addLineOpen === day.id ? "Cancel" : "+ Add Line"}
+                </button>
+              ) : null}
             </div>
-            {addLineOpen === day.id ? (
+            {!isCollapsed && addLineOpen === day.id ? (
               <div style={{ marginBottom: 8, padding: 8, background: "#fff", borderRadius: 6, border: "1px solid #d7c6aa" }}>
                 <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>Pick a position from the rate card:</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 200, overflowY: "auto" }}>
@@ -490,24 +539,26 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
                 </div>
               </div>
             ) : null}
-            {dayLines.length === 0 ? (
-              <div className="muted" style={{ fontSize: 13 }}>No lines for this day yet.</div>
-            ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Department</th><th>Specialty</th>
-                      <th>Qty</th><th>Hours</th><th>$/hr</th><th>$/day</th>
-                      <th>Total</th><th>Mode</th><th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dayLines.map(({ line, globalIndex }) => renderLineRow(line, globalIndex))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {!isCollapsed ? (
+              dayLines.length === 0 ? (
+                <div className="muted" style={{ fontSize: 13 }}>No lines for this day yet.</div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Department</th><th>Specialty</th>
+                        <th>Qty</th><th>Hours</th><th>$/hr</th><th>$/day</th>
+                        <th>Total</th><th>Mode</th><th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dayLines.map(({ line, globalIndex }) => renderLineRow(line, globalIndex))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            ) : null}
           </div>
         );
       })}
