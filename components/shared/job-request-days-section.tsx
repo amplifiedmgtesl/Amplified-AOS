@@ -11,6 +11,7 @@ import {
   deleteJobRequestCrewNeed,
 } from "@/lib/storage/job-request-days";
 import { timeOptions } from "@/lib/store/timekeeping";
+import { pickRateCardForJob } from "@/lib/store/quotes";
 import type {
   JobRequestDay,
   JobRequestCrewNeed,
@@ -62,6 +63,10 @@ export function JobRequestDaysSection({
   const [crewByDayId, setCrewByDayId] = useState<Record<string, JobRequestCrewNeed[]>>({});
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  /** Set of "{positionId}|{specialtyId}" pairs covered by the applicable rate card.
+   *  Crew needs whose pair isn't in here surface a "no rate card row" warning. */
+  const [rateCardPairs, setRateCardPairs] = useState<Set<string>>(new Set());
+  const [rateCardName, setRateCardName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -80,6 +85,48 @@ export function JobRequestDaysSection({
       })));
     });
   }, []);
+
+  // Load the applicable rate card for this job and build a set of available
+  // (position_id, specialty_id) pairs so the requirements UI can warn about
+  // needs that won't have rates when a quote is generated.
+  useEffect(() => {
+    if (!jobRequestId) { setRateCardPairs(new Set()); setRateCardName(""); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const jobRes = await supabase
+          .from("job_requests")
+          .select("client_id, request_date")
+          .eq("id", jobRequestId)
+          .maybeSingle();
+        if (cancelled || !jobRes.data) return;
+        const card = await pickRateCardForJob(
+          jobRes.data.client_id,
+          jobRes.data.request_date || jobStartDate || todayISO(),
+        );
+        if (cancelled || !card) return;
+        const profileRes = await supabase
+          .from("rate_card_profiles")
+          .select("name, client_name")
+          .eq("id", card.id)
+          .maybeSingle();
+        if (cancelled) return;
+        const pairs = new Set<string>();
+        for (const r of card.rows) {
+          pairs.add(`${r.position_id ?? ""}|${r.specialty_id ?? ""}`);
+        }
+        setRateCardPairs(pairs);
+        setRateCardName(profileRes.data
+          ? (profileRes.data.client_name
+              ? `${profileRes.data.client_name} — ${profileRes.data.name}`
+              : profileRes.data.name)
+          : card.id);
+      } catch (err) {
+        console.error("[job-request-days-section] rate card lookup failed:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [jobRequestId, jobStartDate]);
 
   async function reload() {
     if (!jobRequestId) { setDays([]); setCrewByDayId({}); setLoading(false); return; }
@@ -426,14 +473,18 @@ export function JobRequestDaysSection({
                           <th style={{ textAlign: "left" }}>Specialty</th>
                           <th style={{ textAlign: "left", width: 70 }}>Qty</th>
                           <th style={{ textAlign: "left" }}>Notes</th>
+                          <th style={{ width: 24, textAlign: "center" }} title="Rate card">⚠</th>
                           <th style={{ width: 30 }}></th>
                         </tr>
                       </thead>
                       <tbody>
                         {crew.map((c) => {
                           const spcOptions = c.positionId ? (specialtiesByPosition.get(c.positionId) ?? []) : [];
+                          const pairKey = `${c.positionId ?? ""}|${c.specialtyId ?? ""}`;
+                          const hasRate = c.positionId && rateCardPairs.size > 0 && rateCardPairs.has(pairKey);
+                          const showWarning = c.positionId && rateCardPairs.size > 0 && !hasRate;
                           return (
-                            <tr key={c.id}>
+                            <tr key={c.id} style={showWarning ? { background: "#fff8e1" } : undefined}>
                               <td>
                                 <select
                                   disabled={disabled}
@@ -473,6 +524,14 @@ export function JobRequestDaysSection({
                                   onChange={(e) => patchCrewNeed(d.id, c, { notes: e.target.value })}
                                   placeholder="optional"
                                 />
+                              </td>
+                              <td style={{ textAlign: "center" }}>
+                                {showWarning ? (
+                                  <span
+                                    title={`Not in rate card "${rateCardName}". A quote line for this position will have $0 rates until you add it to the rate card or change the rate card on the quote.`}
+                                    style={{ color: "#a86200", fontSize: 14, cursor: "help" }}
+                                  >⚠</span>
+                                ) : null}
                               </td>
                               <td>
                                 <button
