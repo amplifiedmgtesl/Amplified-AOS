@@ -256,11 +256,11 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     const newRows = rcRes.data ?? [];
 
     const newLines = quote.lines.map((l) => {
-      const match = newRows.find(
-        (r: any) =>
-          r.specialties?.position_id === l.positionId &&
-          r.specialty_id === l.specialtyId,
-      );
+      // Match by specialty_id alone — rate_card_profile_rows has no
+      // position_id column (specialty implies position 1:1).
+      const match = l.specialtyId
+        ? newRows.find((r: any) => r.specialty_id === l.specialtyId)
+        : undefined;
       if (!match) return l; // keep old rates, will be flagged in UI
       const merged: QuoteLine = {
         ...l,
@@ -342,14 +342,14 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     }
   });
 
-  // Track which positions in the rate card don't have a match in the current new profile
+  // Track which lines reference a specialty that isn't in the current rate card.
+  // Match by specialty_id alone — rate_card_profile_rows is keyed on specialty.
   const linesWithStaleRates = new Set<number>();
   if (rateCardRows.length > 0) {
     quote.lines.forEach((l, i) => {
-      const hasMatch = rateCardRows.some(
-        (r) => r.specialties?.position_id === l.positionId && r.specialty_id === l.specialtyId,
-      );
-      if (!hasMatch && l.positionId) linesWithStaleRates.add(i);
+      if (!l.specialtyId) return;
+      const hasMatch = rateCardRows.some((r) => r.specialty_id === l.specialtyId);
+      if (!hasMatch) linesWithStaleRates.add(i);
     });
   }
 

@@ -63,9 +63,12 @@ export function JobRequestDaysSection({
   const [crewByDayId, setCrewByDayId] = useState<Record<string, JobRequestCrewNeed[]>>({});
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
-  /** Set of "{positionId}|{specialtyId}" pairs covered by the applicable rate card.
-   *  Crew needs whose pair isn't in here surface a "no rate card row" warning. */
-  const [rateCardPairs, setRateCardPairs] = useState<Set<string>>(new Set());
+  /** Set of specialty_id values covered by the applicable rate card.
+   *  rate_card_profile_rows is keyed on specialty_id alone (no position_id),
+   *  and each specialty belongs to exactly one position, so specialty_id is
+   *  the natural matching key. Crew needs whose specialty isn't in here
+   *  surface a "no rate card row" warning. */
+  const [rateCardSpecialtyIds, setRateCardSpecialtyIds] = useState<Set<string>>(new Set());
   const [rateCardName, setRateCardName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
@@ -91,7 +94,7 @@ export function JobRequestDaysSection({
   // needs that won't have rates when a quote is generated. Honors the job's
   // pinned rate_card_profile_id override; falls back to auto-resolution.
   useEffect(() => {
-    if (!jobRequestId) { setRateCardPairs(new Set()); setRateCardName(""); return; }
+    if (!jobRequestId) { setRateCardSpecialtyIds(new Set()); setRateCardName(""); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -130,11 +133,11 @@ export function JobRequestDaysSection({
           .eq("id", cardId)
           .maybeSingle();
         if (cancelled) return;
-        const pairs = new Set<string>();
+        const specialtyIds = new Set<string>();
         for (const r of cardRows) {
-          pairs.add(`${r.position_id ?? ""}|${r.specialty_id ?? ""}`);
+          if (r.specialty_id) specialtyIds.add(r.specialty_id);
         }
-        setRateCardPairs(pairs);
+        setRateCardSpecialtyIds(specialtyIds);
         setRateCardName(profileRes.data
           ? (profileRes.data.client_name
               ? `${profileRes.data.client_name} — ${profileRes.data.name}`
@@ -499,9 +502,12 @@ export function JobRequestDaysSection({
                       <tbody>
                         {crew.map((c) => {
                           const spcOptions = c.positionId ? (specialtiesByPosition.get(c.positionId) ?? []) : [];
-                          const pairKey = `${c.positionId ?? ""}|${c.specialtyId ?? ""}`;
-                          const hasRate = c.positionId && rateCardPairs.size > 0 && rateCardPairs.has(pairKey);
-                          const showWarning = c.positionId && rateCardPairs.size > 0 && !hasRate;
+                          // Match on specialty_id alone — rate_card_profile_rows
+                          // is keyed on specialty (which implies position 1:1).
+                          const hasRate = !!c.specialtyId && rateCardSpecialtyIds.has(c.specialtyId);
+                          // Only warn when specialty is fully picked. Position-only
+                          // rows are incomplete data entry, not a rate card mismatch.
+                          const showWarning = !!c.specialtyId && rateCardSpecialtyIds.size > 0 && !hasRate;
                           return (
                             <tr key={c.id} style={showWarning ? { background: "#fff8e1" } : undefined}>
                               <td>

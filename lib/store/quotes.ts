@@ -432,11 +432,11 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
     for (const day of effectiveDays) {
       const needs = crewNeeds.filter((n: any) => n.job_request_day_id === day.id);
       for (const need of needs) {
-        const rate = rateCard.rows.find(
-          (rr: any) =>
-            rr.position_id === need.position_id &&
-            (rr.specialty_id ?? null) === (need.specialty_id ?? null),
-        );
+        // Match by specialty_id only — rate_card_profile_rows has no
+        // position_id column (specialty implies position 1:1).
+        const rate = need.specialty_id
+          ? rateCard.rows.find((rr: any) => rr.specialty_id === need.specialty_id)
+          : undefined;
         draft.lines.push(buildLineFromRate(rate, {
           qty: need.quantity,
           quoteDate: day.event_date,
