@@ -112,6 +112,26 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   // Per-day collapse state on the editing view. Print mode forces all expanded
   // (via @media print) and hides the day-separator header rows.
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
+  // When true, the next print includes the rate/pay columns + a payroll
+  // summary at the bottom. Admin only — gated by !hidePayAlways. Set briefly
+  // around window.print() then reset.
+  const [printPayroll, setPrintPayroll] = useState(false);
+
+  function printWithPayroll(title: (string | undefined)[]) {
+    setPrintPayroll(true);
+    // Wait one paint so the conditional render takes effect, then print, then
+    // reset. Reset on the afterprint event when the dialog closes.
+    setTimeout(() => {
+      const reset = () => {
+        setPrintPayroll(false);
+        window.removeEventListener("afterprint", reset);
+      };
+      window.addEventListener("afterprint", reset);
+      printWithTitle(title);
+      // Safety reset in case afterprint never fires (rare).
+      setTimeout(reset, 5000);
+    }, 50);
+  }
   // Convenience alias for the in-memory rows of the active timesheet.
   const allRows = useMemo(() => timesheet?.rows ?? [], [timesheet]);
 
@@ -327,6 +347,20 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               currentSheet?.client,
               dayFilter !== "all" ? dayFilter : undefined,
             ])}>Download / Print PDF</button>
+            {!hidePayAlways && (
+              <button
+                className="secondary"
+                onClick={() => printWithPayroll([
+                  "Timesheet (Payroll)",
+                  currentSheet?.title,
+                  currentSheet?.client,
+                  dayFilter !== "all" ? dayFilter : undefined,
+                ])}
+                title="Same timesheet layout, but the printed copy includes per-line hours/rates/pay and a payroll summary at the bottom."
+              >
+                Print with Payroll
+              </button>
+            )}
           </div>
         </div>
         <div className="action-row" style={{ marginTop: 12 }}>
@@ -373,6 +407,11 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
             <div style={{ overflowX: "auto" }}>
               {(() => {
                 const showPay = !hidePayAlways && !timesheet.hidePayColumns;
+                // When printing in payroll mode, the rate/pay columns become
+                // visible during print. col-hidden + hide-print get cleared
+                // for those cells so they render in the print stream.
+                const payrollHideCol   = printPayroll ? ""           : "col-hidden";
+                const payrollHidePrint = printPayroll ? "show-print" : "hide-print";
                 // Row-1 layout: Position | Name | Start | End | (phantom for
                 // hidden hour/rate cols). Each visible row-1 label spans exactly
                 // 2 row-2 cells so the right edge of End Date aligns with the
@@ -396,15 +435,15 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                   <col style={{ width: "9%"  }} />{/* Time IN 2 */}
                   <col style={{ width: "9%"  }} />{/* Time OUT 2 */}
                   <col style={{ width: "21%" }} />{/* Meal 2 (absorbs remaining) */}
-                  <col className="col-hidden" />{/* STD HRS */}
-                  <col className="col-hidden" />{/* OT HRS */}
-                  <col className="col-hidden" />{/* DT HRS */}
-                  <col className="col-hidden" />{/* TOTAL HRS */}
+                  <col className={payrollHideCol} />{/* STD HRS */}
+                  <col className={payrollHideCol} />{/* OT HRS */}
+                  <col className={payrollHideCol} />{/* DT HRS */}
+                  <col className={payrollHideCol} />{/* TOTAL HRS */}
                   {showPay && <>
-                    <col className="col-hidden" />{/* STD RATE */}
-                    <col className="col-hidden" />{/* OT RATE */}
-                    <col className="col-hidden" />{/* DT RATE */}
-                    <col className="col-hidden" />{/* TOTAL PAY */}
+                    <col className={payrollHideCol} />{/* STD RATE */}
+                    <col className={payrollHideCol} />{/* OT RATE */}
+                    <col className={payrollHideCol} />{/* DT RATE */}
+                    <col className={payrollHideCol} />{/* TOTAL PAY */}
                   </>}
                   <col className="col-hidden" />{/* Action */}
                 </colgroup>
@@ -422,15 +461,15 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     <th>Time IN 1</th><th>Time OUT 1</th><th>Meal 1</th>
                     <th className="sig-box-th">Sign IN 2</th>
                     <th>Time IN 2</th><th>Time OUT 2</th><th>Meal 2</th>
-                    <th className="hide-print">STD HRS</th>
-                    <th className="hide-print">OT HRS</th>
-                    <th className="hide-print">DT HRS</th>
-                    <th className="hide-print">TOTAL HRS</th>
+                    <th className={payrollHidePrint}>STD HRS</th>
+                    <th className={payrollHidePrint}>OT HRS</th>
+                    <th className={payrollHidePrint}>DT HRS</th>
+                    <th className={payrollHidePrint}>TOTAL HRS</th>
                     {showPay ? <>
-                      <th className="hide-print">STD RATE</th>
-                      <th className="hide-print">OT RATE</th>
-                      <th className="hide-print">DT RATE</th>
-                      <th className="hide-print">TOTAL PAY</th>
+                      <th className={payrollHidePrint}>STD RATE</th>
+                      <th className={payrollHidePrint}>OT RATE</th>
+                      <th className={payrollHidePrint}>DT RATE</th>
+                      <th className={payrollHidePrint}>TOTAL PAY</th>
                     </> : null}
                   </tr>
                 </thead>
@@ -548,16 +587,25 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       <td><select className="input-tight" value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn2 || ""}</span></td>
                       <td><select className="input-tight" value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut2 || ""}</span></td>
                       <td><select className="input-tight" value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak2Minutes ?? 0}</span></td>
-                      <td className="hide-print">{row.stdHours.toFixed(2)}</td>
-                      <td className="hide-print">{row.otHours.toFixed(2)}</td>
-                      <td className="hide-print">{row.dtHours.toFixed(2)}</td>
-                      <td className="hide-print">{row.totalHours.toFixed(2)}</td>
+                      <td className={payrollHidePrint}>{row.stdHours.toFixed(2)}</td>
+                      <td className={payrollHidePrint}>{row.otHours.toFixed(2)}</td>
+                      <td className={payrollHidePrint}>{row.dtHours.toFixed(2)}</td>
+                      <td className={payrollHidePrint}>{row.totalHours.toFixed(2)}</td>
                       {showPay ? (
                         <>
-                          <td className="hide-print"><select className="input-tight" value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td className="hide-print"><select className="input-tight" value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td className="hide-print"><select className="input-tight" value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td className="hide-print">${row.totalPay.toFixed(2)}</td>
+                          <td className={payrollHidePrint}>
+                            <select className="input-tight hide-print" value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select>
+                            <span className="show-print-only">${row.stdRate.toFixed(2)}</span>
+                          </td>
+                          <td className={payrollHidePrint}>
+                            <select className="input-tight hide-print" value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select>
+                            <span className="show-print-only">${row.otRate.toFixed(2)}</span>
+                          </td>
+                          <td className={payrollHidePrint}>
+                            <select className="input-tight hide-print" value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select>
+                            <span className="show-print-only">${row.dtRate.toFixed(2)}</span>
+                          </td>
+                          <td className={payrollHidePrint}>${row.totalPay.toFixed(2)}</td>
                         </>
                       ) : null}
                     </tr>
@@ -567,7 +615,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                   </Fragment>
                   );
                 })}
-                <tfoot className="hide-print">
+                <tfoot className={payrollHidePrint}>
                   <tr>
                     <th colSpan={8}>Totals</th>
                     <th>{totals.stdHours.toFixed(2)}</th>
@@ -575,13 +623,96 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     <th>{totals.dtHours.toFixed(2)}</th>
                     <th>{totals.totalHours.toFixed(2)}</th>
                     {showPay ? <><th></th><th></th><th></th><th>${totals.totalPay.toFixed(2)}</th></> : null}
-                    <th></th>
+                    <th className="hide-print"></th>
                   </tr>
                 </tfoot>
               </table>
                 );
               })()}
             </div>
+
+            {/* Payroll print-only summary. Hidden on screen + on the regular
+                print; visible only when "Print with Payroll" is invoked. */}
+            {printPayroll && !hidePayAlways && (() => {
+              // Aggregate by employee (filtered to selected day if applicable).
+              const filteredRows = dayFilter === "all"
+                ? allRows
+                : allRows.filter((r) => (r.workDate || "no-date") === dayFilter);
+              type EmpAgg = { name: string; position: string; stdHours: number; otHours: number; dtHours: number; totalHours: number; totalPay: number; entries: number };
+              const byEmp = new Map<string, EmpAgg>();
+              for (const r of filteredRows) {
+                const key = r.employeeKey || `${r.firstName || ""} ${r.lastName || ""}`.trim() || "(unassigned)";
+                const name = r.employeeKey
+                  ? (employees.find((e) => e.employeeKey === r.employeeKey)?.fullName ?? `${r.firstName} ${r.lastName}`.trim())
+                  : `${r.firstName} ${r.lastName}`.trim();
+                const agg = byEmp.get(key) ?? { name: name || "(no name)", position: r.position || "", stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, totalPay: 0, entries: 0 };
+                agg.stdHours += r.stdHours || 0;
+                agg.otHours += r.otHours || 0;
+                agg.dtHours += r.dtHours || 0;
+                agg.totalHours += r.totalHours || 0;
+                agg.totalPay += r.totalPay || 0;
+                agg.entries += 1;
+                byEmp.set(key, agg);
+              }
+              const empRows = Array.from(byEmp.values()).sort((a, b) => a.name.localeCompare(b.name));
+              const grand = empRows.reduce((acc, r) => ({
+                stdHours: acc.stdHours + r.stdHours,
+                otHours: acc.otHours + r.otHours,
+                dtHours: acc.dtHours + r.dtHours,
+                totalHours: acc.totalHours + r.totalHours,
+                totalPay: acc.totalPay + r.totalPay,
+              }), { stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, totalPay: 0 });
+
+              return (
+                <div className="show-print" style={{ marginTop: 18, pageBreakInside: "avoid" }}>
+                  <h3 className="section-title" style={{ marginBottom: 8 }}>
+                    Payroll Summary {dayFilter !== "all" ? `— ${dayFilter}` : "— All Days"}
+                  </h3>
+                  <table style={{ width: "100%", fontSize: 11 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: "left" }}>Employee</th>
+                        <th style={{ textAlign: "left" }}>Position</th>
+                        <th style={{ textAlign: "right" }}>Entries</th>
+                        <th style={{ textAlign: "right" }}>STD Hrs</th>
+                        <th style={{ textAlign: "right" }}>OT Hrs</th>
+                        <th style={{ textAlign: "right" }}>DT Hrs</th>
+                        <th style={{ textAlign: "right" }}>Total Hrs</th>
+                        <th style={{ textAlign: "right" }}>Total Pay</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {empRows.length === 0 ? (
+                        <tr><td colSpan={8} style={{ textAlign: "center", color: "#888" }}>No entries.</td></tr>
+                      ) : empRows.map((r) => (
+                        <tr key={r.name}>
+                          <td>{r.name}</td>
+                          <td>{r.position}</td>
+                          <td style={{ textAlign: "right" }}>{r.entries}</td>
+                          <td style={{ textAlign: "right" }}>{r.stdHours.toFixed(2)}</td>
+                          <td style={{ textAlign: "right" }}>{r.otHours.toFixed(2)}</td>
+                          <td style={{ textAlign: "right" }}>{r.dtHours.toFixed(2)}</td>
+                          <td style={{ textAlign: "right" }}>{r.totalHours.toFixed(2)}</td>
+                          <td style={{ textAlign: "right" }}>${r.totalPay.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {empRows.length > 0 && (
+                      <tfoot>
+                        <tr style={{ borderTop: "2px solid #181410", fontWeight: 700 }}>
+                          <th colSpan={3} style={{ textAlign: "left" }}>Grand Total</th>
+                          <th style={{ textAlign: "right" }}>{grand.stdHours.toFixed(2)}</th>
+                          <th style={{ textAlign: "right" }}>{grand.otHours.toFixed(2)}</th>
+                          <th style={{ textAlign: "right" }}>{grand.dtHours.toFixed(2)}</th>
+                          <th style={{ textAlign: "right" }}>{grand.totalHours.toFixed(2)}</th>
+                          <th style={{ textAlign: "right" }}>${grand.totalPay.toFixed(2)}</th>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              );
+            })()}
 
             <div className="hide-print" style={{ marginTop: 16 }}>
               <h3 className="section-title">Labor Summary for Quotes</h3>

@@ -293,7 +293,16 @@ small,.muted{color:var(--muted)}
 }
 
 .print-only-inline{display:none}
-@media print{.hide-print{display:none !important}.print-terms{display:block !important}}
+.show-print, .show-print-only{display:none}
+@media print{
+  .hide-print{display:none !important}
+  .print-terms{display:block !important}
+  /* show-print / show-print-only are visible only when printing. Used by the
+     timekeeping payroll print to surface the employee summary table and the
+     printed-rate text spans inside <select> cells. */
+  .show-print{display:block !important}
+  .show-print-only{display:inline !important}
+}
 
 
 .quote-date-select-wide{min-width:140px}
