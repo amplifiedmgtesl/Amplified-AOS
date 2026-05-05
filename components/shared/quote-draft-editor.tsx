@@ -355,8 +355,24 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
 
   const renderLineRow = (line: QuoteLine, globalIndex: number) => (
     <tr key={globalIndex} style={linesWithStaleRates.has(globalIndex) ? { background: "#fff8e1" } : undefined}>
-      <td>{line.department || "—"}</td>
-      <td>{line.specialty || "—"}</td>
+      <td>
+        <input
+          type="text"
+          value={line.department || ""}
+          onChange={(e) => updateLine(globalIndex, { department: e.target.value })}
+          placeholder="Position"
+          style={{ width: "100%", minWidth: 120 }}
+        />
+      </td>
+      <td>
+        <input
+          type="text"
+          value={line.specialty || ""}
+          onChange={(e) => updateLine(globalIndex, { specialty: e.target.value })}
+          placeholder="Specialty"
+          style={{ width: "100%", minWidth: 120 }}
+        />
+      </td>
       <td><input type="number" value={line.qty} onChange={(e) => updateLine(globalIndex, { qty: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} /></td>
       <td><input type="number" value={line.hours} onChange={(e) => updateLine(globalIndex, { hours: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} /></td>
       <td><input type="number" value={line.baseHourly} onChange={(e) => updateLine(globalIndex, { baseHourly: parseFloat(e.target.value) || 0 })} style={{ width: 80 }} step="0.01" /></td>
@@ -577,8 +593,8 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
               <tbody>
                 {unassigned.map(({ line, globalIndex }) => (
                   <tr key={globalIndex}>
-                    <td>{line.department || "—"}</td>
-                    <td>{line.specialty || "—"}</td>
+                    <td><input type="text" value={line.department || ""} onChange={(e) => updateLine(globalIndex, { department: e.target.value })} placeholder="Position" style={{ width: "100%", minWidth: 120 }} /></td>
+                    <td><input type="text" value={line.specialty || ""} onChange={(e) => updateLine(globalIndex, { specialty: e.target.value })} placeholder="Specialty" style={{ width: "100%", minWidth: 120 }} /></td>
                     <td><input type="date" value={line.quoteDate || ""} onChange={(e) => updateLine(globalIndex, { quoteDate: e.target.value })} /></td>
                     <td><input type="number" value={line.qty} onChange={(e) => updateLine(globalIndex, { qty: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} /></td>
                     <td><input type="number" value={line.hours} onChange={(e) => updateLine(globalIndex, { hours: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} /></td>

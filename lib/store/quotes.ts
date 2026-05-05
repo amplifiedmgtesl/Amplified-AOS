@@ -339,6 +339,29 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
     crewNeeds = cnRes.data ?? [];
   }
 
+  // Look up position + specialty names so lines have human-readable labels
+  // even when the (position, specialty) pair isn't in the chosen rate card.
+  const allPosIds = Array.from(new Set([
+    ...crewNeeds.map((n: any) => n.position_id).filter(Boolean),
+  ]));
+  const allSpcIds = Array.from(new Set([
+    ...crewNeeds.map((n: any) => n.specialty_id).filter(Boolean),
+  ]));
+  const [positionsRes, specialtiesRes] = await Promise.all([
+    allPosIds.length > 0
+      ? supabase.from("positions").select("id, name").in("id", allPosIds)
+      : Promise.resolve({ data: [], error: null }),
+    allSpcIds.length > 0
+      ? supabase.from("specialties").select("id, name").in("id", allSpcIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  const positionNameById = new Map<string, string>(
+    (positionsRes.data ?? []).map((p: any) => [p.id, p.name]),
+  );
+  const specialtyNameById = new Map<string, string>(
+    (specialtiesRes.data ?? []).map((s: any) => [s.id, s.name]),
+  );
+
   const rateCard = await pickRateCardForJob(job.client_id, job.request_date);
   if (!rateCard) {
     throw new Error("No applicable rate card found (no client card, no master default).");
@@ -399,6 +422,9 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
           endTime: day.end_time,
           positionId: need.position_id,
           specialtyId: need.specialty_id,
+          // Resolve names so the line has labels even when no rate card row matches.
+          department: positionNameById.get(need.position_id) ?? undefined,
+          specialty: specialtyNameById.get(need.specialty_id) ?? undefined,
         }));
       }
     }
@@ -414,6 +440,9 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
         endTime: day1.end_time,
         positionId: rr.position_id,
         specialtyId: rr.specialty_id,
+        // Rate card rows already carry these as denormalized strings.
+        department: rr.position ?? undefined,
+        specialty: rr.specialty ?? undefined,
       }));
     }
   }
@@ -532,8 +561,16 @@ function buildLineFromRate(
     endTime?: string;
     positionId?: string;
     specialtyId?: string;
+    /** Resolved position/specialty names. Caller can pass these explicitly when
+     *  there's no matching rate row to read them from (e.g. crew_needs that
+     *  reference a position not in the rate card). */
+    department?: string;
+    specialty?: string;
   },
 ): QuoteLine {
+  // Prefer explicitly-passed names; fall back to rate row's denormalized text.
+  const department = opts.department ?? rate?.position ?? undefined;
+  const specialty = opts.specialty ?? rate?.specialty ?? undefined;
   return {
     serviceKey:   "",
     qty:          opts.qty,
@@ -548,6 +585,8 @@ function buildLineFromRate(
     total:        0,
     positionId:   opts.positionId,
     specialtyId:  opts.specialtyId,
+    department,
+    specialty,
     quoteDate:    opts.quoteDate,
     startTime:    opts.startTime,
     endTime:      opts.endTime,
