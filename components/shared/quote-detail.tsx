@@ -165,7 +165,13 @@ export default function QuoteDetail({ id }: { id: string }) {
           {job?.id ? (
             <>
               <div className="muted" style={{ marginTop: 8 }}>Source job</div>
-              <div><Link className="badge" href="/job-requests">{job.job_no || job.id}</Link></div>
+              <div><Link className="badge" href={`/job-requests?id=${job.id}`}>{job.job_no || job.id}</Link></div>
+            </>
+          ) : null}
+          {quote.preparedByName || quote.preparedByTitle ? (
+            <>
+              <div className="muted" style={{ marginTop: 8 }}>Prepared by</div>
+              <div>{quote.preparedByName}{quote.preparedByTitle ? <span className="muted"> — {quote.preparedByTitle}</span> : null}</div>
             </>
           ) : null}
         </div>
@@ -178,12 +184,14 @@ export default function QuoteDetail({ id }: { id: string }) {
           <thead>
             <tr>
               <th>Date</th><th>Department</th><th>Specialty</th><th>Shift</th>
-              <th>Qty</th><th>Hours</th><th>Rate</th><th>Total</th>
+              <th>Qty</th><th>Hrs</th><th>Hol</th><th>Travel</th>
+              <th>$/hr</th><th>$/day</th><th>OT</th><th>DT</th>
+              <th>Rule</th><th>Mode</th><th>Total</th>
             </tr>
           </thead>
           <tbody>
             {quote.lines.length === 0 ? (
-              <tr><td colSpan={8} className="muted">No line items.</td></tr>
+              <tr><td colSpan={15} className="muted">No line items.</td></tr>
             ) : quote.lines.map((l, i) => (
               <tr key={i}>
                 <td>{l.quoteDate || "—"}</td>
@@ -192,8 +200,15 @@ export default function QuoteDetail({ id }: { id: string }) {
                 <td>{l.shiftLabel || "—"}</td>
                 <td>{l.qty}</td>
                 <td>{l.hours}</td>
-                <td>${(l.baseHourly || l.baseDay || 0).toFixed(2)}</td>
-                <td>${l.total.toFixed(2)}</td>
+                <td>{l.holidayHours || 0}</td>
+                <td>${(l.travel || 0).toFixed(2)}</td>
+                <td>${(l.baseHourly || 0).toFixed(2)}</td>
+                <td>${(l.baseDay || 0).toFixed(2)}</td>
+                <td>${(l.otRate || 0).toFixed(2)}</td>
+                <td>${(l.dtRate || 0).toFixed(2)}</td>
+                <td style={{ fontSize: 11 }}>{l.rule || "—"}</td>
+                <td>{l.rateMode || "hourly"}</td>
+                <td style={{ fontVariantNumeric: "tabular-nums" }}>${l.total.toFixed(2)}</td>
               </tr>
             ))}
           </tbody>

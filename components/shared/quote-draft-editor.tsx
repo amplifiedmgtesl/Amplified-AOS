@@ -162,10 +162,15 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function recomputeLineTotal(l: QuoteLine): number {
+    const qty = l.qty || 0;
+    const travel = (l.travel || 0) * qty;
     if (l.rateMode === "day" || (l.baseDay > 0 && !l.hours)) {
-      return (l.qty || 0) * (l.baseDay || 0);
+      return qty * (l.baseDay || 0) + travel;
     }
-    return (l.qty || 0) * (l.hours || 0) * (l.baseHourly || 0);
+    const regular = qty * (l.hours || 0) * (l.baseHourly || 0);
+    // Holiday hours billed at 2x the regular hourly rate (per DEFAULT_TERMS).
+    const holiday = qty * (l.holidayHours || 0) * (l.baseHourly || 0) * 2;
+    return regular + holiday + travel;
   }
   function recomputeTotals(lines: QuoteLine[]): number {
     return lines.reduce((s, l) => s + (l.total || 0), 0);
@@ -361,7 +366,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
           value={line.department || ""}
           onChange={(e) => updateLine(globalIndex, { department: e.target.value })}
           placeholder="Position"
-          style={{ width: "100%", minWidth: 120 }}
+          style={{ width: "100%", minWidth: 110 }}
         />
       </td>
       <td>
@@ -370,20 +375,44 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
           value={line.specialty || ""}
           onChange={(e) => updateLine(globalIndex, { specialty: e.target.value })}
           placeholder="Specialty"
-          style={{ width: "100%", minWidth: 120 }}
+          style={{ width: "100%", minWidth: 110 }}
         />
       </td>
-      <td><input type="number" value={line.qty} onChange={(e) => updateLine(globalIndex, { qty: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} /></td>
-      <td><input type="number" value={line.hours} onChange={(e) => updateLine(globalIndex, { hours: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} /></td>
-      <td><input type="number" value={line.baseHourly} onChange={(e) => updateLine(globalIndex, { baseHourly: parseFloat(e.target.value) || 0 })} style={{ width: 80 }} step="0.01" /></td>
-      <td><input type="number" value={line.baseDay} onChange={(e) => updateLine(globalIndex, { baseDay: parseFloat(e.target.value) || 0 })} style={{ width: 80 }} step="0.01" /></td>
-      <td>${line.total.toFixed(2)}</td>
+      <td>
+        <input
+          type="text"
+          value={line.shiftLabel || ""}
+          onChange={(e) => updateLine(globalIndex, { shiftLabel: e.target.value })}
+          placeholder="Shift"
+          title="Free-text shift label, e.g. Load In, Show Call, Strike"
+          style={{ width: "100%", minWidth: 90 }}
+        />
+      </td>
+      <td><input type="number" value={line.qty} onChange={(e) => updateLine(globalIndex, { qty: parseFloat(e.target.value) || 0 })} style={{ width: 50 }} /></td>
+      <td><input type="number" value={line.hours} onChange={(e) => updateLine(globalIndex, { hours: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.5" /></td>
+      <td><input type="number" value={line.holidayHours} onChange={(e) => updateLine(globalIndex, { holidayHours: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.5" title="Hours billed at 2x the regular hourly rate" /></td>
+      <td><input type="number" value={line.travel} onChange={(e) => updateLine(globalIndex, { travel: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="Per-crew travel charge" /></td>
+      <td><input type="number" value={line.baseHourly} onChange={(e) => updateLine(globalIndex, { baseHourly: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} step="0.01" /></td>
+      <td><input type="number" value={line.baseDay} onChange={(e) => updateLine(globalIndex, { baseDay: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} step="0.01" /></td>
+      <td><input type="number" value={line.otRate} onChange={(e) => updateLine(globalIndex, { otRate: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="OT rate — informational; OT computed at timesheet time" /></td>
+      <td><input type="number" value={line.dtRate} onChange={(e) => updateLine(globalIndex, { dtRate: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="DT rate — informational; DT computed at timesheet time" /></td>
+      <td>
+        <input
+          type="text"
+          value={line.rule || ""}
+          onChange={(e) => updateLine(globalIndex, { rule: e.target.value })}
+          placeholder="OT trigger"
+          title='OT/DT rule, e.g. "OT after 12 / DT after 15"'
+          style={{ width: "100%", minWidth: 130, fontSize: 11 }}
+        />
+      </td>
       <td>
         <select value={line.rateMode || "hourly"} onChange={(e) => updateLine(globalIndex, { rateMode: e.target.value })} style={{ fontSize: 12 }}>
           <option value="hourly">hourly</option>
           <option value="day">day</option>
         </select>
       </td>
+      <td style={{ fontVariantNumeric: "tabular-nums" }}>${line.total.toFixed(2)}</td>
       <td><button className="secondary" onClick={() => deleteLine(globalIndex)} style={{ fontSize: 12, padding: "4px 8px" }}>×</button></td>
     </tr>
   );
@@ -411,7 +440,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       <div className="card" style={{ marginBottom: 16, background: "rgba(0,0,0,0.02)" }}>
         <div className="action-row" style={{ alignItems: "baseline", marginBottom: 8 }}>
           <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Event details</h3>
-          {job?.id ? <Link className="badge" href="/job-requests">Edit on Job →</Link> : null}
+          {job?.id ? <Link className="badge" href={`/job-requests?id=${job.id}`}>Edit on Job →</Link> : null}
         </div>
         {job ? (
           <div className="grid2">
@@ -485,7 +514,27 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
           </label>
         </div>
         <div>
-          <label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <label>
+              <div className="muted">Prepared by — name</div>
+              <input
+                type="text"
+                value={quote.preparedByName || ""}
+                onChange={(e) => updateQuote({ preparedByName: e.target.value })}
+                placeholder="Your name"
+              />
+            </label>
+            <label>
+              <div className="muted">Prepared by — title</div>
+              <input
+                type="text"
+                value={quote.preparedByTitle || ""}
+                onChange={(e) => updateQuote({ preparedByTitle: e.target.value })}
+                placeholder="Your title"
+              />
+            </label>
+          </div>
+          <label style={{ marginTop: 8 }}>
             <div className="muted">Signature name (typed by signer at issue)</div>
             <input
               type="text"
@@ -595,9 +644,10 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
                   <table>
                     <thead>
                       <tr>
-                        <th>Department</th><th>Specialty</th>
-                        <th>Qty</th><th>Hours</th><th>$/hr</th><th>$/day</th>
-                        <th>Total</th><th>Mode</th><th></th>
+                        <th>Department</th><th>Specialty</th><th>Shift</th>
+                        <th>Qty</th><th>Hours</th><th>Holiday</th><th>Travel</th>
+                        <th>$/hr</th><th>$/day</th><th>OT</th><th>DT</th>
+                        <th>Rule</th><th>Mode</th><th>Total</th><th></th>
                       </tr>
                     </thead>
                     <tbody>

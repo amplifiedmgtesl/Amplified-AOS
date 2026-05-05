@@ -964,6 +964,8 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     signedAt: r.signed_at ?? undefined,
     signedBy: r.signed_by ?? undefined,
     rateCardProfileId: r.rate_card_profile_id ?? undefined,
+    preparedByName: r.prepared_by_name ?? undefined,
+    preparedByTitle: r.prepared_by_title ?? undefined,
     // New fields from quote rewrite Phase A:
     isDraft: r.is_draft ?? true,
     jobRequestId: r.job_request_id ?? undefined,

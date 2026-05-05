@@ -121,6 +121,9 @@ export type QuoteDraft = {
   signedAt?: string;
   signedBy?: string;
   rateCardProfileId?: string;
+  /** Author info that prints on the quote PDF. Free-text. */
+  preparedByName?: string;
+  preparedByTitle?: string;
   // ─── New fields (quote rewrite Phase A) ────────────────────────────────────
   /** True while editable; false once issued. Frozen rows can't have content updated. */
   isDraft: boolean;
