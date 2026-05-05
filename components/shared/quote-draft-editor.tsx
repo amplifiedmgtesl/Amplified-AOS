@@ -452,6 +452,33 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
               ))}
             </select>
           </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+            <label>
+              <div className="muted">Deposit %</div>
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={quote.total > 0 ? Math.round((quote.deposit / quote.total) * 100) : 0}
+                onChange={(e) => {
+                  const pct = Math.max(0, Math.min(100, parseFloat(e.target.value) || 0));
+                  updateQuote({ deposit: +(quote.total * (pct / 100)).toFixed(2) });
+                }}
+                title="Percentage of subtotal. Updates the $ amount live."
+              />
+            </label>
+            <label>
+              <div className="muted">Deposit $</div>
+              <input
+                type="number"
+                min={0}
+                step={0.01}
+                value={quote.deposit}
+                onChange={(e) => updateQuote({ deposit: parseFloat(e.target.value) || 0 })}
+              />
+            </label>
+          </div>
           <label style={{ marginTop: 8 }}>
             <div className="muted">Notes</div>
             <textarea value={quote.notes} onChange={(e) => updateQuote({ notes: e.target.value })} rows={3} />
@@ -459,8 +486,13 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         </div>
         <div>
           <label>
-            <div className="muted">Deposit ($)</div>
-            <input type="number" value={quote.deposit} onChange={(e) => updateQuote({ deposit: parseFloat(e.target.value) || 0 })} />
+            <div className="muted">Signature name (typed by signer at issue)</div>
+            <input
+              type="text"
+              value={quote.signatureName || ""}
+              onChange={(e) => updateQuote({ signatureName: e.target.value })}
+              placeholder="(blank — populated when client signs)"
+            />
           </label>
           <label style={{ marginTop: 8 }}>
             <div className="muted">Terms</div>
