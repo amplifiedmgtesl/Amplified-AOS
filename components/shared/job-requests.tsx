@@ -527,27 +527,6 @@ export default function JobRequests() {
             {isLocked && liveJobNo && (
               <span className="badge" style={{ fontSize: 10, background: "#eef5ff", color: "#1e3a8a" }}>locked</span>
             )}
-            <span style={{ opacity: 0.4 }}>·</span>
-            <small style={{ opacity: 0.7 }}>Rate card</small>
-            <select
-              disabled={isLocked}
-              value={form.rateCardProfileId ?? ""}
-              onChange={(e) => setForm({ ...form, rateCardProfileId: e.target.value || undefined })}
-              title="Pin a rate card to this job (overrides auto-resolution by client + date). Quote create uses this."
-              style={{ fontSize: 13, maxWidth: 360 }}
-            >
-              <option value="">
-                — Auto{applicableRateCardLabel ? ` (${applicableRateCardLabel})` : ""} —
-              </option>
-              {allRateCardProfiles.map((p) => {
-                const label = [p.client_name, p.name].filter(Boolean).join(" — ");
-                return (
-                  <option key={p.id} value={p.id}>
-                    {label}{p.effective_date ? ` (eff ${p.effective_date})` : ""}
-                  </option>
-                );
-              })}
-            </select>
           </div>
 
           {deleteMsg && (
@@ -681,6 +660,40 @@ export default function JobRequests() {
           )}
 
           <div style={{ marginTop: 12 }}><small>Notes</small><textarea disabled={isLocked} value={form.notes} onChange={(e)=>setForm({ ...form, notes:e.target.value })} /></div>
+
+          {/* Rate card pick (optional override). Filtered to cards for the
+              selected client plus the master default. Quotes off this job
+              honor the pin; if left as Auto, pickRateCardForJob runs. */}
+          <div style={{ marginTop: 12, fontSize: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <small style={{ opacity: 0.7 }}>Rate card</small>
+            <select
+              disabled={isLocked}
+              value={form.rateCardProfileId ?? ""}
+              onChange={(e) => setForm({ ...form, rateCardProfileId: e.target.value || undefined })}
+              title="Pin a rate card to this job (overrides auto-resolution by date). Quote create uses this."
+              style={{ fontSize: 12, maxWidth: 360 }}
+            >
+              <option value="">
+                Auto{applicableRateCardLabel ? ` — ${applicableRateCardLabel}` : ""}
+              </option>
+              {allRateCardProfiles
+                .filter((p) =>
+                  // Only show this client's cards + the master default.
+                  (form.clientId && p.client_name && clientById.get(form.clientId)?.name === p.client_name)
+                  || p.id === "ratecard-master-default"
+                )
+                .map((p) => {
+                  const label = p.id === "ratecard-master-default"
+                    ? p.name
+                    : [p.client_name, p.name].filter(Boolean).join(" — ");
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {label}{p.effective_date ? ` (eff ${p.effective_date})` : ""}
+                    </option>
+                  );
+                })}
+            </select>
+          </div>
 
           <div className="action-row" style={{ marginTop: 12 }}>
             <button onClick={save}>Save</button>
