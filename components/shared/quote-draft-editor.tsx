@@ -192,16 +192,21 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
   }, [quote]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+  /** Round to dollars and cents — no fractional cents on quote lines. */
+  function money(n: number): number {
+    return Math.round(n * 100) / 100;
+  }
+
   function recomputeLineTotal(l: QuoteLine): number {
     const qty = l.qty || 0;
     const travel = (l.travel || 0) * qty;
     if (l.rateMode === "day" || (l.baseDay > 0 && !l.hours)) {
-      return qty * (l.baseDay || 0) + travel;
+      return money(qty * (l.baseDay || 0) + travel);
     }
     const regular = qty * (l.hours || 0) * (l.baseHourly || 0);
     // Holiday hours billed at 2x the regular hourly rate (per DEFAULT_TERMS).
     const holiday = qty * (l.holidayHours || 0) * (l.baseHourly || 0) * 2;
-    return regular + holiday + travel;
+    return money(regular + holiday + travel);
   }
   function recomputeTotals(lines: QuoteLine[]): number {
     return lines.reduce((s, l) => s + (l.total || 0), 0);
@@ -220,19 +225,24 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       merged.total = recomputeLineTotal(merged);
       return merged;
     });
-    setQuote({ ...quote, lines: newLines, total: recomputeTotals(newLines) });
+    const newTotal = money(recomputeTotals(newLines));
+    // Recompute deposit $ from stored pct so user intent persists across line edits.
+    const pct = quote.depositPct ?? 0;
+    const newDeposit = money(newTotal * (pct / 100));
+    setQuote({ ...quote, lines: newLines, total: newTotal, deposit: newDeposit });
   }
 
   function deleteLine(globalIndex: number) {
     if (!quote) return;
     const newLines = quote.lines.filter((_, i) => i !== globalIndex);
-    setQuote({ ...quote, lines: newLines, total: recomputeTotals(newLines) });
+    const newTotal = money(recomputeTotals(newLines));
+    const pct = quote.depositPct ?? 0;
+    const newDeposit = money(newTotal * (pct / 100));
+    setQuote({ ...quote, lines: newLines, total: newTotal, deposit: newDeposit });
   }
 
   function addLine(day: DayInfo, rateRow: any) {
     if (!quote) return;
-    const positionName = rateRow.specialties?.positions?.name ?? "";
-    const specialtyName = rateRow.specialties?.name ?? "";
     const newLine: QuoteLine = {
       serviceKey: "",
       qty: 1,
@@ -247,15 +257,18 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       total: 0,
       positionId: rateRow.specialties?.position_id ?? undefined,
       specialtyId: rateRow.specialty_id ?? undefined,
-      department: positionName,
-      specialty: specialtyName,
+      // Don't write the legacy denormalized text columns; display always
+      // looks up by ID from the positions/specialties tables.
       quoteDate: day.date,
       startTime: day.startTime,
       endTime: day.endTime,
       rateMode: "hourly",
     };
     const newLines = [...quote.lines, newLine];
-    setQuote({ ...quote, lines: newLines, total: recomputeTotals(newLines) });
+    const newTotal = money(recomputeTotals(newLines));
+    const pct = quote.depositPct ?? 0;
+    const newDeposit = money(newTotal * (pct / 100));
+    setQuote({ ...quote, lines: newLines, total: newTotal, deposit: newDeposit });
     setAddLineOpen(null);
   }
 
@@ -273,7 +286,10 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       endTime: targetDay.endTime,
     }));
     const newLines = [...quote.lines, ...copies];
-    setQuote({ ...quote, lines: newLines, total: recomputeTotals(newLines) });
+    const newTotal = money(recomputeTotals(newLines));
+    const pct = quote.depositPct ?? 0;
+    const newDeposit = money(newTotal * (pct / 100));
+    setQuote({ ...quote, lines: newLines, total: newTotal, deposit: newDeposit });
   }
 
   async function changeRateCard(newProfileId: string) {
@@ -548,33 +564,28 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
               ))}
             </select>
           </label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-            <label>
-              <div className="muted">Deposit %</div>
-              <input
-                type="number"
-                min={0}
-                max={100}
-                step={1}
-                value={quote.total > 0 ? Math.round((quote.deposit / quote.total) * 100) : 0}
-                onChange={(e) => {
-                  const pct = Math.max(0, Math.min(100, parseFloat(e.target.value) || 0));
-                  updateQuote({ deposit: +(quote.total * (pct / 100)).toFixed(2) });
-                }}
-                title="Percentage of subtotal. Updates the $ amount live."
-              />
-            </label>
-            <label>
-              <div className="muted">Deposit $</div>
-              <input
-                type="number"
-                min={0}
-                step={0.01}
-                value={quote.deposit}
-                onChange={(e) => updateQuote({ deposit: parseFloat(e.target.value) || 0 })}
-              />
-            </label>
-          </div>
+          <label style={{ marginTop: 8, display: "block" }}>
+            <div className="muted">Deposit %</div>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={quote.depositPct ?? 0}
+              onChange={(e) => {
+                const pct = Math.max(0, Math.min(100, parseFloat(e.target.value) || 0));
+                updateQuote({
+                  depositPct: pct,
+                  deposit: money(quote.total * (pct / 100)),
+                });
+              }}
+              title="Percentage of subtotal. The $ amount is computed and updates as lines are edited."
+              style={{ maxWidth: 120 }}
+            />
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+              = ${(quote.deposit ?? 0).toFixed(2)}
+            </div>
+          </label>
           <label style={{ marginTop: 8 }}>
             <div className="muted">Notes</div>
             <textarea value={quote.notes} onChange={(e) => updateQuote({ notes: e.target.value })} rows={3} />
@@ -760,14 +771,18 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
 
       <div className="grid2" style={{ marginBottom: 16 }}>
         <div></div>
-        <div>
+        <div style={{ fontVariantNumeric: "tabular-nums" }}>
           <div className="action-row">
             <div className="muted" style={{ flex: 1 }}>Subtotal</div>
-            <div>${quote.total.toFixed(2)}</div>
+            <div>${(quote.total ?? 0).toFixed(2)}</div>
           </div>
           <div className="action-row">
-            <div className="muted" style={{ flex: 1 }}>Deposit</div>
-            <div>${quote.deposit.toFixed(2)}</div>
+            <div className="muted" style={{ flex: 1 }}>Deposit ({quote.depositPct ?? 0}%)</div>
+            <div>${(quote.deposit ?? 0).toFixed(2)}</div>
+          </div>
+          <div className="action-row" style={{ borderTop: "1px solid #d7c6aa", paddingTop: 4, marginTop: 4 }}>
+            <div className="muted" style={{ flex: 1 }}>Balance due</div>
+            <div>${money((quote.total ?? 0) - (quote.deposit ?? 0)).toFixed(2)}</div>
           </div>
         </div>
       </div>

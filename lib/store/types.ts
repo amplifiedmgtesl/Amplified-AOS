@@ -107,6 +107,10 @@ export type QuoteDraft = {
   expectedHoursPerDay?: number;
   total: number;
   deposit: number;
+  /** Deposit percentage of subtotal (0-100). Stored separately from `deposit`
+   *  so user intent persists when subtotal changes — deposit $ is recomputed
+   *  as needed. NULL is treated as 0. */
+  depositPct?: number;
   /** issued | signed | superseded — NULL while is_draft=true */
   status: string | null;
   notes: string;

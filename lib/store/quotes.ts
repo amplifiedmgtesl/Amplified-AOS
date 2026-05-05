@@ -49,6 +49,7 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     expectedHoursPerDay: r.expected_hours_per_day ?? undefined,
     total: r.total ?? 0,
     deposit: r.deposit ?? 0,
+    depositPct: r.deposit_pct ?? undefined,
     status: r.status ?? null,
     notes: r.notes ?? "",
     lines: lineRows.map(rowToQuoteLine),
@@ -121,6 +122,7 @@ function quoteToDraftRow(q: QuoteDraft) {
     expected_hours_per_day: q.expectedHoursPerDay ?? null,
     total:                  q.total ?? 0,
     deposit:                q.deposit ?? 0,
+    deposit_pct:            q.depositPct ?? null,
     status:                 q.status,
     notes:                  q.notes || null,
     terms:                  q.terms || null,
@@ -477,6 +479,12 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
     }
   }
 
+  // Seed quote.total from the line totals computed during seeding so the
+  // editor's subtotal display is correct on first render (no longer waiting
+  // for the user to edit a line to trigger a recompute). Round to cents.
+  const rawTotal = draft.lines.reduce((s, l) => s + (l.total || 0), 0);
+  draft.total = Math.round(rawTotal * 100) / 100;
+
   await persistDraft(draft);
   return draft;
 }
@@ -607,9 +615,10 @@ function buildLineFromRate(
   // before, so total was always 0 at seed time and the editor would fix it).
   const baseHourly = rate?.hourly ?? 0;
   const baseDay = rate?.day ?? 0;
-  const total = (rate?.rate_mode === "day" || (baseDay > 0 && hours === 0))
+  const rawTotal = (rate?.rate_mode === "day" || (baseDay > 0 && hours === 0))
     ? (opts.qty || 0) * baseDay
     : (opts.qty || 0) * hours * baseHourly;
+  const total = Math.round(rawTotal * 100) / 100;
   return {
     serviceKey:   "",
     qty:          opts.qty,

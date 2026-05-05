@@ -953,6 +953,7 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     expectedHoursPerDay: r.expected_hours_per_day ?? undefined,
     total: r.total ?? 0,
     deposit: r.deposit ?? 0,
+    depositPct: r.deposit_pct ?? undefined,
     status: r.status ?? null,
     notes: r.notes ?? "",
     lines: lineRows.map(rowToQuoteLine),
