@@ -156,7 +156,19 @@ export default function QuotesList() {
               return (
                 <tr key={q.id}>
                   <td><span className="badge">{displayStatus(q)}</span></td>
-                  <td><Link href={href}>{labelQuoteNo}</Link></td>
+                  <td>
+                    <Link
+                      href={href}
+                      style={{
+                        color: "#2c4d73",
+                        textDecoration: "underline",
+                        fontWeight: 600,
+                        fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace",
+                      }}
+                    >
+                      {labelQuoteNo}
+                    </Link>
+                  </td>
                   <td>{q.client || "—"}</td>
                   <td>{q.eventName || "—"}</td>
                   <td>{q.startDate || "—"}</td>
