@@ -46,6 +46,15 @@ export type QuoteLine = {
   startTime?: string;
   endTime?: string;
   rateMode?: string;
+  // ─── Phase C invoice rewrite: source tracking on invoice_lines ──────────
+  // These are only populated on lines that belong to an invoice (not a quote).
+  // QuoteLine is the shared shape between quote_lines and invoice_lines tables.
+  /** quote_line | timesheet_entry | manual_override — only on invoice_lines. */
+  sourceKind?: "quote_line" | "timesheet_entry" | "manual_override";
+  /** FK to the originating quote_lines row. Prevents double-billing. */
+  sourceQuoteLineId?: string;
+  /** FK to the originating timesheet_entries row. Prevents double-billing. */
+  sourceTimesheetEntryId?: string;
 };
 
 export type TimeEntry = {
@@ -167,11 +176,111 @@ export type InvoiceDraft = {
   amountDue: number;
   terms: string;
   notes: string;
-  status: string;
+  /** issued | sent | paid | superseded | void — NULL while is_draft=true */
+  status: string | null;
   paidAmount: number;
   rateCardProfileId?: string;
   linkedJobSheetId?: string;
   timesheetSummary?: Array<{ position: string; workers: number; stdHours: number; otHours: number; dtHours: number; totalHours: number; totalPay: number; }>;
+  // ─── New fields (Phase C invoice rewrite) ────────────────────────────────
+  /** True while editable; false once issued. Frozen rows can't have content updated. */
+  isDraft: boolean;
+  /** deposit | final */
+  invoiceType?: "deposit" | "final";
+  /** FK to job_requests(id). Required for new invoices; legacy orphans may be NULL. */
+  jobRequestId?: string;
+  /** FK to quotes(id). The new invoice is generated from this quote. */
+  sourceQuoteId?: string;
+  /** Snapshot of source quote's quote_no at issue. Frozen on the row. */
+  sourceQuoteCode?: string;
+  /** Set on revision drafts pointing at the parent frozen invoice. */
+  parentInvoiceId?: string;
+  /** Per-day finals: array of dates this invoice covers. NULL = whole job. */
+  coveredDates?: string[];
+  // invoiceNo already declared above (line ~155) — same field, holds the new
+  // AES_..._INV / _DEP / _REV{N-1} format once issued.
+  revisionNo: number;
+  /** How much of the job's deposit credit is applied to this invoice. */
+  depositApplied: number;
+  /** SUM of customer_credit_ledger entries 'applied_to_invoice' for this invoice. Maintained by trigger. */
+  creditsApplied: number;
+  // Lifecycle audit
+  issuedAt?: string;
+  issuedBy?: string;
+  sentAt?: string;
+  sentBy?: string;
+  paidAt?: string;
+  paidBy?: string;
+  supersededAt?: string;
+  supersededBy?: string;
+  voidedAt?: string;
+  voidedBy?: string;
+  voidReason?: string;
+  // Standard audit
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
+// ─── Customer payments + credits (Phase C invoice rewrite) ──────────────────
+export type PaymentMethod = "check" | "ach" | "credit_card" | "cash" | "wire" | "zelle" | "venmo" | "money_order" | "other";
+
+export type CustomerPayment = {
+  id: string;
+  clientId: string;
+  paymentDate: string;             // YYYY-MM-DD
+  paymentMethod: PaymentMethod;
+  paymentAmount: number;
+  /** Check #, CC transaction id, Venmo id, etc. — the rail's identifier. */
+  referenceNumber?: string;
+  /** What the customer wrote on the memo line. */
+  memo?: string;
+  receivedDate?: string;
+  receivedBy?: string;
+  depositedDate?: string;
+  depositedBy?: string;
+  /** Internal AES notes. */
+  notes?: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
+export type PaymentAllocation = {
+  id: string;
+  paymentId: string;
+  invoiceId: string;
+  amount: number;
+  allocatedDate: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
+export type CreditTransactionType = "overpayment" | "manual_credit" | "applied_to_invoice" | "refunded" | "written_off";
+
+export type CustomerCreditLedgerEntry = {
+  id: string;
+  clientId: string;
+  transactionDate: string;
+  transactionType: CreditTransactionType;
+  amount: number;                  // always positive; sign comes from type
+  relatedInvoiceId?: string;
+  relatedPaymentId?: string;
+  refundReference?: string;
+  refundMemo?: string;
+  refundDate?: string;
+  notes?: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
 };
 
 export type JobRequest = {
