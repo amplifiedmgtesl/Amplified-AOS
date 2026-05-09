@@ -403,12 +403,20 @@ Updates to existing routes:
                                   (gated: deposit button hides if active deposit exists; final button shows day picker for multi-day jobs)
 ```
 
-### Cleanup deletes (executed alongside)
+### Cleanup — keep legacy invoice-builder accessible during transition
 
-- `components/shared/invoice-builder.tsx` — DELETE the legacy ~1500-line builder
-- `app/invoices/page.tsx` if it renders the legacy — replace with `<InvoicesList />`
-- `db.ts` invoice-shaped functions: `setInvoiceDrafts`, `upsertInvoiceDraft` (with 2026-04-29 collision guard), `syncInvoiceLines`, `invoiceToRow`, `rowToInvoice`, `rowToInvoiceLine`, `invoiceLineToRow`
-- `app-store.ts` invoice re-exports
+Mirroring the quote rewrite's transitional approach: **don't delete the legacy
+builder yet** — hide it from primary nav but keep the route functional in case
+we need to refer back during the transition (verifying behavior, recovering edits
+that didn't make it through, etc.). After the new flow has been live and stable
+for a while, the cleanup pass deletes it.
+
+- `components/shared/invoice-builder.tsx` — **kept** as `/invoice-builder` route
+- `app/invoices/page.tsx` → swapped to render `<InvoicesList />` (the new unified list)
+- `app/invoice-builder/page.tsx` — **new file** (or rename existing) that exposes the legacy builder behind a less-prominent URL
+- Nav: "Invoices" points to `/invoices` (new); "Invoice Builder (legacy)" added briefly to nav for transition, removed once confidence is high
+- `db.ts` invoice-shaped functions: **kept** during transition since the legacy builder reads them. Final delete happens in a follow-up cleanup pass mirroring the quote one (PASS 2 cleanup, after invoice rewrite has shipped and been stable).
+- `app-store.ts` invoice re-exports: same — kept during transition.
 
 ### What stays unchanged
 
