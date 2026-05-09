@@ -16,6 +16,11 @@ import {
   displayStatus,
   linkOrphanQuote,
 } from "@/lib/store/quotes";
+import {
+  createDepositDraftFromQuote,
+  createFinalDraftFromQuote,
+  loadInvoices,
+} from "@/lib/store/invoices";
 import type { QuoteDraft } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
 
@@ -30,6 +35,13 @@ export default function QuoteDetail({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [signOpen, setSignOpen] = useState(false);
   const [signName, setSignName] = useState("");
+  /** Existing invoices for this quote — drives Generate Deposit/Final
+   *  button visibility (hide when an active one already exists). */
+  const [hasActiveDeposit, setHasActiveDeposit] = useState(false);
+  const [hasActiveFinal, setHasActiveFinal] = useState(false);
+  const [activeDepositId, setActiveDepositId] = useState<string | null>(null);
+  const [activeFinalId, setActiveFinalId] = useState<string | null>(null);
+
   /** Orphan-quote linker state. Open when user clicks "Link to Job". */
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkJobs, setLinkJobs] = useState<Array<{ id: string; job_no: string | null; client: string | null; event_name: string | null; request_date: string | null; client_id: string | null }>>([]);
@@ -77,6 +89,16 @@ export default function QuoteDetail({ id }: { id: string }) {
           .maybeSingle();
         if (!cancelled && child.data) {
           setSupersededBy({ id: child.data.id, quoteNo: child.data.quote_no });
+        }
+        // Check for active invoices linked to this quote (deposit / final).
+        const invoices = await loadInvoices({ sourceQuoteId: q.id });
+        if (!cancelled) {
+          const dep = invoices.find((i) => i.invoiceType === "deposit" && (!i.status || (i.status !== "superseded" && i.status !== "void")));
+          const fin = invoices.find((i) => i.invoiceType === "final" && (!i.status || (i.status !== "superseded" && i.status !== "void")) && (!i.coveredDates || i.coveredDates.length === 0));
+          setHasActiveDeposit(!!dep);
+          setActiveDepositId(dep?.id ?? null);
+          setHasActiveFinal(!!fin);
+          setActiveFinalId(fin?.id ?? null);
         }
         setLoading(false);
       })
@@ -146,6 +168,28 @@ export default function QuoteDetail({ id }: { id: string }) {
     setLinkJobs([...sameClient, ...others]);
     setLinkPickedJobId("");
     setLinkOpen(true);
+  }
+
+  async function onGenerateDeposit() {
+    if (!quote) return;
+    if (!confirm(`Generate a deposit invoice from this quote?`)) return;
+    try {
+      const draft = await createDepositDraftFromQuote(quote.id);
+      router.push(`/invoices/${draft.id}/edit`);
+    } catch (err: any) {
+      alert(`Generate Deposit failed: ${err.message || err}`);
+    }
+  }
+
+  async function onGenerateFinal() {
+    if (!quote) return;
+    if (!confirm(`Generate a final invoice covering the full job from this quote?`)) return;
+    try {
+      const draft = await createFinalDraftFromQuote(quote.id);
+      router.push(`/invoices/${draft.id}/edit`);
+    } catch (err: any) {
+      alert(`Generate Final failed: ${err.message || err}`);
+    }
   }
 
   async function onConfirmLink() {
@@ -308,6 +352,29 @@ export default function QuoteDetail({ id }: { id: string }) {
           <button className="secondary" onClick={onOpenLink} title="This legacy quote has no linked job. Pick a job to attach it to and recompute the quote number.">
             Link to Job…
           </button>
+        ) : null}
+        {/* Invoice generation — only on issued/signed quotes with a job link */}
+        {quote.jobRequestId && !isSuperseded ? (
+          hasActiveDeposit ? (
+            <button className="secondary" onClick={() => router.push(`/invoices/${activeDepositId}`)}>
+              View Deposit Invoice
+            </button>
+          ) : (
+            <button className="secondary" onClick={onGenerateDeposit}>
+              Generate Deposit Invoice
+            </button>
+          )
+        ) : null}
+        {quote.jobRequestId && !isSuperseded ? (
+          hasActiveFinal ? (
+            <button className="secondary" onClick={() => router.push(`/invoices/${activeFinalId}`)}>
+              View Final Invoice
+            </button>
+          ) : (
+            <button className="secondary" onClick={onGenerateFinal}>
+              Generate Final Invoice
+            </button>
+          )
         ) : null}
         {/* Generate Invoice button intentionally absent — Phase C scope. */}
       </div>

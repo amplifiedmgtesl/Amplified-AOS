@@ -18,6 +18,7 @@ const nav = [
   ["/job-requests", "📨", "Jobs"],
   ["/quotes", "🧾", "Quotes"],
   ["/invoices", "💵", "Invoices"],
+  ["/invoice-builder", "📄", "Invoice Builder (legacy)"],
   ["/rate-card", "📋", "Rate Card"],
   ["/job-sheets", "📑", "Job Sheets"],
   ["/timekeeping", "⏱️", "Timekeeping"],
