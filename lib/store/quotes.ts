@@ -557,6 +557,18 @@ export async function issueDraft(quoteId: string): Promise<string> {
   return data as string;
 }
 
+/** Link a legacy orphan frozen quote (job_request_id IS NULL) to a job.
+ *  Recomputes quote_no from the chosen job's job_no. One-time only — once
+ *  linked, the freeze trigger blocks re-parenting. */
+export async function linkOrphanQuote(quoteId: string, jobRequestId: string): Promise<string> {
+  const { data, error } = await supabase.rpc("link_orphan_quote", {
+    p_quote_id: quoteId,
+    p_job_request_id: jobRequestId,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
 /** Mark a frozen quote as signed. Only signature columns + status change —
  *  the freeze trigger lets these through. */
 export async function markSigned(quoteId: string, signatureName: string): Promise<void> {

@@ -14,6 +14,7 @@ import {
   createDraftFromRevision,
   markSigned,
   displayStatus,
+  linkOrphanQuote,
 } from "@/lib/store/quotes";
 import type { QuoteDraft } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
@@ -29,6 +30,10 @@ export default function QuoteDetail({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [signOpen, setSignOpen] = useState(false);
   const [signName, setSignName] = useState("");
+  /** Orphan-quote linker state. Open when user clicks "Link to Job". */
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [linkJobs, setLinkJobs] = useState<Array<{ id: string; job_no: string | null; client: string | null; event_name: string | null; request_date: string | null; client_id: string | null }>>([]);
+  const [linkPickedJobId, setLinkPickedJobId] = useState<string>("");
 
   useEffect(() => {
     let cancelled = false;
@@ -118,6 +123,46 @@ export default function QuoteDetail({ id }: { id: string }) {
       setQuote(q);
     } catch (err: any) {
       alert(`Mark Signed failed: ${err.message || err}`);
+    }
+  }
+
+  async function onOpenLink() {
+    if (!quote) return;
+    // Load job_requests, prefer same-client first.
+    const { data, error } = await supabase
+      .from("job_requests")
+      .select("id, job_no, client, event_name, request_date, client_id")
+      .not("job_no", "is", null)
+      .order("request_date", { ascending: false });
+    if (error) { alert(`Couldn't load jobs: ${error.message}`); return; }
+    const rows = data ?? [];
+    // Sort: same-client jobs first, then everything else by request_date desc.
+    const sameClient = quote.clientId
+      ? rows.filter((r) => r.client_id === quote.clientId)
+      : [];
+    const others = quote.clientId
+      ? rows.filter((r) => r.client_id !== quote.clientId)
+      : rows;
+    setLinkJobs([...sameClient, ...others]);
+    setLinkPickedJobId("");
+    setLinkOpen(true);
+  }
+
+  async function onConfirmLink() {
+    if (!quote || !linkPickedJobId) return;
+    try {
+      await linkOrphanQuote(quote.id, linkPickedJobId);
+      setLinkOpen(false);
+      // Reload the quote to show new quote_no + linked job.
+      const q = await loadQuote(quote.id);
+      setQuote(q);
+      // Reload the linked job header info.
+      if (q?.jobRequestId) {
+        const j = await supabase.from("job_requests").select("*").eq("id", q.jobRequestId).maybeSingle();
+        setJob(j.data ?? null);
+      }
+    } catch (err: any) {
+      alert(`Link failed: ${err.message || err}`);
     }
   }
 
@@ -256,8 +301,41 @@ export default function QuoteDetail({ id }: { id: string }) {
         {!isSuperseded ? (
           <button className="secondary" onClick={onRevise}>Revise</button>
         ) : null}
+        {/* Legacy orphan adoption: visible only when this quote has no
+            linked job_request. After successful link, the button hides on
+            reload. */}
+        {!quote.jobRequestId ? (
+          <button className="secondary" onClick={onOpenLink} title="This legacy quote has no linked job. Pick a job to attach it to and recompute the quote number.">
+            Link to Job…
+          </button>
+        ) : null}
         {/* Generate Invoice button intentionally absent — Phase C scope. */}
       </div>
+
+      {linkOpen ? (
+        <div className="card" style={{ marginTop: 16 }}>
+          <h3 className="section-title">Link to a Job</h3>
+          <div className="muted" style={{ marginBottom: 8 }}>
+            Pick the job this quote belongs to. The quote number will recompute as <code>{`{job_no}_EST`}</code> (or <code>_REV{`{N}`}</code> for revisions). Same-client jobs are listed first.
+          </div>
+          <select
+            value={linkPickedJobId}
+            onChange={(e) => setLinkPickedJobId(e.target.value)}
+            style={{ minWidth: 360, marginBottom: 8 }}
+          >
+            <option value="">— Select a job —</option>
+            {linkJobs.map((j) => (
+              <option key={j.id} value={j.id}>
+                {j.job_no || "(no job_no)"} — {j.client || "?"} — {j.event_name || "?"}{j.request_date ? ` (${j.request_date})` : ""}
+              </option>
+            ))}
+          </select>
+          <div className="action-row">
+            <button onClick={onConfirmLink} disabled={!linkPickedJobId}>Link Quote</button>
+            <button className="secondary" onClick={() => { setLinkOpen(false); setLinkPickedJobId(""); }}>Cancel</button>
+          </div>
+        </div>
+      ) : null}
 
       {signOpen ? (
         <div className="card" style={{ marginTop: 16 }}>
