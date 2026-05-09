@@ -255,34 +255,61 @@ export default function InvoiceDetail({ id }: { id: string }) {
         </div>
       </div>
 
-      {/* Lines */}
-      <h3 className="section-title">Line items</h3>
-      <div style={{ overflowX: "auto", marginBottom: 12 }}>
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th><th>Position</th><th>Specialty</th><th>Shift</th>
-              <th>Qty</th><th>Hrs</th><th>Rate</th><th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            {invoice.lines.length === 0 ? (
-              <tr><td colSpan={8} className="muted">No line items.</td></tr>
-            ) : invoice.lines.map((l, i) => (
-              <tr key={i}>
-                <td>{l.quoteDate || "—"}</td>
-                <td>{l.department || "—"}</td>
-                <td>{l.specialty || "—"}</td>
-                <td>{l.shiftLabel || "—"}</td>
-                <td>{l.qty}</td>
-                <td>{l.hours}</td>
-                <td>${(l.baseHourly || l.baseDay || 0).toFixed(2)}</td>
-                <td>${l.total.toFixed(2)}</td>
+      {/* Lines — finals show the table; deposits show a synthesized line */}
+      {invoice.invoiceType === "deposit" ? (
+        <>
+        <h3 className="section-title">Charges</h3>
+        <div style={{ overflowX: "auto", marginBottom: 12 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th style={{ textAlign: "right" }}>Amount</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  Deposit
+                  {invoice.sourceQuoteCode ? <> for <code>{invoice.sourceQuoteCode}</code></> : null}
+                </td>
+                <td style={{ textAlign: "right" }}>${invoice.subtotal.toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        </>
+      ) : (
+        <>
+        <h3 className="section-title">Line items</h3>
+        <div style={{ overflowX: "auto", marginBottom: 12 }}>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th>Position</th><th>Specialty</th><th>Shift</th>
+                <th>Qty</th><th>Hrs</th><th>Rate</th><th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoice.lines.length === 0 ? (
+                <tr><td colSpan={8} className="muted">No line items.</td></tr>
+              ) : invoice.lines.map((l, i) => (
+                <tr key={i}>
+                  <td>{l.quoteDate || "—"}</td>
+                  <td>{l.department || "—"}</td>
+                  <td>{l.specialty || "—"}</td>
+                  <td>{l.shiftLabel || "—"}</td>
+                  <td>{l.qty}</td>
+                  <td>{l.hours}</td>
+                  <td>${(l.baseHourly || l.baseDay || 0).toFixed(2)}</td>
+                  <td>${l.total.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        </>
+      )}
 
       {/* Pricing */}
       <div className="grid2" style={{ marginBottom: 16 }}>

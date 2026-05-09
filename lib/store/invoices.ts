@@ -219,8 +219,14 @@ export async function getAlreadyBilledQuoteLineIds(jobRequestId: string): Promis
 
 // ─── Write operations ────────────────────────────────────────────────────────
 
-/** Create a deposit-invoice draft from a frozen quote. Seeds with a single
- *  line representing the deposit amount = quote.total × deposit_pct%. */
+/** Create a deposit-invoice draft from a frozen quote.
+ *
+ *  Deposits have NO line items. The deposit is a lump-sum amount stored on
+ *  the invoice header (subtotal = depositAmount). The PDF and detail views
+ *  render a synthesized "Deposit for {quote_no}" line at display time so
+ *  the customer sees a meaningful description without the data shape having
+ *  to fake a line item with the amount stuffed into a wrong field.
+ */
 export async function createDepositDraftFromQuote(quoteId: string): Promise<InvoiceDraft> {
   const qRes = await supabase.from("quotes").select("*").eq("id", quoteId).maybeSingle();
   if (qRes.error) throw qRes.error;
@@ -229,7 +235,6 @@ export async function createDepositDraftFromQuote(quoteId: string): Promise<Invo
   if (q.is_draft) throw new Error(`Cannot generate invoice from a draft quote (${quoteId}). Issue it first.`);
   if (!q.job_request_id) throw new Error(`Quote ${quoteId} has no linked job_request.`);
 
-  // Compute deposit amount from quote.total × deposit_pct%
   const depositAmount = Math.round(((q.total ?? 0) * ((q.deposit_pct ?? 0) / 100)) * 100) / 100;
 
   const draftId = newInvoiceId();
@@ -246,25 +251,9 @@ export async function createDepositDraftFromQuote(quoteId: string): Promise<Invo
     eventName: q.event_name ?? "",
     venue: q.venue ?? "",
     cityState: q.city_state ?? "",
-    lines: [{
-      serviceKey: "",
-      qty: 1,
-      hours: 0,
-      holidayHours: 0,
-      travel: 0,
-      baseHourly: 0,
-      baseDay: depositAmount,
-      otRate: 0,
-      dtRate: 0,
-      rule: "",
-      total: depositAmount,
-      department: "Deposit",
-      specialty: `${q.deposit_pct ?? 0}% of ${q.quote_no || q.id}`,
-      rateMode: "day",
-      sourceKind: "manual_override",
-    }],
-    subtotal: depositAmount,
-    deposit: depositAmount,
+    lines: [],                          // Deposits have no line items by design
+    subtotal: depositAmount,            // The lump-sum deposit amount
+    deposit: depositAmount,             // Legacy field kept in sync
     amountDue: depositAmount,
     terms: q.terms ?? "",
     notes: "",

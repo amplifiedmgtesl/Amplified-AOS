@@ -221,6 +221,28 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
       </div>
 
       {/* Invoice fields */}
+      {invoice.invoiceType === "deposit" ? (
+        // Deposits are header-amount only. No line items.
+        <div className="card" style={{ marginBottom: 16, background: "#fbf4e8" }}>
+          <h3 className="section-title" style={{ marginTop: 0 }}>Deposit Amount</h3>
+          <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+            Deposits are a lump-sum amount tied to the source quote — no line items.
+            The printed invoice will show it as: <code>Deposit for {invoice.sourceQuoteCode || "(quote)"}: ${invoice.subtotal.toFixed(2)}</code>
+          </div>
+          <input
+            type="number"
+            min={0}
+            step={0.01}
+            value={invoice.subtotal}
+            onChange={(e) => {
+              const amt = Math.round((parseFloat(e.target.value) || 0) * 100) / 100;
+              updateInvoice({ subtotal: amt, deposit: amt, amountDue: amt });
+            }}
+            style={{ fontSize: 18, width: 200 }}
+          />
+        </div>
+      ) : null}
+
       <div className="grid2" style={{ marginBottom: 16 }}>
         <div>
           <label>
@@ -261,7 +283,9 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         </div>
       </div>
 
-      {/* Lines */}
+      {/* Lines — only for finals; deposits use the header amount above */}
+      {invoice.invoiceType === "final" ? (
+      <>
       <h3 className="section-title">Line items</h3>
       <div style={{ overflowX: "auto", marginBottom: 12 }}>
         <table>
@@ -291,6 +315,8 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           </tbody>
         </table>
       </div>
+      </>
+      ) : null}
 
       <div className="action-row">
         <button onClick={onSave} disabled={saving === "saving"}>
