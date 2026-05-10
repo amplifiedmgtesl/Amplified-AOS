@@ -26,6 +26,18 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
+  // Local string state for the deposit amount input so the user can type
+  // freely (decimals, partial values) without the parent state's number
+  // truncating "100.50" → "100.5" and preventing trailing-zero display.
+  const [depositAmountStr, setDepositAmountStr] = useState<string>("");
+  // Linked deposit invoice info for the final-invoice draft summary panel.
+  const [linkedDeposit, setLinkedDeposit] = useState<{
+    invoiceNo: string;
+    subtotal: number;
+    paidAmount: number;
+    status: string;
+    isDraft: boolean;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -36,9 +48,32 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         if (!q) { setError(`Invoice not found: ${id}`); setLoading(false); return; }
         if (!q.isDraft) { router.replace(`/invoices/${id}`); return; }
         setInvoice(q);
+        setDepositAmountStr((q.subtotal ?? 0).toFixed(2));
         if (q.jobRequestId) {
           const j = await supabase.from("job_requests").select("*").eq("id", q.jobRequestId).maybeSingle();
           if (!cancelled) setJob(j.data ?? null);
+          // For final drafts, surface the linked deposit invoice so the
+          // user can see what's being applied (or warn if none exists).
+          if (q.invoiceType === "final") {
+            const dep = await supabase
+              .from("invoices")
+              .select("invoice_no, subtotal, paid_amount, status, is_draft")
+              .eq("job_request_id", q.jobRequestId)
+              .eq("invoice_type", "deposit")
+              .or("status.is.null,and(status.neq.superseded,status.neq.void)")
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (!cancelled && dep.data) {
+              setLinkedDeposit({
+                invoiceNo: dep.data.invoice_no ?? "(draft)",
+                subtotal: Number(dep.data.subtotal ?? 0),
+                paidAmount: Number(dep.data.paid_amount ?? 0),
+                status: dep.data.status ?? (dep.data.is_draft ? "draft" : "issued"),
+                isDraft: !!dep.data.is_draft,
+              });
+            }
+          }
         }
         setLoading(false);
       })
@@ -244,6 +279,48 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         ) : <div className="muted">No job linked.</div>}
       </div>
 
+      {/* Linked deposit panel — finals only */}
+      {invoice.invoiceType === "final" && linkedDeposit ? (
+        <div className="card" style={{ marginBottom: 16, background: "#eef6ff", border: "1px solid #b8d4f0" }}>
+          <h3 className="section-title" style={{ marginTop: 0 }}>Linked deposit invoice</h3>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "baseline", fontVariantNumeric: "tabular-nums" }}>
+            <div>
+              <div className="muted" style={{ fontSize: 11 }}>Deposit invoice</div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}><code>{linkedDeposit.invoiceNo}</code></div>
+            </div>
+            <div>
+              <div className="muted" style={{ fontSize: 11 }}>Status</div>
+              <div style={{ fontSize: 14 }}>{linkedDeposit.status}</div>
+            </div>
+            <div>
+              <div className="muted" style={{ fontSize: 11 }}>Deposit amount</div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>${linkedDeposit.subtotal.toFixed(2)}</div>
+            </div>
+            <div>
+              <div className="muted" style={{ fontSize: 11 }}>Paid so far</div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>${linkedDeposit.paidAmount.toFixed(2)}</div>
+            </div>
+            <div style={{ marginLeft: "auto" }}>
+              <div className="muted" style={{ fontSize: 11 }}>Applied to this invoice</div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>${invoice.depositApplied.toFixed(2)}</div>
+            </div>
+          </div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            The deposit is applied as a credit on the final invoice regardless of paid status —
+            the customer is on the hook for both invoices either way. Edit "Deposit applied" below to override.
+          </div>
+        </div>
+      ) : null}
+      {invoice.invoiceType === "final" && !linkedDeposit ? (
+        <div className="card" style={{ marginBottom: 16, background: "#fff7e6", border: "1px solid #e8c46c" }}>
+          <h3 className="section-title" style={{ marginTop: 0 }}>No deposit invoice</h3>
+          <div className="muted" style={{ fontSize: 13 }}>
+            No deposit invoice was found for this job. If a deposit should be billed, generate it from the source quote first;
+            otherwise this final stands alone.
+          </div>
+        </div>
+      ) : null}
+
       {/* Invoice fields */}
       {invoice.invoiceType === "deposit" ? (
         // Deposits are header-amount only. No line items.
@@ -254,15 +331,22 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
             The printed invoice will show it as: <code>Deposit for {invoice.sourceQuoteCode || "(quote)"}: ${invoice.subtotal.toFixed(2)}</code>
           </div>
           <input
-            type="number"
-            min={0}
-            step={0.01}
-            value={invoice.subtotal}
+            type="text"
+            inputMode="decimal"
+            value={depositAmountStr}
             onChange={(e) => {
-              const amt = Math.round((parseFloat(e.target.value) || 0) * 100) / 100;
+              // Accept any keystroke; parse into the model.
+              const raw = e.target.value;
+              setDepositAmountStr(raw);
+              const amt = Math.round((parseFloat(raw) || 0) * 100) / 100;
               updateInvoice({ subtotal: amt, deposit: amt, amountDue: amt });
             }}
-            style={{ fontSize: 18, width: 200 }}
+            onBlur={() => {
+              // On blur, normalize the displayed string to two decimals.
+              const amt = Math.round((parseFloat(depositAmountStr) || 0) * 100) / 100;
+              setDepositAmountStr(amt.toFixed(2));
+            }}
+            style={{ fontSize: 18, width: 200, fontVariantNumeric: "tabular-nums" }}
           />
         </div>
       ) : null}

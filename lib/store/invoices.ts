@@ -321,14 +321,22 @@ export async function createFinalDraftFromQuote(
 
   const subtotal = Math.round(quoteLines.reduce((s: number, l: any) => s + (l.total || 0), 0) * 100) / 100;
 
-  // Compute deposit credit available for this job
+  // Compute deposit credit available for this job.
+  //
+  // Deposit credit = deposit invoice's subtotal (the BILLED amount), not its
+  // paid_amount. The deposit and final are separate invoices for the same
+  // engagement; the customer owes (deposit) + (final − deposit applied) =
+  // (full job total) regardless of when they pay either one. Tying credit
+  // to paid_amount would mis-state the final's balance due whenever the
+  // customer hasn't paid the deposit yet — they'd appear to owe the full
+  // job total on the final, double-counting the deposit invoice.
   const depositInvRes = await supabase
     .from("invoices")
-    .select("deposit, paid_amount")
+    .select("subtotal, paid_amount")
     .eq("job_request_id", q.job_request_id)
     .eq("invoice_type", "deposit")
     .or("status.is.null,and(status.neq.superseded,status.neq.void)");
-  const depositPaid = (depositInvRes.data ?? []).reduce((s: number, r: any) => s + (r.paid_amount ?? 0), 0);
+  const depositBilled = (depositInvRes.data ?? []).reduce((s: number, r: any) => s + (r.subtotal ?? 0), 0);
 
   const finalsAppliedRes = await supabase
     .from("invoices")
@@ -338,7 +346,7 @@ export async function createFinalDraftFromQuote(
     .or("status.is.null,and(status.neq.superseded,status.neq.void)");
   const alreadyApplied = (finalsAppliedRes.data ?? []).reduce((s: number, r: any) => s + (r.deposit_applied ?? 0), 0);
 
-  const depositCreditAvailable = Math.max(0, depositPaid - alreadyApplied);
+  const depositCreditAvailable = Math.max(0, depositBilled - alreadyApplied);
   const depositApplied = Math.min(depositCreditAvailable, subtotal);
 
   const draftId = newInvoiceId();
