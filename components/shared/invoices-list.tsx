@@ -9,11 +9,25 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { loadInvoices, displayStatus, balanceDue, type InvoiceFilters } from "@/lib/store/invoices";
 import type { InvoiceDraft } from "@/lib/store/types";
+import { supabase } from "@/lib/supabase/client";
+
+/** Build the same projected invoice # the editor shows for an unsaved draft. */
+function projectedInvoiceNo(inv: InvoiceDraft, jobNo: string | undefined): string | null {
+  if (!jobNo) return null;
+  const suffix =
+    inv.invoiceType === "deposit" ? "_DEP" :
+    inv.coveredDates && inv.coveredDates.length > 0
+      ? "_INV_" + inv.coveredDates[0].replace(/-/g, "")
+      : "_INV";
+  const rev = inv.revisionNo > 1 ? `_REV${inv.revisionNo - 1}` : "";
+  return `${jobNo}${suffix}${rev}`;
+}
 
 type StatusFilter = "active" | "drafts" | "issued" | "sent" | "paid" | "superseded" | "void" | "all";
 
 export default function InvoicesList() {
   const [rows, setRows] = useState<InvoiceDraft[]>([]);
+  const [jobNoMap, setJobNoMap] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
@@ -34,7 +48,7 @@ export default function InvoicesList() {
     if (statusFilter === "all") filters.hideSupersededAndVoid = false;
 
     loadInvoices(filters)
-      .then((data) => {
+      .then(async (data) => {
         if (cancelled) return;
         let filtered = data;
         if (statusFilter === "issued")     filtered = filtered.filter((q) => q.status === "issued");
@@ -43,6 +57,27 @@ export default function InvoicesList() {
         if (statusFilter === "superseded") filtered = filtered.filter((q) => q.status === "superseded");
         if (statusFilter === "void")       filtered = filtered.filter((q) => q.status === "void");
         setRows(filtered);
+
+        // Batch-load job_no for every job_request_id we'll show, so drafts
+        // can render their projected invoice # without N+1 lookups.
+        const jobIds = Array.from(new Set(
+          filtered.map((q) => q.jobRequestId).filter(Boolean) as string[]
+        ));
+        if (jobIds.length > 0) {
+          const { data: jobs } = await supabase
+            .from("job_requests")
+            .select("id, job_no")
+            .in("id", jobIds);
+          if (!cancelled && jobs) {
+            const m = new Map<string, string>();
+            for (const j of jobs as any[]) {
+              if (j.job_no) m.set(j.id, j.job_no);
+            }
+            setJobNoMap(m);
+          }
+        } else if (!cancelled) {
+          setJobNoMap(new Map());
+        }
         setLoading(false);
       })
       .catch((err) => {
@@ -57,13 +92,18 @@ export default function InvoicesList() {
   const visible = useMemo(() => {
     if (!search.trim()) return rows;
     const s = search.toLowerCase();
-    return rows.filter((q) =>
-      (q.invoiceNo || "").toLowerCase().includes(s) ||
-      (q.client || "").toLowerCase().includes(s) ||
-      (q.eventName || "").toLowerCase().includes(s) ||
-      q.id.toLowerCase().includes(s),
-    );
-  }, [rows, search]);
+    return rows.filter((q) => {
+      const projected = projectedInvoiceNo(q, q.jobRequestId ? jobNoMap.get(q.jobRequestId) : undefined);
+      return (
+        (q.invoiceNo || "").toLowerCase().includes(s) ||
+        (projected || "").toLowerCase().includes(s) ||
+        (q.sourceQuoteCode || "").toLowerCase().includes(s) ||
+        (q.client || "").toLowerCase().includes(s) ||
+        (q.eventName || "").toLowerCase().includes(s) ||
+        q.id.toLowerCase().includes(s)
+      );
+    });
+  }, [rows, search, jobNoMap]);
 
   if (loading) return <div className="muted">Loading invoices…</div>;
   if (error) return <div className="muted">{error}</div>;
@@ -102,6 +142,7 @@ export default function InvoicesList() {
               <th>Status</th>
               <th>Type</th>
               <th>Invoice #</th>
+              <th>Source quote</th>
               <th>Client</th>
               <th>Event</th>
               <th>Subtotal</th>
@@ -111,16 +152,21 @@ export default function InvoicesList() {
           </thead>
           <tbody>
             {visible.length === 0 ? (
-              <tr><td colSpan={8} className="muted">No invoices match.</td></tr>
+              <tr><td colSpan={9} className="muted">No invoices match.</td></tr>
             ) : visible.map((q) => {
               const href = q.isDraft ? `/invoices/${q.id}/edit` : `/invoices/${q.id}`;
+              const projected = projectedInvoiceNo(q, q.jobRequestId ? jobNoMap.get(q.jobRequestId) : undefined);
+              // Frozen rows show invoice_no. Drafts show the projected #
+              // (so the operator can tell six drafts apart) and only fall
+              // back to "— Draft —" when the job has no job_no yet.
               const labelInvoiceNo =
                 q.invoiceNo ||
+                projected ||
                 (q.isDraft ? "— Draft —" : q.id.slice(0, 12));
               return (
                 <tr key={q.id}>
                   <td><span className="badge">{displayStatus(q)}</span></td>
-                  <td>{q.invoiceType || (q.isDraft ? "—" : "—")}</td>
+                  <td>{q.invoiceType || "—"}</td>
                   <td>
                     <Link
                       href={href}
@@ -133,6 +179,12 @@ export default function InvoicesList() {
                     >
                       {labelInvoiceNo}
                     </Link>
+                    {q.isDraft && projected ? (
+                      <span className="muted" style={{ marginLeft: 6, fontSize: 11 }}>(projected)</span>
+                    ) : null}
+                  </td>
+                  <td style={{ fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace", fontSize: 12 }}>
+                    {q.sourceQuoteCode || "—"}
                   </td>
                   <td>{q.client || "—"}</td>
                   <td>{q.eventName || "—"}</td>

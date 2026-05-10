@@ -648,12 +648,35 @@ export async function markSent(invoiceId: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Mark as paid (manually — usually triggered automatically when amount_paid
- *  reaches balance). */
+/** Mark as paid manually — shorthand for "customer paid in full, I'm not
+ *  recording the line-item payment right now."
+ *
+ *  Also bumps paid_amount to fully cover the balance so the denormalized
+ *  aggregate stays consistent with status. The customer_payments + payment_
+ *  allocations triggers normally maintain paid_amount, but this lets users
+ *  close out an invoice without going through that flow. If they later
+ *  record a real payment, the trigger will replace this manual value with
+ *  the actual allocation total.
+ */
 export async function markPaid(invoiceId: string): Promise<void> {
+  const inv = await loadInvoice(invoiceId);
+  if (!inv) throw new Error(`Invoice not found: ${invoiceId}`);
+  if (inv.isDraft) throw new Error(`Cannot mark a draft invoice paid (id=${invoiceId})`);
+
+  const balance = Math.max(0, (inv.subtotal ?? 0) - (inv.depositApplied ?? 0) - (inv.creditsApplied ?? 0));
+  const newPaidAmount = Math.max(inv.paidAmount ?? 0, balance);
+
+  // Note: amount_due is blocked by the freeze trigger, but balanceDue() is
+  // computed on the fly from subtotal − applied − credits − paid, so the
+  // stored column doesn't drive any display. Skipping it here keeps the
+  // update inside the freeze trigger's allow-list.
   const { error } = await supabase
     .from("invoices")
-    .update({ status: "paid", paid_at: new Date().toISOString() })
+    .update({
+      status: "paid",
+      paid_at: new Date().toISOString(),
+      paid_amount: newPaidAmount,
+    })
     .eq("id", invoiceId)
     .eq("is_draft", false);
   if (error) throw error;
