@@ -353,27 +353,16 @@ export default function InvoicePdfView({ id }: { id: string }) {
         </section>
       ) : null}
 
-      {/* Terms */}
+      {/* Terms — last block on the page so they can flow into multiple
+          pages if long. Full width, no break-inside:avoid. Invoices don't
+          carry a signature section (acknowledgment isn't required like on
+          a quote). */}
       {invoice.terms ? (
         <section className="terms">
           <h3>Terms &amp; Conditions</h3>
           <div className="terms-body">{invoice.terms}</div>
         </section>
       ) : null}
-
-      {/* Customer signature only — invoices typically aren't counter-signed */}
-      <section className="signatures">
-        <div className="sig-block sig-block-single">
-          <div className="sig-line"></div>
-          <div className="sig-meta">
-            <div>Customer signature (acknowledgment of receipt)</div>
-            <div className="sig-fields">
-              <span>Printed name: ___________________________</span>
-              <span>Date: _____________</span>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* Print button (hidden on print) */}
       <div className="print-actions hide-print">
@@ -536,9 +525,11 @@ export default function InvoicePdfView({ id }: { id: string }) {
           color: #6c6358;
         }
 
+        /* Terms: full-width, allowed to break across pages so long T&Cs
+           flow naturally instead of forcing a single-page block. */
         .terms {
           margin-top: 22px;
-          break-inside: avoid;
+          width: 100%;
         }
         .terms h3 {
           margin: 0 0 6px 0;
@@ -554,14 +545,10 @@ export default function InvoicePdfView({ id }: { id: string }) {
           font-size: 9pt;
           line-height: 1.45;
           color: #181410;
+          /* Allow heading to stay with first lines; otherwise let it flow. */
+          orphans: 3;
+          widows: 3;
         }
-
-        .signatures { margin-top: 32px; break-inside: avoid; }
-        .sig-block-single { max-width: 60%; }
-        .sig-block { font-size: 10pt; }
-        .sig-line { border-bottom: 1px solid #181410; height: 36px; }
-        .sig-meta { margin-top: 4px; color: #6c6358; font-size: 9pt; }
-        .sig-fields { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; }
 
         .print-actions {
           margin-top: 22px;
@@ -576,7 +563,8 @@ export default function InvoicePdfView({ id }: { id: string }) {
             max-width: none;
           }
           .hide-print { display: none !important; }
-          .day-group, .pay-to, .terms, .signatures { break-inside: avoid; }
+          .day-group, .pay-to { break-inside: avoid; }
+          /* terms intentionally NOT in the avoid list — long T&Cs should flow */
         }
       `}</style>
     </div>

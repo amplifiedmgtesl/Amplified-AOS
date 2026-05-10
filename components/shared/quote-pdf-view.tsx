@@ -403,15 +403,8 @@ export default function QuotePdfView({ id }: { id: string }) {
         </section>
       ) : null}
 
-      {/* ─── Terms ────────────────────────────────────────────────────────── */}
-      {quote.terms ? (
-        <section className="terms">
-          <h3>Terms &amp; Conditions</h3>
-          <div className="terms-body">{quote.terms}</div>
-        </section>
-      ) : null}
-
-      {/* ─── Signature blocks ─────────────────────────────────────────────── */}
+      {/* ─── Signature blocks (above terms — sigs stay on a page break
+              boundary, terms are last and allowed to flow). ─────────────── */}
       <section className="signatures">
         <div className="sig-block">
           <div className="sig-line"></div>
@@ -434,6 +427,15 @@ export default function QuotePdfView({ id }: { id: string }) {
           </div>
         </div>
       </section>
+
+      {/* ─── Terms — last block on the page, full width, allowed to flow
+              across page breaks for long T&Cs. ──────────────────────────── */}
+      {quote.terms ? (
+        <section className="terms">
+          <h3>Terms &amp; Conditions</h3>
+          <div className="terms-body">{quote.terms}</div>
+        </section>
+      ) : null}
 
       {/* ─── Print button + view-mode toggles (hidden on print) ─────────── */}
       <div className="print-actions hide-print">
@@ -723,10 +725,12 @@ export default function QuotePdfView({ id }: { id: string }) {
           font-variant-numeric: tabular-nums;
         }
 
-        /* ─── Terms ───────────────────────────────────────────────────── */
+        /* ─── Terms ─────────────────────────────────────────────────────
+           Full-width and intentionally NOT break-inside:avoid — long T&Cs
+           should flow naturally across as many pages as needed. */
         .terms {
           margin-top: 22px;
-          break-inside: avoid;
+          width: 100%;
         }
         .terms h3 {
           margin: 0 0 6px 0;
@@ -742,6 +746,8 @@ export default function QuotePdfView({ id }: { id: string }) {
           font-size: 9pt;
           line-height: 1.45;
           color: #181410;
+          orphans: 3;
+          widows: 3;
         }
 
         /* ─── Signatures ──────────────────────────────────────────────── */
