@@ -222,6 +222,11 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
 
   function removeRow(id: string) {
     if (!timesheet) return;
+    // Confirm — the entry is removed from the timesheet and persisted away on
+    // the next save. If the entry has already been billed onto an invoice
+    // line, the invoice_line_id pointer will go stale and the entry will
+    // re-appear available on a future "Overwrite from Timesheets" run.
+    if (!confirm("Delete this timesheet row? This removes the entry from the timesheet on save.")) return;
     persist({ ...timesheet, rows: timesheet.rows.filter((r) => r.id !== id) });
   }
 

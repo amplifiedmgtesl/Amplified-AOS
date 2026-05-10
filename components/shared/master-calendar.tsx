@@ -244,6 +244,10 @@ export default function MasterCalendar() {
   }
 
   function handleDelete(eventId: string) {
+    // Soft delete (sets is_deleted=true), but still confirm — the event
+    // disappears from every view and any linked_job_request_id pointer
+    // stops resolving in the calendar UI.
+    if (!confirm("Delete this calendar event? It will be hidden from all views (soft delete — recoverable via SQL).")) return;
     deleteEventById(eventId);
     if (selectedEventId === eventId) setSelectedEventId("");
     if (hoveredEventId === eventId) setHoveredEventId("");
