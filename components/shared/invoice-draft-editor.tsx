@@ -14,6 +14,7 @@ import {
   issueDraft,
   deleteDraft,
   balanceDue,
+  overwriteFromTimesheets,
 } from "@/lib/store/invoices";
 import type { InvoiceDraft, QuoteLine } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
@@ -126,6 +127,29 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
       router.push(`/invoices/${invoice.id}`);
     } catch (err: any) {
       alert(`Issue failed: ${err.message || err}`);
+    }
+  }
+
+  async function onOverwriteFromTimesheets() {
+    if (!invoice) return;
+    if (!confirm(
+      "Replace this draft's line items with aggregated approved timesheet entries?\n\n" +
+      "Entries already billed on a non-superseded / non-void invoice will be skipped. " +
+      "Each contributing entry gets linked to the new invoice line so it won't be re-billed."
+    )) return;
+    setSaving("saving");
+    try {
+      // Persist any unsaved header edits first.
+      await saveDraft(invoice);
+      const refreshed = await overwriteFromTimesheets(invoice.id, {
+        coveredDates: invoice.coveredDates,
+      });
+      setInvoice(refreshed);
+      setSaving("saved");
+      setTimeout(() => setSaving("idle"), 2000);
+    } catch (err: any) {
+      setSaving("idle");
+      alert(`Overwrite failed: ${err.message || err}`);
     }
   }
 
@@ -286,7 +310,16 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
       {/* Lines — only for finals; deposits use the header amount above */}
       {invoice.invoiceType === "final" ? (
       <>
-      <h3 className="section-title">Line items</h3>
+      <div className="action-row" style={{ alignItems: "baseline", marginBottom: 8 }}>
+        <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Line items</h3>
+        <button
+          className="secondary"
+          onClick={onOverwriteFromTimesheets}
+          title="Replace lines with aggregated approved timesheet entries (excludes already-billed entries)"
+        >
+          Overwrite from Timesheets
+        </button>
+      </div>
       <div style={{ overflowX: "auto", marginBottom: 12 }}>
         <table>
           <thead>

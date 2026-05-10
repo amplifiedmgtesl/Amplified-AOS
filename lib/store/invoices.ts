@@ -100,7 +100,6 @@ function rowToInvoiceLine(r: any): QuoteLine {
     rateMode:     r.rate_mode     ?? undefined,
     sourceKind:   r.source_kind   ?? undefined,
     sourceQuoteLineId:      r.source_quote_line_id      ?? undefined,
-    sourceTimesheetEntryId: r.source_timesheet_entry_id ?? undefined,
   };
 }
 
@@ -163,7 +162,6 @@ function invoiceLineToRow(invoiceId: string, l: QuoteLine, index: number, existi
     rate_mode:     l.rateMode    ?? null,
     source_kind:   l.sourceKind             ?? null,
     source_quote_line_id:      l.sourceQuoteLineId      ?? null,
-    source_timesheet_entry_id: l.sourceTimesheetEntryId ?? null,
   };
 }
 
@@ -215,6 +213,25 @@ export async function getAlreadyBilledQuoteLineIds(jobRequestId: string): Promis
     .not("source_quote_line_id", "is", null);
   if (error) throw error;
   return new Set((data ?? []).map((r: any) => r.source_quote_line_id));
+}
+
+// ─── Already-billed timesheet_entry ids (for re-invoicing prevention) ────────
+// An entry is "already billed" when its invoice_line_id points at a line
+// whose parent invoice is non-superseded and non-void. Voided/superseded
+// invoice lines effectively release the entry back to the pool.
+export async function getAlreadyBilledTimesheetEntryIds(jobRequestId: string): Promise<Set<string>> {
+  // 1. Find timesheets for this job (timesheet.job_sheet_id OR via job_id when
+  //    the schema is migrated; use whichever links exist now).
+  // 2. Their entries.
+  // 3. Filter to entries whose invoice_line_id resolves to an active invoice.
+  const { data, error } = await supabase
+    .from("timesheet_entries")
+    .select("id, invoice_line_id, invoice_lines!inner(invoice_id, invoices!inner(job_request_id, status))")
+    .eq("invoice_lines.invoices.job_request_id", jobRequestId)
+    .or("status.is.null,and(status.neq.superseded,status.neq.void)", { foreignTable: "invoice_lines.invoices" })
+    .not("invoice_line_id", "is", null);
+  if (error) throw error;
+  return new Set((data ?? []).map((r: any) => r.id));
 }
 
 // ─── Write operations ────────────────────────────────────────────────────────
@@ -381,6 +398,201 @@ export async function createFinalDraftFromQuote(
 
   await persistDraft(draft);
   return draft;
+}
+
+/** Overwrite a final-invoice draft's lines from approved timesheet entries.
+ *
+ *  Aggregates approved timesheet_entries belonging to job_sheets linked to the
+ *  invoice's job_request, excludes entries already billed on a non-superseded
+ *  / non-void invoice line, optionally filters to coveredDates, then groups
+ *  by (work_date × position) into one invoice_line each. After the new lines
+ *  land in the DB, every contributing timesheet_entry's `invoice_line_id` is
+ *  set so the entry is excluded from future imports.
+ *
+ *  Replaces the draft's existing lines. The draft's existing lines (if any
+ *  came from a previous overwrite) get their entry pointers cleared via
+ *  ON DELETE SET NULL when those lines are deleted by persistDraft.
+ *
+ *  Throws if the invoice is frozen, not final, or has no jobRequestId.
+ */
+export async function overwriteFromTimesheets(
+  invoiceId: string,
+  opts: { coveredDates?: string[] } = {},
+): Promise<InvoiceDraft> {
+  const inv = await loadInvoice(invoiceId);
+  if (!inv) throw new Error(`Invoice not found: ${invoiceId}`);
+  if (!inv.isDraft) throw new Error(`Cannot overwrite a frozen invoice (id=${invoiceId}). Use Revise.`);
+  if (inv.invoiceType !== "final") throw new Error(`Overwrite from timesheets is final-only (id=${invoiceId}, type=${inv.invoiceType ?? "null"}).`);
+  if (!inv.jobRequestId) throw new Error(`Invoice ${invoiceId} has no linked job_request.`);
+
+  // 1. job_sheets for this job_request
+  const sheetsRes = await supabase
+    .from("job_sheets")
+    .select("id")
+    .eq("linked_job_request_id", inv.jobRequestId);
+  if (sheetsRes.error) throw sheetsRes.error;
+  const jobSheetIds = (sheetsRes.data ?? []).map((r: any) => r.id);
+  if (jobSheetIds.length === 0) {
+    throw new Error(`No job_sheets linked to job_request ${inv.jobRequestId}.`);
+  }
+
+  // 2. approved entries for those sheets
+  const entriesRes = await supabase
+    .from("timesheet_entries")
+    .select("id, work_date, end_date, position, std_hours, ot_hours, dt_hours, total_hours, std_rate, ot_rate, dt_rate, total_pay, invoice_line_id")
+    .in("job_sheet_id", jobSheetIds)
+    .eq("status", "approved");
+  if (entriesRes.error) throw entriesRes.error;
+  let entries = entriesRes.data ?? [];
+
+  // 3. filter to coveredDates if specified
+  if (opts.coveredDates && opts.coveredDates.length > 0) {
+    const dateSet = new Set(opts.coveredDates);
+    entries = entries.filter((e: any) => e.work_date && dateSet.has(e.work_date));
+  }
+
+  // 4. exclude already-billed entries (their invoice_line_id resolves to an active invoice line)
+  //    But include entries currently pointing at THIS draft's existing lines — those will be
+  //    re-aggregated and re-linked. Easiest: pass through the already-billed set, then
+  //    let the caller's draft-line replacement handle re-linkage.
+  const alreadyBilled = await getAlreadyBilledTimesheetEntryIds(inv.jobRequestId);
+  // Entries currently linked to lines on THIS invoice are filtered out of "alreadyBilled"
+  // by virtue of those lines being about to be deleted (and replaced) — but
+  // getAlreadyBilledTimesheetEntryIds reads the live DB, so they're flagged. Strip them.
+  const thisInvoiceLineIds = new Set(inv.lines.map((l: any) => (l as any).id).filter(Boolean));
+  // We don't carry line ids through QuoteLine, so use a direct query for this draft's line ids:
+  const ownLinesRes = await supabase
+    .from("invoice_lines")
+    .select("id")
+    .eq("invoice_id", invoiceId);
+  if (ownLinesRes.error) throw ownLinesRes.error;
+  const ownLineIdSet = new Set((ownLinesRes.data ?? []).map((r: any) => r.id));
+  const ownEntryIdsRes = await supabase
+    .from("timesheet_entries")
+    .select("id")
+    .in("invoice_line_id", Array.from(ownLineIdSet).length > 0 ? Array.from(ownLineIdSet) : ["__none__"]);
+  if (ownEntryIdsRes.error) throw ownEntryIdsRes.error;
+  const ownEntryIds = new Set((ownEntryIdsRes.data ?? []).map((r: any) => r.id));
+
+  entries = entries.filter((e: any) => !alreadyBilled.has(e.id) || ownEntryIds.has(e.id));
+
+  // 5. group by (work_date × position)
+  type Group = {
+    workDate: string;
+    endDate: string | null;
+    position: string;
+    stdHours: number;
+    otHours: number;
+    dtHours: number;
+    stdRate: number;
+    otRate: number;
+    dtRate: number;
+    totalPay: number;
+    entryIds: string[];
+  };
+  const groups = new Map<string, Group>();
+  for (const e of entries) {
+    const key = `${e.work_date ?? ""}|${e.position ?? ""}`;
+    const g = groups.get(key);
+    if (g) {
+      g.stdHours += Number(e.std_hours ?? 0);
+      g.otHours  += Number(e.ot_hours  ?? 0);
+      g.dtHours  += Number(e.dt_hours  ?? 0);
+      g.totalPay += Number(e.total_pay ?? 0);
+      g.entryIds.push(e.id);
+      // End date: take latest among contributing entries
+      if (e.end_date && (!g.endDate || e.end_date > g.endDate)) g.endDate = e.end_date;
+    } else {
+      groups.set(key, {
+        workDate: e.work_date ?? "",
+        endDate: e.end_date ?? null,
+        position: e.position ?? "",
+        stdHours: Number(e.std_hours ?? 0),
+        otHours:  Number(e.ot_hours  ?? 0),
+        dtHours:  Number(e.dt_hours  ?? 0),
+        stdRate:  Number(e.std_rate  ?? 0),
+        otRate:   Number(e.ot_rate   ?? 0),
+        dtRate:   Number(e.dt_rate   ?? 0),
+        totalPay: Number(e.total_pay ?? 0),
+        entryIds: [e.id],
+      });
+    }
+  }
+
+  // 6. build invoice lines, sorted by date then position
+  const sorted = Array.from(groups.values()).sort((a, b) => {
+    if (a.workDate !== b.workDate) return a.workDate.localeCompare(b.workDate);
+    return a.position.localeCompare(b.position);
+  });
+
+  // We need stable ids up front so we can map entry → line id without a round trip.
+  const lineIdByGroupIndex = sorted.map(() => newLineId());
+
+  const newLines: QuoteLine[] = sorted.map((g) => {
+    const totalHours = +(g.stdHours + g.otHours + g.dtHours).toFixed(2);
+    return {
+      serviceKey: g.position,
+      qty: 1,
+      hours: g.stdHours,
+      holidayHours: 0,
+      travel: 0,
+      baseHourly: g.stdRate,
+      baseDay: 0,
+      otRate: g.otRate,
+      dtRate: g.dtRate,
+      rule: `Timesheet actuals: ${totalHours}h`,
+      total: +g.totalPay.toFixed(2),
+      specialty: g.position,
+      shiftLabel: undefined,
+      quoteDate: g.workDate,
+      endDate: g.endDate ?? undefined,
+      rateMode: "hourly",
+      sourceKind: "timesheet_entry",
+    };
+  });
+
+  const subtotal = +newLines.reduce((s, l) => s + (l.total || 0), 0).toFixed(2);
+
+  // 7. Persist: replace lines via direct SQL so we can assign known ids,
+  //    then back-link entries.
+  // Delete existing draft lines (this clears entry pointers via ON DELETE SET NULL)
+  const { error: delErr } = await supabase
+    .from("invoice_lines")
+    .delete()
+    .eq("invoice_id", invoiceId);
+  if (delErr) throw delErr;
+
+  if (newLines.length > 0) {
+    const rows = newLines.map((l, i) => invoiceLineToRow(invoiceId, l, i, lineIdByGroupIndex[i]));
+    const { error: insErr } = await supabase.from("invoice_lines").insert(rows);
+    if (insErr) throw insErr;
+
+    // Back-link entries → invoice_line_id
+    // One UPDATE per group; entry counts are small (dozens at most).
+    for (let i = 0; i < sorted.length; i++) {
+      const lineId = lineIdByGroupIndex[i];
+      const ids = sorted[i].entryIds;
+      if (ids.length === 0) continue;
+      const { error: linkErr } = await supabase
+        .from("timesheet_entries")
+        .update({ invoice_line_id: lineId })
+        .in("id", ids);
+      if (linkErr) throw linkErr;
+    }
+  }
+
+  // 8. Update invoice header subtotal + amount_due
+  const newAmountDue = +(subtotal - (inv.depositApplied ?? 0) - (inv.creditsApplied ?? 0)).toFixed(2);
+  const { error: hdrErr } = await supabase
+    .from("invoices")
+    .update({ subtotal, amount_due: newAmountDue, updated_at: new Date().toISOString() })
+    .eq("id", invoiceId)
+    .eq("is_draft", true);
+  if (hdrErr) throw hdrErr;
+
+  const refreshed = await loadInvoice(invoiceId);
+  if (!refreshed) throw new Error(`Invoice vanished after overwrite: ${invoiceId}`);
+  return refreshed;
 }
 
 /** Save an in-progress draft. Throws if the row is frozen. */

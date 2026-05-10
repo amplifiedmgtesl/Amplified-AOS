@@ -53,8 +53,9 @@ export type QuoteLine = {
   sourceKind?: "quote_line" | "timesheet_entry" | "manual_override";
   /** FK to the originating quote_lines row. Prevents double-billing. */
   sourceQuoteLineId?: string;
-  /** FK to the originating timesheet_entries row. Prevents double-billing. */
-  sourceTimesheetEntryId?: string;
+  // Timesheet→invoice linkage flipped 2026-05-10: timesheet_entries now have
+  // an invoice_line_id back-reference (handles many-to-one aggregation).
+  // The per-line sourceTimesheetEntryId field was dropped.
 };
 
 export type TimeEntry = {
