@@ -130,6 +130,12 @@ function invoiceToDraftRow(inv: InvoiceDraft) {
     invoice_type:        inv.invoiceType ?? null,
     job_request_id:      inv.jobRequestId || null,
     source_quote_id:     inv.sourceQuoteId || null,
+    // Snapshot the source quote's quote_no on the draft so the editor and
+    // list can show "Source quote: AES_..._EST_REV2" before issue. The
+    // issue_invoice_draft RPC reasserts this on freeze (so a quote_no edit
+    // after the draft was created gets picked up at issue time), but the
+    // draft needs it persisted now or it'd display as "—" until issued.
+    source_quote_code:   inv.sourceQuoteCode || null,
     parent_invoice_id:   inv.parentInvoiceId || null,
     covered_dates:       inv.coveredDates ?? null,
     revision_no:         inv.revisionNo ?? 1,

@@ -47,6 +47,21 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         if (cancelled) return;
         if (!q) { setError(`Invoice not found: ${id}`); setLoading(false); return; }
         if (!q.isDraft) { router.replace(`/invoices/${id}`); return; }
+        // Backfill sourceQuoteCode at load time if missing — earlier drafts
+        // were saved before invoiceToDraftRow persisted this column, so the
+        // row has source_quote_id set but source_quote_code NULL. Look up
+        // the quote's current quote_no so the editor shows it; the next
+        // save round-trips the value to the row.
+        if (!q.sourceQuoteCode && q.sourceQuoteId) {
+          const sq = await supabase
+            .from("quotes")
+            .select("quote_no")
+            .eq("id", q.sourceQuoteId)
+            .maybeSingle();
+          if (!cancelled && sq.data?.quote_no) {
+            q.sourceQuoteCode = sq.data.quote_no;
+          }
+        }
         setInvoice(q);
         setDepositAmountStr((q.subtotal ?? 0).toFixed(2));
         if (q.jobRequestId) {
