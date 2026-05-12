@@ -16,7 +16,7 @@ import {
   balanceDue,
   overwriteFromTimesheets,
 } from "@/lib/store/invoices";
-import type { InvoiceDraft, QuoteLine } from "@/lib/store/types";
+import type { InvoiceDraft, QuoteLine, Position, Specialty } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
 import { parseOtTriggerRule, computeDayHourSplit } from "@/lib/rates/ot-trigger";
 
@@ -24,6 +24,8 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
   const router = useRouter();
   const [invoice, setInvoice] = useState<InvoiceDraft | null>(null);
   const [job, setJob] = useState<any | null>(null);
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -65,6 +67,24 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         }
         setInvoice(q);
         setDepositAmountStr((q.subtotal ?? 0).toFixed(2));
+
+        // Load positions + specialties for cascading dropdowns on line rows.
+        // Mirrors the quote-draft-editor pattern: position picks filter the
+        // available specialties; specialty_id is authoritative for the FK
+        // (department/specialty text columns kept in sync as display fallback).
+        const [posRes, spcRes] = await Promise.all([
+          supabase.from("positions").select("*").eq("is_active", true).order("sort_order"),
+          supabase.from("specialties").select("*").eq("is_active", true).order("sort_order"),
+        ]);
+        if (!cancelled) {
+          setPositions((posRes.data ?? []).map((r: any) => ({
+            id: r.id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active,
+          })));
+          setSpecialties((spcRes.data ?? []).map((r: any) => ({
+            id: r.id, positionId: r.position_id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active,
+          })));
+        }
+
         if (q.jobRequestId) {
           const j = await supabase.from("job_requests").select("*").eq("id", q.jobRequestId).maybeSingle();
           if (!cancelled) setJob(j.data ?? null);
@@ -468,12 +488,67 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
               <tr><td colSpan={13} className="muted">No line items.</td></tr>
             ) : invoice.lines.map((l, i) => {
               const isDayMode = l.rateMode === "day" || (l.baseDay > 0 && !l.hours);
+              // Specialty is authoritative — derive position from
+              // specialty.position_id when set. Falls back to the line's
+              // positionId, then best-effort matches the legacy
+              // department/specialty text against the master list so old
+              // drafts populate the dropdown rather than appearing blank.
+              const lineSpecialty = l.specialtyId
+                ? specialties.find((s) => s.id === l.specialtyId)
+                : (l.specialty
+                    ? specialties.find((s) => s.name.toLowerCase() === (l.specialty || "").toLowerCase())
+                    : undefined);
+              const legacyPositionMatch = !lineSpecialty && l.department
+                ? positions.find((p) => p.name.toLowerCase() === (l.department || "").toLowerCase())
+                : undefined;
+              const effectivePositionId =
+                lineSpecialty?.positionId ?? l.positionId ?? legacyPositionMatch?.id ?? "";
+              const lineSpecialties = effectivePositionId
+                ? specialties.filter((s) => s.positionId === effectivePositionId)
+                : [];
               return (
                 <React.Fragment key={i}>
                   <tr>
                     <td><input type="date" value={l.quoteDate || ""} onChange={(e) => updateLine(i, { quoteDate: e.target.value })} /></td>
-                    <td><input type="text" value={l.department || ""} onChange={(e) => updateLine(i, { department: e.target.value })} placeholder="Position" /></td>
-                    <td><input type="text" value={l.specialty || ""} onChange={(e) => updateLine(i, { specialty: e.target.value })} placeholder="Specialty" /></td>
+                    <td>
+                      <select
+                        value={effectivePositionId}
+                        onChange={(e) => {
+                          const posId = e.target.value;
+                          const posName = positions.find((p) => p.id === posId)?.name ?? "";
+                          updateLine(i, {
+                            positionId: posId || undefined,
+                            specialtyId: undefined,
+                            department: posName,
+                            specialty: "",
+                          });
+                        }}
+                        style={{ minWidth: 130 }}
+                      >
+                        <option value="">— Select —</option>
+                        {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        value={lineSpecialty?.id || ""}
+                        onChange={(e) => {
+                          const spc = specialties.find((s) => s.id === e.target.value);
+                          const posName = spc ? positions.find((p) => p.id === spc.positionId)?.name ?? "" : "";
+                          updateLine(i, {
+                            specialtyId: spc?.id ?? undefined,
+                            positionId: spc?.positionId ?? l.positionId,
+                            department: posName || l.department,
+                            specialty: spc?.name ?? "",
+                          });
+                        }}
+                        disabled={!effectivePositionId}
+                        style={{ minWidth: 130 }}
+                      >
+                        <option value="">— Select —</option>
+                        {lineSpecialties.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </td>
                     <td><input type="text" value={l.shiftLabel || ""} onChange={(e) => updateLine(i, { shiftLabel: e.target.value })} placeholder="Shift" style={{ width: 90 }} /></td>
                     <td>
                       <select
