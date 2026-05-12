@@ -301,12 +301,17 @@ export default function InvoicePdfView({ id }: { id: string }) {
                     const rateDisplay = isDayMode
                       ? `${fmtMoney(line.baseDay)} / day`
                       : `${fmtMoney(line.baseHourly)} / hr`;
-                    // Build a per-line caption: rule + OT/DT rates if non-zero.
-                    // Omitted entirely on flat day-rate lines with no rule.
+                    // Build a per-line caption: only show fields that actually
+                    // drive this line's total. Rule + OT rate apply only in day
+                    // mode; DT rate applies in day mode OR when holiday hours
+                    // are non-zero (holiday bills at DT). On hourly lines with
+                    // no holiday and no OT context, the caption is empty.
                     const captionParts: string[] = [];
-                    if (line.rule) captionParts.push(line.rule);
-                    if ((line.otRate || 0) > 0) captionParts.push(`OT ${fmtMoney(line.otRate)}/hr`);
-                    if ((line.dtRate || 0) > 0) captionParts.push(`DT ${fmtMoney(line.dtRate)}/hr`);
+                    if (isDayMode && line.rule) captionParts.push(line.rule);
+                    if (isDayMode && (line.otRate || 0) > 0) captionParts.push(`OT ${fmtMoney(line.otRate)}/hr`);
+                    if ((line.dtRate || 0) > 0 && (isDayMode || (line.holidayHours || 0) > 0)) {
+                      captionParts.push(`DT ${fmtMoney(line.dtRate)}/hr${!isDayMode ? " (holiday)" : ""}`);
+                    }
                     const colCount = 6 + (anyHoliday ? 1 : 0) + (anyTravel ? 1 : 0) + 1; // headers above
                     return (
                       <React.Fragment key={i}>

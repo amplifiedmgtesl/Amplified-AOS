@@ -18,6 +18,7 @@ import {
 } from "@/lib/store/invoices";
 import type { InvoiceDraft, QuoteLine } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
+import { parseOtTriggerRule, computeDayHourSplit } from "@/lib/rates/ot-trigger";
 
 export default function InvoiceDraftEditor({ id }: { id: string }) {
   const router = useRouter();
@@ -105,15 +106,32 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     return Math.round(n * 100) / 100;
   }
 
+  // Mirrors lib/store/invoices.ts and the legacy invoice-builder calc.
+  // Hourly mode:
+  //   total = qty * hours * baseHourly + holidayHours * dtRate + travel
+  // Day mode:
+  //   split hours into st/ot/dt via the rule (e.g. "OT after 12 / DT after 15")
+  //   perWorker = baseDay + ot*otRate + dt*dtRate
+  //   total = qty * perWorker + holidayHours * dtRate + travel
+  // Travel is flat per line (NOT per-qty); holiday hours bill at dtRate
+  // (treating holiday as double-time, which on standard cards equals 2×hourly).
   function recomputeLineTotal(l: QuoteLine): number {
-    const qty = l.qty || 0;
-    const travel = (l.travel || 0) * qty;
-    if (l.rateMode === "day" || (l.baseDay > 0 && !l.hours)) {
-      return money(qty * (l.baseDay || 0) + travel);
+    const qty          = Number(l.qty || 0);
+    const hours        = Number(l.hours || 0);
+    const holidayHours = Number(l.holidayHours || 0);
+    const travel       = Number(l.travel || 0);
+    const baseHourly   = Number(l.baseHourly || 0);
+    const baseDay      = Number(l.baseDay || 0);
+    const otRate       = Number(l.otRate || 0);
+    const dtRate       = Number(l.dtRate || 0);
+    const isDayMode    = l.rateMode === "day" || (baseDay > 0 && !hours && l.rateMode !== "hourly");
+
+    if (isDayMode) {
+      const split = computeDayHourSplit(hours, parseOtTriggerRule(l.rule || ""));
+      const perWorker = baseDay + (split.ot * otRate) + (split.dt * dtRate);
+      return money((qty * perWorker) + (holidayHours * dtRate) + travel);
     }
-    const regular = qty * (l.hours || 0) * (l.baseHourly || 0);
-    const holiday = qty * (l.holidayHours || 0) * (l.baseHourly || 0) * 2;
-    return money(regular + holiday + travel);
+    return money((qty * hours * baseHourly) + (holidayHours * dtRate) + travel);
   }
 
   function recomputeTotals(lines: QuoteLine[]): number {
@@ -420,9 +438,10 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         </button>
       </div>
       <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
-        Each line shows what flows into its total: rate mode (day vs hourly),
-        regular hours, holiday hours, OT/DT rates, travel, and the OT trigger
-        rule that came from the source quote. The grey row under each line is
+        How the total is computed:{" "}
+        <strong>Hourly</strong>: qty × hrs × $/hr + holiday × $/dt + travel.{" "}
+        <strong>Day</strong>: qty × ($/day + ot × $/ot + dt × $/dt) + holiday × $/dt + travel,
+        where hrs are split by the rule (e.g. "OT after 12"). The grey row under each line is
         read-only context — edit fields in the main row to change the total.
       </div>
       <div style={{ overflowX: "auto", marginBottom: 12 }}>
@@ -521,22 +540,40 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                     <td style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>${l.total.toFixed(2)}</td>
                     <td><button className="secondary" onClick={() => deleteLine(i)} style={{ fontSize: 12 }}>×</button></td>
                   </tr>
-                  {/* Context row: rule + OT/DT rates from source quote/timesheet.
-                       Read-only — the calc doesn't currently apply OT/DT splits
-                       at the invoice line level (the source quote already baked
-                       them into the total). Shown so the user can sanity-check
-                       what the printed invoice ties back to. */}
+                  {/* Context row: only shows fields that actually drive this
+                       line's total. Rule is relevant in day mode (splits hours
+                       into ST/OT/DT tiers); OT rate is only used in day mode;
+                       DT rate is used in both modes (via holiday pay) and in
+                       day mode for the DT tier. Source kind always shown. */}
                   <tr style={{ background: "rgba(0,0,0,0.025)", borderBottom: "1px solid #e7dcc4" }}>
                     <td colSpan={13} style={{ fontSize: 11, color: "#6c6358", padding: "4px 6px" }}>
-                      <span style={{ marginRight: 14 }}>
-                        <strong>Rule:</strong> {l.rule || <span className="muted">(none — flat rate)</span>}
-                      </span>
-                      <span style={{ marginRight: 14 }}>
-                        <strong>OT rate:</strong> ${(l.otRate || 0).toFixed(2)}/hr
-                      </span>
-                      <span style={{ marginRight: 14 }}>
-                        <strong>DT rate:</strong> ${(l.dtRate || 0).toFixed(2)}/hr
-                      </span>
+                      {isDayMode && l.rule ? (
+                        <span style={{ marginRight: 14 }}>
+                          <strong>Rule:</strong> {l.rule}
+                        </span>
+                      ) : null}
+                      {isDayMode && (l.otRate || 0) > 0 ? (
+                        <span style={{ marginRight: 14 }}>
+                          <strong>OT:</strong> ${(l.otRate || 0).toFixed(2)}/hr
+                        </span>
+                      ) : null}
+                      {(l.dtRate || 0) > 0 && (isDayMode || (l.holidayHours || 0) > 0) ? (
+                        <span style={{ marginRight: 14 }}>
+                          <strong>DT:</strong> ${(l.dtRate || 0).toFixed(2)}/hr
+                          {!isDayMode ? <span className="muted"> (holiday pay)</span> : null}
+                        </span>
+                      ) : null}
+                      {isDayMode ? (() => {
+                        // Show the actual hour split so the operator can verify
+                        // OT/DT contribution to the per-worker total.
+                        const split = computeDayHourSplit(l.hours || 0, parseOtTriggerRule(l.rule || ""));
+                        if (split.ot === 0 && split.dt === 0) return null;
+                        return (
+                          <span style={{ marginRight: 14 }}>
+                            <strong>Hours split:</strong> {split.st} ST · {split.ot} OT · {split.dt} DT
+                          </span>
+                        );
+                      })() : null}
                       <span style={{ marginRight: 14 }}>
                         <strong>Source:</strong> {l.sourceKind === "timesheet_entry" ? "Timesheet" : l.sourceKind === "quote_line" ? "Quote" : l.sourceKind ?? "manual"}
                       </span>
