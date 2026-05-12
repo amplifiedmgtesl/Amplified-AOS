@@ -28,6 +28,7 @@ import {
 } from "@/lib/store/quotes";
 import type { QuoteDraft, QuoteLine, Position, Specialty } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
+import { computeLineTotal } from "@/lib/rates/line-calc";
 
 /** OT-trigger options + their canonical rule strings.
  *  Mirror of rate-card-editor.tsx triggerLabel() so the picker on a quote
@@ -197,16 +198,10 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     return Math.round(n * 100) / 100;
   }
 
+  // Shared formula in lib/rates/line-calc.ts. As of 2026-05-12 lines carry
+  // explicit ST/OT/DT/holiday person-hours + crewCount.
   function recomputeLineTotal(l: QuoteLine): number {
-    const qty = l.qty || 0;
-    const travel = (l.travel || 0) * qty;
-    if (l.rateMode === "day" || (l.baseDay > 0 && !l.hours)) {
-      return money(qty * (l.baseDay || 0) + travel);
-    }
-    const regular = qty * (l.hours || 0) * (l.baseHourly || 0);
-    // Holiday hours billed at 2x the regular hourly rate (per DEFAULT_TERMS).
-    const holiday = qty * (l.holidayHours || 0) * (l.baseHourly || 0) * 2;
-    return money(regular + holiday + travel);
+    return computeLineTotal(l);
   }
   function recomputeTotals(lines: QuoteLine[]): number {
     return lines.reduce((s, l) => s + (l.total || 0), 0);
@@ -246,7 +241,10 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     const newLine: QuoteLine = {
       serviceKey: "",
       qty: 1,
+      crewCount: 1,
       hours: 0,
+      otHours: 0,
+      dtHours: 0,
       holidayHours: 0,
       travel: rateRow.travel ?? 0,
       baseHourly: rateRow.hourly ?? 0,

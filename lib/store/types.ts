@@ -24,14 +24,29 @@ export type CalendarEvent = {
 
 export type QuoteLine = {
   serviceKey: string;
+  /** Legacy qty field — kept in sync with crewCount for backward compat with
+   *  any code path still reading qty. New code should read crewCount. */
   qty: number;
+  /** Explicit worker count. Multiplier for baseDay on day-rate lines;
+   *  informational only on hourly lines (hours is already total person-hours). */
+  crewCount: number;
+  /** Total ST person-hours. On day-rate lines this is 0 (day rate covers ST).
+   *  On hourly lines this is the sum of all workers' ST hours. */
   hours: number;
+  /** Total OT person-hours billed at otRate. Explicit since 2026-05-12 — was
+   *  previously derived at calc time from rule + hours. */
+  otHours: number;
+  /** Total DT person-hours billed at dtRate. Explicit since 2026-05-12. */
+  dtHours: number;
+  /** Total holiday person-hours billed at dtRate (treated as DT premium). */
   holidayHours: number;
   travel: number;
   baseHourly: number;
   baseDay: number;
   otRate: number;
   dtRate: number;
+  /** Informational only since 2026-05-12 — printed for the customer but no
+   *  longer drives runtime calc. ST/OT/DT splits live in hours/otHours/dtHours. */
   rule: string;
   total: number;
   // FK references to positions/specialties master tables

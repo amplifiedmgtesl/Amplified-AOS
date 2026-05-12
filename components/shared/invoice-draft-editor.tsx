@@ -18,7 +18,7 @@ import {
 } from "@/lib/store/invoices";
 import type { InvoiceDraft, QuoteLine, Position, Specialty } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
-import { parseOtTriggerRule, computeDayHourSplit } from "@/lib/rates/ot-trigger";
+import { computeLineTotal, isDayModeLine } from "@/lib/rates/line-calc";
 
 export default function InvoiceDraftEditor({ id }: { id: string }) {
   const router = useRouter();
@@ -140,32 +140,11 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     return Math.round(n * 100) / 100;
   }
 
-  // Mirrors lib/store/invoices.ts and the legacy invoice-builder calc.
-  // Hourly mode:
-  //   total = qty * hours * baseHourly + holidayHours * dtRate + travel
-  // Day mode:
-  //   split hours into st/ot/dt via the rule (e.g. "OT after 12 / DT after 15")
-  //   perWorker = baseDay + ot*otRate + dt*dtRate
-  //   total = qty * perWorker + holidayHours * dtRate + travel
-  // Travel is flat per line (NOT per-qty); holiday hours bill at dtRate
-  // (treating holiday as double-time, which on standard cards equals 2×hourly).
+  // Defers to the shared formula in lib/rates/line-calc.ts. The line shape
+  // carries explicit ST/OT/DT/holiday person-hours and an explicit crewCount,
+  // so this is now just a thin wrapper for type-narrowing.
   function recomputeLineTotal(l: QuoteLine): number {
-    const qty          = Number(l.qty || 0);
-    const hours        = Number(l.hours || 0);
-    const holidayHours = Number(l.holidayHours || 0);
-    const travel       = Number(l.travel || 0);
-    const baseHourly   = Number(l.baseHourly || 0);
-    const baseDay      = Number(l.baseDay || 0);
-    const otRate       = Number(l.otRate || 0);
-    const dtRate       = Number(l.dtRate || 0);
-    const isDayMode    = l.rateMode === "day" || (baseDay > 0 && !hours && l.rateMode !== "hourly");
-
-    if (isDayMode) {
-      const split = computeDayHourSplit(hours, parseOtTriggerRule(l.rule || ""));
-      const perWorker = baseDay + (split.ot * otRate) + (split.dt * dtRate);
-      return money((qty * perWorker) + (holidayHours * dtRate) + travel);
-    }
-    return money((qty * hours * baseHourly) + (holidayHours * dtRate) + travel);
+    return computeLineTotal(l);
   }
 
   function recomputeTotals(lines: QuoteLine[]): number {
@@ -484,10 +463,9 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
       </div>
       <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
         How the total is computed:{" "}
-        <strong>Hourly</strong>: qty × hrs × $/hr + holiday × $/dt + travel.{" "}
-        <strong>Day</strong>: qty × ($/day + ot × $/ot + dt × $/dt) + holiday × $/dt + travel,
-        where hrs are split by the rule (e.g. "OT after 12"). The grey row under each line is
-        read-only context — edit fields in the main row to change the total.
+        <strong>Hourly</strong>: hrs × $/hr + OT × $/OT + DT × $/DT + hol × $/DT + travel.{" "}
+        <strong>Day</strong>: crew × $/day + OT × $/OT + DT × $/DT + hol × $/DT + travel.{" "}
+        ST/OT/DT hours are explicit person-hour totals — no rule splitting at calc time.
       </div>
       <div style={{ overflowX: "auto", marginBottom: 12 }}>
         <table>
@@ -498,11 +476,15 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
               <th>Specialty</th>
               <th>Shift</th>
               <th>Mode</th>
-              <th>Qty</th>
-              <th>Hrs</th>
-              <th>Hol&nbsp;Hrs</th>
+              <th title="Worker count — multiplies day rate; informational on hourly">Crew</th>
+              <th title="Total ST person-hours (0 on day-rate lines)">ST Hrs</th>
+              <th title="Total OT person-hours across crew">OT Hrs</th>
+              <th title="Total DT person-hours across crew">DT Hrs</th>
+              <th title="Total holiday person-hours (billed at $/DT)">Hol Hrs</th>
               <th>$/hr</th>
               <th>$/day</th>
+              <th>$/OT</th>
+              <th>$/DT</th>
               <th>Travel</th>
               <th>Total</th>
               <th></th>
@@ -510,9 +492,9 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           </thead>
           <tbody>
             {invoice.lines.length === 0 ? (
-              <tr><td colSpan={13} className="muted">No line items.</td></tr>
+              <tr><td colSpan={17} className="muted">No line items.</td></tr>
             ) : invoice.lines.map((l, i) => {
-              const isDayMode = l.rateMode === "day" || (l.baseDay > 0 && !l.hours);
+              const isDayMode = isDayModeLine(l);
               // Specialty is authoritative — derive position from
               // specialty.position_id when set. Falls back to the line's
               // positionId, then best-effort matches the legacy
@@ -586,16 +568,49 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                         <option value="day">Day</option>
                       </select>
                     </td>
-                    <td><input type="number" value={l.qty} onChange={(e) => updateLine(i, { qty: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} /></td>
+                    <td>
+                      <input
+                        type="number"
+                        value={l.crewCount ?? l.qty ?? 1}
+                        onChange={(e) => {
+                          const c = parseInt(e.target.value, 10) || 0;
+                          updateLine(i, { crewCount: c, qty: c });
+                        }}
+                        step="1"
+                        min="0"
+                        style={{ width: 50 }}
+                        title="Worker count. Multiplies day rate on day-mode lines; informational on hourly."
+                      />
+                    </td>
                     <td>
                       <input
                         type="number"
                         value={l.hours}
                         onChange={(e) => updateLine(i, { hours: parseFloat(e.target.value) || 0 })}
                         step="0.5"
-                        style={{ width: 70, opacity: isDayMode ? 0.5 : 1 }}
+                        style={{ width: 60, opacity: isDayMode ? 0.5 : 1 }}
                         disabled={isDayMode}
-                        title={isDayMode ? "Day-rate line — hours not used in calc" : ""}
+                        title={isDayMode ? "Day-rate line — ST is covered by day rate" : "Total ST person-hours"}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        value={l.otHours || 0}
+                        onChange={(e) => updateLine(i, { otHours: parseFloat(e.target.value) || 0 })}
+                        step="0.5"
+                        style={{ width: 60 }}
+                        title="Total OT person-hours billed at $/OT"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        value={l.dtHours || 0}
+                        onChange={(e) => updateLine(i, { dtHours: parseFloat(e.target.value) || 0 })}
+                        step="0.5"
+                        style={{ width: 60 }}
+                        title="Total DT person-hours billed at $/DT"
                       />
                     </td>
                     <td>
@@ -604,9 +619,8 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                         value={l.holidayHours || 0}
                         onChange={(e) => updateLine(i, { holidayHours: parseFloat(e.target.value) || 0 })}
                         step="0.5"
-                        style={{ width: 70, opacity: isDayMode ? 0.5 : 1 }}
-                        disabled={isDayMode}
-                        title={isDayMode ? "Day-rate line — holiday hours not used in calc" : "Holiday hours bill at 2× base hourly"}
+                        style={{ width: 60 }}
+                        title="Holiday person-hours bill at $/DT"
                       />
                     </td>
                     <td>
@@ -615,7 +629,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                         value={l.baseHourly}
                         onChange={(e) => updateLine(i, { baseHourly: parseFloat(e.target.value) || 0 })}
                         step="0.01"
-                        style={{ width: 80, opacity: isDayMode ? 0.5 : 1 }}
+                        style={{ width: 70, opacity: isDayMode ? 0.5 : 1 }}
                       />
                     </td>
                     <td>
@@ -624,7 +638,25 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                         value={l.baseDay}
                         onChange={(e) => updateLine(i, { baseDay: parseFloat(e.target.value) || 0 })}
                         step="0.01"
-                        style={{ width: 80, opacity: isDayMode ? 1 : 0.5 }}
+                        style={{ width: 70, opacity: isDayMode ? 1 : 0.5 }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        value={l.otRate}
+                        onChange={(e) => updateLine(i, { otRate: parseFloat(e.target.value) || 0 })}
+                        step="0.01"
+                        style={{ width: 65 }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        value={l.dtRate}
+                        onChange={(e) => updateLine(i, { dtRate: parseFloat(e.target.value) || 0 })}
+                        step="0.01"
+                        style={{ width: 65 }}
                       />
                     </td>
                     <td>
@@ -633,47 +665,23 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                         value={l.travel || 0}
                         onChange={(e) => updateLine(i, { travel: parseFloat(e.target.value) || 0 })}
                         step="0.01"
-                        style={{ width: 70 }}
-                        title="Per-qty travel surcharge ($)"
+                        style={{ width: 65 }}
+                        title="Flat travel surcharge per line ($)"
                       />
                     </td>
                     <td style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>${l.total.toFixed(2)}</td>
                     <td><button className="secondary" onClick={() => deleteLine(i)} style={{ fontSize: 12 }}>×</button></td>
                   </tr>
-                  {/* Context row: only shows fields that actually drive this
-                       line's total. Rule is relevant in day mode (splits hours
-                       into ST/OT/DT tiers); OT rate is only used in day mode;
-                       DT rate is used in both modes (via holiday pay) and in
-                       day mode for the DT tier. Source kind always shown. */}
+                  {/* Context row: rule (informational only since 2026-05-12)
+                       and source. All math drivers are now in the columns. */}
                   <tr style={{ background: "rgba(0,0,0,0.025)", borderBottom: "1px solid #e7dcc4" }}>
-                    <td colSpan={13} style={{ fontSize: 11, color: "#6c6358", padding: "4px 6px" }}>
-                      {isDayMode && l.rule ? (
+                    <td colSpan={17} style={{ fontSize: 11, color: "#6c6358", padding: "4px 6px" }}>
+                      {l.rule ? (
                         <span style={{ marginRight: 14 }}>
-                          <strong>Rule:</strong> {l.rule}
+                          <strong>Rule:</strong> {l.rule}{" "}
+                          <span className="muted">(printed for the customer; calc uses explicit OT/DT hour columns)</span>
                         </span>
                       ) : null}
-                      {isDayMode && (l.otRate || 0) > 0 ? (
-                        <span style={{ marginRight: 14 }}>
-                          <strong>OT:</strong> ${(l.otRate || 0).toFixed(2)}/hr
-                        </span>
-                      ) : null}
-                      {(l.dtRate || 0) > 0 && (isDayMode || (l.holidayHours || 0) > 0) ? (
-                        <span style={{ marginRight: 14 }}>
-                          <strong>DT:</strong> ${(l.dtRate || 0).toFixed(2)}/hr
-                          {!isDayMode ? <span className="muted"> (holiday pay)</span> : null}
-                        </span>
-                      ) : null}
-                      {isDayMode ? (() => {
-                        // Show the actual hour split so the operator can verify
-                        // OT/DT contribution to the per-worker total.
-                        const split = computeDayHourSplit(l.hours || 0, parseOtTriggerRule(l.rule || ""));
-                        if (split.ot === 0 && split.dt === 0) return null;
-                        return (
-                          <span style={{ marginRight: 14 }}>
-                            <strong>Hours split:</strong> {split.st} ST · {split.ot} OT · {split.dt} DT
-                          </span>
-                        );
-                      })() : null}
                       <span style={{ marginRight: 14 }}>
                         <strong>Source:</strong> {l.sourceKind === "timesheet_entry" ? "Timesheet" : l.sourceKind === "quote_line" ? "Quote" : l.sourceKind ?? "manual"}
                       </span>

@@ -81,7 +81,10 @@ function rowToQuoteLine(r: any): QuoteLine {
   return {
     serviceKey:   r.service_key   ?? "",
     qty:          r.qty           ?? 0,
+    crewCount:    r.crew_count    ?? r.qty ?? 1,
     hours:        r.hours         ?? 0,
+    otHours:      r.ot_hours      ?? 0,
+    dtHours:      r.dt_hours      ?? 0,
     holidayHours: r.holiday_hours ?? 0,
     travel:       r.travel        ?? 0,
     baseHourly:   r.base_hourly   ?? 0,
@@ -135,13 +138,18 @@ function quoteToDraftRow(q: QuoteDraft) {
 function quoteLineToRow(quoteId: string, l: QuoteLine, index: number, existingId?: string) {
   // Note: position_id, department, specialty are deprecated — display always
   // looks up via specialty_id FK. Dropped from the table by migration 20260505b.
+  // qty is kept in sync with crewCount for backward compat.
+  const crew = Number(l.crewCount ?? l.qty ?? 1);
   return {
     id:            existingId ?? newLineId(),
     quote_id:      quoteId,
     sort_order:    index,
     service_key:   l.serviceKey,
-    qty:           l.qty,
+    qty:           crew,
+    crew_count:    crew,
     hours:         l.hours,
+    ot_hours:      l.otHours ?? 0,
+    dt_hours:      l.dtHours ?? 0,
     holiday_hours: l.holidayHours,
     travel:        l.travel,
     base_hourly:   l.baseHourly,
@@ -619,18 +627,25 @@ function buildLineFromRate(
   const department = opts.department ?? rate?.position ?? undefined;
   const specialty = opts.specialty ?? rate?.specialty ?? undefined;
   const hours = opts.hours ?? 0;
-  // Recompute total now that hours can come in from crew_needs (was always 0
-  // before, so total was always 0 at seed time and the editor would fix it).
+  // Recompute under the new explicit-OT/DT line model (2026-05-12).
+  // Day mode: total = crew × baseDay. Hourly: total = (qty × hours) × baseHourly,
+  // since `hours` in the new model is total person-hours not per-worker.
   const baseHourly = rate?.hourly ?? 0;
   const baseDay = rate?.day ?? 0;
-  const rawTotal = (rate?.rate_mode === "day" || (baseDay > 0 && hours === 0))
-    ? (opts.qty || 0) * baseDay
-    : (opts.qty || 0) * hours * baseHourly;
+  const isDayMode = rate?.rate_mode === "day" || (baseDay > 0 && hours === 0);
+  const crewCount = opts.qty || 1;
+  const totalPersonHours = isDayMode ? 0 : (opts.qty || 0) * hours;
+  const rawTotal = isDayMode
+    ? crewCount * baseDay
+    : totalPersonHours * baseHourly;
   const total = Math.round(rawTotal * 100) / 100;
   return {
     serviceKey:   "",
     qty:          opts.qty,
-    hours,
+    crewCount,
+    hours:        totalPersonHours,
+    otHours:      0,
+    dtHours:      0,
     holidayHours: 0,
     travel:       0,
     baseHourly:   rate?.hourly  ?? 0,

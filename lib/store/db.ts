@@ -1287,7 +1287,10 @@ function rowToQuoteLine(r: any): import("./types").QuoteLine {
   return {
     serviceKey:   r.service_key  ?? "",
     qty:          r.qty          ?? 0,
+    crewCount:    r.crew_count   ?? r.qty ?? 1,
     hours:        r.hours        ?? 0,
+    otHours:      r.ot_hours     ?? 0,
+    dtHours:      r.dt_hours     ?? 0,
     holidayHours: r.holiday_hours ?? 0,
     travel:       r.travel       ?? 0,
     baseHourly:   r.base_hourly  ?? 0,

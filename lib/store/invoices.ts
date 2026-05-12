@@ -80,7 +80,10 @@ function rowToInvoiceLine(r: any): QuoteLine {
   return {
     serviceKey:   r.service_key   ?? "",
     qty:          r.qty           ?? 0,
+    crewCount:    r.crew_count    ?? r.qty ?? 1,
     hours:        r.hours         ?? 0,
+    otHours:      r.ot_hours      ?? 0,
+    dtHours:      r.dt_hours      ?? 0,
     holidayHours: r.holiday_hours ?? 0,
     travel:       r.travel        ?? 0,
     baseHourly:   r.base_hourly   ?? 0,
@@ -145,13 +148,19 @@ function invoiceToDraftRow(inv: InvoiceDraft) {
 }
 
 function invoiceLineToRow(invoiceId: string, l: QuoteLine, index: number, existingId?: string) {
+  // Keep legacy qty in sync with crewCount so any code path still reading
+  // qty (legacy invoice-builder, exports, audit) stays correct.
+  const crew = Number(l.crewCount ?? l.qty ?? 1);
   return {
     id:            existingId ?? newLineId(),
     invoice_id:    invoiceId,
     sort_order:    index,
     service_key:   l.serviceKey,
-    qty:           l.qty,
+    qty:           crew,
+    crew_count:    crew,
     hours:         l.hours,
+    ot_hours:      l.otHours ?? 0,
+    dt_hours:      l.dtHours ?? 0,
     holiday_hours: l.holidayHours,
     travel:        l.travel,
     base_hourly:   l.baseHourly,
@@ -376,7 +385,10 @@ export async function createFinalDraftFromQuote(
     lines: quoteLines.map((ql: any) => ({
       serviceKey: ql.service_key ?? "",
       qty: ql.qty ?? 0,
+      crewCount: ql.crew_count ?? ql.qty ?? 1,
       hours: ql.hours ?? 0,
+      otHours: ql.ot_hours ?? 0,
+      dtHours: ql.dt_hours ?? 0,
       holidayHours: ql.holiday_hours ?? 0,
       travel: ql.travel ?? 0,
       baseHourly: ql.base_hourly ?? 0,
@@ -457,7 +469,7 @@ export async function overwriteFromTimesheets(
   // 2. approved entries for those sheets
   const entriesRes = await supabase
     .from("timesheet_entries")
-    .select("id, work_date, end_date, position, std_hours, ot_hours, dt_hours, total_hours, std_rate, ot_rate, dt_rate, total_pay, invoice_line_id")
+    .select("id, work_date, end_date, position, employee_key, std_hours, ot_hours, dt_hours, total_hours, std_rate, ot_rate, dt_rate, total_pay, invoice_line_id")
     .in("job_sheet_id", jobSheetIds)
     .eq("status", "approved");
   if (entriesRes.error) throw entriesRes.error;
@@ -494,7 +506,18 @@ export async function overwriteFromTimesheets(
 
   entries = entries.filter((e: any) => !alreadyBilled.has(e.id) || ownEntryIds.has(e.id));
 
-  // 5. group by (work_date × position)
+  // 5. Group by (work_date × position).
+  //
+  // Aggregation uses the explicit-ST/OT/DT data model (2026-05-12). Each
+  // entry already carries per-worker tier splits (std_hours / ot_hours /
+  // dt_hours from the timesheet calc, which respects the rule per-worker).
+  // We just sum across workers in the group and count distinct employees
+  // for crewCount.
+  //
+  // This is hourly-mode aggregation only — day-rate work isn't normally
+  // tracked through hour-by-hour timesheets, and even if it were, summing
+  // ot/dt across mixed-hours workers is correct under the new line model
+  // (ot/dt are explicit person-hours, not derived from a rule + uniform hrs).
   type Group = {
     workDate: string;
     endDate: string | null;
@@ -507,10 +530,12 @@ export async function overwriteFromTimesheets(
     dtRate: number;
     totalPay: number;
     entryIds: string[];
+    workerKeys: Set<string>;
   };
   const groups = new Map<string, Group>();
   for (const e of entries) {
     const key = `${e.work_date ?? ""}|${e.position ?? ""}`;
+    const workerKey = e.employee_key ?? `entry-${e.id}`;
     const g = groups.get(key);
     if (g) {
       g.stdHours += Number(e.std_hours ?? 0);
@@ -518,7 +543,7 @@ export async function overwriteFromTimesheets(
       g.dtHours  += Number(e.dt_hours  ?? 0);
       g.totalPay += Number(e.total_pay ?? 0);
       g.entryIds.push(e.id);
-      // End date: take latest among contributing entries
+      g.workerKeys.add(workerKey);
       if (e.end_date && (!g.endDate || e.end_date > g.endDate)) g.endDate = e.end_date;
     } else {
       groups.set(key, {
@@ -533,6 +558,7 @@ export async function overwriteFromTimesheets(
         dtRate:   Number(e.dt_rate   ?? 0),
         totalPay: Number(e.total_pay ?? 0),
         entryIds: [e.id],
+        workerKeys: new Set([workerKey]),
       });
     }
   }
@@ -547,21 +573,24 @@ export async function overwriteFromTimesheets(
   const lineIdByGroupIndex = sorted.map(() => newLineId());
 
   const newLines: QuoteLine[] = sorted.map((g) => {
-    const totalHours = +(g.stdHours + g.otHours + g.dtHours).toFixed(2);
+    const crewCount = g.workerKeys.size;
     return {
       serviceKey: g.position,
-      qty: 1,
-      hours: g.stdHours,
+      qty: crewCount,
+      crewCount,
+      hours:        +g.stdHours.toFixed(2),
+      otHours:      +g.otHours.toFixed(2),
+      dtHours:      +g.dtHours.toFixed(2),
       holidayHours: 0,
-      travel: 0,
-      baseHourly: g.stdRate,
-      baseDay: 0,
-      otRate: g.otRate,
-      dtRate: g.dtRate,
-      rule: `Timesheet actuals: ${totalHours}h`,
-      total: +g.totalPay.toFixed(2),
-      specialty: g.position,
-      shiftLabel: undefined,
+      travel:       0,
+      baseHourly:   g.stdRate,
+      baseDay:      0,
+      otRate:       g.otRate,
+      dtRate:       g.dtRate,
+      rule:         "Timesheet actuals",
+      total:        +g.totalPay.toFixed(2),
+      specialty:    g.position,
+      shiftLabel:   undefined,
       quoteDate: g.workDate,
       endDate: g.endDate ?? undefined,
       rateMode: "hourly",

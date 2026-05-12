@@ -114,24 +114,29 @@ function recalcLineFromMeta(line: QuoteLine, meta: LineMeta): QuoteLine {
     endTime: meta.endTime ?? line.endTime,
   };
 
-  const qty = Number(line.qty || 0);
-  const hours = Number(line.hours || 0);
+  // Updated 2026-05-12: line carries explicit ST/OT/DT/holiday person-hours
+  // + crewCount. Same formula as lib/rates/line-calc.ts (kept inline here
+  // because the legacy invoice-builder is on its way out and pulling the
+  // shared helper would mean retrofitting more of this file's types).
+  const crewCount    = Number(line.crewCount ?? line.qty ?? 1);
+  const hours        = Number(line.hours        || 0);
+  const otHours      = Number(line.otHours      || 0);
+  const dtHours      = Number(line.dtHours      || 0);
   const holidayHours = Number(line.holidayHours || 0);
-  const travel = Number(line.travel || 0);
-  const baseHourly = Number(line.baseHourly || 0);
-  const baseDay = Number(line.baseDay || 0);
-  const otRate = Number(line.otRate || 0);
-  const dtRate = Number(line.dtRate || 0);
-  const otTrigger = parseOtTrigger(line.rule || "");
+  const travel       = Number(line.travel       || 0);
+  const baseHourly   = Number(line.baseHourly   || 0);
+  const baseDay      = Number(line.baseDay      || 0);
+  const otRate       = Number(line.otRate       || 0);
+  const dtRate       = Number(line.dtRate       || 0);
 
-  let total = 0;
-  if (meta.rateMode === "hourly") {
-    total = (qty * hours * baseHourly) + (holidayHours * dtRate) + travel;
-  } else {
-    const split = computeDayHourSplit(hours, otTrigger);
-    const perWorker = baseDay + (split.ot * otRate) + (split.dt * dtRate);
-    total = (qty * perWorker) + (holidayHours * dtRate) + travel;
-  }
+  const base = meta.rateMode === "hourly"
+    ? hours * baseHourly
+    : crewCount * baseDay;
+  const total = base
+    + otHours      * otRate
+    + dtHours      * dtRate
+    + holidayHours * dtRate
+    + travel;
 
   return {
     ...line,
@@ -328,7 +333,10 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
     const line: QuoteLine = {
       serviceKey: buildServiceKey(meta),
       qty: 1,
+      crewCount: 1,
       hours: 0,
+      otHours: 0,
+      dtHours: 0,
       holidayHours: 0,
       travel: 0,
       baseHourly: 0,
