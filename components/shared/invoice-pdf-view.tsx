@@ -14,7 +14,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { loadInvoice, balanceDue } from "@/lib/store/invoices";
 import { loadCompanySettings, type CompanySettings } from "@/lib/store/company-settings";
 import type { InvoiceDraft } from "@/lib/store/types";
@@ -161,6 +161,7 @@ export default function InvoicePdfView({ id }: { id: string }) {
 
   const balance = balanceDue(invoice);
   const anyHoliday = invoice.lines.some((l) => (l.holidayHours || 0) > 0);
+  const anyTravel  = invoice.lines.some((l) => (l.travel || 0) > 0);
 
   return (
     <div className="invoice-pdf">
@@ -290,25 +291,44 @@ export default function InvoicePdfView({ id }: { id: string }) {
                     <th className="num">Hrs</th>
                     {anyHoliday ? <th className="num">Hol</th> : null}
                     <th className="num">Rate</th>
+                    {anyTravel ? <th className="num">Travel</th> : null}
                     <th className="num">Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {g.lines.map(({ line, positionName, specialtyName }, i) => {
-                    const rateDisplay = line.rateMode === "day" || (line.baseDay > 0 && !line.hours)
+                    const isDayMode = line.rateMode === "day" || (line.baseDay > 0 && !line.hours);
+                    const rateDisplay = isDayMode
                       ? `${fmtMoney(line.baseDay)} / day`
                       : `${fmtMoney(line.baseHourly)} / hr`;
+                    // Build a per-line caption: rule + OT/DT rates if non-zero.
+                    // Omitted entirely on flat day-rate lines with no rule.
+                    const captionParts: string[] = [];
+                    if (line.rule) captionParts.push(line.rule);
+                    if ((line.otRate || 0) > 0) captionParts.push(`OT ${fmtMoney(line.otRate)}/hr`);
+                    if ((line.dtRate || 0) > 0) captionParts.push(`DT ${fmtMoney(line.dtRate)}/hr`);
+                    const colCount = 6 + (anyHoliday ? 1 : 0) + (anyTravel ? 1 : 0) + 1; // headers above
                     return (
-                      <tr key={i}>
-                        <td>{positionName}</td>
-                        <td>{specialtyName}</td>
-                        <td>{line.shiftLabel || ""}</td>
-                        <td className="num">{line.qty}</td>
-                        <td className="num">{line.rateMode === "day" || !line.hours ? "—" : line.hours}</td>
-                        {anyHoliday ? <td className="num">{line.holidayHours || ""}</td> : null}
-                        <td className="num">{rateDisplay}</td>
-                        <td className="num">{fmtMoney(line.total)}</td>
-                      </tr>
+                      <React.Fragment key={i}>
+                        <tr>
+                          <td>{positionName}</td>
+                          <td>{specialtyName}</td>
+                          <td>{line.shiftLabel || ""}</td>
+                          <td className="num">{line.qty}</td>
+                          <td className="num">{isDayMode || !line.hours ? "—" : line.hours}</td>
+                          {anyHoliday ? <td className="num">{line.holidayHours || ""}</td> : null}
+                          <td className="num">{rateDisplay}</td>
+                          {anyTravel ? <td className="num">{(line.travel || 0) > 0 ? fmtMoney(line.travel) : ""}</td> : null}
+                          <td className="num">{fmtMoney(line.total)}</td>
+                        </tr>
+                        {captionParts.length > 0 ? (
+                          <tr className="line-caption">
+                            <td colSpan={colCount}>
+                              {captionParts.join("  ·  ")}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
@@ -507,6 +527,16 @@ export default function InvoicePdfView({ id }: { id: string }) {
         .lines-table th.num, .lines-table td.num {
           text-align: right;
           font-variant-numeric: tabular-nums;
+        }
+        /* Per-line caption row: rule + OT/DT rates that justify the total.
+           Indented under the line, small, no top border so it visually
+           attaches to the line above. */
+        .lines-table tr.line-caption td {
+          padding: 1px 6px 4px 18px;
+          border-bottom: 1px solid #ead7b8;
+          font-size: 8.5pt;
+          color: #6c6358;
+          font-style: italic;
         }
         .no-lines { padding: 10px; color: #6c6358; font-style: italic; }
 
