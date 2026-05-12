@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -419,31 +419,132 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           Overwrite from Timesheets
         </button>
       </div>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>
+        Each line shows what flows into its total: rate mode (day vs hourly),
+        regular hours, holiday hours, OT/DT rates, travel, and the OT trigger
+        rule that came from the source quote. The grey row under each line is
+        read-only context — edit fields in the main row to change the total.
+      </div>
       <div style={{ overflowX: "auto", marginBottom: 12 }}>
         <table>
           <thead>
             <tr>
-              <th>Date</th><th>Position</th><th>Specialty</th><th>Shift</th>
-              <th>Qty</th><th>Hrs</th><th>$/hr</th><th>$/day</th><th>Total</th><th></th>
+              <th>Date</th>
+              <th>Position</th>
+              <th>Specialty</th>
+              <th>Shift</th>
+              <th>Mode</th>
+              <th>Qty</th>
+              <th>Hrs</th>
+              <th>Hol&nbsp;Hrs</th>
+              <th>$/hr</th>
+              <th>$/day</th>
+              <th>Travel</th>
+              <th>Total</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
             {invoice.lines.length === 0 ? (
-              <tr><td colSpan={10} className="muted">No line items.</td></tr>
-            ) : invoice.lines.map((l, i) => (
-              <tr key={i}>
-                <td><input type="date" value={l.quoteDate || ""} onChange={(e) => updateLine(i, { quoteDate: e.target.value })} /></td>
-                <td><input type="text" value={l.department || ""} onChange={(e) => updateLine(i, { department: e.target.value })} placeholder="Position" /></td>
-                <td><input type="text" value={l.specialty || ""} onChange={(e) => updateLine(i, { specialty: e.target.value })} placeholder="Specialty" /></td>
-                <td><input type="text" value={l.shiftLabel || ""} onChange={(e) => updateLine(i, { shiftLabel: e.target.value })} placeholder="Shift" style={{ width: 90 }} /></td>
-                <td><input type="number" value={l.qty} onChange={(e) => updateLine(i, { qty: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} /></td>
-                <td><input type="number" value={l.hours} onChange={(e) => updateLine(i, { hours: parseFloat(e.target.value) || 0 })} step="0.5" style={{ width: 70 }} /></td>
-                <td><input type="number" value={l.baseHourly} onChange={(e) => updateLine(i, { baseHourly: parseFloat(e.target.value) || 0 })} step="0.01" style={{ width: 80 }} /></td>
-                <td><input type="number" value={l.baseDay} onChange={(e) => updateLine(i, { baseDay: parseFloat(e.target.value) || 0 })} step="0.01" style={{ width: 80 }} /></td>
-                <td>${l.total.toFixed(2)}</td>
-                <td><button className="secondary" onClick={() => deleteLine(i)} style={{ fontSize: 12 }}>×</button></td>
-              </tr>
-            ))}
+              <tr><td colSpan={13} className="muted">No line items.</td></tr>
+            ) : invoice.lines.map((l, i) => {
+              const isDayMode = l.rateMode === "day" || (l.baseDay > 0 && !l.hours);
+              return (
+                <React.Fragment key={i}>
+                  <tr>
+                    <td><input type="date" value={l.quoteDate || ""} onChange={(e) => updateLine(i, { quoteDate: e.target.value })} /></td>
+                    <td><input type="text" value={l.department || ""} onChange={(e) => updateLine(i, { department: e.target.value })} placeholder="Position" /></td>
+                    <td><input type="text" value={l.specialty || ""} onChange={(e) => updateLine(i, { specialty: e.target.value })} placeholder="Specialty" /></td>
+                    <td><input type="text" value={l.shiftLabel || ""} onChange={(e) => updateLine(i, { shiftLabel: e.target.value })} placeholder="Shift" style={{ width: 90 }} /></td>
+                    <td>
+                      <select
+                        value={isDayMode ? "day" : "hourly"}
+                        onChange={(e) => updateLine(i, { rateMode: e.target.value as "day" | "hourly" })}
+                        style={{ width: 80 }}
+                        title="Toggling resets the calc to use the chosen rate basis"
+                      >
+                        <option value="hourly">Hourly</option>
+                        <option value="day">Day</option>
+                      </select>
+                    </td>
+                    <td><input type="number" value={l.qty} onChange={(e) => updateLine(i, { qty: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} /></td>
+                    <td>
+                      <input
+                        type="number"
+                        value={l.hours}
+                        onChange={(e) => updateLine(i, { hours: parseFloat(e.target.value) || 0 })}
+                        step="0.5"
+                        style={{ width: 70, opacity: isDayMode ? 0.5 : 1 }}
+                        disabled={isDayMode}
+                        title={isDayMode ? "Day-rate line — hours not used in calc" : ""}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        value={l.holidayHours || 0}
+                        onChange={(e) => updateLine(i, { holidayHours: parseFloat(e.target.value) || 0 })}
+                        step="0.5"
+                        style={{ width: 70, opacity: isDayMode ? 0.5 : 1 }}
+                        disabled={isDayMode}
+                        title={isDayMode ? "Day-rate line — holiday hours not used in calc" : "Holiday hours bill at 2× base hourly"}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        value={l.baseHourly}
+                        onChange={(e) => updateLine(i, { baseHourly: parseFloat(e.target.value) || 0 })}
+                        step="0.01"
+                        style={{ width: 80, opacity: isDayMode ? 0.5 : 1 }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        value={l.baseDay}
+                        onChange={(e) => updateLine(i, { baseDay: parseFloat(e.target.value) || 0 })}
+                        step="0.01"
+                        style={{ width: 80, opacity: isDayMode ? 1 : 0.5 }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        value={l.travel || 0}
+                        onChange={(e) => updateLine(i, { travel: parseFloat(e.target.value) || 0 })}
+                        step="0.01"
+                        style={{ width: 70 }}
+                        title="Per-qty travel surcharge ($)"
+                      />
+                    </td>
+                    <td style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>${l.total.toFixed(2)}</td>
+                    <td><button className="secondary" onClick={() => deleteLine(i)} style={{ fontSize: 12 }}>×</button></td>
+                  </tr>
+                  {/* Context row: rule + OT/DT rates from source quote/timesheet.
+                       Read-only — the calc doesn't currently apply OT/DT splits
+                       at the invoice line level (the source quote already baked
+                       them into the total). Shown so the user can sanity-check
+                       what the printed invoice ties back to. */}
+                  <tr style={{ background: "rgba(0,0,0,0.025)", borderBottom: "1px solid #e7dcc4" }}>
+                    <td colSpan={13} style={{ fontSize: 11, color: "#6c6358", padding: "4px 6px" }}>
+                      <span style={{ marginRight: 14 }}>
+                        <strong>Rule:</strong> {l.rule || <span className="muted">(none — flat rate)</span>}
+                      </span>
+                      <span style={{ marginRight: 14 }}>
+                        <strong>OT rate:</strong> ${(l.otRate || 0).toFixed(2)}/hr
+                      </span>
+                      <span style={{ marginRight: 14 }}>
+                        <strong>DT rate:</strong> ${(l.dtRate || 0).toFixed(2)}/hr
+                      </span>
+                      <span style={{ marginRight: 14 }}>
+                        <strong>Source:</strong> {l.sourceKind === "timesheet_entry" ? "Timesheet" : l.sourceKind === "quote_line" ? "Quote" : l.sourceKind ?? "manual"}
+                      </span>
+                    </td>
+                  </tr>
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
