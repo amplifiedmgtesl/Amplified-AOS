@@ -19,6 +19,7 @@ import { loadInvoice, balanceDue } from "@/lib/store/invoices";
 import { loadCompanySettings, type CompanySettings } from "@/lib/store/company-settings";
 import type { InvoiceDraft } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
+import { parseOtTriggerRule, computeDayHourSplit } from "@/lib/rates/ot-trigger";
 
 type LoadedJob = {
   id: string;
@@ -284,9 +285,7 @@ export default function InvoicePdfView({ id }: { id: string }) {
               <table className="lines-table">
                 <thead>
                   <tr>
-                    <th>Position</th>
-                    <th>Specialty</th>
-                    <th>Shift</th>
+                    <th>Role</th>
                     <th className="num">Qty</th>
                     <th className="num">Hrs</th>
                     {anyHoliday ? <th className="num">Hol</th> : null}
@@ -298,41 +297,75 @@ export default function InvoicePdfView({ id }: { id: string }) {
                 <tbody>
                   {g.lines.map(({ line, positionName, specialtyName }, i) => {
                     const isDayMode = line.rateMode === "day" || (line.baseDay > 0 && !line.hours);
+                    const qty = Number(line.qty || 0);
+                    const hours = Number(line.hours || 0);
+                    const holidayHours = Number(line.holidayHours || 0);
+                    const travel = Number(line.travel || 0);
+                    const baseHourly = Number(line.baseHourly || 0);
+                    const baseDay = Number(line.baseDay || 0);
+                    const otRate = Number(line.otRate || 0);
+                    const dtRate = Number(line.dtRate || 0);
                     const rateDisplay = isDayMode
                       ? `${fmtMoney(line.baseDay)} / day`
                       : `${fmtMoney(line.baseHourly)} / hr`;
-                    // Build a per-line caption: only show fields that actually
-                    // drive this line's total. Rule + OT rate apply only in day
-                    // mode; DT rate applies in day mode OR when holiday hours
-                    // are non-zero (holiday bills at DT). On hourly lines with
-                    // no holiday and no OT context, the caption is empty.
-                    const captionParts: string[] = [];
-                    if (isDayMode && line.rule) captionParts.push(line.rule);
-                    if (isDayMode && (line.otRate || 0) > 0) captionParts.push(`OT ${fmtMoney(line.otRate)}/hr`);
-                    if ((line.dtRate || 0) > 0 && (isDayMode || (line.holidayHours || 0) > 0)) {
-                      captionParts.push(`DT ${fmtMoney(line.dtRate)}/hr${!isDayMode ? " (holiday)" : ""}`);
+
+                    // Combined Role label: "Position · Specialty · Shift",
+                    // skipping empty parts so a missing specialty doesn't
+                    // produce "Position ·  · Shift".
+                    const roleParts = [positionName, specialtyName, line.shiftLabel]
+                      .filter((s) => s && s !== "—");
+                    const roleLabel = roleParts.join(" · ");
+
+                    // ─── Build the customer-verifiable math breakdown ─────
+                    // Goal: the printed line carries enough arithmetic for
+                    // the customer to redo the total from the numbers shown.
+                    // For day mode with OT/DT, expand into the hour split.
+                    let mathBreakdown = "";
+                    const contextParts: string[] = [];
+
+                    if (isDayMode) {
+                      if (line.rule) contextParts.push(line.rule);
+                      const split = computeDayHourSplit(hours, parseOtTriggerRule(line.rule || ""));
+                      const perWorkerParts = [`${fmtMoney(baseDay)} day`];
+                      if (split.ot > 0 && otRate > 0) perWorkerParts.push(`${split.ot}h OT × ${fmtMoney(otRate)}`);
+                      if (split.dt > 0 && dtRate > 0) perWorkerParts.push(`${split.dt}h DT × ${fmtMoney(dtRate)}`);
+                      mathBreakdown = `${qty} × (${perWorkerParts.join(" + ")})`;
+                      if (holidayHours > 0 && dtRate > 0) {
+                        mathBreakdown += ` + ${holidayHours}h hol × ${fmtMoney(dtRate)}`;
+                      }
+                      if (travel > 0) mathBreakdown += ` + ${fmtMoney(travel)} travel`;
+                      mathBreakdown += ` = ${fmtMoney(line.total)}`;
+                    } else {
+                      // Hourly: qty × hrs × $/hr + holiday × DT + travel
+                      const parts = [`${qty} × ${hours}h × ${fmtMoney(baseHourly)}`];
+                      if (holidayHours > 0 && dtRate > 0) {
+                        parts.push(`${holidayHours}h hol × ${fmtMoney(dtRate)}`);
+                        contextParts.push(`Holiday at DT ${fmtMoney(dtRate)}/hr`);
+                      }
+                      if (travel > 0) parts.push(`${fmtMoney(travel)} travel`);
+                      mathBreakdown = `${parts.join(" + ")} = ${fmtMoney(line.total)}`;
                     }
-                    const colCount = 6 + (anyHoliday ? 1 : 0) + (anyTravel ? 1 : 0) + 1; // headers above
+
+                    const colCount = 1 + 3 + (anyHoliday ? 1 : 0) + (anyTravel ? 1 : 0) + 1;
                     return (
                       <React.Fragment key={i}>
                         <tr>
-                          <td>{positionName}</td>
-                          <td>{specialtyName}</td>
-                          <td>{line.shiftLabel || ""}</td>
-                          <td className="num">{line.qty}</td>
-                          <td className="num">{isDayMode || !line.hours ? "—" : line.hours}</td>
-                          {anyHoliday ? <td className="num">{line.holidayHours || ""}</td> : null}
+                          <td>{roleLabel || "—"}</td>
+                          <td className="num">{qty}</td>
+                          <td className="num">{isDayMode || !hours ? "—" : hours}</td>
+                          {anyHoliday ? <td className="num">{holidayHours || ""}</td> : null}
                           <td className="num">{rateDisplay}</td>
-                          {anyTravel ? <td className="num">{(line.travel || 0) > 0 ? fmtMoney(line.travel) : ""}</td> : null}
+                          {anyTravel ? <td className="num">{travel > 0 ? fmtMoney(travel) : ""}</td> : null}
                           <td className="num">{fmtMoney(line.total)}</td>
                         </tr>
-                        {captionParts.length > 0 ? (
-                          <tr className="line-caption">
-                            <td colSpan={colCount}>
-                              {captionParts.join("  ·  ")}
-                            </td>
-                          </tr>
-                        ) : null}
+                        <tr className="line-caption">
+                          <td colSpan={colCount}>
+                            <span className="math">{mathBreakdown}</span>
+                            {contextParts.length > 0 ? (
+                              <span className="ctx">  ·  {contextParts.join("  ·  ")}</span>
+                            ) : null}
+                          </td>
+                        </tr>
                       </React.Fragment>
                     );
                   })}
@@ -533,14 +566,19 @@ export default function InvoicePdfView({ id }: { id: string }) {
           text-align: right;
           font-variant-numeric: tabular-nums;
         }
-        /* Per-line caption row: rule + OT/DT rates that justify the total.
-           Indented under the line, small, no top border so it visually
-           attaches to the line above. */
+        /* Per-line caption row: explicit math + context so the customer can
+           verify the total from the printed numbers. Indented under the
+           line, small, no top border so it visually attaches to the line. */
         .lines-table tr.line-caption td {
           padding: 1px 6px 4px 18px;
           border-bottom: 1px solid #ead7b8;
           font-size: 8.5pt;
           color: #6c6358;
+        }
+        .lines-table tr.line-caption .math {
+          font-variant-numeric: tabular-nums;
+        }
+        .lines-table tr.line-caption .ctx {
           font-style: italic;
         }
         .no-lines { padding: 10px; color: #6c6358; font-style: italic; }
