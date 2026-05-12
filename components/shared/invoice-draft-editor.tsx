@@ -26,6 +26,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
   const [job, setJob] = useState<any | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [rateCardName, setRateCardName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +84,19 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           setSpecialties((spcRes.data ?? []).map((r: any) => ({
             id: r.id, positionId: r.position_id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active,
           })));
+        }
+
+        // Resolve the rate card profile name (data-entry context, never
+        // printed on the customer-facing invoice). The invoice carries
+        // rateCardProfileId snapshotted at create time; show its name so
+        // the operator can verify the right card was applied before issue.
+        if (q.rateCardProfileId) {
+          const rc = await supabase
+            .from("rate_card_profiles")
+            .select("name")
+            .eq("id", q.rateCardProfileId)
+            .maybeSingle();
+          if (!cancelled) setRateCardName(rc.data?.name ?? q.rateCardProfileId);
         }
 
         if (q.jobRequestId) {
@@ -327,6 +341,17 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
               <div>{invoice.sourceQuoteCode || "—"}</div>
               <div className="muted" style={{ marginTop: 8 }}>Job #</div>
               <div>{job.job_no || "—"}</div>
+              <div className="muted" style={{ marginTop: 8 }}>
+                Rate card{" "}
+                <span style={{ fontSize: 10, opacity: 0.7 }}>(not printed)</span>
+              </div>
+              <div>
+                {rateCardName ? (
+                  <code style={{ fontSize: 12 }}>{rateCardName}</code>
+                ) : (
+                  <span className="muted">— none —</span>
+                )}
+              </div>
             </div>
           </div>
         ) : <div className="muted">No job linked.</div>}
