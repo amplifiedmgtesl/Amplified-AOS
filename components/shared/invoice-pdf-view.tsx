@@ -161,8 +161,18 @@ export default function InvoicePdfView({ id }: { id: string }) {
     ?? (job?.job_no ? `${job.job_no}${isDeposit ? "_DEP" : "_INV"}${invoice.parentInvoiceId ? `_REV${invoice.revisionNo - 1}` : ""} (DRAFT)` : "(DRAFT)");
 
   const balance = balanceDue(invoice);
-  const anyHoliday = invoice.lines.some((l) => (l.holidayHours || 0) > 0);
-  const anyTravel  = invoice.lines.some((l) => (l.travel || 0) > 0);
+  const anyHoliday  = invoice.lines.some((l) => (l.holidayHours || 0) > 0);
+  const anyTravel   = invoice.lines.some((l) => (l.travel       || 0) > 0);
+  const anyShift    = invoice.lines.some((l) => !!l.shiftLabel);
+  const anyOt       = invoice.lines.some((l) => (l.otRate || 0) > 0 && (l.rateMode === "day" || (l.baseDay > 0 && !l.hours)));
+  // DT rate is shown when day-rate lines use it (DT tier) OR when any line
+  // has holiday hours (holiday bills at DT). Hides on flat-hourly invoices.
+  const anyDt = invoice.lines.some((l) => {
+    const dt = Number(l.dtRate || 0);
+    if (dt <= 0) return false;
+    const isDayMode = l.rateMode === "day" || (l.baseDay > 0 && !l.hours);
+    return isDayMode || Number(l.holidayHours || 0) > 0;
+  });
 
   return (
     <div className="invoice-pdf">
@@ -285,87 +295,87 @@ export default function InvoicePdfView({ id }: { id: string }) {
               <table className="lines-table">
                 <thead>
                   <tr>
-                    <th>Role</th>
+                    <th>Position</th>
+                    <th>Specialty</th>
+                    {anyShift   ? <th>Shift</th>            : null}
                     <th className="num">Qty</th>
                     <th className="num">Hrs</th>
-                    {anyHoliday ? <th className="num">Hol</th> : null}
+                    {anyHoliday ? <th className="num">Hol</th>     : null}
                     <th className="num">Rate</th>
-                    {anyTravel ? <th className="num">Travel</th> : null}
+                    {anyOt      ? <th className="num">OT $/hr</th> : null}
+                    {anyDt      ? <th className="num">DT $/hr</th> : null}
+                    {anyTravel  ? <th className="num">Travel</th>  : null}
                     <th className="num">Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {g.lines.map(({ line, positionName, specialtyName }, i) => {
                     const isDayMode = line.rateMode === "day" || (line.baseDay > 0 && !line.hours);
-                    const qty = Number(line.qty || 0);
-                    const hours = Number(line.hours || 0);
+                    const qty          = Number(line.qty          || 0);
+                    const hours        = Number(line.hours        || 0);
                     const holidayHours = Number(line.holidayHours || 0);
-                    const travel = Number(line.travel || 0);
-                    const baseHourly = Number(line.baseHourly || 0);
-                    const baseDay = Number(line.baseDay || 0);
-                    const otRate = Number(line.otRate || 0);
-                    const dtRate = Number(line.dtRate || 0);
+                    const travel       = Number(line.travel       || 0);
+                    const otRate       = Number(line.otRate       || 0);
+                    const dtRate       = Number(line.dtRate       || 0);
                     const rateDisplay = isDayMode
                       ? `${fmtMoney(line.baseDay)} / day`
                       : `${fmtMoney(line.baseHourly)} / hr`;
 
-                    // Combined Role label: "Position · Specialty · Shift",
-                    // skipping empty parts so a missing specialty doesn't
-                    // produce "Position ·  · Shift".
-                    const roleParts = [positionName, specialtyName, line.shiftLabel]
-                      .filter((s) => s && s !== "—");
-                    const roleLabel = roleParts.join(" · ");
+                    // OT and DT rates only print on lines where they
+                    // actually contribute to the total. Hourly lines show
+                    // the DT rate only when holiday hours exist (DT drives
+                    // holiday pay). Empty cells keep columns aligned.
+                    const showOtCell = isDayMode && otRate > 0;
+                    const showDtCell = (isDayMode && dtRate > 0) || (!isDayMode && holidayHours > 0 && dtRate > 0);
 
-                    // ─── Build the customer-verifiable math breakdown ─────
-                    // Goal: the printed line carries enough arithmetic for
-                    // the customer to redo the total from the numbers shown.
-                    // For day mode with OT/DT, expand into the hour split.
-                    let mathBreakdown = "";
-                    const contextParts: string[] = [];
+                    // Hour split for day-mode lines — drives the caption.
+                    const split = isDayMode
+                      ? computeDayHourSplit(hours, parseOtTriggerRule(line.rule || ""))
+                      : { st: hours, ot: 0, dt: 0 };
 
-                    if (isDayMode) {
-                      if (line.rule) contextParts.push(line.rule);
-                      const split = computeDayHourSplit(hours, parseOtTriggerRule(line.rule || ""));
-                      const perWorkerParts = [`${fmtMoney(baseDay)} day`];
-                      if (split.ot > 0 && otRate > 0) perWorkerParts.push(`${split.ot}h OT × ${fmtMoney(otRate)}`);
-                      if (split.dt > 0 && dtRate > 0) perWorkerParts.push(`${split.dt}h DT × ${fmtMoney(dtRate)}`);
-                      mathBreakdown = `${qty} × (${perWorkerParts.join(" + ")})`;
-                      if (holidayHours > 0 && dtRate > 0) {
-                        mathBreakdown += ` + ${holidayHours}h hol × ${fmtMoney(dtRate)}`;
+                    // Caption (only on day-mode lines where the rule
+                    // actually splits hours, OR where a rule exists at all).
+                    // Customer can reconstruct the per-worker total from
+                    // the columns + this split breakdown.
+                    let captionText = "";
+                    if (isDayMode && line.rule) {
+                      captionText = line.rule;
+                      if (split.ot > 0 || split.dt > 0) {
+                        captionText += ` → ${split.st}h ST + ${split.ot}h OT + ${split.dt}h DT`;
                       }
-                      if (travel > 0) mathBreakdown += ` + ${fmtMoney(travel)} travel`;
-                      mathBreakdown += ` = ${fmtMoney(line.total)}`;
-                    } else {
-                      // Hourly: qty × hrs × $/hr + holiday × DT + travel
-                      const parts = [`${qty} × ${hours}h × ${fmtMoney(baseHourly)}`];
-                      if (holidayHours > 0 && dtRate > 0) {
-                        parts.push(`${holidayHours}h hol × ${fmtMoney(dtRate)}`);
-                        contextParts.push(`Holiday at DT ${fmtMoney(dtRate)}/hr`);
-                      }
-                      if (travel > 0) parts.push(`${fmtMoney(travel)} travel`);
-                      mathBreakdown = `${parts.join(" + ")} = ${fmtMoney(line.total)}`;
                     }
 
-                    const colCount = 1 + 3 + (anyHoliday ? 1 : 0) + (anyTravel ? 1 : 0) + 1;
+                    const colCount =
+                      2 +
+                      (anyShift   ? 1 : 0) +
+                      2 +
+                      (anyHoliday ? 1 : 0) +
+                      1 +
+                      (anyOt      ? 1 : 0) +
+                      (anyDt      ? 1 : 0) +
+                      (anyTravel  ? 1 : 0) +
+                      1;
+
                     return (
                       <React.Fragment key={i}>
                         <tr>
-                          <td>{roleLabel || "—"}</td>
+                          <td>{positionName}</td>
+                          <td>{specialtyName}</td>
+                          {anyShift ? <td>{line.shiftLabel || ""}</td> : null}
                           <td className="num">{qty}</td>
-                          <td className="num">{isDayMode || !hours ? "—" : hours}</td>
+                          <td className="num">{isDayMode || !hours ? (isDayMode ? hours || "" : "—") : hours}</td>
                           {anyHoliday ? <td className="num">{holidayHours || ""}</td> : null}
                           <td className="num">{rateDisplay}</td>
+                          {anyOt     ? <td className="num">{showOtCell ? fmtMoney(otRate) : ""}</td> : null}
+                          {anyDt     ? <td className="num">{showDtCell ? fmtMoney(dtRate) : ""}</td> : null}
                           {anyTravel ? <td className="num">{travel > 0 ? fmtMoney(travel) : ""}</td> : null}
                           <td className="num">{fmtMoney(line.total)}</td>
                         </tr>
-                        <tr className="line-caption">
-                          <td colSpan={colCount}>
-                            <span className="math">{mathBreakdown}</span>
-                            {contextParts.length > 0 ? (
-                              <span className="ctx">  ·  {contextParts.join("  ·  ")}</span>
-                            ) : null}
-                          </td>
-                        </tr>
+                        {captionText ? (
+                          <tr className="line-caption">
+                            <td colSpan={colCount}>{captionText}</td>
+                          </tr>
+                        ) : null}
                       </React.Fragment>
                     );
                   })}
@@ -549,12 +559,14 @@ export default function InvoicePdfView({ id }: { id: string }) {
         .lines-table {
           width: 100%;
           border-collapse: collapse;
-          font-size: 10pt;
+          font-size: 9.5pt;
           margin-top: 4px;
+          table-layout: auto;
         }
         .lines-table th, .lines-table td {
-          padding: 4px 6px;
+          padding: 3px 5px;
           border-bottom: 1px solid #ead7b8;
+          vertical-align: top;
         }
         .lines-table th {
           text-align: left;
