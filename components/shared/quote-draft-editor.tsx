@@ -465,10 +465,12 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
           style={{ width: "100%", minWidth: 90 }}
         />
       </td>
-      <td><input className="num" type="number" value={line.qty} onChange={(e) => updateLine(globalIndex, { qty: parseFloat(e.target.value) || 0 })} style={{ width: 50 }} /></td>
-      <td><input className="num" type="number" value={line.hours} onChange={(e) => updateLine(globalIndex, { hours: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.5" /></td>
-      <td><input className="num" type="number" value={line.holidayHours} onChange={(e) => updateLine(globalIndex, { holidayHours: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.5" title="Hours billed at 2x the regular hourly rate" /></td>
-      <td><input className="num" type="number" value={line.travel} onChange={(e) => updateLine(globalIndex, { travel: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="Per-crew travel charge" /></td>
+      <td><input className="num" type="number" value={line.crewCount ?? line.qty ?? 1} onChange={(e) => { const c = parseInt(e.target.value, 10) || 0; updateLine(globalIndex, { crewCount: c, qty: c }); }} step="1" min="0" style={{ width: 50 }} title="Worker count. Multiplies day rate; informational on hourly." /></td>
+      <td><input className="num" type="number" value={line.hours} onChange={(e) => updateLine(globalIndex, { hours: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.5" title="Total ST person-hours (0 on day-rate lines)" /></td>
+      <td><input className="num" type="number" value={line.otHours || 0} onChange={(e) => updateLine(globalIndex, { otHours: parseFloat(e.target.value) || 0 })} style={{ width: 55 }} step="0.5" title="Total OT person-hours" /></td>
+      <td><input className="num" type="number" value={line.dtHours || 0} onChange={(e) => updateLine(globalIndex, { dtHours: parseFloat(e.target.value) || 0 })} style={{ width: 55 }} step="0.5" title="Total DT person-hours" /></td>
+      <td><input className="num" type="number" value={line.holidayHours} onChange={(e) => updateLine(globalIndex, { holidayHours: parseFloat(e.target.value) || 0 })} style={{ width: 55 }} step="0.5" title="Holiday person-hours bill at $/DT" /></td>
+      <td><input className="num" type="number" value={line.travel} onChange={(e) => updateLine(globalIndex, { travel: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="Flat travel charge per line" /></td>
       <td><input className="num" type="number" value={line.baseHourly} onChange={(e) => updateLine(globalIndex, { baseHourly: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} step="0.01" /></td>
       <td><input className="num" type="number" value={line.baseDay} onChange={(e) => updateLine(globalIndex, { baseDay: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} step="0.01" /></td>
       <td><input className="num" type="number" value={line.otRate} onChange={(e) => updateLine(globalIndex, { otRate: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="OT rate — informational; OT computed at timesheet time" /></td>
@@ -761,8 +763,13 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
                     <thead>
                       <tr>
                         <th>Department</th><th>Specialty</th><th>Shift</th>
-                        <th>Qty</th><th>Hours</th><th>Holiday</th><th>Travel</th>
-                        <th>$/hr</th><th>$/day</th><th>OT</th><th>DT</th>
+                        <th title="Worker count">Crew</th>
+                        <th title="Total ST person-hours">ST Hrs</th>
+                        <th title="Total OT person-hours">OT Hrs</th>
+                        <th title="Total DT person-hours">DT Hrs</th>
+                        <th title="Total holiday person-hours (billed at $/DT)">Hol Hrs</th>
+                        <th>Travel</th>
+                        <th>$/hr</th><th>$/day</th><th>$/OT</th><th>$/DT</th>
                         <th>Rule</th><th>Mode</th><th>Total</th><th></th>
                       </tr>
                     </thead>
@@ -786,7 +793,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
           <div style={{ overflowX: "auto" }}>
             <table>
               <thead>
-                <tr><th>Department</th><th>Specialty</th><th>Date</th><th>Qty</th><th>Hours</th><th>$/hr</th><th>Total</th><th></th></tr>
+                <tr><th>Department</th><th>Specialty</th><th>Date</th><th>Crew</th><th>ST Hrs</th><th>$/hr</th><th>Total</th><th></th></tr>
               </thead>
               <tbody>
                 {unassigned.map(({ line, globalIndex }) => (
@@ -794,7 +801,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
                     <td><input type="text" value={line.department || ""} onChange={(e) => updateLine(globalIndex, { department: e.target.value })} placeholder="Position" style={{ width: "100%", minWidth: 120 }} /></td>
                     <td><input type="text" value={line.specialty || ""} onChange={(e) => updateLine(globalIndex, { specialty: e.target.value })} placeholder="Specialty" style={{ width: "100%", minWidth: 120 }} /></td>
                     <td><input type="date" value={line.quoteDate || ""} onChange={(e) => updateLine(globalIndex, { quoteDate: e.target.value })} /></td>
-                    <td><input type="number" value={line.qty} onChange={(e) => updateLine(globalIndex, { qty: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} /></td>
+                    <td><input type="number" value={line.crewCount ?? line.qty ?? 1} onChange={(e) => { const c = parseInt(e.target.value, 10) || 0; updateLine(globalIndex, { crewCount: c, qty: c }); }} step="1" min="0" style={{ width: 60 }} /></td>
                     <td><input type="number" value={line.hours} onChange={(e) => updateLine(globalIndex, { hours: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} /></td>
                     <td><input type="number" value={line.baseHourly} onChange={(e) => updateLine(globalIndex, { baseHourly: parseFloat(e.target.value) || 0 })} style={{ width: 80 }} step="0.01" /></td>
                     <td>${line.total.toFixed(2)}</td>

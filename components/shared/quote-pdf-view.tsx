@@ -181,6 +181,8 @@ export default function QuotePdfView({ id }: { id: string }) {
   // actually has holiday hours. Keeps the table tight when nobody booked
   // a holiday, surfaces it clearly when they did.
   const anyHoliday = quote.lines.some((l) => (l.holidayHours || 0) > 0);
+  const anyOt      = quote.lines.some((l) => (l.otHours      || 0) > 0);
+  const anyDt      = quote.lines.some((l) => (l.dtHours      || 0) > 0);
 
   const dateRange =
     job?.request_date && job?.end_date && job.end_date !== job.request_date
@@ -296,23 +298,28 @@ export default function QuotePdfView({ id }: { id: string }) {
                   <th>Position</th>
                   <th>Specialty</th>
                   <th>Shift</th>
-                  <th className="num">Qty</th>
-                  <th className="num">Hrs</th>
-                  {/* Basic: holiday only when present anywhere on the quote.
-                      Full: always show. */}
-                  {(detail === "full" || anyHoliday) ? <th className="num">Hol</th> : null}
+                  <th className="num">Crew</th>
+                  <th className="num">ST Hrs</th>
+                  {/* Conditional columns mirror invoice PDF: only appear when
+                      at least one line uses that field. Keeps simple quotes
+                      clean while showing full math when complexity is real. */}
+                  {(detail === "full" || anyOt)      ? <th className="num">OT Hrs</th>  : null}
+                  {(detail === "full" || anyDt)      ? <th className="num">DT Hrs</th>  : null}
+                  {(detail === "full" || anyHoliday) ? <th className="num">Hol Hrs</th> : null}
                   {detail === "full" ? <th className="num">Travel</th> : null}
                   <th className="num">{detail === "full" ? "$/hr" : "Rate"}</th>
                   {detail === "full" ? <th className="num">$/day</th> : null}
-                  {detail === "full" ? <th className="num">OT</th> : null}
-                  {detail === "full" ? <th className="num">DT</th> : null}
+                  {(detail === "full" || anyOt)                  ? <th className="num">$/OT</th> : null}
+                  {(detail === "full" || anyDt || anyHoliday)    ? <th className="num">$/DT</th> : null}
                   {detail === "full" ? <th>Rule</th> : null}
                   <th className="num">Total</th>
                 </tr>
               </thead>
               <tbody>
                 {g.lines.map(({ line, positionName, specialtyName }, i) => {
-                  const basicRateDisplay = line.rateMode === "day" || (line.baseDay > 0 && !line.hours)
+                  const isDayMode = line.rateMode === "day" || ((line.baseDay || 0) > 0 && !(line.hours || 0));
+                  const crewCount = line.crewCount ?? line.qty ?? 1;
+                  const basicRateDisplay = isDayMode
                     ? `${fmtMoney(line.baseDay)} / day`
                     : `${fmtMoney(line.baseHourly)} / hr`;
                   return (
@@ -320,14 +327,16 @@ export default function QuotePdfView({ id }: { id: string }) {
                       <td>{positionName}</td>
                       <td>{specialtyName}</td>
                       <td>{line.shiftLabel || ""}</td>
-                      <td className="num">{line.qty}</td>
-                      <td className="num">{line.rateMode === "day" || !line.hours ? "—" : line.hours}</td>
+                      <td className="num">{crewCount}</td>
+                      <td className="num">{isDayMode ? "—" : (line.hours || "")}</td>
+                      {(detail === "full" || anyOt)      ? <td className="num">{line.otHours      || ""}</td> : null}
+                      {(detail === "full" || anyDt)      ? <td className="num">{line.dtHours      || ""}</td> : null}
                       {(detail === "full" || anyHoliday) ? <td className="num">{line.holidayHours || ""}</td> : null}
                       {detail === "full" ? <td className="num">{line.travel ? fmtMoney(line.travel) : ""}</td> : null}
                       <td className="num">{detail === "full" ? fmtMoney(line.baseHourly) : basicRateDisplay}</td>
                       {detail === "full" ? <td className="num">{fmtMoney(line.baseDay)}</td> : null}
-                      {detail === "full" ? <td className="num">{fmtMoney(line.otRate)}</td> : null}
-                      {detail === "full" ? <td className="num">{fmtMoney(line.dtRate)}</td> : null}
+                      {(detail === "full" || anyOt)               ? <td className="num">{line.otRate > 0 ? fmtMoney(line.otRate) : ""}</td> : null}
+                      {(detail === "full" || anyDt || anyHoliday) ? <td className="num">{line.dtRate > 0 ? fmtMoney(line.dtRate) : ""}</td> : null}
                       {detail === "full" ? <td className="rule-cell">{line.rule || ""}</td> : null}
                       <td className="num">{fmtMoney(line.total)}</td>
                     </tr>
