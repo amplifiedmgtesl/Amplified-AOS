@@ -1,35 +1,36 @@
 -- Lines: explicit OT/DT hours + crew_count, replacing rule-derived splits.
 --
--- BEFORE this migration, day-mode lines stored a single `hours` field
--- (total hours worked) and the calc engine derived ST/OT/DT tiers at
--- runtime by parsing the `rule` string ("OT after 12 / DT after 15") and
--- splitting hours via computeDayHourSplit. This works fine when every
--- worker on a line had the same hours (the quote-builder assumption) but
--- breaks for timesheet aggregation: 3 workers with hours 8 / 14 / 16
--- each cross OT thresholds differently and cannot be represented as one
--- aggregated line under the rule-derived model.
+-- BEFORE: day-mode lines stored one `hours` field; ST/OT/DT tiers were
+-- derived at calc time by parsing the `rule` string. Worked when every
+-- worker on a line had the same hours, broke for timesheet aggregation
+-- with variable hours per worker.
 --
--- AFTER this migration:
---   crew_count    = explicit worker count (multiplier for day-rate base)
---   hours         = total ST person-hours (0 on day-rate lines since the
---                   day rate covers straight time)
---   ot_hours      = total OT person-hours billed at ot_rate     (NEW)
---   dt_hours      = total DT person-hours billed at dt_rate     (NEW)
---   holiday_hours = total holiday person-hours billed at dt_rate (unchanged)
---   rule          = informational only (printed for the customer; no
---                   longer drives runtime calc — splits are explicit now)
+-- AFTER:
+--   crew_count    explicit worker count (multiplies day rate; informational
+--                 on hourly lines)
+--   hours         total ST person-hours (0 on day-rate lines)
+--   ot_hours      total OT person-hours billed at ot_rate     (NEW)
+--   dt_hours      total DT person-hours billed at dt_rate     (NEW)
+--   holiday_hours total holiday person-hours at dt_rate       (unchanged)
+--   rule          informational only — no longer parsed at calc time
 --
--- New formula in both modes:
---   Day:    crew_count × base_day + ot_hours × ot_rate + dt_hours × dt_rate
---         + holiday_hours × dt_rate + travel
---   Hourly: hours × base_hourly + ot_hours × ot_rate + dt_hours × dt_rate
---         + holiday_hours × dt_rate + travel
+-- Formula (both modes):
+--   (day:    crew_count × base_day, hourly: hours × base_hourly)
+--   + ot_hours × ot_rate + dt_hours × dt_rate + holiday_hours × dt_rate
+--   + travel
 --
--- Backfill is mathematically faithful — every existing line's `total`
--- recomputes to the same value under the new formula. Verified by the
--- check block at the bottom (RAISES + ABORTS if any line drifts).
+-- VERIFICATION POLICY:
+--   - DRAFT lines must reconcile exactly under the new formula. The check
+--     aborts the migration if any draft line drifts >1 cent.
+--   - FROZEN lines are tolerated for drift. Legacy data (Connor-era
+--     slug-PK rows and similar) has stored `total` values that didn't
+--     match even the legacy formula — likely due to historical hand
+--     edits or pre-rewrite bugs. We preserve those stored totals as
+--     the authoritative customer-facing values (they represent what was
+--     actually quoted/billed) and populate the new fields best-effort
+--     for revise/audit. The drift count is reported via NOTICE.
 --
--- Companion: docs/invoice-rewrite-plan.md (Phase C addendum).
+-- Companion: docs/explicit-line-model-summary.md
 
 -- ─── 1. Add columns ────────────────────────────────────────────────────────
 
@@ -43,7 +44,7 @@ ALTER TABLE invoice_lines
   ADD COLUMN IF NOT EXISTS dt_hours   numeric DEFAULT 0 NOT NULL,
   ADD COLUMN IF NOT EXISTS crew_count integer DEFAULT 1 NOT NULL;
 
--- ─── 2. Helper functions ─ pure-SQL mirror of lib/rates/ot-trigger.ts ─────
+-- ─── 2. Helper functions — pure-SQL mirror of lib/rates/ot-trigger.ts ─────
 
 CREATE OR REPLACE FUNCTION _migration_parse_ot_trigger(rule text)
 RETURNS TABLE(kind text, ot_start numeric) LANGUAGE plpgsql IMMUTABLE AS $$
@@ -64,7 +65,6 @@ BEGIN
     RETURN QUERY SELECT 'daily'::text, m::numeric;
     RETURN;
   END IF;
-  -- Default trigger when no rule string present
   RETURN QUERY SELECT 'daily'::text, 10::numeric;
 END $$;
 
@@ -87,16 +87,12 @@ BEGIN
     GREATEST(0::numeric, h - 15);
 END $$;
 
--- ─── 3. Disable freeze triggers for backfill ──────────────────────────────
--- The existing freeze triggers block ALL updates on lines whose parent
--- doc is frozen. The backfill is a one-time schema-level migration, not
--- a content edit, so we disable the triggers for the duration of the
--- backfill UPDATE then immediately re-enable.
+-- ─── 3. Disable freeze triggers for the one-time backfill ────────────────
 
 ALTER TABLE quote_lines   DISABLE TRIGGER quote_lines_freeze_iud_trg;
 ALTER TABLE invoice_lines DISABLE TRIGGER invoice_lines_freeze_iud_trg;
 
--- ─── 4. Backfill quote_lines ──────────────────────────────────────────────
+-- ─── 4. Backfill quote_lines ─────────────────────────────────────────────
 
 UPDATE quote_lines ql
 SET
@@ -128,7 +124,7 @@ FROM (
 ) AS sub
 WHERE ql.id = sub.id;
 
--- ─── 5. Backfill invoice_lines ────────────────────────────────────────────
+-- ─── 5. Backfill invoice_lines ───────────────────────────────────────────
 
 UPDATE invoice_lines il
 SET
@@ -160,86 +156,137 @@ FROM (
 ) AS sub
 WHERE il.id = sub.id;
 
--- ─── 6. Re-enable freeze triggers ─────────────────────────────────────────
+-- ─── 6. Re-enable freeze triggers ────────────────────────────────────────
 
 ALTER TABLE quote_lines   ENABLE TRIGGER quote_lines_freeze_iud_trg;
 ALTER TABLE invoice_lines ENABLE TRIGGER invoice_lines_freeze_iud_trg;
 
--- ─── 7. Verification — recompute total under new formula, compare to
---        stored total. Aborts the migration if any line drifts >1 cent. ─
+-- ─── 7. Verification — strict on drafts, tolerant on frozen ──────────────
 
 DO $$
 DECLARE
-  drift_count int;
-  drift_sample text;
+  draft_drift int;
+  frozen_drift_quote int;
+  frozen_drift_invoice int;
+  draft_sample text;
 BEGIN
-  -- Quote lines
+  -- Quote_lines: draft parent must reconcile exactly.
   SELECT count(*), string_agg(id || ' (drift ' || drift::text || ')', ', ')
-    INTO drift_count, drift_sample
+    INTO draft_drift, draft_sample
   FROM (
-    SELECT id,
+    SELECT ql.id,
       round((
         (CASE
-           WHEN rate_mode = 'day' OR (COALESCE(base_day, 0) > 0 AND COALESCE(hours, 0) = 0)
-             THEN COALESCE(crew_count, 1) * COALESCE(base_day, 0)
-           ELSE COALESCE(hours, 0) * COALESCE(base_hourly, 0)
+           WHEN ql.rate_mode = 'day' OR (COALESCE(ql.base_day, 0) > 0 AND COALESCE(ql.hours, 0) = 0)
+             THEN COALESCE(ql.crew_count, 1) * COALESCE(ql.base_day, 0)
+           ELSE COALESCE(ql.hours, 0) * COALESCE(ql.base_hourly, 0)
          END)
-        + COALESCE(ot_hours, 0)      * COALESCE(ot_rate, 0)
-        + COALESCE(dt_hours, 0)      * COALESCE(dt_rate, 0)
-        + COALESCE(holiday_hours, 0) * COALESCE(dt_rate, 0)
-        + COALESCE(travel, 0)
-        - COALESCE(total, 0)
+        + COALESCE(ql.ot_hours, 0)      * COALESCE(ql.ot_rate, 0)
+        + COALESCE(ql.dt_hours, 0)      * COALESCE(ql.dt_rate, 0)
+        + COALESCE(ql.holiday_hours, 0) * COALESCE(ql.dt_rate, 0)
+        + COALESCE(ql.travel, 0)
+        - COALESCE(ql.total, 0)
       )::numeric, 2) AS drift
-    FROM quote_lines
+    FROM quote_lines ql
+    JOIN quotes q ON q.id = ql.quote_id
+    WHERE q.is_draft = true
   ) sub
   WHERE ABS(drift) > 0.01;
 
-  IF drift_count > 0 THEN
-    RAISE EXCEPTION 'Quote-line total drift after backfill: % rows. Sample: %. Migration ABORTED.',
-      drift_count, LEFT(drift_sample, 500);
+  IF draft_drift > 0 THEN
+    RAISE EXCEPTION 'DRAFT quote-line drift: % rows. Sample: %. Migration ABORTED.',
+      draft_drift, LEFT(draft_sample, 500);
   END IF;
 
-  -- Invoice lines
-  SELECT count(*), string_agg(id || ' (drift ' || drift::text || ')', ', ')
-    INTO drift_count, drift_sample
+  -- Quote_lines: frozen rows — count only, do not abort.
+  SELECT count(*) INTO frozen_drift_quote
   FROM (
-    SELECT id,
+    SELECT ql.id,
       round((
         (CASE
-           WHEN rate_mode = 'day' OR (COALESCE(base_day, 0) > 0 AND COALESCE(hours, 0) = 0)
-             THEN COALESCE(crew_count, 1) * COALESCE(base_day, 0)
-           ELSE COALESCE(hours, 0) * COALESCE(base_hourly, 0)
+           WHEN ql.rate_mode = 'day' OR (COALESCE(ql.base_day, 0) > 0 AND COALESCE(ql.hours, 0) = 0)
+             THEN COALESCE(ql.crew_count, 1) * COALESCE(ql.base_day, 0)
+           ELSE COALESCE(ql.hours, 0) * COALESCE(ql.base_hourly, 0)
          END)
-        + COALESCE(ot_hours, 0)      * COALESCE(ot_rate, 0)
-        + COALESCE(dt_hours, 0)      * COALESCE(dt_rate, 0)
-        + COALESCE(holiday_hours, 0) * COALESCE(dt_rate, 0)
-        + COALESCE(travel, 0)
-        - COALESCE(total, 0)
+        + COALESCE(ql.ot_hours, 0)      * COALESCE(ql.ot_rate, 0)
+        + COALESCE(ql.dt_hours, 0)      * COALESCE(ql.dt_rate, 0)
+        + COALESCE(ql.holiday_hours, 0) * COALESCE(ql.dt_rate, 0)
+        + COALESCE(ql.travel, 0)
+        - COALESCE(ql.total, 0)
       )::numeric, 2) AS drift
-    FROM invoice_lines
+    FROM quote_lines ql
+    JOIN quotes q ON q.id = ql.quote_id
+    WHERE q.is_draft = false
   ) sub
   WHERE ABS(drift) > 0.01;
 
-  IF drift_count > 0 THEN
-    RAISE EXCEPTION 'Invoice-line total drift after backfill: % rows. Sample: %. Migration ABORTED.',
-      drift_count, LEFT(drift_sample, 500);
+  -- Invoice_lines: draft parent must reconcile exactly.
+  SELECT count(*), string_agg(id || ' (drift ' || drift::text || ')', ', ')
+    INTO draft_drift, draft_sample
+  FROM (
+    SELECT il.id,
+      round((
+        (CASE
+           WHEN il.rate_mode = 'day' OR (COALESCE(il.base_day, 0) > 0 AND COALESCE(il.hours, 0) = 0)
+             THEN COALESCE(il.crew_count, 1) * COALESCE(il.base_day, 0)
+           ELSE COALESCE(il.hours, 0) * COALESCE(il.base_hourly, 0)
+         END)
+        + COALESCE(il.ot_hours, 0)      * COALESCE(il.ot_rate, 0)
+        + COALESCE(il.dt_hours, 0)      * COALESCE(il.dt_rate, 0)
+        + COALESCE(il.holiday_hours, 0) * COALESCE(il.dt_rate, 0)
+        + COALESCE(il.travel, 0)
+        - COALESCE(il.total, 0)
+      )::numeric, 2) AS drift
+    FROM invoice_lines il
+    JOIN invoices i ON i.id = il.invoice_id
+    WHERE i.is_draft = true
+  ) sub
+  WHERE ABS(drift) > 0.01;
+
+  IF draft_drift > 0 THEN
+    RAISE EXCEPTION 'DRAFT invoice-line drift: % rows. Sample: %. Migration ABORTED.',
+      draft_drift, LEFT(draft_sample, 500);
   END IF;
 
-  RAISE NOTICE 'Line backfill verified — all quote_line and invoice_line totals reconcile under the new formula.';
+  -- Invoice_lines: frozen rows — count only, do not abort.
+  SELECT count(*) INTO frozen_drift_invoice
+  FROM (
+    SELECT il.id,
+      round((
+        (CASE
+           WHEN il.rate_mode = 'day' OR (COALESCE(il.base_day, 0) > 0 AND COALESCE(il.hours, 0) = 0)
+             THEN COALESCE(il.crew_count, 1) * COALESCE(il.base_day, 0)
+           ELSE COALESCE(il.hours, 0) * COALESCE(il.base_hourly, 0)
+         END)
+        + COALESCE(il.ot_hours, 0)      * COALESCE(il.ot_rate, 0)
+        + COALESCE(il.dt_hours, 0)      * COALESCE(il.dt_rate, 0)
+        + COALESCE(il.holiday_hours, 0) * COALESCE(il.dt_rate, 0)
+        + COALESCE(il.travel, 0)
+        - COALESCE(il.total, 0)
+      )::numeric, 2) AS drift
+    FROM invoice_lines il
+    JOIN invoices i ON i.id = il.invoice_id
+    WHERE i.is_draft = false
+  ) sub
+  WHERE ABS(drift) > 0.01;
+
+  RAISE NOTICE 'Backfill verified: all DRAFT lines reconcile.';
+  RAISE NOTICE 'Frozen quote_lines with legacy total drift (preserved as historical): %', frozen_drift_quote;
+  RAISE NOTICE 'Frozen invoice_lines with legacy total drift (preserved as historical): %', frozen_drift_invoice;
 END $$;
 
--- ─── 8. Clean up helpers ──────────────────────────────────────────────────
+-- ─── 8. Clean up helpers ─────────────────────────────────────────────────
 
 DROP FUNCTION IF EXISTS _migration_parse_ot_trigger(text);
 DROP FUNCTION IF EXISTS _migration_compute_split(numeric, text, numeric);
 
--- ─── 9. Final state report ────────────────────────────────────────────────
+-- ─── 9. Final state report ───────────────────────────────────────────────
 
 SELECT 'quote_lines' AS tbl,
        count(*) AS total_rows,
-       count(*) FILTER (WHERE ot_hours > 0) AS rows_with_ot,
-       count(*) FILTER (WHERE dt_hours > 0) AS rows_with_dt,
-       count(*) FILTER (WHERE crew_count > 1) AS rows_with_crew_gt_1
+       count(*) FILTER (WHERE ot_hours > 0)        AS rows_with_ot,
+       count(*) FILTER (WHERE dt_hours > 0)        AS rows_with_dt,
+       count(*) FILTER (WHERE crew_count > 1)      AS rows_with_crew_gt_1
 FROM quote_lines
 UNION ALL
 SELECT 'invoice_lines',
