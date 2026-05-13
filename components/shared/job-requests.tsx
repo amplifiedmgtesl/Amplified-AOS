@@ -11,6 +11,7 @@ import { US_STATES, JOB_REQUEST_STATUSES } from "@/lib/constants";
 import { JobRequestAttachmentsSection } from "./job-request-attachments-section";
 import { JobRequestDaysSection } from "./job-request-days-section";
 import { JobRequestCrewSection } from "./job-request-crew-section";
+import { JobRequestShiftsSection } from "./job-request-shifts-section";
 import { JobPrintSheet } from "./job-print-sheet";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { computeJobNo, defaultEventAbbr, sanitizeEventAbbr } from "@/lib/jobs/job-no";
@@ -45,7 +46,7 @@ function daysSince(iso?: string): number | null {
 }
 
 type Mode = "none" | "new" | "edit";
-type SectionTab = "daily" | "crew" | "attachments";
+type SectionTab = "daily" | "crew" | "shifts" | "attachments";
 
 export default function JobRequests() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -752,6 +753,7 @@ export default function JobRequests() {
               {([
                 { id: "daily" as const,       label: "Daily Requirements" },
                 { id: "crew" as const,        label: "Assigned Crew" },
+                { id: "shifts" as const,      label: "Shifts" },
                 { id: "attachments" as const, label: "Attachments" },
               ]).map((t) => {
                 const active = sectionTab === t.id;
@@ -791,6 +793,14 @@ export default function JobRequests() {
                 ? <JobRequestCrewSection jobRequestId={editingId} disabled={isCrewLocked} hideHeader />
                 : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
                     Save the job first to start assigning crew.
+                  </div>
+            )}
+
+            {sectionTab === "shifts" && (
+              editingId
+                ? <JobRequestShiftsSection jobRequestId={editingId} hideHeader />
+                : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
+                    Save the job first to start adding shifts.
                   </div>
             )}
 
