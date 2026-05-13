@@ -17,7 +17,8 @@
 import React, { useEffect, useState } from "react";
 import { loadInvoice, balanceDue } from "@/lib/store/invoices";
 import { loadCompanySettings, type CompanySettings } from "@/lib/store/company-settings";
-import type { InvoiceDraft } from "@/lib/store/types";
+import type { InvoiceDraft, JobRequestShift } from "@/lib/store/types";
+import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { supabase } from "@/lib/supabase/client";
 import { isDayModeLine } from "@/lib/rates/line-calc";
 
@@ -75,6 +76,7 @@ export default function InvoicePdfView({ id }: { id: string }) {
   const [company, setCompany] = useState<CompanySettings | null>(null);
   const [positionsById, setPositionsById] = useState<Map<string, string>>(new Map());
   const [specialtiesById, setSpecialtiesById] = useState<Map<string, { name: string; positionId: string }>>(new Map());
+  const [shiftsById, setShiftsById] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,6 +110,12 @@ export default function InvoicePdfView({ id }: { id: string }) {
         if (clientId) {
           const cRes = await supabase.from("clients").select("*").eq("id", clientId).maybeSingle();
           if (!cancelled) setClient(cRes.data as LoadedClient | null);
+        }
+
+        // Shift label lookup for printed lines.
+        if (inv.jobRequestId) {
+          const s = await loadShifts(inv.jobRequestId, { includeInactive: true });
+          if (!cancelled) setShiftsById(new Map(s.map((row: JobRequestShift) => [row.id, row.label])));
         }
 
         setLoading(false);
@@ -163,7 +171,7 @@ export default function InvoicePdfView({ id }: { id: string }) {
   const balance     = balanceDue(invoice);
   const anyHoliday  = invoice.lines.some((l) => (l.holidayHours || 0) > 0);
   const anyTravel   = invoice.lines.some((l) => (l.travel       || 0) > 0);
-  const anyShift    = invoice.lines.some((l) => !!l.shiftLabel);
+  const anyShift    = invoice.lines.some((l) => !!l.shiftId);
   // OT/DT columns only show when at least one line actually uses them.
   // Explicit fields, no rule parsing.
   const anyOt = invoice.lines.some((l) => (l.otHours || 0) > 0);
@@ -326,7 +334,7 @@ export default function InvoicePdfView({ id }: { id: string }) {
                         <tr>
                           <td>{positionName}</td>
                           <td>{specialtyName}</td>
-                          {anyShift    ? <td>{line.shiftLabel || ""}</td> : null}
+                          {anyShift    ? <td>{(line.shiftId ? shiftsById.get(line.shiftId) : "") || ""}</td> : null}
                           {anyCrewGt1  ? <td className="num">{crewCount}</td> : null}
                           <td className="num">{isDayMode ? "—" : (hours || "")}</td>
                           {anyOt       ? <td className="num">{otHours      || ""}</td> : null}

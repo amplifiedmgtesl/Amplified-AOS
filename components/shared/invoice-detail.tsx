@@ -26,13 +26,15 @@ import {
   linkOrphanInvoice,
 } from "@/lib/store/invoices";
 import { getAvailableCredit, applyCreditToInvoice } from "@/lib/store/customer-credits";
+import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { supabase } from "@/lib/supabase/client";
-import type { InvoiceDraft } from "@/lib/store/types";
+import type { InvoiceDraft, JobRequestShift } from "@/lib/store/types";
 
 export default function InvoiceDetail({ id }: { id: string }) {
   const router = useRouter();
   const [invoice, setInvoice] = useState<InvoiceDraft | null>(null);
   const [job, setJob] = useState<any | null>(null);
+  const [shifts, setShifts] = useState<JobRequestShift[]>([]);
   const [supersededBy, setSupersededBy] = useState<{ id: string; invoiceNo: string | null } | null>(null);
   const [creditBalance, setCreditBalance] = useState<number>(0);
   const [loading, setLoading] = useState(true);
@@ -62,6 +64,9 @@ export default function InvoiceDetail({ id }: { id: string }) {
         if (q.jobRequestId) {
           const j = await supabase.from("job_requests").select("*").eq("id", q.jobRequestId).maybeSingle();
           if (!cancelled) setJob(j.data ?? null);
+          // Load shifts (include inactive so historical line refs still resolve)
+          const s = await loadShifts(q.jobRequestId, { includeInactive: true });
+          if (!cancelled) setShifts(s);
         }
         const child = await supabase
           .from("invoices")
@@ -298,7 +303,7 @@ export default function InvoiceDetail({ id }: { id: string }) {
                   <td>{l.quoteDate || "—"}</td>
                   <td>{l.department || "—"}</td>
                   <td>{l.specialty || "—"}</td>
-                  <td>{l.shiftLabel || "—"}</td>
+                  <td>{(l.shiftId ? shifts.find((s) => s.id === l.shiftId)?.label : null) || "—"}</td>
                   <td>{l.qty}</td>
                   <td>{l.hours}</td>
                   <td>${(l.baseHourly || l.baseDay || 0).toFixed(2)}</td>

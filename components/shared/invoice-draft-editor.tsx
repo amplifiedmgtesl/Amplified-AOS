@@ -16,9 +16,10 @@ import {
   balanceDue,
   overwriteFromTimesheets,
 } from "@/lib/store/invoices";
-import type { InvoiceDraft, QuoteLine, Position, Specialty } from "@/lib/store/types";
+import type { InvoiceDraft, QuoteLine, Position, Specialty, JobRequestShift } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
 import { computeLineTotal, isDayModeLine } from "@/lib/rates/line-calc";
+import { loadShifts } from "@/lib/storage/job-request-shifts";
 
 export default function InvoiceDraftEditor({ id }: { id: string }) {
   const router = useRouter();
@@ -26,6 +27,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
   const [job, setJob] = useState<any | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [shifts, setShifts] = useState<JobRequestShift[]>([]);
   const [rateCardName, setRateCardName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
@@ -102,6 +104,12 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         if (q.jobRequestId) {
           const j = await supabase.from("job_requests").select("*").eq("id", q.jobRequestId).maybeSingle();
           if (!cancelled) setJob(j.data ?? null);
+          // Load this job's shift list for the line dropdowns. Include inactive
+          // so historical line refs still resolve in the dropdown (selected
+          // but flagged), preserving the line's existing shift if it points
+          // at one the operator since deactivated.
+          const s = await loadShifts(q.jobRequestId, { includeInactive: true });
+          if (!cancelled) setShifts(s);
           // For final drafts, surface the linked deposit invoice so the
           // user can see what's being applied (or warn if none exists).
           if (q.invoiceType === "final") {
@@ -556,7 +564,22 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                         {lineSpecialties.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                     </td>
-                    <td><input type="text" value={l.shiftLabel || ""} onChange={(e) => updateLine(i, { shiftLabel: e.target.value })} placeholder="Shift" style={{ width: 90 }} /></td>
+                    <td>
+                      {shifts.length === 0 ? (
+                        <span className="muted" style={{ fontSize: 11 }} title="No shifts defined on the parent job. Add shifts on the Job Request screen.">—</span>
+                      ) : (
+                        <select
+                          value={l.shiftId || ""}
+                          onChange={(e) => updateLine(i, { shiftId: e.target.value || undefined })}
+                          style={{ width: 110 }}
+                        >
+                          <option value="">— None —</option>
+                          {shifts.map((s) => (
+                            <option key={s.id} value={s.id}>{s.label}{!s.isActive ? " (inactive)" : ""}</option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
                     <td>
                       <select
                         value={isDayMode ? "day" : "hourly"}

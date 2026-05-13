@@ -26,9 +26,10 @@ import {
   deleteDraft,
   pickRateCardForJob,
 } from "@/lib/store/quotes";
-import type { QuoteDraft, QuoteLine, Position, Specialty } from "@/lib/store/types";
+import type { QuoteDraft, QuoteLine, Position, Specialty, JobRequestShift } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
 import { computeLineTotal } from "@/lib/rates/line-calc";
+import { loadShifts } from "@/lib/storage/job-request-shifts";
 
 /** OT-trigger options + their canonical rule strings.
  *  Mirror of rate-card-editor.tsx triggerLabel() so the picker on a quote
@@ -71,6 +72,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
   const [allProfiles, setAllProfiles] = useState<any[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [shifts, setShifts] = useState<JobRequestShift[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +124,12 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         setSpecialties((spcRes.data ?? []).map((r: any) => ({
           id: r.id, positionId: r.position_id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active,
         })));
+
+        // Shifts for this job (include inactive so historical line refs resolve)
+        if (q.jobRequestId) {
+          const s = await loadShifts(q.jobRequestId, { includeInactive: true });
+          if (!cancelled) setShifts(s);
+        }
 
         // Build the day list. If no day rows, synthesize a single day from the job.
         const dayRows = (daysRes.data ?? []) as any[];
@@ -456,14 +464,20 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         </select>
       </td>
       <td>
-        <input
-          type="text"
-          value={line.shiftLabel || ""}
-          onChange={(e) => updateLine(globalIndex, { shiftLabel: e.target.value })}
-          placeholder="Shift"
-          title="Free-text shift label, e.g. Load In, Show Call, Strike"
-          style={{ width: "100%", minWidth: 90 }}
-        />
+        {shifts.length === 0 ? (
+          <span className="muted" style={{ fontSize: 11 }} title="No shifts defined on the parent job. Add shifts on the Job Request screen.">—</span>
+        ) : (
+          <select
+            value={line.shiftId || ""}
+            onChange={(e) => updateLine(globalIndex, { shiftId: e.target.value || undefined })}
+            style={{ width: "100%", minWidth: 110 }}
+          >
+            <option value="">— None —</option>
+            {shifts.map((s) => (
+              <option key={s.id} value={s.id}>{s.label}{!s.isActive ? " (inactive)" : ""}</option>
+            ))}
+          </select>
+        )}
       </td>
       <td><input className="num" type="number" value={line.crewCount ?? line.qty ?? 1} onChange={(e) => { const c = parseInt(e.target.value, 10) || 0; updateLine(globalIndex, { crewCount: c, qty: c }); }} step="1" min="0" style={{ width: 50 }} title="Worker count. Multiplies day rate; informational on hourly." /></td>
       <td><input className="num" type="number" value={line.hours} onChange={(e) => updateLine(globalIndex, { hours: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.5" title="Total ST person-hours (0 on day-rate lines)" /></td>

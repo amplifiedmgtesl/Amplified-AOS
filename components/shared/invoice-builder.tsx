@@ -72,9 +72,11 @@ function parseLineMeta(line: QuoteLine): LineMeta {
   const date = line.quoteDate || parts[0] || "";
   const department = line.department || parts[1] || "";
   const position = parts[2] || line.serviceKey || "";
-  // Shift is only present in 6-part service_keys. If discrete column is empty
-  // AND it's a 5-part key, don't pull parts[3] (that's specialty).
-  const shiftLabel = line.shiftLabel || (has6 ? (parts[4] || "Shift 1") : "Shift 1");
+  // Shift used to be free-text on the line; dropped in 20260512a (now a FK
+  // to job_request_shifts). The legacy invoice-builder doesn't have access
+  // to a job-scoped shift list, so we surface the historical service_key
+  // remnant for display only — it isn't persisted back to any column.
+  const shiftLabel = has6 ? (parts[4] || "") : "";
   // rateMode is parts[5] in 6-part, parts[4] in 5-part.
   const rateModeRaw = (line.rateMode || (has6 ? parts[5] : parts[4]) || "hourly").toLowerCase();
   const rateMode = (rateModeRaw === "day" ? "day" : "hourly") as RateMode;
@@ -109,7 +111,8 @@ function recalcLineFromMeta(line: QuoteLine, meta: LineMeta): QuoteLine {
     quoteDate: meta.date || line.quoteDate || "",
     department: meta.department ?? line.department,
     rateMode: meta.rateMode || line.rateMode,
-    shiftLabel: meta.shiftLabel ?? line.shiftLabel,
+    // shiftLabel removed — shifts are now FKs (shift_id). Legacy
+    // invoice-builder doesn't surface a shift picker.
     startTime: meta.startTime ?? line.startTime,
     endTime: meta.endTime ?? line.endTime,
   };
@@ -347,7 +350,6 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
       total: 0,
       department: "",
       specialty: "",
-      shiftLabel: "",
       quoteDate: defaultDate,
       endDate: defaultDate,
       startTime: "",

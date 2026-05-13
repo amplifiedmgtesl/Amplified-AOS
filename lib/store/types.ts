@@ -55,7 +55,10 @@ export type QuoteLine = {
   // Discrete UI columns (populated from quote_lines / invoice_lines table)
   department?: string;
   specialty?: string;
-  shiftLabel?: string;
+  /** FK to job_request_shifts. The free-text shiftLabel column was dropped
+   *  in migration 20260512a — display lookup goes via the shifts list for
+   *  the parent job_request. */
+  shiftId?: string;
   quoteDate?: string;
   endDate?: string;      // optional end date for shifts that span multiple days
   startTime?: string;
@@ -511,6 +514,16 @@ export type Specialty = {
   id: string;
   positionId: string;
   name: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
+/** Job-scoped shift master. Each job_request defines its own list of shifts;
+ *  lines reference shifts by FK. Replaced free-text shift_label in 20260512a. */
+export type JobRequestShift = {
+  id: string;
+  jobRequestId: string;
+  label: string;
   sortOrder: number;
   isActive: boolean;
 };

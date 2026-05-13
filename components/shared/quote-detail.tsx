@@ -21,7 +21,8 @@ import {
   createFinalDraftFromQuote,
   loadInvoices,
 } from "@/lib/store/invoices";
-import type { QuoteDraft } from "@/lib/store/types";
+import type { QuoteDraft, JobRequestShift } from "@/lib/store/types";
+import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { supabase } from "@/lib/supabase/client";
 
 export default function QuoteDetail({ id }: { id: string }) {
@@ -31,6 +32,7 @@ export default function QuoteDetail({ id }: { id: string }) {
   const [supersededBy, setSupersededBy] = useState<{ id: string; quoteNo: string | null } | null>(null);
   const [positionsById, setPositionsById] = useState<Map<string, string>>(new Map());
   const [specialtiesById, setSpecialtiesById] = useState<Map<string, { name: string; positionId: string }>>(new Map());
+  const [shifts, setShifts] = useState<JobRequestShift[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [signOpen, setSignOpen] = useState(false);
@@ -77,6 +79,8 @@ export default function QuoteDetail({ id }: { id: string }) {
         if (q.jobRequestId) {
           const j = await supabase.from("job_requests").select("*").eq("id", q.jobRequestId).maybeSingle();
           if (!cancelled) setJob(j.data ?? null);
+          const s = await loadShifts(q.jobRequestId, { includeInactive: true });
+          if (!cancelled) setShifts(s);
         }
         // Find the child quote that superseded this one, if any.
         const child = await supabase
@@ -306,7 +310,7 @@ export default function QuoteDetail({ id }: { id: string }) {
                 <td>{l.quoteDate || "—"}</td>
                 <td>{positionName}</td>
                 <td>{specialtyName}</td>
-                <td>{l.shiftLabel || "—"}</td>
+                <td>{(l.shiftId ? shifts.find((s) => s.id === l.shiftId)?.label : null) || "—"}</td>
                 <td>{l.qty}</td>
                 <td>{l.hours}</td>
                 <td>{l.holidayHours || 0}</td>

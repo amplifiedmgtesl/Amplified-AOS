@@ -25,7 +25,8 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { loadQuote } from "@/lib/store/quotes";
 import { loadCompanySettings, type CompanySettings } from "@/lib/store/company-settings";
-import type { QuoteDraft } from "@/lib/store/types";
+import type { QuoteDraft, JobRequestShift } from "@/lib/store/types";
+import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { supabase } from "@/lib/supabase/client";
 
 type LoadedJob = {
@@ -90,6 +91,7 @@ export default function QuotePdfView({ id }: { id: string }) {
   const [client, setClient] = useState<LoadedClient | null>(null);
   const [company, setCompany] = useState<CompanySettings | null>(null);
   const [positionsById, setPositionsById] = useState<Map<string, string>>(new Map());
+  const [shiftsById, setShiftsById] = useState<Map<string, string>>(new Map());
   const [specialtiesById, setSpecialtiesById] = useState<Map<string, { name: string; positionId: string }>>(new Map());
   /** Rate card profile + rows used for the appendix Rate Schedule. */
   const [rateScheduleRows, setRateScheduleRows] = useState<any[]>([]);
@@ -128,6 +130,12 @@ export default function QuotePdfView({ id }: { id: string }) {
         if (clientId) {
           const cRes = await supabase.from("clients").select("*").eq("id", clientId).maybeSingle();
           if (!cancelled) setClient(cRes.data as LoadedClient | null);
+        }
+
+        // Shift label lookup for printed lines.
+        if (q.jobRequestId) {
+          const s = await loadShifts(q.jobRequestId, { includeInactive: true });
+          if (!cancelled) setShiftsById(new Map(s.map((row: JobRequestShift) => [row.id, row.label])));
         }
 
         // Load the rate card profile + its rows for the appendix Rate Schedule.
@@ -326,7 +334,7 @@ export default function QuotePdfView({ id }: { id: string }) {
                     <tr key={i}>
                       <td>{positionName}</td>
                       <td>{specialtyName}</td>
-                      <td>{line.shiftLabel || ""}</td>
+                      <td>{(line.shiftId ? shiftsById.get(line.shiftId) : "") || ""}</td>
                       <td className="num">{crewCount}</td>
                       <td className="num">{isDayMode ? "—" : (line.hours || "")}</td>
                       {(detail === "full" || anyOt)      ? <td className="num">{line.otHours      || ""}</td> : null}
