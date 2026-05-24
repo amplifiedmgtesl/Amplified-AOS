@@ -30,6 +30,12 @@ import type { QuoteDraft, QuoteLine, Position, Specialty, JobRequestShift } from
 import { supabase } from "@/lib/supabase/client";
 import { computeLineTotal } from "@/lib/rates/line-calc";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
+import {
+  loadQuoteDays,
+  setQuoteDayHoliday,
+  holidayLookup,
+  type QuoteDay,
+} from "@/lib/storage/quote-days";
 
 /** OT-trigger options + their canonical rule strings.
  *  Mirror of rate-card-editor.tsx triggerLabel() so the picker on a quote
@@ -73,6 +79,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [shifts, setShifts] = useState<JobRequestShift[]>([]);
+  const [quoteDays, setQuoteDays] = useState<QuoteDay[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -130,6 +137,11 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
           const s = await loadShifts(q.jobRequestId, { includeInactive: true });
           if (!cancelled) setShifts(s);
         }
+
+        // Quote-days (per-date is_holiday snapshot). Snapshot was seeded at
+        // draft creation; load whatever's there for the UI to render.
+        const qds = await loadQuoteDays(q.id);
+        if (!cancelled) setQuoteDays(qds);
 
         // Build the day list. If no day rows, synthesize a single day from the job.
         const dayRows = (daysRes.data ?? []) as any[];
@@ -206,10 +218,15 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     return Math.round(n * 100) / 100;
   }
 
+  // Per-date holiday lookup. Map<YYYY-MM-DD, isHoliday>.
+  const holidayByDate = useMemo(() => holidayLookup(quoteDays), [quoteDays]);
+
   // Shared formula in lib/rates/line-calc.ts. As of 2026-05-12 lines carry
-  // explicit ST/OT/DT/holiday person-hours + crewCount.
+  // explicit ST/OT/DT/holiday person-hours + crewCount. As of 2026-05-24 the
+  // calc honors a day-level is_holiday flag (2× multiplier on base + OT + DT).
   function recomputeLineTotal(l: QuoteLine): number {
-    return computeLineTotal(l);
+    const dayIsHoliday = !!(l.quoteDate && holidayByDate.get(l.quoteDate));
+    return computeLineTotal(l, { dayIsHoliday });
   }
   function recomputeTotals(lines: QuoteLine[]): number {
     return lines.reduce((s, l) => s + (l.total || 0), 0);
@@ -276,6 +293,56 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     const newDeposit = money(newTotal * (pct / 100));
     setQuote({ ...quote, lines: newLines, total: newTotal, deposit: newDeposit });
     setAddLineOpen(null);
+  }
+
+  /** Toggle the holiday flag on a day. Persists to quote_days, then
+   *  recomputes every line in that day with the new H multiplier. The
+   *  existing autosave watcher will save the updated line totals. */
+  async function toggleDayHoliday(day: DayInfo, next: boolean) {
+    if (!quote) return;
+    // Optimistic UI: update state immediately so the badge flips even if the
+    // network is slow. If the upsert errors we revert in catch.
+    const prevDays = quoteDays;
+    const newDays: QuoteDay[] = prevDays.some((d) => d.quoteDate === day.date)
+      ? prevDays.map((d) => d.quoteDate === day.date ? { ...d, isHoliday: next } : d)
+      : [...prevDays, { id: "(pending)", quoteId: quote.id, quoteDate: day.date, isHoliday: next }];
+    setQuoteDays(newDays);
+
+    // Recompute totals for every line on this date with the new flag.
+    const newLines = quote.lines.map((l) => {
+      if (l.quoteDate !== day.date) return l;
+      const merged = { ...l };
+      merged.total = computeLineTotal(merged, { dayIsHoliday: next });
+      return merged;
+    });
+    const newTotal = money(recomputeOnce(newLines, day.date, next));
+    const pct = quote.depositPct ?? 0;
+    const newDeposit = money(newTotal * (pct / 100));
+    setQuote({ ...quote, lines: newLines, total: newTotal, deposit: newDeposit });
+
+    // Persist quote_days. setQuote above will trigger the autosave watcher
+    // for the quote+lines part.
+    try {
+      const persisted = await setQuoteDayHoliday(quote.id, day.date, next);
+      setQuoteDays((cur) => cur.map((d) => d.quoteDate === day.date ? persisted : d));
+    } catch (err: any) {
+      console.error("[quote-draft-editor] toggle holiday failed:", err);
+      setQuoteDays(prevDays);
+      alert(`Couldn't update holiday flag: ${err?.message ?? err}`);
+    }
+  }
+
+  /** Sum line totals using the explicit (date, flag) override for the
+   *  toggled day, so the running quote total reflects the in-flight flip
+   *  even before quoteDays state has settled. */
+  function recomputeOnce(lines: QuoteLine[], overrideDate: string, overrideFlag: boolean): number {
+    return lines.reduce((s, l) => {
+      if (l.quoteDate === overrideDate) {
+        return s + computeLineTotal(l, { dayIsHoliday: overrideFlag });
+      }
+      const flag = !!(l.quoteDate && holidayByDate.get(l.quoteDate));
+      return s + computeLineTotal(l, { dayIsHoliday: flag });
+    }, 0);
   }
 
   function copyFromPreviousDay(targetDay: DayInfo, prevDay: DayInfo) {
@@ -715,8 +782,13 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         const prevDay = dayIndex > 0 ? days[dayIndex - 1] : null;
         const isCollapsed = collapsedDays.has(day.id);
         const dayTotal = dayLines.reduce((s, { line }) => s + (line.total || 0), 0);
+        const dayIsHoliday = !!holidayByDate.get(day.date);
         return (
-          <div key={day.id} className="card" style={{ marginBottom: 12, background: "rgba(0,0,0,0.015)" }}>
+          <div key={day.id} className="card" style={{
+            marginBottom: 12,
+            background: dayIsHoliday ? "rgba(217, 70, 70, 0.06)" : "rgba(0,0,0,0.015)",
+            borderLeft: dayIsHoliday ? "3px solid #c0392b" : undefined,
+          }}>
             <div className="action-row" style={{ marginBottom: isCollapsed ? 0 : 8, alignItems: "baseline" }}>
               <button
                 onClick={() => toggleDayCollapsed(day.id)}
@@ -730,10 +802,28 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
               </button>
               <h4 style={{ margin: 0, flex: 1 }}>
                 {day.label}
+                {dayIsHoliday && (
+                  <span style={{
+                    marginLeft: 8, fontSize: 12, fontWeight: 600,
+                    background: "#c0392b", color: "#fff",
+                    padding: "2px 8px", borderRadius: 12,
+                  }}>🎄 Holiday · 2× rate</span>
+                )}
                 <span className="muted" style={{ marginLeft: 8, fontSize: 13, fontWeight: "normal" }}>
                   · {dayLines.length} line{dayLines.length === 1 ? "" : "s"} · ${dayTotal.toFixed(2)}
                 </span>
               </h4>
+              <label
+                style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}
+                title="Flag this day as a holiday — base, OT and DT for every line on this date bill at 2× rate."
+              >
+                <input
+                  type="checkbox"
+                  checked={dayIsHoliday}
+                  onChange={(e) => toggleDayHoliday(day, e.target.checked)}
+                />
+                🎄 Holiday
+              </label>
               {!isCollapsed && prevDay && dayLines.length === 0 ? (
                 <button className="secondary" onClick={() => copyFromPreviousDay(day, prevDay)} style={{ fontSize: 12 }}>
                   Copy from {prevDay.label}

@@ -18,6 +18,10 @@
 
 import { supabase } from "@/lib/supabase/client";
 import type { QuoteDraft, QuoteLine, JobRequest } from "./types";
+import {
+  snapshotQuoteDaysFromJob,
+  snapshotQuoteDaysFromParent,
+} from "@/lib/storage/quote-days";
 
 // ─── ID generation ───────────────────────────────────────────────────────────
 
@@ -490,6 +494,11 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
   draft.total = Math.round(rawTotal * 100) / 100;
 
   await persistDraft(draft);
+
+  // Holiday Phase 2: snapshot job_request_days.is_holiday → quote_days so the
+  // draft has its own editable holiday flags from the moment it's created.
+  await snapshotQuoteDaysFromJob(draft.id, jobRequestId);
+
   return draft;
 }
 
@@ -521,6 +530,12 @@ export async function createDraftFromRevision(parentQuoteId: string): Promise<Qu
   };
 
   await persistDraft(draft);
+
+  // Holiday Phase 2: revisions inherit holiday flags from the parent quote's
+  // quote_days snapshot so the revision's math starts identical to the
+  // parent. User can re-toggle on the draft.
+  await snapshotQuoteDaysFromParent(draft.id, parent.id);
+
   return draft;
 }
 
