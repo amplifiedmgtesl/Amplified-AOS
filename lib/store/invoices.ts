@@ -12,6 +12,11 @@
 
 import { supabase } from "@/lib/supabase/client";
 import type { InvoiceDraft, QuoteLine, QuoteDraft } from "./types";
+import {
+  snapshotInvoiceDaysFromQuote,
+  snapshotInvoiceDaysFromJob,
+  snapshotInvoiceDaysFromParent,
+} from "@/lib/storage/invoice-days";
 
 function newInvoiceId(): string {
   return `i-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -307,6 +312,12 @@ export async function createDepositDraftFromQuote(quoteId: string): Promise<Invo
   };
 
   await persistDraft(draft);
+
+  // Holiday Phase 3: seed invoice_days from source quote's quote_days.
+  // Deposits don't have line items so the holiday flag has no calc impact,
+  // but the rows are still useful as a Revise/audit anchor.
+  await snapshotInvoiceDaysFromQuote(draft.id, q.id);
+
   return draft;
 }
 
@@ -427,6 +438,12 @@ export async function createFinalDraftFromQuote(
   };
 
   await persistDraft(draft);
+
+  // Holiday Phase 3: snapshot invoice_days from source quote's quote_days so
+  // line totals on this final invoice apply the same holiday treatment that
+  // was in effect on the issued quote.
+  await snapshotInvoiceDaysFromQuote(draft.id, q.id);
+
   return draft;
 }
 
@@ -767,6 +784,11 @@ export async function reviseInvoice(invoiceId: string): Promise<InvoiceDraft> {
   };
 
   await persistDraft(draft);
+
+  // Holiday Phase 3: revision inherits parent invoice's holiday flagging so
+  // its line totals start identical to the parent. User can re-toggle.
+  await snapshotInvoiceDaysFromParent(draft.id, parent.id);
+
   return draft;
 }
 

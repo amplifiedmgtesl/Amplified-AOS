@@ -5,7 +5,7 @@
 
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -20,6 +20,12 @@ import type { InvoiceDraft, QuoteLine, Position, Specialty, JobRequestShift } fr
 import { supabase } from "@/lib/supabase/client";
 import { computeLineTotal, isDayModeLine } from "@/lib/rates/line-calc";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
+import {
+  loadInvoiceDays,
+  setInvoiceDayHoliday,
+  invoiceHolidayLookup,
+  type InvoiceDay,
+} from "@/lib/storage/invoice-days";
 
 export default function InvoiceDraftEditor({ id }: { id: string }) {
   const router = useRouter();
@@ -28,6 +34,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [shifts, setShifts] = useState<JobRequestShift[]>([]);
+  const [invoiceDays, setInvoiceDays] = useState<InvoiceDay[]>([]);
   const [rateCardName, setRateCardName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
@@ -70,6 +77,11 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         }
         setInvoice(q);
         setDepositAmountStr((q.subtotal ?? 0).toFixed(2));
+
+        // Load invoice_days (holiday flags per date). Seeded at draft creation
+        // by snapshotInvoiceDaysFromQuote / FromParent.
+        const ids = await loadInvoiceDays(q.id);
+        if (!cancelled) setInvoiceDays(ids);
 
         // Load positions + specialties for cascading dropdowns on line rows.
         // Mirrors the quote-draft-editor pattern: position picks filter the
@@ -148,16 +160,76 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     return Math.round(n * 100) / 100;
   }
 
-  // Defers to the shared formula in lib/rates/line-calc.ts. The line shape
-  // carries explicit ST/OT/DT/holiday person-hours and an explicit crewCount,
-  // so this is now just a thin wrapper for type-narrowing.
+  // Per-date holiday lookup. Map<YYYY-MM-DD, isHoliday>. Seeded from
+  // invoice_days; toggling a day in the Days panel mutates both this map
+  // and the underlying row.
+  const holidayByDate = useMemo(() => invoiceHolidayLookup(invoiceDays), [invoiceDays]);
+
+  // Defers to the shared formula in lib/rates/line-calc.ts. As of 2026-05-24
+  // the calc honors a day-level is_holiday flag (2× multiplier on base + OT + DT).
   function recomputeLineTotal(l: QuoteLine): number {
-    return computeLineTotal(l);
+    const dayIsHoliday = !!(l.quoteDate && holidayByDate.get(l.quoteDate));
+    return computeLineTotal(l, { dayIsHoliday });
   }
 
   function recomputeTotals(lines: QuoteLine[]): number {
     return lines.reduce((s, l) => s + (l.total || 0), 0);
   }
+
+  /** Toggle the holiday flag for a date on this invoice. Persists to
+   *  invoice_days, then recomputes every line on that date so totals stay
+   *  in step. Blocked by freeze trigger on frozen invoices (UI shouldn't
+   *  reach here — the editor only runs on drafts). */
+  async function toggleDayHoliday(date: string, next: boolean) {
+    if (!invoice) return;
+    const prevDays = invoiceDays;
+    const newDays: InvoiceDay[] = prevDays.some((d) => d.invoiceDate === date)
+      ? prevDays.map((d) => d.invoiceDate === date ? { ...d, isHoliday: next } : d)
+      : [...prevDays, { id: "(pending)", invoiceId: invoice.id, invoiceDate: date, isHoliday: next }];
+    setInvoiceDays(newDays);
+
+    // Recompute line totals for that date with the new flag.
+    const newLines = invoice.lines.map((l) => {
+      if (l.quoteDate !== date) return l;
+      const merged = { ...l };
+      merged.total = computeLineTotal(merged, { dayIsHoliday: next });
+      return merged;
+    });
+    const newSubtotal = money(
+      newLines.reduce((s, l) => {
+        if (l.quoteDate === date) return s + computeLineTotal(l, { dayIsHoliday: next });
+        const flag = !!(l.quoteDate && holidayByDate.get(l.quoteDate));
+        return s + computeLineTotal(l, { dayIsHoliday: flag });
+      }, 0),
+    );
+    setInvoice({
+      ...invoice,
+      lines: newLines,
+      subtotal: newSubtotal,
+      amountDue: money(newSubtotal - invoice.depositApplied - invoice.creditsApplied),
+    });
+
+    try {
+      const persisted = await setInvoiceDayHoliday(invoice.id, date, next);
+      setInvoiceDays((cur) => cur.map((d) => d.invoiceDate === date ? persisted : d));
+    } catch (err: any) {
+      console.error("[invoice-draft-editor] toggle holiday failed:", err);
+      setInvoiceDays(prevDays);
+      alert(`Couldn't update holiday flag: ${err?.message ?? err}`);
+    }
+  }
+
+  /** Build the sorted list of distinct dates present on this invoice's
+   *  lines. Drives the per-day Holiday panel. Deposits have no lines so
+   *  this is empty for them — the panel hides. */
+  const invoiceDates = useMemo(() => {
+    if (!invoice) return [];
+    const s = new Set<string>();
+    for (const l of invoice.lines) {
+      if (l.quoteDate) s.add(l.quoteDate);
+    }
+    return Array.from(s).sort();
+  }, [invoice]);
 
   function updateInvoice(patch: Partial<InvoiceDraft>) {
     if (!invoice) return;
@@ -459,6 +531,47 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
       {/* Lines — only for finals; deposits use the header amount above */}
       {invoice.invoiceType === "final" ? (
       <>
+      {/* Per-day holiday panel — toggling a date here applies a 2× multiplier
+          to base + OT + DT for every line on that date. Snapshotted from the
+          source quote's quote_days at draft creation. */}
+      {invoiceDates.length > 0 && (
+        <div className="card" style={{ marginBottom: 12, background: "rgba(0,0,0,0.015)" }}>
+          <h3 className="section-title" style={{ margin: 0, marginBottom: 8 }}>🎄 Holiday days</h3>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+            Flag any date as a holiday to bill base, OT, and DT for every line on that date at 2× rate.
+            Travel is not multiplied. Per-line <code>Hol Hrs</code> stays separate (manual override).
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {invoiceDates.map((date) => {
+              const isHoliday = !!holidayByDate.get(date);
+              const lineCount = invoice.lines.filter((l) => l.quoteDate === date).length;
+              return (
+                <label
+                  key={date}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13,
+                    padding: "4px 10px", borderRadius: 6, cursor: "pointer",
+                    background: isHoliday ? "#c0392b" : "#fff",
+                    color: isHoliday ? "#fff" : "inherit",
+                    border: `1px solid ${isHoliday ? "#c0392b" : "#d7c6aa"}`,
+                  }}
+                  title={`${lineCount} line${lineCount === 1 ? "" : "s"} on ${date}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isHoliday}
+                    onChange={(e) => toggleDayHoliday(date, e.target.checked)}
+                  />
+                  <span style={{ fontWeight: isHoliday ? 600 : 400 }}>
+                    {isHoliday ? "🎄 " : ""}{date}
+                  </span>
+                  <span style={{ opacity: 0.75, fontSize: 11 }}>· {lineCount}</span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
       <div className="action-row" style={{ alignItems: "baseline", marginBottom: 8 }}>
         <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Line items</h3>
         <button
