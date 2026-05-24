@@ -11,10 +11,12 @@ import {
   upsertAssignment,
   deleteAssignment,
 } from "@/lib/storage/job-request-assignments";
+import { loadShifts } from "@/lib/storage/job-request-shifts";
 import type {
   JobRequestDay,
   JobRequestAssignment,
   JobRequestCrewNeed,
+  JobRequestShift,
   Position,
   Specialty,
 } from "@/lib/store/types";
@@ -35,6 +37,7 @@ export function JobRequestCrewSection({
 }) {
   const [days, setDays] = useState<JobRequestDay[]>([]);
   const [assignmentsByDay, setAssignmentsByDay] = useState<Record<string, JobRequestAssignment[]>>({});
+  const [shifts, setShifts] = useState<JobRequestShift[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [crewNeedsByDay, setCrewNeedsByDay] = useState<Record<string, JobRequestCrewNeed[]>>({});
@@ -59,15 +62,17 @@ export function JobRequestCrewSection({
   }, []);
 
   async function reload() {
-    if (!jobRequestId) { setDays([]); setAssignmentsByDay({}); setCrewNeedsByDay({}); setLoading(false); return; }
+    if (!jobRequestId) { setDays([]); setAssignmentsByDay({}); setCrewNeedsByDay({}); setShifts([]); setLoading(false); return; }
     setLoading(true);
     try {
       const ds = await loadJobRequestDays(jobRequestId);
       setDays(ds);
-      const [allAsg, allNeeds] = await Promise.all([
+      const [allAsg, allNeeds, shiftList] = await Promise.all([
         loadAssignmentsForRequest(jobRequestId),
         loadCrewNeedsForRequest(jobRequestId),
+        loadShifts(jobRequestId),
       ]);
+      setShifts(shiftList);
       const grouped: Record<string, JobRequestAssignment[]> = {};
       for (const d of ds) grouped[d.id] = [];
       for (const a of allAsg) {
@@ -339,6 +344,7 @@ export function JobRequestCrewSection({
                             <th style={{ textAlign: "left" }}>Employee</th>
                             <th style={{ textAlign: "left" }}>Position</th>
                             <th style={{ textAlign: "left" }}>Specialty</th>
+                            {shifts.length >= 2 && <th style={{ textAlign: "left", width: 120 }}>Shift</th>}
                             <th style={{ textAlign: "left", width: 90 }}>Confirmed</th>
                             <th style={{ textAlign: "left" }}>Notes</th>
                             <th style={{ width: 30 }}></th>
@@ -379,6 +385,19 @@ export function JobRequestCrewSection({
                                     {spcOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                                   </select>
                                 </td>
+                                {shifts.length >= 2 && (
+                                  <td>
+                                    <select
+                                      disabled={disabled}
+                                      value={a.shiftId ?? ""}
+                                      onChange={(e) => patchAssignment(d.id, a, { shiftId: e.target.value || undefined })}
+                                      title="Optional. Leave blank for general/unspecified."
+                                    >
+                                      <option value="">— Any —</option>
+                                      {shifts.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                    </select>
+                                  </td>
+                                )}
                                 <td>
                                   <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                                     <input

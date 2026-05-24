@@ -10,11 +10,13 @@ import {
   upsertJobRequestCrewNeed,
   deleteJobRequestCrewNeed,
 } from "@/lib/storage/job-request-days";
+import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { timeOptions } from "@/lib/store/timekeeping";
 import { pickRateCardForJob } from "@/lib/store/quotes";
 import type {
   JobRequestDay,
   JobRequestCrewNeed,
+  JobRequestShift,
   Position,
   Specialty,
 } from "@/lib/store/types";
@@ -61,6 +63,7 @@ export function JobRequestDaysSection({
 }) {
   const [days, setDays] = useState<JobRequestDay[]>([]);
   const [crewByDayId, setCrewByDayId] = useState<Record<string, JobRequestCrewNeed[]>>({});
+  const [shifts, setShifts] = useState<JobRequestShift[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   /** Set of specialty_id values covered by the applicable rate card.
@@ -151,12 +154,16 @@ export function JobRequestDaysSection({
   }, [jobRequestId, jobStartDate]);
 
   async function reload() {
-    if (!jobRequestId) { setDays([]); setCrewByDayId({}); setLoading(false); return; }
+    if (!jobRequestId) { setDays([]); setCrewByDayId({}); setShifts([]); setLoading(false); return; }
     setLoading(true);
     try {
-      const ds = await loadJobRequestDays(jobRequestId);
+      const [ds, allCrew, shiftList] = await Promise.all([
+        loadJobRequestDays(jobRequestId),
+        loadCrewNeedsForRequest(jobRequestId),
+        loadShifts(jobRequestId),
+      ]);
       setDays(ds);
-      const allCrew = await loadCrewNeedsForRequest(jobRequestId);
+      setShifts(shiftList);
       const grouped: Record<string, JobRequestCrewNeed[]> = {};
       for (const d of ds) grouped[d.id] = [];
       for (const c of allCrew) {
@@ -208,6 +215,7 @@ export function JobRequestDaysSection({
       eventDate: proposed,
       sortOrder: days.length,
       expectedHours: 10,
+      isHoliday: false,
     };
     try {
       const persisted = await upsertJobRequestDay(newDay);
@@ -238,6 +246,7 @@ export function JobRequestDaysSection({
   }
   function daySummary(d: JobRequestDay, crewCount: number): string {
     const bits: string[] = [];
+    if (d.isHoliday) bits.push("🎄 Holiday (2×)");
     if (d.callTime) bits.push(`call ${d.callTime}`);
     if (d.startTime || d.endTime) bits.push(`${d.startTime || "?"}–${d.endTime || "?"}`);
     if (d.expectedHours) bits.push(`${d.expectedHours}h`);
@@ -410,7 +419,7 @@ export function JobRequestDaysSection({
                 </button>
                 {isExpanded && (
                 <div style={{ padding: 10 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "130px 110px 110px 110px 90px 1fr 80px", gap: 8, alignItems: "end" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "130px 110px 110px 110px 90px 1fr 110px 80px", gap: 8, alignItems: "end" }}>
                   <div>
                     <small>Date</small>
                     <input
@@ -456,6 +465,20 @@ export function JobRequestDaysSection({
                       placeholder="e.g. Load-in day"
                     />
                   </div>
+                  <div style={{ alignSelf: "end", paddingBottom: 6 }}>
+                    <label
+                      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, cursor: disabled ? "not-allowed" : "pointer" }}
+                      title="Flag this day as a holiday — all work hours bill at 2× the regular rate when this quote/invoice is generated."
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={disabled}
+                        checked={!!d.isHoliday}
+                        onChange={(e) => patchDay(d, { isHoliday: e.target.checked })}
+                      />
+                      🎄 Holiday
+                    </label>
+                  </div>
                   <div className="action-row" style={{ alignItems: "end", gap: 4 }}>
                     {prev && (
                       <button
@@ -498,6 +521,7 @@ export function JobRequestDaysSection({
                         <tr>
                           <th style={{ textAlign: "left" }}>Position</th>
                           <th style={{ textAlign: "left" }}>Specialty</th>
+                          {shifts.length >= 2 && <th style={{ textAlign: "left", width: 120 }}>Shift</th>}
                           <th style={{ textAlign: "left", width: 60 }}>Qty</th>
                           <th style={{ textAlign: "left", width: 70 }}>Hours</th>
                           <th style={{ textAlign: "right", width: 80 }}>Total Hrs</th>
@@ -540,6 +564,19 @@ export function JobRequestDaysSection({
                                   {spcOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                               </td>
+                              {shifts.length >= 2 && (
+                                <td>
+                                  <select
+                                    disabled={disabled}
+                                    value={c.shiftId ?? ""}
+                                    onChange={(e) => patchCrewNeed(d.id, c, { shiftId: e.target.value || undefined })}
+                                    title="Optional. Leave blank for general/unspecified."
+                                  >
+                                    <option value="">— Any —</option>
+                                    {shifts.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                  </select>
+                                </td>
+                              )}
                               <td>
                                 <input
                                   type="number"

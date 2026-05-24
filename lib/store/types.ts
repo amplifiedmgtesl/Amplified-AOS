@@ -353,6 +353,9 @@ export type JobRequestDay = {
   expectedHours?: number;
   notes?: string;
   sortOrder: number;
+  /** Operator-flagged holiday. Source of truth; snapshotted into quote_days
+   *  and invoice_days on draft creation (Phase 2/3). 2.0× rate at calc time. */
+  isHoliday: boolean;
 };
 
 export type JobRequestCrewNeed = {
@@ -360,6 +363,9 @@ export type JobRequestCrewNeed = {
   jobRequestDayId: string;
   positionId?: string;
   specialtyId?: string;
+  /** Optional shift scope. NULL = "any shift / unspecified" (the default when
+   *  a job has no defined shifts). Shift UI is hidden in single-shift jobs. */
+  shiftId?: string;
   quantity: number;
   /** Hours for this position on this day. Defaults from the day's expected_hours
    *  on create, but can be overridden per row (e.g., 4 hr audio call vs 10 hr
@@ -379,6 +385,9 @@ export type JobRequestAssignment = {
   employeeKey?: string;
   positionId?: string;
   specialtyId?: string;
+  /** Optional shift scope. NULL = "any shift / unspecified". An employee can
+   *  appear once per (day, shift) — DB unique index enforces. */
+  shiftId?: string;
   confirmed: boolean;
   notes?: string;
   sortOrder: number;
