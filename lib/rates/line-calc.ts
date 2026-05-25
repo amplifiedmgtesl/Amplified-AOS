@@ -9,9 +9,11 @@
  *
  * As of 2026-05-25 (Holiday cleanup) holiday treatment is purely day-level,
  * sourced from quote_days / invoice_days. When the parent day is flagged
- * holiday, ALL work bills at 2× base — OT/DT distinctions don't apply
- * (Connor: "everything at holiday rate, period"). The per-line
- * `holiday_hours` column was dropped as redundant.
+ * holiday, EVERY hour billable on the line bills at 2× base rate — the
+ * holiday flat rate supersedes any OT/DT premium structure (Connor:
+ * "everything at holiday rate, period"). OT and DT hours stay in their
+ * own buckets on screen (so operator can read across without moving data)
+ * but bill at base × 2 just like ST hours.
  *
  * FORMULA
  *
@@ -28,22 +30,28 @@
  *           + travel
  *
  *   Holiday day mode:
- *     total = HOLIDAY_MULTIPLIER × crewCount × baseDay  +  travel
+ *     total = H × (crewCount × baseDay)
+ *           + H × (otHours + dtHours) × baseHourly
+ *           + travel
  *
  *   Holiday hourly mode:
- *     total = HOLIDAY_MULTIPLIER × hours × baseHourly   +  travel
+ *     total = H × (hours + otHours + dtHours) × baseHourly
+ *           + travel
  *
- *   OT/DT terms vanish entirely on holiday days (operator can't enter them
- *   — the editor disables those inputs and auto-zeros otHours / dtHours
- *   whenever the day flag is on).
+ *   Where H = HOLIDAY_MULTIPLIER (= 2.0).
+ *
+ *   Key holiday rule: OT/DT hours bill at `baseHourly × H` (not `otRate × H`
+ *   or `dtRate × H`) — the holiday flat rate supersedes the OT/DT premium.
+ *   This way 10 ST + 2 OT + 3 DT on a holiday all bill at the same hourly
+ *   rate, customer pays for 15 hours × base × 2.
  *
  * SEMANTICS
  *
  *   - crewCount = explicit worker count. Multiplier on day-rate base ONLY;
  *     informational on hourly lines (hours is already total person-hours).
  *   - hours = total ST person-hours. 0 on day-rate lines (day rate covers ST).
- *   - otHours / dtHours = total person-hours billed at OT/DT rates (only
- *     applicable to non-holiday days).
+ *   - otHours / dtHours = total person-hours billed at OT/DT rates on
+ *     non-holiday days; at base × 2 on holiday days.
  *   - travel = flat per line, regardless of crew count or holiday status.
  *
  *   Mode detection: rateMode='day' OR (baseDay>0 AND hours=0 AND rateMode!='hourly').
@@ -87,8 +95,13 @@ export function computeLineTotal(
     : hours     * baseHourly;
 
   if (opts.dayIsHoliday) {
-    // Holiday rule: flat 2× base, OT/DT do NOT stack. Travel pass-through.
-    return Math.round((HOLIDAY_MULTIPLIER * base + travel) * 100) / 100;
+    // Holiday rule: every billable hour at base × 2. OT/DT stay in their
+    // own buckets on screen but bill at baseHourly (not otRate/dtRate),
+    // so 10 ST + 2 OT + 3 DT on a holiday = 15 hrs × baseHourly × 2.
+    // Day-mode lines: day rate × 2 covers the day, plus any overflow
+    // OT/DT hours at baseHourly × 2.
+    const extraHoursAtBase = (otHours + dtHours) * baseHourly;
+    return Math.round((HOLIDAY_MULTIPLIER * (base + extraHoursAtBase) + travel) * 100) / 100;
   }
 
   const total = base

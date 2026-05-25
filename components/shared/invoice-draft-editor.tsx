@@ -542,7 +542,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           <h3 className="section-title" style={{ margin: 0, marginBottom: 8 }}>🎄 Holiday days</h3>
           <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
             Flag any date as a holiday to bill base, OT, and DT for every line on that date at 2× rate.
-            Travel is not multiplied. On holiday days, OT/DT values are preserved but not billed — all hours bill at 2× base. Toggle holiday off to restore OT/DT math.
+            Travel is not multiplied. On holiday days, every billable hour (ST + OT + DT) bills at base × 2 — OT/DT premium rates are ignored but the hours still count. Toggle holiday off to restore OT/DT premium math.
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
             {invoiceDates.map((date) => {
@@ -739,8 +739,8 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                         value={l.otHours || 0}
                         onChange={(e) => updateLine(i, { otHours: parseFloat(e.target.value) || 0 })}
                         step="0.5"
-                        style={{ width: 60, opacity: lineDayIsHoliday ? 0.55 : 1 }}
-                        title={lineDayIsHoliday ? "Holiday active — value preserved but not billed. Toggle holiday off to use OT in math." : "Total OT person-hours billed at $/OT"}
+                        style={{ width: 60, opacity: lineDayIsHoliday ? 0.7 : 1 }}
+                        title={lineDayIsHoliday ? "Holiday active — these hours bill at base × 2 (OT premium not applied). Stays editable so you can adjust the breakdown without moving data between buckets." : "Total OT person-hours billed at $/OT"}
                       />
                     </td>
                     <td>
@@ -749,8 +749,8 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                         value={l.dtHours || 0}
                         onChange={(e) => updateLine(i, { dtHours: parseFloat(e.target.value) || 0 })}
                         step="0.5"
-                        style={{ width: 60, opacity: lineDayIsHoliday ? 0.55 : 1 }}
-                        title={lineDayIsHoliday ? "Holiday active — value preserved but not billed. Toggle holiday off to use DT in math." : "Total DT person-hours billed at $/DT"}
+                        style={{ width: 60, opacity: lineDayIsHoliday ? 0.7 : 1 }}
+                        title={lineDayIsHoliday ? "Holiday active — these hours bill at base × 2 (DT premium not applied). Stays editable so you can adjust the breakdown without moving data between buckets." : "Total DT person-hours billed at $/DT"}
                       />
                     </td>
                     <td>
@@ -788,8 +788,8 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                         value={l.otRate}
                         onChange={(e) => updateLine(i, { otRate: parseFloat(e.target.value) || 0 })}
                         step="0.01"
-                        style={{ width: 65, opacity: lineDayIsHoliday ? 0.55 : 1 }}
-                        title={lineDayIsHoliday ? "Holiday active — rate preserved but not used in math." : undefined}
+                        style={{ width: 65, opacity: lineDayIsHoliday ? 0.7 : 1 }}
+                        title={lineDayIsHoliday ? "Holiday active — OT rate not used. All hours bill at base × 2." : undefined}
                       />
                     </td>
                     <td>
@@ -798,8 +798,8 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                         value={l.dtRate}
                         onChange={(e) => updateLine(i, { dtRate: parseFloat(e.target.value) || 0 })}
                         step="0.01"
-                        style={{ width: 65, opacity: lineDayIsHoliday ? 0.55 : 1 }}
-                        title={lineDayIsHoliday ? "Holiday active — rate preserved but not used in math." : undefined}
+                        style={{ width: 65, opacity: lineDayIsHoliday ? 0.7 : 1 }}
+                        title={lineDayIsHoliday ? "Holiday active — DT rate not used. All hours bill at base × 2." : undefined}
                       />
                     </td>
                     <td>
