@@ -80,7 +80,7 @@ export default function ClientMaintenance() {
         .select("id, name, updated_at")
         .eq("client_id", selectedId).order("name"),
       supabase.from("calendar_events")
-        .select("id, event_name, start_date, start_time, end_date, status, linked_job_request_id")
+        .select("id, event_name, start_date, start_time, end_date, status")
         .eq("client_id", selectedId).eq("is_deleted", false)
         .order("start_date", { ascending: false }),
       supabase.from("invoices")
@@ -794,47 +794,30 @@ export default function ClientMaintenance() {
                     </table>
               )}
 
-              {activeTab === "calendar_events" && (() => {
-                if (tabData.calendarEvents.length === 0) {
-                  return <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No calendar events.</div>;
-                }
-                const { groups, orphans } = groupByJob(tabData.calendarEvents, (e: any) => e.linked_job_request_id);
-                const CAL_COLS = 4;
-                const renderRow = (r: any) => (
-                  <tr key={r.id} style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-                    <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{r.start_date ?? "—"}{r.end_date && r.end_date !== r.start_date ? ` – ${r.end_date}` : ""}</td>
-                    <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{r.start_time ?? "—"}</td>
-                    <td style={{ padding: "5px 8px 5px 0" }}>{r.event_name ?? "—"}</td>
-                    <td style={{ padding: "5px 8px 5px 0", color: "#888" }}>{r.status ?? "—"}</td>
-                  </tr>
-                );
-                return (
-                  <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-                        <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Date</th>
-                        <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Time</th>
-                        <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Event</th>
-                        <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {groups.map(({ job, items }) => (
-                        <React.Fragment key={job.id}>
-                          {jobHeaderRow(job, items.length, CAL_COLS)}
-                          {items.map(renderRow)}
-                        </React.Fragment>
-                      ))}
-                      {orphans.length > 0 && (
-                        <React.Fragment key="orphans">
-                          {orphanHeaderRow(orphans.length, CAL_COLS)}
-                          {orphans.map(renderRow)}
-                        </React.Fragment>
-                      )}
-                    </tbody>
-                  </table>
-                );
-              })()}
+              {activeTab === "calendar_events" && (
+                tabData.calendarEvents.length === 0
+                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No calendar events.</div>
+                  : <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Date</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Time</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Event</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tabData.calendarEvents.map((r) => (
+                          <tr key={r.id} style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{r.start_date ?? "—"}{r.end_date && r.end_date !== r.start_date ? ` – ${r.end_date}` : ""}</td>
+                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{r.start_time ?? "—"}</td>
+                            <td style={{ padding: "5px 8px 5px 0" }}>{r.event_name ?? "—"}</td>
+                            <td style={{ padding: "5px 8px 5px 0", color: "#888" }}>{r.status ?? "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+              )}
 
               {activeTab === "invoices" && (() => {
                 if (tabData.invoices.length === 0) return <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No invoices.</div>;
