@@ -143,7 +143,7 @@ async function _loadAll() {
     supabase.from("job_requests").select("*"),
     supabase.from("job_sheets").select("*"),
     supabase.from("job_sheet_workers").select("*").order("sort_order"),
-    supabase.from("timesheets").select("id, job_sheet_id, title, hide_pay_columns"),
+    supabase.from("timesheets").select("id, job_sheet_id, job_id, title, hide_pay_columns"),
     supabase.from("timesheet_entries").select("*").not("timesheet_id", "is", null),
     fetchAllEmployees(),
     supabase.from("job_costing_drafts").select("*"),
@@ -549,6 +549,7 @@ export interface StaffEntryReviewRow {
   employeeKey: string | null;
   userId: string | null;
   jobSheetId: string | null;
+  jobId: string | null;          // Phase 1: canonical job_requests link
   timesheetId: string | null;
   jobClient: string;
   jobEventName: string;
@@ -574,7 +575,7 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
     .from("timesheet_entries")
     .select(`
       id, work_date, position, first_name, last_name, email, employee_key, user_id,
-      job_sheet_id, timesheet_id, time_in1, time_out1, time_in2, time_out2,
+      job_sheet_id, job_id, timesheet_id, time_in1, time_out1, time_in2, time_out2,
       meal_break_1_minutes, meal_break_2_minutes,
       std_hours, ot_hours, dt_hours, total_hours, total_pay,
       status, notes, updated_at
@@ -605,6 +606,7 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
     employeeKey: r.employee_key ?? null,
     userId: r.user_id ?? null,
     jobSheetId: r.job_sheet_id ?? null,
+    jobId: r.job_id ?? null,
     timesheetId: r.timesheet_id ?? null,
     jobClient: r.job_sheet_id ? jobMap.get(r.job_sheet_id)?.client ?? "" : "",
     jobEventName: r.job_sheet_id ? jobMap.get(r.job_sheet_id)?.eventName ?? "" : "",
@@ -661,6 +663,82 @@ export async function ensureTimesheetForJob(jobSheetId: string, jobTitle?: strin
     .from("timesheets")
     .upsert({ id, job_sheet_id: jobSheetId, title: jobTitle || "Timekeeping Sheet", hide_pay_columns: false }, { onConflict: "id" });
   if (error) { console.error("[db] ensureTimesheetForJob:", error); throw error; }
+  return id;
+}
+
+// Phase 1: canonical job_id-anchored helpers. Prefer these over the
+// jobSheetId-named twins for any new code path.
+
+export async function getPendingStaffEntriesByJobId(jobId: string): Promise<import("./types").TimeEntry[]> {
+  const { data, error } = await supabase
+    .from("timesheet_entries")
+    .select("*")
+    .eq("job_id", jobId)
+    .is("timesheet_id", null)
+    .eq("status", "submitted")
+    .order("updated_at");
+  if (error) { console.error("[db] getPendingStaffEntriesByJobId:", error); return []; }
+  return (data ?? []).map(rowToTimeEntry);
+}
+
+export async function getApprovedEntriesForJobByJobId(jobId: string): Promise<import("./types").TimeEntry[]> {
+  const { data, error } = await supabase
+    .from("timesheet_entries")
+    .select("*")
+    .eq("job_id", jobId)
+    .eq("status", "approved");
+  if (error) { console.error("[db] getApprovedEntriesForJobByJobId:", error); return []; }
+  return (data ?? []).map(rowToTimeEntry);
+}
+
+export async function getEntryCountsForJobByJobId(jobId: string): Promise<{ approved: number; pending: number }> {
+  const [approved, pending] = await Promise.all([
+    supabase.from("timesheet_entries").select("id", { count: "exact", head: true }).eq("job_id", jobId).eq("status", "approved"),
+    supabase.from("timesheet_entries").select("id", { count: "exact", head: true }).eq("job_id", jobId).or("status.eq.submitted,status.is.null"),
+  ]);
+  if (approved.error) console.error("[db] getEntryCountsForJobByJobId (approved):", approved.error);
+  if (pending.error)  console.error("[db] getEntryCountsForJobByJobId (pending):", pending.error);
+  return { approved: approved.count ?? 0, pending: pending.count ?? 0 };
+}
+
+/**
+ * Create-or-fetch a timesheet for a job_request.
+ *
+ * Lookup order:
+ *   1. Existing timesheet with this job_id (handles backfilled rows that
+ *      still carry their legacy `timesheet-jobsheet-…` id).
+ *   2. Otherwise insert a new row with a job_id-derived id.
+ *
+ * The legacy `ensureTimesheetForJob(jobSheetId, …)` is kept for back-compat
+ * by callers that haven't moved to the jobId-anchored API yet.
+ */
+export async function ensureTimesheetForJobRequest(
+  jobId: string,
+  opts: { jobTitle?: string; jobSheetId?: string | null } = {},
+): Promise<string> {
+  // 1. Reuse an existing timesheet already linked to this job.
+  const existing = await supabase
+    .from("timesheets")
+    .select("id")
+    .eq("job_id", jobId)
+    .limit(1)
+    .maybeSingle();
+  if (existing.error) { console.error("[db] ensureTimesheetForJobRequest lookup:", existing.error); }
+  if (existing.data?.id) return existing.data.id;
+
+  // 2. None yet — create one. Stable id derived from job_id.
+  const id = `timesheet-job-${jobId}`;
+  const payload: Record<string, unknown> = {
+    id,
+    job_id: jobId,
+    title: opts.jobTitle || "Timekeeping Sheet",
+    hide_pay_columns: false,
+  };
+  if (opts.jobSheetId) payload.job_sheet_id = opts.jobSheetId;
+  const { error } = await supabase
+    .from("timesheets")
+    .upsert(payload, { onConflict: "id" });
+  if (error) { console.error("[db] ensureTimesheetForJobRequest:", error); throw error; }
   return id;
 }
 
@@ -725,7 +803,13 @@ function syncTimesheet(t: Timesheet) {
   // Upsert header (no rows column)
   supabase
     .from("timesheets")
-    .upsert({ id: t.id, job_sheet_id: t.jobSheetId, title: t.title, hide_pay_columns: t.hidePayColumns })
+    .upsert({
+      id: t.id,
+      job_sheet_id: t.jobSheetId,
+      job_id: t.jobId ?? null,
+      title: t.title,
+      hide_pay_columns: t.hidePayColumns,
+    })
     .then(({ error }) => { if (error) console.error("[db] syncTimesheet header error:", error); });
 
   // Sync only AOS-managed entries (user_id IS NULL).
@@ -735,7 +819,9 @@ function syncTimesheet(t: Timesheet) {
   const aosManagedRows = t.rows.filter((r) => !r.userId);
 
   if (aosManagedRows.length > 0) {
-    const entryRows = aosManagedRows.map((r, idx) => timesheetEntryToRow(r, t.id, t.jobSheetId, idx));
+    const entryRows = aosManagedRows.map(
+      (r, idx) => timesheetEntryToRow(r, t.id, t.jobSheetId, t.jobId ?? null, idx)
+    );
     supabase
       .from("timesheet_entries")
       .upsert(entryRows, { onConflict: "id" })
@@ -1078,6 +1164,7 @@ function rowToTimesheet(r: any, entries: any[]): Timesheet {
   return {
     id: r.id,
     jobSheetId: r.job_sheet_id ?? "",
+    jobId: r.job_id ?? null,
     title: r.title ?? "",
     hidePayColumns: r.hide_pay_columns ?? false,
     rows: entries
@@ -1116,14 +1203,22 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     status: r.status ?? null,
     sortOrder: r.sort_order ?? 0,
     createdAt: r.created_at ?? undefined,
+    jobId: r.job_id ?? null,
   };
 }
 
-function timesheetEntryToRow(e: import("./types").TimeEntry, timesheetId: string, jobSheetId: string, sortOrder: number) {
+function timesheetEntryToRow(
+  e: import("./types").TimeEntry,
+  timesheetId: string,
+  jobSheetId: string,
+  jobId: string | null,
+  sortOrder: number,
+) {
   return {
     id: e.id,
     timesheet_id: timesheetId,
     job_sheet_id: jobSheetId,
+    job_id: jobId,
     employee_key: e.employeeKey ?? null,
     user_id: e.userId ?? null,
     position: e.position,

@@ -3,10 +3,29 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { printWithTitle } from "@/lib/print-with-title";
-import { getActiveJobSheet, loadJobSheets, getTimesheetByJobSheetId, upsertTimesheet, positionNames, loadEmployees, getPendingStaffEntries, approveStaffEntry, rejectStaffEntry, setEntryApproved } from "@/lib/store/app-store";
+import {
+  getActiveJob, setActiveJob,
+  loadJobRequests, loadJobSheets, loadTimesheets,
+  getTimesheetByJobId, getTimesheetByJobSheetId,
+  ensureTimesheetForJobRequest,
+  upsertTimesheet, positionNames, loadEmployees,
+  getPendingStaffEntriesByJobId,
+  approveStaffEntry, rejectStaffEntry, setEntryApproved,
+} from "@/lib/store/app-store";
 import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
 import { parseMinutes } from "@/lib/time-utils";
-import type { EmployeeRecord, TimeEntry, Timesheet } from "@/lib/store/types";
+import type { EmployeeRecord, JobRequest, JobSheet, TimeEntry, Timesheet } from "@/lib/store/types";
+
+// Phase 1: picker selection encodes which world we're in.
+//   "job:<jobId>"        — canonical, anchored on job_requests
+//   "legacy:<jobSheetId>" — pre-rewrite timesheet whose job_id couldn't be backfilled
+type PickerValue = "" | `job:${string}` | `legacy:${string}`;
+
+function parsePicker(v: PickerValue): { kind: "none" | "job" | "legacy"; key: string } {
+  if (!v) return { kind: "none", key: "" };
+  if (v.startsWith("job:")) return { kind: "job", key: v.slice(4) };
+  return { kind: "legacy", key: v.slice(7) };
+}
 
 const TIMES = timeOptions();
 const RATES = rateOptions();
@@ -103,10 +122,26 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   const POSITIONS = positionNames();
   const [refreshKey, setRefreshKey] = useState(0);
   const sheets = useMemo(() => loadJobSheets(), [refreshKey]);
+  const jobRequests = useMemo(() => loadJobRequests(), [refreshKey]);
+  const timesheets = useMemo(() => loadTimesheets(), [refreshKey]);
   const employees = useMemo(() => loadEmployees(), [refreshKey]);
   const [pendingEntries, setPendingEntries] = useState<import("@/lib/store/types").TimeEntry[]>([]);
-  const activeSheetId = getActiveJobSheet() || sheets[0]?.id || "";
-  const [jobSheetId, setJobSheetId] = useState(activeSheetId);
+
+  // Picker state — encodes both kinds of selection (canonical job vs. legacy job_sheet).
+  // Initial value: prefer the last picked job (Phase 1 sticky state). If none, default
+  // to the most recent job_request that already has a timesheet linked to it.
+  const initialPicker: PickerValue = (() => {
+    const lastJobId = getActiveJob();
+    if (lastJobId && jobRequests.some((j) => j.id === lastJobId)) return `job:${lastJobId}`;
+    const firstLinked = timesheets.find((t) => t.jobId);
+    if (firstLinked?.jobId) return `job:${firstLinked.jobId}`;
+    const firstLegacy = timesheets.find((t) => !t.jobId);
+    if (firstLegacy?.jobSheetId) return `legacy:${firstLegacy.jobSheetId}`;
+    return "";
+  })();
+  const [picker, setPicker] = useState<PickerValue>(initialPicker);
+  const { kind: pickerKind, key: pickerKey } = parsePicker(picker);
+
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
   const [dayFilter, setDayFilter] = useState<string>("all");
   // Per-day collapse state on the editing view. Print mode forces all expanded
@@ -116,16 +151,48 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   const allRows = useMemo(() => timesheet?.rows ?? [], [timesheet]);
 
   useEffect(() => {
-    if (!jobSheetId) return;
-    const linked = getTimesheetByJobSheetId(jobSheetId);
-    const sheet = sheets.find((s) => s.id === jobSheetId);
-    if (linked) {
-      setTimesheet(linked);
-    } else if (sheet) {
-      setTimesheet({ id: `timesheet-${sheet.id}`, jobSheetId: sheet.id, title: sheet.title, hidePayColumns: false, rows: [] });
+    if (pickerKind === "none") { setTimesheet(null); return; }
+
+    if (pickerKind === "job") {
+      const jobId = pickerKey;
+      const jr = jobRequests.find((j) => j.id === jobId);
+      if (!jr) return;
+      // Remember the user's last-picked job for next visit
+      setActiveJob(jobId);
+
+      const linked = getTimesheetByJobId(jobId);
+      if (linked) {
+        setTimesheet(linked);
+      } else {
+        // Lazily create a timesheet in the DB so staff approval has somewhere
+        // to land. The DB call de-dupes if a row already exists.
+        const title = `${jr.jobNo ? jr.jobNo + " — " : ""}${jr.eventName || "Job"}`;
+        ensureTimesheetForJobRequest(jobId, { jobTitle: title }).then((id) => {
+          setTimesheet({
+            id, jobId, jobSheetId: "", title,
+            hidePayColumns: false, rows: [],
+          });
+        }).catch((e) => console.error("[timekeeping] ensure failed:", e));
+      }
+    } else if (pickerKind === "legacy") {
+      const jobSheetId = pickerKey;
+      const linked = getTimesheetByJobSheetId(jobSheetId);
+      const sheet = sheets.find((s) => s.id === jobSheetId);
+      if (linked) {
+        setTimesheet(linked);
+      } else if (sheet) {
+        setTimesheet({
+          id: `timesheet-${sheet.id}`,
+          jobSheetId: sheet.id,
+          jobId: null,
+          title: sheet.title,
+          hidePayColumns: false,
+          rows: [],
+        });
+      }
     }
     setDayFilter("all");
-  }, [jobSheetId, refreshKey]);
+  }, [picker, refreshKey]);
 
   // Group rows by workDate (with a "no-date" bucket for blank ones), days
   // sorted ascending. The editing UI renders one collapsible card per day.
@@ -164,11 +231,37 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   function collapseAll() { setCollapsedDays(new Set(dayGroups.map(([d]) => d))); }
 
   useEffect(() => {
-    if (!jobSheetId) { setPendingEntries([]); return; }
-    getPendingStaffEntries(jobSheetId).then(setPendingEntries);
-  }, [jobSheetId, refreshKey]);
+    if (pickerKind === "job") {
+      getPendingStaffEntriesByJobId(pickerKey).then(setPendingEntries);
+    } else if (pickerKind === "legacy") {
+      // Legacy job_sheets: staff entries still keyed on job_sheet_id today.
+      // Phase 2 retires this branch entirely.
+      import("@/lib/store/app-store").then(({ getPendingStaffEntries }) =>
+        getPendingStaffEntries(pickerKey).then(setPendingEntries)
+      );
+    } else {
+      setPendingEntries([]);
+    }
+  }, [picker, refreshKey]);
 
-  const currentSheet = sheets.find((s) => s.id === jobSheetId) || null;
+  // The selected job_request (canonical) — drives header display in "job" mode.
+  const currentJob: JobRequest | null = useMemo(
+    () => (pickerKind === "job" ? jobRequests.find((j) => j.id === pickerKey) || null : null),
+    [picker, jobRequests],
+  );
+  // The job_sheet for legacy mode (and an auxiliary lookup for "Add Crew from
+  // Job Sheet" when a canonical job happens to also have a matching sheet).
+  const currentSheet: JobSheet | null = useMemo(() => {
+    if (pickerKind === "legacy") return sheets.find((s) => s.id === pickerKey) || null;
+    if (pickerKind === "job" && timesheet?.jobSheetId) {
+      return sheets.find((s) => s.id === timesheet.jobSheetId) || null;
+    }
+    return null;
+  }, [picker, sheets, timesheet?.jobSheetId]);
+  const headerTitle = currentJob
+    ? `${currentJob.jobNo ? currentJob.jobNo + " — " : ""}${currentJob.eventName || ""} — ${currentJob.client || ""}`.replace(/ — $/, "")
+    : (currentSheet?.title || "No job selected");
+  const headerClient = currentJob?.client || currentSheet?.client || "";
   const summary = useMemo(() => summarizeTimesheet(timesheet), [timesheet]);
   const approvedSummary = useMemo(
     () => summarizeTimesheet(timesheet, (r) => r.status === "approved"),
@@ -285,10 +378,34 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
         <h2 className="section-title">Timekeeping Control Center</h2>
         <div className="grid4">
           <div>
-            <small>Job Sheet</small>
-            <select value={jobSheetId} onChange={(e) => setJobSheetId(e.target.value)}>
-              <option value="">Select job sheet</option>
-              {sheets.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+            <small>Job</small>
+            <select value={picker} onChange={(e) => setPicker(e.target.value as PickerValue)}>
+              <option value="">Select a job</option>
+              <optgroup label="Jobs">
+                {jobRequests
+                  .slice()
+                  .sort((a, b) => (b.requestDate || "").localeCompare(a.requestDate || ""))
+                  .map((j) => (
+                    <option key={j.id} value={`job:${j.id}`}>
+                      {(j.jobNo || "(no #)")} — {j.eventName || "(untitled)"} — {j.client || ""}
+                    </option>
+                  ))}
+              </optgroup>
+              {timesheets.some((t) => !t.jobId) && (
+                <optgroup label="Legacy (no Job linked)">
+                  {timesheets
+                    .filter((t) => !t.jobId && t.jobSheetId)
+                    .map((t) => {
+                      const sheet = sheets.find((s) => s.id === t.jobSheetId);
+                      const label = sheet
+                        ? `${sheet.client || ""} — ${sheet.eventName || sheet.title || ""} — ${sheet.date || ""}`
+                        : t.title;
+                      return (
+                        <option key={t.id} value={`legacy:${t.jobSheetId}`}>{label}</option>
+                      );
+                    })}
+                </optgroup>
+              )}
             </select>
           </div>
           {!hidePayAlways && (
@@ -328,8 +445,8 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
             )}
             <button onClick={() => printWithTitle([
               "Timesheet",
-              currentSheet?.title,
-              currentSheet?.client,
+              headerTitle,
+              headerClient,
               dayFilter !== "all" ? dayFilter : undefined,
             ])}>Download / Print PDF</button>
           </div>
@@ -366,13 +483,13 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
           <div className="pdf-title-wrap pdf-title-wrap--left">
             <h2 className="pdf-title pdf-title--compact">Timekeeping Sheet</h2>
             <div className="pdf-subtitle pdf-subtitle--event">
-              {currentSheet ? currentSheet.title : "No job sheet selected"}
+              {headerTitle}
             </div>
           </div>
         </div>
 
         {!timesheet ? (
-          <div className="muted">Select a job sheet to begin timekeeping.</div>
+          <div className="muted">Select a job to begin timekeeping.</div>
         ) : (
           <>
             <div style={{ overflowX: "auto" }}>

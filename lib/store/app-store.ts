@@ -100,6 +100,33 @@ export function getTimesheetByJobSheetId(jobSheetId: string): Timesheet | null {
   return db.getTimesheets().find((t) => t.jobSheetId === jobSheetId) || null;
 }
 
+// ─── Phase 1: job_id-anchored API (prefer these over the *ByJobSheetId twins)
+export function getTimesheetByJobId(jobId: string): Timesheet | null {
+  return db.getTimesheets().find((t) => t.jobId === jobId) || null;
+}
+export async function getPendingStaffEntriesByJobId(jobId: string) {
+  return db.getPendingStaffEntriesByJobId(jobId);
+}
+export async function getApprovedEntriesForJobByJobId(jobId: string) {
+  return db.getApprovedEntriesForJobByJobId(jobId);
+}
+export async function getEntryCountsForJobByJobId(jobId: string) {
+  return db.getEntryCountsForJobByJobId(jobId);
+}
+export async function ensureTimesheetForJobRequest(
+  jobId: string,
+  opts: { jobTitle?: string; jobSheetId?: string | null } = {},
+) {
+  return db.ensureTimesheetForJobRequest(jobId, opts);
+}
+
+// Tracks the user's last-picked job on the timekeeping screen (replaces
+// getActiveJobSheet for the new flow).
+export function setActiveJob(jobId: string) { saveJSON("aes_active_job_v1", jobId); }
+export function getActiveJob(): string | null {
+  return loadJSON<string | null>("aes_active_job_v1", null);
+}
+
 export function addWorkerToTimesheet(jobSheetId: string, worker: JobSheetWorker) {
   const existing = getTimesheetByJobSheetId(jobSheetId);
   const base = existing || {

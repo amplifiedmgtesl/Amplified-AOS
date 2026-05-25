@@ -7,6 +7,8 @@ import {
   rejectStaffEntry,
   setEntryApproved,
   ensureTimesheetForJob,
+  ensureTimesheetForJobRequest,
+  loadJobRequests,
 } from "@/lib/store/app-store";
 import type { StaffEntryReviewRow } from "@/lib/store/db";
 
@@ -16,8 +18,14 @@ function fullName(r: StaffEntryReviewRow) {
   return `${r.firstName} ${r.lastName}`.trim() || r.email || "—";
 }
 
-function jobLabel(r: StaffEntryReviewRow) {
-  if (!r.jobSheetId) return "Office / Remote";
+function jobLabel(r: StaffEntryReviewRow, jobNoById: Map<string, string>): string {
+  // Phase 1: prefer job_no when the entry is linked to a job_request.
+  if (r.jobId) {
+    const jobNo = jobNoById.get(r.jobId);
+    const parts = [jobNo, r.jobClient, r.jobEventName].filter(Boolean);
+    if (parts.length > 0) return parts.join(" — ");
+  }
+  if (!r.jobSheetId && !r.jobId) return "Office / Remote";
   const parts = [r.jobClient, r.jobEventName].filter(Boolean);
   return parts.join(" — ") || "(untitled job)";
 }
@@ -38,10 +46,21 @@ export default function TimesheetReview() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<StatusFilter>("pending");
   const [employeeEmail, setEmployeeEmail] = useState<string>("");
-  const [jobSheetId, setJobSheetId] = useState<string>("");  // "" = all, "__none__" = no job
+  // Phase 1: filter key is either a jobId ("job:…"), a legacy jobSheetId
+  // ("legacy:…"), "" (all), or "__none__" (office/remote, no job link).
+  const [jobFilter, setJobFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // job_no lookup table — populated from the in-memory job_requests cache.
+  const jobNoById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const j of loadJobRequests()) {
+      if (j.jobNo) m.set(j.id, j.jobNo);
+    }
+    return m;
+  }, [rows]);
 
   async function load() {
     setLoading(true);
@@ -61,14 +80,17 @@ export default function TimesheetReview() {
     return Array.from(map, ([email, name]) => ({ email, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [rows]);
 
+  // Group the unique jobs that show up in the review rows. Prefer the
+  // canonical jobId; fall back to jobSheetId for legacy rows.
   const jobs = useMemo(() => {
     const map = new Map<string, string>();
     for (const r of rows) {
-      if (!r.jobSheetId) continue;
-      if (!map.has(r.jobSheetId)) map.set(r.jobSheetId, jobLabel(r));
+      const key = r.jobId ? `job:${r.jobId}` : (r.jobSheetId ? `legacy:${r.jobSheetId}` : null);
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, jobLabel(r, jobNoById));
     }
     return Array.from(map, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label));
-  }, [rows]);
+  }, [rows, jobNoById]);
 
   const filtered = useMemo(() => {
     return rows.filter((r) => {
@@ -76,13 +98,16 @@ export default function TimesheetReview() {
       if (status === "approved" && r.status !== "approved") return false;
       if (status === "rejected" && r.status !== "rejected") return false;
       if (employeeEmail && (r.email || "") !== employeeEmail) return false;
-      if (jobSheetId === "__none__" && r.jobSheetId) return false;
-      if (jobSheetId && jobSheetId !== "__none__" && r.jobSheetId !== jobSheetId) return false;
+      if (jobFilter === "__none__" && (r.jobSheetId || r.jobId)) return false;
+      if (jobFilter && jobFilter !== "__none__") {
+        const rowKey = r.jobId ? `job:${r.jobId}` : (r.jobSheetId ? `legacy:${r.jobSheetId}` : "");
+        if (rowKey !== jobFilter) return false;
+      }
       if (dateFrom && (r.workDate ?? "") < dateFrom) return false;
       if (dateTo   && (r.workDate ?? "") > dateTo)   return false;
       return true;
     });
-  }, [rows, status, employeeEmail, jobSheetId, dateFrom, dateTo]);
+  }, [rows, status, employeeEmail, jobFilter, dateFrom, dateTo]);
 
   const totals = useMemo(() => {
     return filtered.reduce(
@@ -98,10 +123,24 @@ export default function TimesheetReview() {
   async function handleApprove(r: StaffEntryReviewRow) {
     setBusyId(r.id);
     try {
-      if (r.jobSheetId) {
-        const tsId = r.timesheetId || await ensureTimesheetForJob(r.jobSheetId, jobLabel(r));
+      const label = jobLabel(r, jobNoById);
+      let tsId = r.timesheetId;
+      if (!tsId) {
+        if (r.jobId) {
+          // Canonical path — anchor on job_request.
+          tsId = await ensureTimesheetForJobRequest(r.jobId, {
+            jobTitle: label,
+            jobSheetId: r.jobSheetId,
+          });
+        } else if (r.jobSheetId) {
+          // Legacy path — only stragglers with no job_id end up here.
+          tsId = await ensureTimesheetForJob(r.jobSheetId, label);
+        }
+      }
+      if (tsId) {
         await approveStaffEntry(r.id, tsId);
       } else {
+        // Office / remote — no job link at all.
         await setEntryApproved(r.id);
       }
       await load();
@@ -120,7 +159,7 @@ export default function TimesheetReview() {
   function clearFilters() {
     setStatus("pending");
     setEmployeeEmail("");
-    setJobSheetId("");
+    setJobFilter("");
     setDateFrom("");
     setDateTo("");
   }
@@ -146,7 +185,7 @@ export default function TimesheetReview() {
         </div>
         <div>
           <small>Job</small>
-          <select value={jobSheetId} onChange={(e) => setJobSheetId(e.target.value)}>
+          <select value={jobFilter} onChange={(e) => setJobFilter(e.target.value)}>
             <option value="">— All jobs —</option>
             <option value="__none__">Office / Remote (no job)</option>
             {jobs.map((j) => <option key={j.id} value={j.id}>{j.label}</option>)}
@@ -202,8 +241,8 @@ export default function TimesheetReview() {
                 <td>{r.workDate || "—"}</td>
                 <td>{fullName(r)}</td>
                 <td>
-                  {r.jobSheetId
-                    ? jobLabel(r)
+                  {(r.jobId || r.jobSheetId)
+                    ? jobLabel(r, jobNoById)
                     : <span className="muted" style={{ fontStyle: "italic" }}>Office / Remote</span>}
                 </td>
                 <td>{r.position || "—"}</td>

@@ -103,11 +103,21 @@ export type TimeEntry = {
   status?: string | null;      // null=admin-created, submitted|approved|rejected for staff entries
   sortOrder?: number;
   createdAt?: string;
+  // Phase 1 (2026-05-25): canonical link to the "Job" (job_requests row).
+  // Populated for all new rows; backfilled on existing rows where a
+  // confident match existed. NULL on legacy rows whose job_sheet has
+  // no corresponding job_request (see migration 20260525c).
+  jobId?: string | null;
 };
 
 export type Timesheet = {
   id: string;
+  // Legacy anchor — still populated for back-compat and for the 3 stragglers
+  // whose job_id couldn't be resolved. Will be retired once those are cleaned.
   jobSheetId: string;
+  // Phase 1: canonical FK to job_requests(id). Prefer this over jobSheetId
+  // for any downstream linkage (invoice draft pulls, holiday math, etc.).
+  jobId?: string | null;
   title: string;
   hidePayColumns: boolean;
   rows: TimeEntry[];
