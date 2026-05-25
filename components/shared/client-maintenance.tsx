@@ -637,7 +637,7 @@ export default function ClientMaintenance() {
             {/* Tab bar */}
             <div style={{ display: "flex", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
               {(["contacts", "job_requests", "quotes", "rate_cards", "calendar_events", "invoices"] as const).map((tab) => {
-                const labels: Record<string, string> = { contacts: "Contacts", job_requests: "Jobs", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Calendar Events", invoices: "Invoices" };
+                const labels: Record<string, string> = { contacts: "Contacts", job_requests: "Jobs", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Manual Calendar Entries", invoices: "Invoices" };
                 const counts: Record<string, number> = { contacts: contactsCount, job_requests: tabData.jobRequests.length, quotes: tabData.quotes.length, rate_cards: tabData.rateCards.length, calendar_events: tabData.calendarEvents.length, invoices: tabData.invoices.length };
                 const active = activeTab === tab;
                 return (
@@ -795,8 +795,12 @@ export default function ClientMaintenance() {
               )}
 
               {activeTab === "calendar_events" && (
-                tabData.calendarEvents.length === 0
-                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No calendar events.</div>
+                <>
+                  <div style={{ color: "#888", fontSize: 11, padding: "0 0 8px 0", fontStyle: "italic" }}>
+                    Only entries created directly on the master calendar appear here. Job-derived calendar events show on the Master Calendar via the &quot;Show in app calendar&quot; flag on each job — see the Jobs tab for those.
+                  </div>
+                  {tabData.calendarEvents.length === 0
+                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No manual calendar entries.</div>
                   : <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                       <thead>
                         <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
@@ -817,6 +821,8 @@ export default function ClientMaintenance() {
                         ))}
                       </tbody>
                     </table>
+                  }
+                </>
               )}
 
               {activeTab === "invoices" && (() => {
