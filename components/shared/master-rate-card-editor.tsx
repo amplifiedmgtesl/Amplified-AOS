@@ -25,6 +25,7 @@ export default function MasterRateCardEditor() {
   const POSITIONS = positionNames();
   const [rows, setRows] = useState<RateRow[]>([]);
   const [terms, setTerms] = useState("");
+  const [holidayMultiplier, setHolidayMultiplier] = useState<number>(2.0);
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +54,7 @@ export default function MasterRateCardEditor() {
       const profiles = loadRateCardProfiles();
       const master = profiles.find((p) => p.id === MASTER_PROFILE_ID);
       setTerms(master?.terms ?? "");
+      setHolidayMultiplier(master?.holidayMultiplier ?? 2.0);
       if (master?.rows?.length) {
         // Resolve specialtyId on legacy rows that came in with no explicit ID.
         setRows(master.rows.map((r) => {
@@ -110,7 +112,7 @@ export default function MasterRateCardEditor() {
         name: MASTER_PROFILE_NAME,
         rows,
         terms,
-        holidayMultiplier: 2.0,
+        holidayMultiplier,
         createdAt: now,
         updatedAt: now,
       });
@@ -132,13 +134,27 @@ export default function MasterRateCardEditor() {
   return (
     <div className="grid">
       <div className="card">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, gap: 16, flexWrap: "wrap" }}>
           <div>
             <h2 className="section-title" style={{ margin: 0 }}>🔧 Master Default Rate Card</h2>
             <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
               Used as the starter rows for every new client rate card.
               Changes here apply to <strong>future</strong> rate cards only — existing client cards are unchanged.
             </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <span className="muted">🎄 Holiday Multiplier</span>
+              <input
+                type="number"
+                min={1.0}
+                step={0.1}
+                value={holidayMultiplier}
+                onChange={(e) => setHolidayMultiplier(Number(e.target.value) || 2.0)}
+                title="Default holiday-rate multiplier seeded onto every new client rate card. Typical: 2.0 (most), 2.5 (some IATSE locals), 3.0 (rare). Each client card can override after creation."
+                style={{ width: 70 }}
+              />
+            </label>
           </div>
           <div className="action-row">
             <button className="secondary" onClick={addRow}>+ Add Row</button>

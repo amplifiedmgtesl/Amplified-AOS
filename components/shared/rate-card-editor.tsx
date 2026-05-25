@@ -251,12 +251,13 @@ export default function RateCardEditor() {
     setClientName("");
     setProfileName("Standard");
     setEffectiveDate("");
-    setHolidayMultiplier(2.0);
     // Seed from the Master Default profile if it exists; fall back to the
     // hardcoded constant so brand-new dev databases or partial migrations
-    // still produce a usable starter card.
+    // still produce a usable starter card. Holiday multiplier also seeds
+    // from the master default so operator's company-wide setting propagates.
     const masterDefault = profiles.find((p) => p.id === "ratecard-master-default");
     setRows(masterDefault?.rows && masterDefault.rows.length > 0 ? masterDefault.rows : DEFAULT_RATE_ROWS);
+    setHolidayMultiplier(masterDefault?.holidayMultiplier ?? 2.0);
     setTerms("");
     setMode("new");
     setStatusMsg(
