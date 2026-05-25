@@ -51,7 +51,10 @@ export default function TimesheetReview() {
   const [jobFilter, setJobFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // Bulk selection: entry IDs the operator has ticked. Cleared whenever
+  // filters change so we never act on a hidden row.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [busyBatch, setBusyBatch] = useState<null | "approve" | "reject">(null);
 
   // job_no lookup table — populated from the in-memory job_requests cache.
   const jobNoById = useMemo(() => {
@@ -120,41 +123,78 @@ export default function TimesheetReview() {
     );
   }, [filtered]);
 
-  async function handleApprove(r: StaffEntryReviewRow) {
-    setBusyId(r.id);
+  // ─── Bulk actions ─────────────────────────────────────────────────────────
+  // Approve every selected row that isn't already approved. Each row runs the
+  // same flow as the single-row Approve button (ensure-or-reuse a timesheet,
+  // bind the entry to it, mark approved). Errors on individual rows are
+  // surfaced but don't abort the batch.
+  async function handleApproveSelected() {
+    const targets = filtered.filter((r) => selectedIds.has(r.id) && r.status !== "approved");
+    if (targets.length === 0) return;
+    setBusyBatch("approve");
     try {
-      const label = jobLabel(r, jobNoById);
-      let tsId = r.timesheetId;
-      if (!tsId) {
-        if (r.jobId) {
-          // Canonical path — anchor on job_request.
-          tsId = await ensureTimesheetForJobRequest(r.jobId, {
-            jobTitle: label,
-            jobSheetId: r.jobSheetId,
-          });
-        } else if (r.jobSheetId) {
-          // Legacy path — only stragglers with no job_id end up here.
-          tsId = await ensureTimesheetForJob(r.jobSheetId, label);
+      for (const r of targets) {
+        try {
+          const label = jobLabel(r, jobNoById);
+          let tsId = r.timesheetId;
+          if (!tsId) {
+            if (r.jobId) {
+              tsId = await ensureTimesheetForJobRequest(r.jobId, { jobTitle: label, jobSheetId: r.jobSheetId });
+            } else if (r.jobSheetId) {
+              tsId = await ensureTimesheetForJob(r.jobSheetId, label);
+            }
+          }
+          if (tsId) await approveStaffEntry(r.id, tsId);
+          else      await setEntryApproved(r.id);
+        } catch (e) {
+          console.error("[review] batch approve row failed:", r.id, e);
         }
       }
-      if (tsId) {
-        await approveStaffEntry(r.id, tsId);
-      } else {
-        // Office / remote — no job link at all.
-        await setEntryApproved(r.id);
-      }
+      setSelectedIds(new Set());
       await load();
-    } finally { setBusyId(null); }
+    } finally { setBusyBatch(null); }
   }
 
-  async function handleReject(r: StaffEntryReviewRow) {
-    if (!confirm("Reject this timesheet entry?")) return;
-    setBusyId(r.id);
+  async function handleRejectSelected() {
+    const targets = filtered.filter((r) => selectedIds.has(r.id) && r.status !== "rejected");
+    if (targets.length === 0) return;
+    if (!confirm(`Reject ${targets.length} timesheet entr${targets.length === 1 ? "y" : "ies"}?`)) return;
+    setBusyBatch("reject");
     try {
-      await rejectStaffEntry(r.id);
+      for (const r of targets) {
+        try { await rejectStaffEntry(r.id); }
+        catch (e) { console.error("[review] batch reject row failed:", r.id, e); }
+      }
+      setSelectedIds(new Set());
       await load();
-    } finally { setBusyId(null); }
+    } finally { setBusyBatch(null); }
   }
+
+  function toggleRow(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleAllVisible() {
+    setSelectedIds((prev) => {
+      const allSelected = filtered.length > 0 && filtered.every((r) => prev.has(r.id));
+      if (allSelected) return new Set();
+      const next = new Set(prev);
+      for (const r of filtered) next.add(r.id);
+      return next;
+    });
+  }
+  const selectedVisibleCount = useMemo(
+    () => filtered.reduce((n, r) => (selectedIds.has(r.id) ? n + 1 : n), 0),
+    [filtered, selectedIds],
+  );
+  const allVisibleSelected = filtered.length > 0 && selectedVisibleCount === filtered.length;
+
+  // Clear selection whenever filters change — otherwise an offscreen row
+  // could end up acted on without the operator seeing it.
+  useEffect(() => { setSelectedIds(new Set()); }, [status, employeeEmail, jobFilter, dateFrom, dateTo]);
 
   function clearFilters() {
     setStatus("pending");
@@ -201,7 +241,7 @@ export default function TimesheetReview() {
         </div>
       </div>
 
-      <div className="action-row" style={{ marginBottom: 12, justifyContent: "space-between" }}>
+      <div className="action-row" style={{ marginBottom: 12, justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div className="muted" style={{ fontSize: 13 }}>
           {loading ? "Loading…" : (
             <>
@@ -211,13 +251,48 @@ export default function TimesheetReview() {
             </>
           )}
         </div>
-        <button className="secondary" onClick={clearFilters}>Clear filters</button>
+        {/* Batch action bar — appears when the operator has ticked one or more rows */}
+        {selectedVisibleCount > 0 ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
+                        background: "#eaf2fb", border: "1px solid #b6c8e0", borderRadius: 8 }}>
+            <strong style={{ fontSize: 13 }}>{selectedVisibleCount} selected</strong>
+            <button
+              onClick={handleApproveSelected}
+              disabled={!!busyBatch}
+              style={{ padding: "4px 12px", fontSize: 12 }}
+            >
+              {busyBatch === "approve" ? "Approving…" : `Approve ${selectedVisibleCount}`}
+            </button>
+            <button
+              className="secondary"
+              onClick={handleRejectSelected}
+              disabled={!!busyBatch}
+              style={{ padding: "4px 12px", fontSize: 12, color: "#a00", borderColor: "#e0a0a0" }}
+            >
+              {busyBatch === "reject" ? "Rejecting…" : `Reject ${selectedVisibleCount}`}
+            </button>
+            <button className="secondary" onClick={() => setSelectedIds(new Set())} disabled={!!busyBatch} style={{ padding: "4px 10px", fontSize: 12 }}>
+              Clear
+            </button>
+          </div>
+        ) : (
+          <button className="secondary" onClick={clearFilters}>Clear filters</button>
+        )}
       </div>
 
       <div className="table-scroll">
         <table>
           <thead>
             <tr>
+              <th style={{ width: 28 }}>
+                <input
+                  type="checkbox"
+                  aria-label="Select all visible"
+                  checked={allVisibleSelected}
+                  ref={(el) => { if (el) el.indeterminate = selectedVisibleCount > 0 && !allVisibleSelected; }}
+                  onChange={toggleAllVisible}
+                />
+              </th>
               <th>Date</th>
               <th>Employee</th>
               <th>Job</th>
@@ -229,15 +304,25 @@ export default function TimesheetReview() {
               <th>Total</th>
               <th>Pay</th>
               <th>Status</th>
-              <th></th>
             </tr>
           </thead>
           <tbody>
             {!loading && filtered.length === 0 && (
               <tr><td colSpan={12} className="muted" style={{ textAlign: "center", padding: "24px 0" }}>No entries match these filters.</td></tr>
             )}
-            {filtered.map((r) => (
-              <tr key={r.id}>
+            {filtered.map((r) => {
+              const checked = selectedIds.has(r.id);
+              return (
+              <tr key={r.id} style={checked ? { background: "#f4f8fd" } : undefined}>
+                <td>
+                  <input
+                    type="checkbox"
+                    aria-label="Select row"
+                    checked={checked}
+                    onChange={() => toggleRow(r.id)}
+                    disabled={!!busyBatch}
+                  />
+                </td>
                 <td>{r.workDate || "—"}</td>
                 <td>{fullName(r)}</td>
                 <td>
@@ -256,32 +341,9 @@ export default function TimesheetReview() {
                 <td><strong>{r.totalHours.toFixed(1)}</strong></td>
                 <td>${r.totalPay.toFixed(2)}</td>
                 <td>{statusBadge(r)}</td>
-                <td>
-                  <div className="action-row">
-                    {isPending(r) && (
-                      <>
-                        <button disabled={busyId === r.id} onClick={() => handleApprove(r)} style={{ padding: "4px 10px", fontSize: 12 }}>
-                          {busyId === r.id ? "…" : "Approve"}
-                        </button>
-                        <button className="secondary" disabled={busyId === r.id} onClick={() => handleReject(r)} style={{ padding: "4px 10px", fontSize: 12, color: "#a00", borderColor: "#e0a0a0" }}>
-                          Reject
-                        </button>
-                      </>
-                    )}
-                    {r.status === "rejected" && (
-                      <button disabled={busyId === r.id} onClick={() => handleApprove(r)} style={{ padding: "4px 10px", fontSize: 12 }}>
-                        Approve
-                      </button>
-                    )}
-                    {r.status === "approved" && (
-                      <button className="secondary" disabled={busyId === r.id} onClick={() => handleReject(r)} style={{ padding: "4px 10px", fontSize: 12, color: "#a00", borderColor: "#e0a0a0" }}>
-                        Reject
-                      </button>
-                    )}
-                  </div>
-                </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
