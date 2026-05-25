@@ -37,6 +37,7 @@ export default function RateCardEditor() {
   const [clientName, setClientName] = useState("");
   const [profileName, setProfileName] = useState("Standard");
   const [effectiveDate, setEffectiveDate] = useState("");
+  const [holidayMultiplier, setHolidayMultiplier] = useState<number>(2.0);
   const [mode, setMode] = useState<"none" | "new" | "edit">("none");
   const [rows, setRows] = useState<RateRow[]>(DEFAULT_RATE_ROWS);
   const [terms, setTerms] = useState("");
@@ -58,6 +59,7 @@ export default function RateCardEditor() {
       setClientId(activeProfile.clientId ?? "");
       setProfileName(activeProfile.name ?? "Standard");
       setEffectiveDate(activeProfile.effectiveDate ?? "");
+      setHolidayMultiplier(activeProfile.holidayMultiplier ?? 2.0);
       setMode("edit");
     }
     // Load directly from DB — cache may not be ready at mount time
@@ -213,7 +215,7 @@ export default function RateCardEditor() {
           clientName: clientName || blankProfileName(),
           name: targetName,
           effectiveDate: effectiveDate || undefined,
-          rows, terms, createdAt: now, updatedAt: now,
+          rows, terms, holidayMultiplier, createdAt: now, updatedAt: now,
         });
         setActiveRateCardProfileId(id);
         setMode("edit");
@@ -232,6 +234,7 @@ export default function RateCardEditor() {
       effectiveDate: effectiveDate || undefined,
       rows,
       terms,
+      holidayMultiplier,
       createdAt: now,
       updatedAt: now,
     });
@@ -248,6 +251,7 @@ export default function RateCardEditor() {
     setClientName("");
     setProfileName("Standard");
     setEffectiveDate("");
+    setHolidayMultiplier(2.0);
     // Seed from the Master Default profile if it exists; fall back to the
     // hardcoded constant so brand-new dev databases or partial migrations
     // still produce a usable starter card.
@@ -275,7 +279,7 @@ export default function RateCardEditor() {
       clientName: clientName || blankProfileName(),
       name: `${profileName || "Standard"} Copy`,
       effectiveDate: effectiveDate || undefined,
-      rows, terms, createdAt: now, updatedAt: now,
+      rows, terms, holidayMultiplier, createdAt: now, updatedAt: now,
     });
     loadProfileIntoCurrent(id);
     setProfileName(`${profileName || "Standard"} Copy`);
@@ -307,6 +311,7 @@ export default function RateCardEditor() {
     setClientId(profile?.clientId ?? "");
     setProfileName(profile?.name ?? "Standard");
     setEffectiveDate(profile?.effectiveDate ?? "");
+    setHolidayMultiplier(profile?.holidayMultiplier ?? 2.0);
     setMode("edit");
     refreshProfiles();
     setStatusMsg("Rate card loaded.");
@@ -376,7 +381,19 @@ export default function RateCardEditor() {
               title="Date this rate card becomes effective. Leave blank for an undated card."
             />
           </div>
-          <div></div>
+          <div>
+            <small>Holiday Multiplier</small>
+            <input
+              type="number"
+              min={1.0}
+              step={0.1}
+              disabled={mode === "none"}
+              value={holidayMultiplier}
+              onChange={(e) => setHolidayMultiplier(Number(e.target.value) || 2.0)}
+              title="Multiplier applied to all billable hours on days flagged as holiday. Typical values: 2.0 (most), 2.5 (some IATSE locals), 3.0 (rare)."
+              style={{ width: 80 }}
+            />
+          </div>
           <div className="action-row" style={{ alignItems: "end" }}>
             <button onClick={saveCurrentProfile} disabled={mode === "none"}>Save Rate Card</button>
             <button

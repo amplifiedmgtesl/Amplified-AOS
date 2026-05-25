@@ -61,9 +61,11 @@
 
 import type { QuoteLine } from "@/lib/store/types";
 
-/** 2.0× — the holiday multiplier applied to base hours when the parent
- *  day is flagged as a holiday. Hardcoded for now (per the 2026-05-24
- *  design decision); migrate to a settings table if real variation emerges. */
+/** 2.0× — the default holiday multiplier. As of 2026-05-25 the actual
+ *  value lives on the rate card (rate_card_profiles.holiday_multiplier),
+ *  snapshotted onto each quote and invoice at draft creation. The constant
+ *  is the fallback used by callers that haven't been wired to pass the
+ *  per-document value yet. */
 export const HOLIDAY_MULTIPLIER = 2.0;
 
 export function isDayModeLine(l: Pick<QuoteLine, "rateMode" | "baseDay" | "hours">): boolean {
@@ -78,7 +80,7 @@ export function computeLineTotal(
     "rateMode" | "crewCount" | "qty" | "hours" | "otHours" | "dtHours"
     | "travel" | "baseHourly" | "baseDay" | "otRate" | "dtRate"
   >,
-  opts: { dayIsHoliday?: boolean } = {},
+  opts: { dayIsHoliday?: boolean; holidayMultiplier?: number } = {},
 ): number {
   const crewCount    = Number(l.crewCount ?? l.qty ?? 1);
   const hours        = Number(l.hours        || 0);
@@ -95,13 +97,16 @@ export function computeLineTotal(
     : hours     * baseHourly;
 
   if (opts.dayIsHoliday) {
-    // Holiday rule: every billable hour at base × 2. OT/DT stay in their
+    // Holiday rule: every billable hour at base × H. OT/DT stay in their
     // own buckets on screen but bill at baseHourly (not otRate/dtRate),
-    // so 10 ST + 2 OT + 3 DT on a holiday = 15 hrs × baseHourly × 2.
-    // Day-mode lines: day rate × 2 covers the day, plus any overflow
-    // OT/DT hours at baseHourly × 2.
+    // so 10 ST + 2 OT + 3 DT on a holiday = 15 hrs × baseHourly × H.
+    // Day-mode lines: day rate × H covers the day, plus any overflow
+    // OT/DT hours at baseHourly × H. H is per-document (snapshotted from
+    // the rate card at creation); falls back to HOLIDAY_MULTIPLIER for
+    // callers that haven't passed it yet.
+    const H = opts.holidayMultiplier ?? HOLIDAY_MULTIPLIER;
     const extraHoursAtBase = (otHours + dtHours) * baseHourly;
-    return Math.round((HOLIDAY_MULTIPLIER * (base + extraHoursAtBase) + travel) * 100) / 100;
+    return Math.round((H * (base + extraHoursAtBase) + travel) * 100) / 100;
   }
 
   const total = base

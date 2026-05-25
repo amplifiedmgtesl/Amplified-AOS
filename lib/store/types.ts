@@ -150,6 +150,11 @@ export type QuoteDraft = {
   signedAt?: string;
   signedBy?: string;
   rateCardProfileId?: string;
+  /** Holiday rate multiplier (e.g. 2.0, 2.5, 3.0). Snapshotted from the
+   *  chosen rate card at draft creation; editable on the draft for one-off
+   *  contract terms. Frozen on issue. Used by calc engine when a line's
+   *  parent day is flagged is_holiday. */
+  holidayMultiplier: number;
   /** Author info that prints on the quote PDF. Free-text. */
   preparedByName?: string;
   preparedByTitle?: string;
@@ -197,6 +202,10 @@ export type InvoiceDraft = {
   status: string | null;
   paidAmount: number;
   rateCardProfileId?: string;
+  /** Holiday rate multiplier (e.g. 2.0, 2.5, 3.0). Snapshotted from the
+   *  source quote's holiday_multiplier at draft creation; editable on the
+   *  draft. Frozen on issue. Used by calc engine on holiday-flagged days. */
+  holidayMultiplier: number;
   linkedJobSheetId?: string;
   timesheetSummary?: Array<{ position: string; workers: number; stdHours: number; otHours: number; dtHours: number; totalHours: number; totalPay: number; }>;
   // ─── New fields (Phase C invoice rewrite) ────────────────────────────────

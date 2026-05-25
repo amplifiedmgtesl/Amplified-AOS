@@ -309,7 +309,7 @@ export default function QuotePdfView({ id }: { id: string }) {
                 {g.label}
                 {isHoliday && (
                   <span style={{ marginLeft: 8, padding: "1px 8px", borderRadius: 10, background: "#c0392b", color: "#fff", fontSize: "0.8em", fontWeight: 600 }}>
-                    Holiday · 2× rate
+                    Holiday · {(quote.holidayMultiplier ?? 2.0)}× rate
                   </span>
                 )}
               </span>

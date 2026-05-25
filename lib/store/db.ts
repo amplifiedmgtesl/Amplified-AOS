@@ -918,6 +918,7 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     signedAt: r.signed_at ?? undefined,
     signedBy: r.signed_by ?? undefined,
     rateCardProfileId: r.rate_card_profile_id ?? undefined,
+    holidayMultiplier: r.holiday_multiplier != null ? Number(r.holiday_multiplier) : 2.0,
     preparedByName: r.prepared_by_name ?? undefined,
     preparedByTitle: r.prepared_by_title ?? undefined,
     // New fields from quote rewrite Phase A:
@@ -960,6 +961,7 @@ function rowToInvoice(r: any, lineRows: any[] = []): InvoiceDraft {
     status: r.status ?? null,
     paidAmount: r.paid_amount ?? 0,
     rateCardProfileId: r.rate_card_profile_id ?? undefined,
+    holidayMultiplier: r.holiday_multiplier != null ? Number(r.holiday_multiplier) : 2.0,
     linkedJobSheetId: r.linked_job_sheet_id ?? undefined,
     timesheetSummary: r.timesheet_summary ?? undefined,
     // Phase C rewrite columns
@@ -1247,6 +1249,7 @@ function rowToRateCardProfile(r: any, profileRows: any[]): RateCardProfile {
     effectiveDate: r.effective_date ?? undefined,
     rows,
     terms: r.terms ?? "",
+    holidayMultiplier: r.holiday_multiplier != null ? Number(r.holiday_multiplier) : 2.0,
     createdAt: r.created_at ?? new Date().toISOString(),
     updatedAt: r.updated_at ?? new Date().toISOString(),
   };
@@ -1534,6 +1537,7 @@ function rateCardProfileToRow(p: RateCardProfile) {
     effective_date: p.effectiveDate ?? null,
     rows: p.rows,
     terms: p.terms,
+    holiday_multiplier: p.holidayMultiplier ?? 2.0,
     created_at: p.createdAt,
     updated_at: p.updatedAt,
   };

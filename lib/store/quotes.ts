@@ -63,6 +63,7 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     signedAt: r.signed_at ?? undefined,
     signedBy: r.signed_by ?? undefined,
     rateCardProfileId: r.rate_card_profile_id ?? undefined,
+    holidayMultiplier: r.holiday_multiplier != null ? Number(r.holiday_multiplier) : 2.0,
     preparedByName: r.prepared_by_name ?? undefined,
     preparedByTitle: r.prepared_by_title ?? undefined,
     isDraft: r.is_draft ?? true,
@@ -129,6 +130,7 @@ function quoteToDraftRow(q: QuoteDraft) {
     linked_job_request_id:  q.linkedJobRequestId || null,
     linked_job_sheet_id:    q.linkedJobSheetId || null,
     rate_card_profile_id:   q.rateCardProfileId || null,
+    holiday_multiplier:     q.holidayMultiplier ?? 2.0,
     prepared_by_name:       q.preparedByName || null,
     prepared_by_title:      q.preparedByTitle || null,
     is_draft:               q.isDraft,
@@ -223,7 +225,13 @@ export async function loadQuote(id: string): Promise<QuoteDraft | null> {
 export async function pickRateCardForJob(
   clientId: string | null | undefined,
   jobStartDate: string,
-): Promise<{ id: string; rows: any[]; terms: string | null } | null> {
+): Promise<{ id: string; rows: any[]; terms: string | null; holidayMultiplier: number } | null> {
+  const wrap = async (data: any) => ({
+    id: data.id,
+    rows: await loadRateCardRows(data.id),
+    terms: data.terms ?? null,
+    holidayMultiplier: data.holiday_multiplier != null ? Number(data.holiday_multiplier) : 2.0,
+  });
   // 1. Client-specific, effective on/before job
   if (clientId && jobStartDate) {
     const r = await supabase
@@ -235,7 +243,7 @@ export async function pickRateCardForJob(
       .limit(1)
       .maybeSingle();
     if (r.error) throw r.error;
-    if (r.data) return { id: r.data.id, rows: await loadRateCardRows(r.data.id), terms: r.data.terms ?? null };
+    if (r.data) return wrap(r.data);
   }
   // 2. Client-specific, NULL effective_date (legacy)
   if (clientId) {
@@ -247,7 +255,7 @@ export async function pickRateCardForJob(
       .limit(1)
       .maybeSingle();
     if (r.error) throw r.error;
-    if (r.data) return { id: r.data.id, rows: await loadRateCardRows(r.data.id), terms: r.data.terms ?? null };
+    if (r.data) return wrap(r.data);
   }
   // 3. Master default, effective on/before job
   if (jobStartDate) {
@@ -260,7 +268,7 @@ export async function pickRateCardForJob(
       .limit(1)
       .maybeSingle();
     if (m.error) throw m.error;
-    if (m.data) return { id: m.data.id, rows: await loadRateCardRows(m.data.id), terms: m.data.terms ?? null };
+    if (m.data) return wrap(m.data);
   }
   // 4. Master default, NULL effective_date
   const m2 = await supabase
@@ -271,7 +279,7 @@ export async function pickRateCardForJob(
     .limit(1)
     .maybeSingle();
   if (m2.error) throw m2.error;
-  if (m2.data) return { id: m2.data.id, rows: await loadRateCardRows(m2.data.id), terms: m2.data.terms ?? null };
+  if (m2.data) return wrap(m2.data);
 
   // 5. Any client-specific card (date-blind)
   if (clientId) {
@@ -283,7 +291,7 @@ export async function pickRateCardForJob(
       .limit(1)
       .maybeSingle();
     if (r.error) throw r.error;
-    if (r.data) return { id: r.data.id, rows: await loadRateCardRows(r.data.id), terms: r.data.terms ?? null };
+    if (r.data) return wrap(r.data);
   }
   // 6. Master default (date-blind)
   const m3 = await supabase
@@ -293,7 +301,7 @@ export async function pickRateCardForJob(
     .limit(1)
     .maybeSingle();
   if (m3.error) throw m3.error;
-  if (m3.data) return { id: m3.data.id, rows: await loadRateCardRows(m3.data.id), terms: m3.data.terms ?? null };
+  if (m3.data) return wrap(m3.data);
 
   return null;
 }
@@ -373,7 +381,7 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
 
   // Honor the job's pinned rate_card_profile_id if set; otherwise auto-resolve
   // by client + start date.
-  let rateCard: { id: string; rows: any[]; terms: string | null } | null = null;
+  let rateCard: { id: string; rows: any[]; terms: string | null; holidayMultiplier: number } | null = null;
   if (job.rate_card_profile_id) {
     const pinnedRes = await supabase
       .from("rate_card_profiles")
@@ -388,7 +396,12 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
         .eq("profile_id", pinnedRes.data.id)
         .order("sort_order");
       if (rows.error) throw rows.error;
-      rateCard = { id: pinnedRes.data.id, rows: rows.data ?? [], terms: pinnedRes.data.terms ?? null };
+      rateCard = {
+        id: pinnedRes.data.id,
+        rows: rows.data ?? [],
+        terms: pinnedRes.data.terms ?? null,
+        holidayMultiplier: pinnedRes.data.holiday_multiplier != null ? Number(pinnedRes.data.holiday_multiplier) : 2.0,
+      };
     }
   }
   if (!rateCard) {
@@ -436,6 +449,7 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
     linkedJobRequestId: jobRequestId,
     revisionNo: 1,
     rateCardProfileId: rateCard.id,
+    holidayMultiplier: rateCard.holidayMultiplier,
   };
 
   // Seed lines.

@@ -165,11 +165,12 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
   // and the underlying row.
   const holidayByDate = useMemo(() => invoiceHolidayLookup(invoiceDays), [invoiceDays]);
 
-  // Defers to the shared formula in lib/rates/line-calc.ts. As of 2026-05-24
-  // the calc honors a day-level is_holiday flag (2× multiplier on base + OT + DT).
+  // Defers to the shared formula in lib/rates/line-calc.ts. As of 2026-05-25
+  // calc honors day-level is_holiday + per-document holiday multiplier
+  // (snapshotted from the source quote's holiday_multiplier).
   function recomputeLineTotal(l: QuoteLine): number {
     const dayIsHoliday = !!(l.quoteDate && holidayByDate.get(l.quoteDate));
-    return computeLineTotal(l, { dayIsHoliday });
+    return computeLineTotal(l, { dayIsHoliday, holidayMultiplier: invoice?.holidayMultiplier });
   }
 
   function recomputeTotals(lines: QuoteLine[]): number {
@@ -192,17 +193,18 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     // Do NOT touch otHours/dtHours — they stay as entered so toggling holiday
     // off restores the original math. Calc engine ignores OT/DT when
     // dayIsHoliday=true (everything bills flat at 2× base).
+    const H = invoice.holidayMultiplier;
     const newLines = invoice.lines.map((l) => {
       if (l.quoteDate !== date) return l;
       const merged = { ...l };
-      merged.total = computeLineTotal(merged, { dayIsHoliday: next });
+      merged.total = computeLineTotal(merged, { dayIsHoliday: next, holidayMultiplier: H });
       return merged;
     });
     const newSubtotal = money(
       newLines.reduce((s, l) => {
-        if (l.quoteDate === date) return s + computeLineTotal(l, { dayIsHoliday: next });
+        if (l.quoteDate === date) return s + computeLineTotal(l, { dayIsHoliday: next, holidayMultiplier: H });
         const flag = !!(l.quoteDate && holidayByDate.get(l.quoteDate));
-        return s + computeLineTotal(l, { dayIsHoliday: flag });
+        return s + computeLineTotal(l, { dayIsHoliday: flag, holidayMultiplier: H });
       }, 0),
     );
     setInvoice({
@@ -414,6 +416,36 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                   <span className="muted">— none —</span>
                 )}
               </div>
+              <div className="muted" style={{ marginTop: 8 }}>
+                Holiday Multiplier{" "}
+                <span style={{ fontSize: 10, opacity: 0.7 }}>(applied on flagged days)</span>
+              </div>
+              <input
+                type="number"
+                min={1.0}
+                step={0.1}
+                value={invoice.holidayMultiplier ?? 2.0}
+                onChange={(e) => {
+                  const H = Number(e.target.value) || 2.0;
+                  // Recompute every line — holiday-flagged days bill at the
+                  // new multiplier × base. Non-holiday lines unchanged.
+                  const newLines = invoice.lines.map((l) => {
+                    const dayIsHoliday = !!(l.quoteDate && holidayByDate.get(l.quoteDate));
+                    if (!dayIsHoliday) return l;
+                    return { ...l, total: computeLineTotal(l, { dayIsHoliday: true, holidayMultiplier: H }) };
+                  });
+                  const newSubtotal = money(newLines.reduce((s, l) => s + (l.total || 0), 0));
+                  setInvoice({
+                    ...invoice,
+                    holidayMultiplier: H,
+                    lines: newLines,
+                    subtotal: newSubtotal,
+                    amountDue: money(newSubtotal - invoice.depositApplied - invoice.creditsApplied),
+                  });
+                }}
+                style={{ width: 80, fontSize: 13 }}
+                title="Snapshotted from the source quote. Override per-invoice for one-off contract terms. Frozen on issue."
+              />
             </div>
           </div>
         ) : <div className="muted">No job linked.</div>}

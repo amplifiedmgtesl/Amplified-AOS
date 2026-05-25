@@ -110,6 +110,7 @@ export default function MasterRateCardEditor() {
         name: MASTER_PROFILE_NAME,
         rows,
         terms,
+        holidayMultiplier: 2.0,
         createdAt: now,
         updatedAt: now,
       });

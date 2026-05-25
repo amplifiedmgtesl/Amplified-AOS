@@ -8,6 +8,10 @@ export type RateCardProfile = {
   effectiveDate?: string; // ISO date (YYYY-MM-DD); rate card applies on/after this date
   rows: RateRow[];
   terms: string;
+  /** Multiplier applied to all billable hours on days flagged is_holiday.
+   *  Defaults to 2.0; per-rate-card configurable. Quotes / invoices snapshot
+   *  this value on creation so frozen docs preserve their issued rate. */
+  holidayMultiplier: number;
   createdAt: string;
   updatedAt: string;
 };

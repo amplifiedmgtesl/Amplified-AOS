@@ -222,11 +222,12 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
   const holidayByDate = useMemo(() => holidayLookup(quoteDays), [quoteDays]);
 
   // Shared formula in lib/rates/line-calc.ts. As of 2026-05-12 lines carry
-  // explicit ST/OT/DT/holiday person-hours + crewCount. As of 2026-05-24 the
-  // calc honors a day-level is_holiday flag (2× multiplier on base + OT + DT).
+  // explicit ST/OT/DT person-hours + crewCount. As of 2026-05-25 the calc
+  // honors a day-level is_holiday flag plus a per-document holiday multiplier
+  // (snapshotted from the rate card).
   function recomputeLineTotal(l: QuoteLine): number {
     const dayIsHoliday = !!(l.quoteDate && holidayByDate.get(l.quoteDate));
-    return computeLineTotal(l, { dayIsHoliday });
+    return computeLineTotal(l, { dayIsHoliday, holidayMultiplier: quote?.holidayMultiplier });
   }
   function recomputeTotals(lines: QuoteLine[]): number {
     return lines.reduce((s, l) => s + (l.total || 0), 0);
@@ -314,7 +315,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     const newLines = quote.lines.map((l) => {
       if (l.quoteDate !== day.date) return l;
       const merged = { ...l };
-      merged.total = computeLineTotal(merged, { dayIsHoliday: next });
+      merged.total = computeLineTotal(merged, { dayIsHoliday: next, holidayMultiplier: quote.holidayMultiplier });
       return merged;
     });
     const newTotal = money(recomputeOnce(newLines, day.date, next));
@@ -338,12 +339,13 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
    *  toggled day, so the running quote total reflects the in-flight flip
    *  even before quoteDays state has settled. */
   function recomputeOnce(lines: QuoteLine[], overrideDate: string, overrideFlag: boolean): number {
+    const H = quote?.holidayMultiplier;
     return lines.reduce((s, l) => {
       if (l.quoteDate === overrideDate) {
-        return s + computeLineTotal(l, { dayIsHoliday: overrideFlag });
+        return s + computeLineTotal(l, { dayIsHoliday: overrideFlag, holidayMultiplier: H });
       }
       const flag = !!(l.quoteDate && holidayByDate.get(l.quoteDate));
-      return s + computeLineTotal(l, { dayIsHoliday: flag });
+      return s + computeLineTotal(l, { dayIsHoliday: flag, holidayMultiplier: H });
     }, 0);
   }
 
@@ -375,12 +377,24 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     );
     if (!ok) return;
 
-    const rcRes = await supabase
-      .from("rate_card_profile_rows")
-      .select("*, specialties(id, name, position_id)")
-      .eq("profile_id", newProfileId)
-      .order("sort_order");
+    // Also fetch the new profile's holiday_multiplier so the quote inherits
+    // the new rate card's holiday rule (operator can still override after).
+    const [rcRes, profileRes] = await Promise.all([
+      supabase
+        .from("rate_card_profile_rows")
+        .select("*, specialties(id, name, position_id)")
+        .eq("profile_id", newProfileId)
+        .order("sort_order"),
+      supabase
+        .from("rate_card_profiles")
+        .select("holiday_multiplier")
+        .eq("id", newProfileId)
+        .maybeSingle(),
+    ]);
     const newRows = rcRes.data ?? [];
+    const newHolidayMultiplier = profileRes.data?.holiday_multiplier != null
+      ? Number(profileRes.data.holiday_multiplier)
+      : quote.holidayMultiplier;
 
     const newLines = quote.lines.map((l) => {
       // Match by specialty_id alone — rate_card_profile_rows has no
@@ -388,7 +402,12 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       const match = l.specialtyId
         ? newRows.find((r: any) => r.specialty_id === l.specialtyId)
         : undefined;
-      if (!match) return l; // keep old rates, will be flagged in UI
+      const dayIsHoliday = !!(l.quoteDate && holidayByDate.get(l.quoteDate));
+      if (!match) {
+        // No new rate match — keep existing rates but still recompute total
+        // with the new holiday multiplier if applicable.
+        return { ...l, total: computeLineTotal(l, { dayIsHoliday, holidayMultiplier: newHolidayMultiplier }) };
+      }
       const merged: QuoteLine = {
         ...l,
         baseHourly: match.hourly ?? 0,
@@ -396,17 +415,18 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         otRate: match.ot_rate ?? 0,
         dtRate: match.dt_rate ?? 0,
       };
-      merged.total = recomputeLineTotal(merged);
+      merged.total = computeLineTotal(merged, { dayIsHoliday, holidayMultiplier: newHolidayMultiplier });
       return merged;
     });
 
-    const newTotal = money(recomputeTotals(newLines));
+    const newTotal = money(newLines.reduce((s, l) => s + (l.total || 0), 0));
     const pct = quote.depositPct ?? 0;
     const newDeposit = money(newTotal * (pct / 100));
     setRateCardRows(newRows);
     setQuote({
       ...quote,
       rateCardProfileId: newProfileId,
+      holidayMultiplier: newHolidayMultiplier,
       lines: newLines,
       total: newTotal,
       deposit: newDeposit,
@@ -701,6 +721,31 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
                 </option>
               ))}
             </select>
+          </label>
+          <label style={{ marginTop: 8, display: "block" }}>
+            <div className="muted">Holiday Multiplier</div>
+            <input
+              type="number"
+              min={1.0}
+              step={0.1}
+              value={quote.holidayMultiplier ?? 2.0}
+              onChange={(e) => {
+                const H = Number(e.target.value) || 2.0;
+                // Recompute every line — holiday-flagged days bill at the
+                // new multiplier × base. Non-holiday lines unchanged.
+                const newLines = quote.lines.map((l) => {
+                  const dayIsHoliday = !!(l.quoteDate && holidayByDate.get(l.quoteDate));
+                  if (!dayIsHoliday) return l;
+                  return { ...l, total: computeLineTotal(l, { dayIsHoliday: true, holidayMultiplier: H }) };
+                });
+                const newTotal = money(newLines.reduce((s, l) => s + (l.total || 0), 0));
+                const pct = quote.depositPct ?? 0;
+                const newDeposit = money(newTotal * (pct / 100));
+                setQuote({ ...quote, holidayMultiplier: H, lines: newLines, total: newTotal, deposit: newDeposit });
+              }}
+              style={{ width: 80 }}
+              title="Snapshotted from the rate card at draft creation. Override per-quote for one-off contract terms. Frozen on issue."
+            />
           </label>
           <label style={{ marginTop: 8, display: "block" }}>
             <div className="muted">Deposit %</div>
