@@ -144,6 +144,13 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
 
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
   const [dayFilter, setDayFilter] = useState<string>("all");
+  // Bulk selection (admin only — gated on !hidePayAlways at render time).
+  // Cleared whenever the picker switches timesheets so we never act on
+  // entries from a different job.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [busyBatch, setBusyBatch] = useState<null | "approve" | "reject" | "delete">(null);
+  // Clear selection on timesheet swap.
+  useEffect(() => { setSelectedIds(new Set()); }, [timesheet?.id]);
   // Per-day collapse state on the editing view. Print mode forces all expanded
   // (via @media print) and hides the day-separator header rows.
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
@@ -331,23 +338,68 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     persist({ ...timesheet, rows: [...timesheet.rows, { ...entry, status: "approved" }] });
   }
 
-  async function handleApproveRow(row: import("@/lib/store/types").TimeEntry) {
-    if (!timesheet) return;
-    await setEntryApproved(row.id);
-    // Update in-memory status so the badge reflects immediately
-    persist({ ...timesheet, rows: timesheet.rows.map((r) => r.id === row.id ? { ...r, status: "approved" } : r) });
-  }
-
   async function handleReject(entryId: string) {
+    // Used by the "Staff Submissions Pending Review" panel below the grid
+    // (separate from the bulk-select flow on the grid itself).
     await rejectStaffEntry(entryId);
     setPendingEntries((prev) => prev.filter((e) => e.id !== entryId));
   }
 
-  async function handleRejectRow(entryId: string) {
+  // ─── Bulk row actions (admin only) ─────────────────────────────────────────
+  // All three operate on the in-memory timesheet rows whose id is in
+  // selectedIds. Approve/Reject mirror the single-row handlers; Delete is
+  // a single in-memory filter call followed by persist.
+  function toggleRowSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function toggleAllRowsSelected() {
     if (!timesheet) return;
-    await rejectStaffEntry(entryId);
-    // Update in-memory status so the badge reflects immediately
-    persist({ ...timesheet, rows: timesheet.rows.map((r) => r.id === entryId ? { ...r, status: "rejected" } : r) });
+    const all = new Set(timesheet.rows.map((r) => r.id));
+    const allSelected = timesheet.rows.length > 0 && timesheet.rows.every((r) => selectedIds.has(r.id));
+    setSelectedIds(allSelected ? new Set() : all);
+  }
+  async function handleApproveSelected() {
+    if (!timesheet) return;
+    const targets = timesheet.rows.filter((r) => selectedIds.has(r.id) && r.status !== "approved" && r.employeeKey);
+    if (targets.length === 0) return;
+    setBusyBatch("approve");
+    try {
+      for (const r of targets) {
+        try { await setEntryApproved(r.id); }
+        catch (e) { console.error("[timekeeping] batch approve row failed:", r.id, e); }
+      }
+      const ids = new Set(targets.map((r) => r.id));
+      persist({ ...timesheet, rows: timesheet.rows.map((r) => ids.has(r.id) ? { ...r, status: "approved" } : r) });
+      setSelectedIds(new Set());
+    } finally { setBusyBatch(null); }
+  }
+  async function handleRejectSelected() {
+    if (!timesheet) return;
+    const targets = timesheet.rows.filter((r) => selectedIds.has(r.id) && r.status !== "rejected" && r.employeeKey);
+    if (targets.length === 0) return;
+    if (!confirm(`Reject ${targets.length} timesheet ${targets.length === 1 ? "entry" : "entries"}?`)) return;
+    setBusyBatch("reject");
+    try {
+      for (const r of targets) {
+        try { await rejectStaffEntry(r.id); }
+        catch (e) { console.error("[timekeeping] batch reject row failed:", r.id, e); }
+      }
+      const ids = new Set(targets.map((r) => r.id));
+      persist({ ...timesheet, rows: timesheet.rows.map((r) => ids.has(r.id) ? { ...r, status: "rejected" } : r) });
+      setSelectedIds(new Set());
+    } finally { setBusyBatch(null); }
+  }
+  function handleDeleteSelected() {
+    if (!timesheet) return;
+    const count = selectedIds.size;
+    if (count === 0) return;
+    if (!confirm(`Delete ${count} timesheet row${count === 1 ? "" : "s"}? This removes them from the timesheet on save.`)) return;
+    persist({ ...timesheet, rows: timesheet.rows.filter((r) => !selectedIds.has(r.id)) });
+    setSelectedIds(new Set());
   }
 
   const totals = useMemo(() => {
@@ -463,6 +515,39 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
             </>
           )}
         </div>
+        {/* Batch action bar — appears when one or more rows are ticked (admin only). */}
+        {!hidePayAlways && selectedIds.size > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: "6px 12px",
+                        background: "#eaf2fb", border: "1px solid #b6c8e0", borderRadius: 8 }}>
+            <strong style={{ fontSize: 13 }}>{selectedIds.size} selected</strong>
+            <button
+              onClick={handleApproveSelected}
+              disabled={!!busyBatch}
+              style={{ padding: "4px 12px", fontSize: 12 }}
+            >
+              {busyBatch === "approve" ? "Approving…" : `Approve ${selectedIds.size}`}
+            </button>
+            <button
+              className="secondary"
+              onClick={handleRejectSelected}
+              disabled={!!busyBatch}
+              style={{ padding: "4px 12px", fontSize: 12, color: "#a00", borderColor: "#e0a0a0" }}
+            >
+              {busyBatch === "reject" ? "Rejecting…" : `Reject ${selectedIds.size}`}
+            </button>
+            <button
+              className="danger"
+              onClick={handleDeleteSelected}
+              disabled={!!busyBatch}
+              style={{ padding: "4px 12px", fontSize: 12 }}
+            >
+              {busyBatch === "delete" ? "Deleting…" : `Delete ${selectedIds.size}`}
+            </button>
+            <button className="secondary" onClick={() => setSelectedIds(new Set())} disabled={!!busyBatch} style={{ padding: "4px 10px", fontSize: 12 }}>
+              Clear
+            </button>
+          </div>
+        )}
       </div>
 
       {dayFilter !== "all" && (
@@ -537,7 +622,23 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     <th colSpan={r1Spans.start}>Start Date</th>
                     <th colSpan={r1Spans.end}>End Date</th>
                     <th colSpan={phantomSpan} className="hide-print"></th>
-                    <th rowSpan={2} className="hide-print">Action</th>
+                    <th rowSpan={2} className="hide-print" style={{ minWidth: 90 }}>
+                      {!hidePayAlways && timesheet.rows.length > 0 && (() => {
+                        const allSel = timesheet.rows.every((r) => selectedIds.has(r.id));
+                        const someSel = !allSel && timesheet.rows.some((r) => selectedIds.has(r.id));
+                        return (
+                          <input
+                            type="checkbox"
+                            aria-label="Select all rows"
+                            checked={allSel}
+                            ref={(el) => { if (el) el.indeterminate = someSel; }}
+                            onChange={toggleAllRowsSelected}
+                            style={{ marginRight: 6 }}
+                          />
+                        );
+                      })()}
+                      Status
+                    </th>
                   </tr>
                   <tr>
                     <th className="sig-box-th">Sign IN 1</th>
@@ -641,12 +742,15 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       </td>
                       <td colSpan={phantomSpan} className="hide-print"></td>
                       <td rowSpan={2} className="hide-print" style={{ verticalAlign: "middle" }}>
-                        <div className="action-row" style={{ flexDirection: "column", gap: 6 }}>
-                          {row.employeeKey && row.status === "submitted" && !hidePayAlways && (
-                            <>
-                              <button onClick={() => handleApproveRow(row)}>✓ Approve</button>
-                              <button className="danger" style={{ padding: "4px 10px", fontSize: 12 }} onClick={() => handleRejectRow(row.id)}>✗ Reject</button>
-                            </>
+                        <div className="action-row" style={{ flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                          {!hidePayAlways && (
+                            <input
+                              type="checkbox"
+                              aria-label="Select row"
+                              checked={selectedIds.has(row.id)}
+                              onChange={() => toggleRowSelected(row.id)}
+                              disabled={!!busyBatch}
+                            />
                           )}
                           {row.employeeKey && row.status === "approved" && (
                             <span className="badge pill-green" style={{ fontSize: 11 }}>Approved</span>
@@ -657,7 +761,9 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                           {row.employeeKey && row.status === "submitted" && (
                             <span className="badge" style={{ fontSize: 11, background: "#e8f0fe", color: "#1a56c4" }}>Pending</span>
                           )}
-                          <button className="secondary" onClick={() => removeRow(row.id)}>Delete</button>
+                          {/* Per-row Delete kept as a tiny escape hatch (one-off cleanup
+                              during editing). Bulk Delete is in the batch action bar. */}
+                          <button className="secondary" onClick={() => removeRow(row.id)} style={{ padding: "2px 8px", fontSize: 11 }}>Delete</button>
                         </div>
                       </td>
                     </tr>
