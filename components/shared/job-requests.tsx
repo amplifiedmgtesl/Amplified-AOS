@@ -144,16 +144,37 @@ export default function JobRequests() {
       }))));
   }, []);
 
-  // Deep-link: /job-requests?id=<jobreq-id> auto-opens that record. Lets the
-  // Client Maintenance "Jobs" tab (and other places) link directly to a job.
-  // Runs once on mount; strips the param from the URL afterwards so later
-  // state changes (e.g. saving a new job that grows rows.length) don't
-  // re-trigger and snap the user back to the deep-linked record.
+  // Deep-link:
+  //   /job-requests?id=<jobreq-id>            → auto-open that record
+  //   /job-requests?new=1&clientId=<client>   → blank form prefilled with that client
+  // Lets the Client Maintenance "Jobs" tab (and other places) link directly
+  // to a job, or jump into a new-job draft already scoped to the client.
+  // Runs once after both rows AND clients are loaded, then strips the params.
   const [deepLinkHandled, setDeepLinkHandled] = useState(false);
   useEffect(() => {
     if (deepLinkHandled || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
+    const wantNew = params.get("new") === "1";
+    const wantClientId = params.get("clientId");
     const wantId = params.get("id");
+
+    // New-job path: needs clients loaded so we can resolve the client name.
+    if (wantNew) {
+      if (clients.length === 0) return; // wait for clients to load
+      const c = wantClientId ? clientById.get(wantClientId) : undefined;
+      setMode("new");
+      setEditingId(null);
+      setForm({
+        ...BLANK,
+        clientId: c?.id ?? "",
+        client: c?.name ?? "",
+      });
+      setMsg("");
+      window.history.replaceState({}, "", window.location.pathname);
+      setDeepLinkHandled(true);
+      return;
+    }
+
     if (!wantId) { setDeepLinkHandled(true); return; }
     const target = rows.find((r) => r.id === wantId);
     if (target) {
@@ -171,7 +192,7 @@ export default function JobRequests() {
       setDeepLinkHandled(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows.length, deepLinkHandled]);
+  }, [rows.length, clients.length, deepLinkHandled]);
 
   const clientById = useMemo(() => {
     const map = new Map<string, Client>();

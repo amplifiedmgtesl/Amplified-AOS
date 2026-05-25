@@ -86,6 +86,30 @@ export default function RateCardEditor() {
   useEffect(() => { saveTerms(terms); }, [terms]);
   useEffect(() => { saveClientName(clientName); }, [clientName]);
 
+  // Deep-link: /rate-card?new=1&clientId=<client> opens a fresh rate card
+  // prefilled with that client. Lets the Client Maintenance "Rate Cards"
+  // tab jump straight into a new card scoped to the current client.
+  // Runs once after clients have loaded so we can resolve the client name.
+  const [deepLinkHandled, setDeepLinkHandled] = useState(false);
+  useEffect(() => {
+    if (deepLinkHandled || typeof window === "undefined") return;
+    if (clients.length === 0) return; // wait for clients to load
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") !== "1") { setDeepLinkHandled(true); return; }
+    const wantClientId = params.get("clientId") ?? "";
+    const c = wantClientId ? clients.find((x) => x.id === wantClientId) : undefined;
+
+    // Use the existing startNewRateCard pathway, then overwrite client.
+    startNewRateCard();
+    if (c) {
+      setClientId(c.id);
+      setClientName(c.name);
+    }
+    window.history.replaceState({}, "", window.location.pathname);
+    setDeepLinkHandled(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clients.length, deepLinkHandled]);
+
   const visibleRows = useMemo(() => rows.filter((r) => r.show), [rows]);
 
   function specialtiesForPosition(positionName: string): Specialty[] {

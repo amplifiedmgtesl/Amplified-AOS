@@ -667,8 +667,17 @@ export default function ClientMaintenance() {
                 <ClientContactsTab clientId={selectedId} onCountChange={setContactsCount} />
               )}
               {activeTab === "job_requests" && (
-                tabData.jobRequests.length === 0
-                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No job requests.</div>
+                <>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => { if (selectedId) window.location.href = `/job-requests?new=1&clientId=${encodeURIComponent(selectedId)}`; }}
+                      style={{ fontSize: 12, padding: "4px 10px" }}
+                      title="Start a new job for this client"
+                    >+ New Job</button>
+                  </div>
+                  {tabData.jobRequests.length === 0
+                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No job requests yet.</div>
                   : <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                       <thead>
                         <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
@@ -719,6 +728,8 @@ export default function ClientMaintenance() {
                         ))}
                       </tbody>
                     </table>
+                  }
+                </>
               )}
 
               {activeTab === "quotes" && (() => {
@@ -774,8 +785,17 @@ export default function ClientMaintenance() {
               })()}
 
               {activeTab === "rate_cards" && (
-                tabData.rateCards.length === 0
-                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No rate cards.</div>
+                <>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => { if (selectedId) window.location.href = `/rate-card?new=1&clientId=${encodeURIComponent(selectedId)}`; }}
+                      style={{ fontSize: 12, padding: "4px 10px" }}
+                      title="Start a new rate card for this client"
+                    >+ New Rate Card</button>
+                  </div>
+                  {tabData.rateCards.length === 0
+                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No rate cards yet.</div>
                   : <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                       <thead>
                         <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
@@ -792,6 +812,8 @@ export default function ClientMaintenance() {
                         ))}
                       </tbody>
                     </table>
+                  }
+                </>
               )}
 
               {activeTab === "calendar_events" && (
