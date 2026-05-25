@@ -387,7 +387,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                   .sort((a, b) => (b.requestDate || "").localeCompare(a.requestDate || ""))
                   .map((j) => (
                     <option key={j.id} value={`job:${j.id}`}>
-                      {(j.jobNo || "(no #)")} — {j.eventName || "(untitled)"} — {j.client || ""}
+                      {j.jobNo || j.eventName || "(untitled)"}
                     </option>
                   ))}
               </optgroup>
