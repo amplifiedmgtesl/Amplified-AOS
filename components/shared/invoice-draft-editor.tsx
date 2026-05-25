@@ -189,11 +189,12 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     setInvoiceDays(newDays);
 
     // Recompute line totals for that date with the new flag.
-    // Auto-zero otHours/dtHours when flipping ON — holiday 2× supersedes
-    // OT/DT premiums (2026-05-25 decision). Flipping OFF doesn't restore.
+    // Do NOT touch otHours/dtHours — they stay as entered so toggling holiday
+    // off restores the original math. Calc engine ignores OT/DT when
+    // dayIsHoliday=true (everything bills flat at 2× base).
     const newLines = invoice.lines.map((l) => {
       if (l.quoteDate !== date) return l;
-      const merged = next ? { ...l, otHours: 0, dtHours: 0 } : { ...l };
+      const merged = { ...l };
       merged.total = computeLineTotal(merged, { dayIsHoliday: next });
       return merged;
     });
@@ -541,7 +542,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           <h3 className="section-title" style={{ margin: 0, marginBottom: 8 }}>🎄 Holiday days</h3>
           <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
             Flag any date as a holiday to bill base, OT, and DT for every line on that date at 2× rate.
-            Travel is not multiplied. OT/DT inputs are disabled on holiday days — all hours bill at 2× base.
+            Travel is not multiplied. On holiday days, OT/DT values are preserved but not billed — all hours bill at 2× base. Toggle holiday off to restore OT/DT math.
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
             {invoiceDates.map((date) => {
@@ -736,22 +737,20 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                       <input
                         type="number"
                         value={l.otHours || 0}
-                        disabled={lineDayIsHoliday}
                         onChange={(e) => updateLine(i, { otHours: parseFloat(e.target.value) || 0 })}
                         step="0.5"
-                        style={{ width: 60, opacity: lineDayIsHoliday ? 0.4 : 1 }}
-                        title={lineDayIsHoliday ? "Disabled on holiday days — all hours bill at 2× base, OT not applied." : "Total OT person-hours billed at $/OT"}
+                        style={{ width: 60, opacity: lineDayIsHoliday ? 0.55 : 1 }}
+                        title={lineDayIsHoliday ? "Holiday active — value preserved but not billed. Toggle holiday off to use OT in math." : "Total OT person-hours billed at $/OT"}
                       />
                     </td>
                     <td>
                       <input
                         type="number"
                         value={l.dtHours || 0}
-                        disabled={lineDayIsHoliday}
                         onChange={(e) => updateLine(i, { dtHours: parseFloat(e.target.value) || 0 })}
                         step="0.5"
-                        style={{ width: 60, opacity: lineDayIsHoliday ? 0.4 : 1 }}
-                        title={lineDayIsHoliday ? "Disabled on holiday days — all hours bill at 2× base, DT not applied." : "Total DT person-hours billed at $/DT"}
+                        style={{ width: 60, opacity: lineDayIsHoliday ? 0.55 : 1 }}
+                        title={lineDayIsHoliday ? "Holiday active — value preserved but not billed. Toggle holiday off to use DT in math." : "Total DT person-hours billed at $/DT"}
                       />
                     </td>
                     <td>
@@ -787,22 +786,20 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                       <input
                         type="number"
                         value={l.otRate}
-                        disabled={lineDayIsHoliday}
                         onChange={(e) => updateLine(i, { otRate: parseFloat(e.target.value) || 0 })}
                         step="0.01"
-                        style={{ width: 65, opacity: lineDayIsHoliday ? 0.4 : 1 }}
-                        title={lineDayIsHoliday ? "Disabled on holiday days — OT rate not applied." : undefined}
+                        style={{ width: 65, opacity: lineDayIsHoliday ? 0.55 : 1 }}
+                        title={lineDayIsHoliday ? "Holiday active — rate preserved but not used in math." : undefined}
                       />
                     </td>
                     <td>
                       <input
                         type="number"
                         value={l.dtRate}
-                        disabled={lineDayIsHoliday}
                         onChange={(e) => updateLine(i, { dtRate: parseFloat(e.target.value) || 0 })}
                         step="0.01"
-                        style={{ width: 65, opacity: lineDayIsHoliday ? 0.4 : 1 }}
-                        title={lineDayIsHoliday ? "Disabled on holiday days — DT rate not applied." : undefined}
+                        style={{ width: 65, opacity: lineDayIsHoliday ? 0.55 : 1 }}
+                        title={lineDayIsHoliday ? "Holiday active — rate preserved but not used in math." : undefined}
                       />
                     </td>
                     <td>
