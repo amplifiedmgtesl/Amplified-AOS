@@ -763,9 +763,20 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                       <input
                         type="number"
                         value={l.baseHourly}
-                        onChange={(e) => updateLine(i, { baseHourly: parseFloat(e.target.value) || 0 })}
+                        onChange={(e) => {
+                          const h = parseFloat(e.target.value) || 0;
+                          // Mirror rate-card-editor / quote-draft-editor auto-derive:
+                          // Day = h × 10, OT = h × 1.5, DT = h × 2.
+                          updateLine(i, {
+                            baseHourly: h,
+                            baseDay:    Number((h * 10).toFixed(2)),
+                            otRate:     Number((h * 1.5).toFixed(2)),
+                            dtRate:     Number((h * 2).toFixed(2)),
+                          });
+                        }}
                         step="0.01"
                         style={{ width: 70, opacity: isDayMode ? 0.5 : 1 }}
+                        title="Hourly rate. Changing this auto-derives Day (×10), OT (×1.5), and DT (×2). Override any of those manually after if needed."
                       />
                     </td>
                     <td>

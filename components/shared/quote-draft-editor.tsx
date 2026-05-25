@@ -552,7 +552,18 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       <td><input className="num" type="number" value={line.dtHours || 0} onChange={(e) => updateLine(globalIndex, { dtHours: parseFloat(e.target.value) || 0 })} style={{ width: 55 }} step="0.5" title="Total DT person-hours" /></td>
       <td><input className="num" type="number" value={line.holidayHours} onChange={(e) => updateLine(globalIndex, { holidayHours: parseFloat(e.target.value) || 0 })} style={{ width: 55 }} step="0.5" title="Holiday person-hours bill at $/DT" /></td>
       <td><input className="num" type="number" value={line.travel} onChange={(e) => updateLine(globalIndex, { travel: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="Flat travel charge per line" /></td>
-      <td><input className="num" type="number" value={line.baseHourly} onChange={(e) => updateLine(globalIndex, { baseHourly: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} step="0.01" /></td>
+      <td><input className="num" type="number" value={line.baseHourly} onChange={(e) => {
+        const h = parseFloat(e.target.value) || 0;
+        // Mirror rate-card-editor auto-derive: changing hourly cascades the
+        // derived rates so the user doesn't have to retype OT/DT/Day each time.
+        // Day = h × 10, OT = h × 1.5, DT = h × 2.
+        updateLine(globalIndex, {
+          baseHourly: h,
+          baseDay:    Number((h * 10).toFixed(2)),
+          otRate:     Number((h * 1.5).toFixed(2)),
+          dtRate:     Number((h * 2).toFixed(2)),
+        });
+      }} style={{ width: 70 }} step="0.01" title="Hourly rate. Changing this auto-derives Day (×10), OT (×1.5), and DT (×2). Override any of those manually after if needed." /></td>
       <td><input className="num" type="number" value={line.baseDay} onChange={(e) => updateLine(globalIndex, { baseDay: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} step="0.01" /></td>
       <td><input className="num" type="number" value={line.otRate} onChange={(e) => updateLine(globalIndex, { otRate: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="OT rate — informational; OT computed at timesheet time" /></td>
       <td><input className="num" type="number" value={line.dtRate} onChange={(e) => updateLine(globalIndex, { dtRate: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="DT rate — informational; DT computed at timesheet time" /></td>
@@ -907,7 +918,15 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
                     <td><input type="date" value={line.quoteDate || ""} onChange={(e) => updateLine(globalIndex, { quoteDate: e.target.value })} /></td>
                     <td><input type="number" value={line.crewCount ?? line.qty ?? 1} onChange={(e) => { const c = parseInt(e.target.value, 10) || 0; updateLine(globalIndex, { crewCount: c, qty: c }); }} step="1" min="0" style={{ width: 60 }} /></td>
                     <td><input type="number" value={line.hours} onChange={(e) => updateLine(globalIndex, { hours: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} /></td>
-                    <td><input type="number" value={line.baseHourly} onChange={(e) => updateLine(globalIndex, { baseHourly: parseFloat(e.target.value) || 0 })} style={{ width: 80 }} step="0.01" /></td>
+                    <td><input type="number" value={line.baseHourly} onChange={(e) => {
+                      const h = parseFloat(e.target.value) || 0;
+                      updateLine(globalIndex, {
+                        baseHourly: h,
+                        baseDay:    Number((h * 10).toFixed(2)),
+                        otRate:     Number((h * 1.5).toFixed(2)),
+                        dtRate:     Number((h * 2).toFixed(2)),
+                      });
+                    }} style={{ width: 80 }} step="0.01" /></td>
                     <td>${line.total.toFixed(2)}</td>
                     <td><button className="secondary" onClick={() => deleteLine(globalIndex)} style={{ fontSize: 12 }}>×</button></td>
                   </tr>
