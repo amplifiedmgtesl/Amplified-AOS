@@ -27,6 +27,7 @@ import { loadQuote } from "@/lib/store/quotes";
 import { loadCompanySettings, type CompanySettings } from "@/lib/store/company-settings";
 import type { QuoteDraft, JobRequestShift } from "@/lib/store/types";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
+import { loadQuoteDays, holidayLookup } from "@/lib/storage/quote-days";
 import { supabase } from "@/lib/supabase/client";
 
 type LoadedJob = {
@@ -92,6 +93,7 @@ export default function QuotePdfView({ id }: { id: string }) {
   const [company, setCompany] = useState<CompanySettings | null>(null);
   const [positionsById, setPositionsById] = useState<Map<string, string>>(new Map());
   const [shiftsById, setShiftsById] = useState<Map<string, string>>(new Map());
+  const [holidayByDate, setHolidayByDate] = useState<Map<string, boolean>>(new Map());
   const [specialtiesById, setSpecialtiesById] = useState<Map<string, { name: string; positionId: string }>>(new Map());
   /** Rate card profile + rows used for the appendix Rate Schedule. */
   const [rateScheduleRows, setRateScheduleRows] = useState<any[]>([]);
@@ -137,6 +139,11 @@ export default function QuotePdfView({ id }: { id: string }) {
           const s = await loadShifts(q.jobRequestId, { includeInactive: true });
           if (!cancelled) setShiftsById(new Map(s.map((row: JobRequestShift) => [row.id, row.label])));
         }
+
+        // Per-date holiday flags (sourced from quote_days). Drives the
+        // "🎄 Holiday (2× rate)" badge on the day header in the printed quote.
+        const qds = await loadQuoteDays(q.id);
+        if (!cancelled) setHolidayByDate(holidayLookup(qds));
 
         // Load the rate card profile + its rows for the appendix Rate Schedule.
         if (q.rateCardProfileId) {
@@ -185,12 +192,11 @@ export default function QuotePdfView({ id }: { id: string }) {
   }
   const dayGroups = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
-  // Show the holiday-hours column in basic mode only when at least one line
-  // actually has holiday hours. Keeps the table tight when nobody booked
-  // a holiday, surfaces it clearly when they did.
-  const anyHoliday = quote.lines.some((l) => (l.holidayHours || 0) > 0);
-  const anyOt      = quote.lines.some((l) => (l.otHours      || 0) > 0);
-  const anyDt      = quote.lines.some((l) => (l.dtHours      || 0) > 0);
+  // OT/DT column visibility: include the column only when at least one line
+  // actually uses it (keeps simple quotes clean). Holiday is now a day-level
+  // badge rendered on the day-group header — no per-line column.
+  const anyOt = quote.lines.some((l) => (l.otHours || 0) > 0);
+  const anyDt = quote.lines.some((l) => (l.dtHours || 0) > 0);
 
   const dateRange =
     job?.request_date && job?.end_date && job.end_date !== job.request_date
@@ -294,10 +300,19 @@ export default function QuotePdfView({ id }: { id: string }) {
         <h3>Crew &amp; Services</h3>
         {dayGroups.length === 0 ? (
           <div className="no-lines">No line items.</div>
-        ) : dayGroups.map((g) => (
+        ) : dayGroups.map((g) => {
+          const isHoliday = !!holidayByDate.get(g.date);
+          return (
           <div key={g.date} className="day-group">
             <div className="day-header">
-              <span className="day-label">{g.label}</span>
+              <span className="day-label">
+                {g.label}
+                {isHoliday && (
+                  <span style={{ marginLeft: 8, padding: "1px 8px", borderRadius: 10, background: "#c0392b", color: "#fff", fontSize: "0.8em", fontWeight: 600 }}>
+                    Holiday · 2× rate
+                  </span>
+                )}
+              </span>
               <span className="day-subtotal">{fmtMoney(g.subtotal)}</span>
             </div>
             <table className="lines-table">
@@ -309,16 +324,15 @@ export default function QuotePdfView({ id }: { id: string }) {
                   <th className="num">Crew</th>
                   <th className="num">ST Hrs</th>
                   {/* Conditional columns mirror invoice PDF: only appear when
-                      at least one line uses that field. Keeps simple quotes
-                      clean while showing full math when complexity is real. */}
-                  {(detail === "full" || anyOt)      ? <th className="num">OT Hrs</th>  : null}
-                  {(detail === "full" || anyDt)      ? <th className="num">DT Hrs</th>  : null}
-                  {(detail === "full" || anyHoliday) ? <th className="num">Hol Hrs</th> : null}
+                      at least one line uses that field. Holiday is a day-level
+                      badge on the header above — no per-line column. */}
+                  {(detail === "full" || anyOt) ? <th className="num">OT Hrs</th> : null}
+                  {(detail === "full" || anyDt) ? <th className="num">DT Hrs</th> : null}
                   {detail === "full" ? <th className="num">Travel</th> : null}
                   <th className="num">{detail === "full" ? "$/hr" : "Rate"}</th>
                   {detail === "full" ? <th className="num">$/day</th> : null}
-                  {(detail === "full" || anyOt)                  ? <th className="num">$/OT</th> : null}
-                  {(detail === "full" || anyDt || anyHoliday)    ? <th className="num">$/DT</th> : null}
+                  {(detail === "full" || anyOt) ? <th className="num">$/OT</th> : null}
+                  {(detail === "full" || anyDt) ? <th className="num">$/DT</th> : null}
                   {detail === "full" ? <th>Rule</th> : null}
                   <th className="num">Total</th>
                 </tr>
@@ -337,14 +351,13 @@ export default function QuotePdfView({ id }: { id: string }) {
                       <td>{(line.shiftId ? shiftsById.get(line.shiftId) : "") || ""}</td>
                       <td className="num">{crewCount}</td>
                       <td className="num">{isDayMode ? "—" : (line.hours || "")}</td>
-                      {(detail === "full" || anyOt)      ? <td className="num">{line.otHours      || ""}</td> : null}
-                      {(detail === "full" || anyDt)      ? <td className="num">{line.dtHours      || ""}</td> : null}
-                      {(detail === "full" || anyHoliday) ? <td className="num">{line.holidayHours || ""}</td> : null}
+                      {(detail === "full" || anyOt) ? <td className="num">{line.otHours || ""}</td> : null}
+                      {(detail === "full" || anyDt) ? <td className="num">{line.dtHours || ""}</td> : null}
                       {detail === "full" ? <td className="num">{line.travel ? fmtMoney(line.travel) : ""}</td> : null}
                       <td className="num">{detail === "full" ? fmtMoney(line.baseHourly) : basicRateDisplay}</td>
                       {detail === "full" ? <td className="num">{fmtMoney(line.baseDay)}</td> : null}
-                      {(detail === "full" || anyOt)               ? <td className="num">{line.otRate > 0 ? fmtMoney(line.otRate) : ""}</td> : null}
-                      {(detail === "full" || anyDt || anyHoliday) ? <td className="num">{line.dtRate > 0 ? fmtMoney(line.dtRate) : ""}</td> : null}
+                      {(detail === "full" || anyOt) ? <td className="num">{line.otRate > 0 ? fmtMoney(line.otRate) : ""}</td> : null}
+                      {(detail === "full" || anyDt) ? <td className="num">{line.dtRate > 0 ? fmtMoney(line.dtRate) : ""}</td> : null}
                       {detail === "full" ? <td className="rule-cell">{line.rule || ""}</td> : null}
                       <td className="num">{fmtMoney(line.total)}</td>
                     </tr>
@@ -353,7 +366,8 @@ export default function QuotePdfView({ id }: { id: string }) {
               </tbody>
             </table>
           </div>
-        ))}
+          );
+        })}
       </section>
 
       {/* ─── Pricing summary at bottom ────────────────────────────────────── */}

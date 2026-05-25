@@ -289,7 +289,7 @@ export default function QuoteDetail({ id }: { id: string }) {
           <thead>
             <tr>
               <th>Date</th><th>Department</th><th>Specialty</th><th>Shift</th>
-              <th>Qty</th><th>Hrs</th><th>Hol</th><th>Travel</th>
+              <th>Qty</th><th>Hrs</th><th>Travel</th>
               <th>$/hr</th><th>$/day</th><th>OT</th><th>DT</th>
               <th>Rule</th><th>Mode</th><th>Total</th>
             </tr>
@@ -313,7 +313,6 @@ export default function QuoteDetail({ id }: { id: string }) {
                 <td>{(l.shiftId ? shifts.find((s) => s.id === l.shiftId)?.label : null) || "—"}</td>
                 <td>{l.qty}</td>
                 <td>{l.hours}</td>
-                <td>{l.holidayHours || 0}</td>
                 <td>${(l.travel || 0).toFixed(2)}</td>
                 <td>${(l.baseHourly || 0).toFixed(2)}</td>
                 <td>${(l.baseDay || 0).toFixed(2)}</td>

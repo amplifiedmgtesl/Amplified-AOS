@@ -19,6 +19,7 @@ import { loadInvoice, balanceDue } from "@/lib/store/invoices";
 import { loadCompanySettings, type CompanySettings } from "@/lib/store/company-settings";
 import type { InvoiceDraft, JobRequestShift } from "@/lib/store/types";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
+import { loadInvoiceDays, invoiceHolidayLookup } from "@/lib/storage/invoice-days";
 import { supabase } from "@/lib/supabase/client";
 import { isDayModeLine } from "@/lib/rates/line-calc";
 
@@ -77,6 +78,7 @@ export default function InvoicePdfView({ id }: { id: string }) {
   const [positionsById, setPositionsById] = useState<Map<string, string>>(new Map());
   const [specialtiesById, setSpecialtiesById] = useState<Map<string, { name: string; positionId: string }>>(new Map());
   const [shiftsById, setShiftsById] = useState<Map<string, string>>(new Map());
+  const [holidayByDate, setHolidayByDate] = useState<Map<string, boolean>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -117,6 +119,11 @@ export default function InvoicePdfView({ id }: { id: string }) {
           const s = await loadShifts(inv.jobRequestId, { includeInactive: true });
           if (!cancelled) setShiftsById(new Map(s.map((row: JobRequestShift) => [row.id, row.label])));
         }
+
+        // Per-date holiday flags. Drives the day-header "Holiday · 2× rate"
+        // badge on the printed invoice.
+        const ids = await loadInvoiceDays(inv.id);
+        if (!cancelled) setHolidayByDate(invoiceHolidayLookup(ids));
 
         setLoading(false);
       } catch (err: any) {
@@ -169,8 +176,8 @@ export default function InvoicePdfView({ id }: { id: string }) {
     ?? (job?.job_no ? `${job.job_no}${isDeposit ? "_DEP" : "_INV"}${invoice.parentInvoiceId ? `_REV${invoice.revisionNo - 1}` : ""} (DRAFT)` : "(DRAFT)");
 
   const balance     = balanceDue(invoice);
-  const anyHoliday  = invoice.lines.some((l) => (l.holidayHours || 0) > 0);
-  const anyTravel   = invoice.lines.some((l) => (l.travel       || 0) > 0);
+  // Holiday is now a day-level badge on the day-group header — no per-line column.
+  const anyTravel   = invoice.lines.some((l) => (l.travel || 0) > 0);
   const anyShift    = invoice.lines.some((l) => !!l.shiftId);
   // OT/DT columns only show when at least one line actually uses them.
   // Explicit fields, no rule parsing.
@@ -290,10 +297,19 @@ export default function InvoicePdfView({ id }: { id: string }) {
           <h3>Crew &amp; Services</h3>
           {dayGroups.length === 0 ? (
             <div className="no-lines">No line items.</div>
-          ) : dayGroups.map((g) => (
+          ) : dayGroups.map((g) => {
+            const isHoliday = !!holidayByDate.get(g.date);
+            return (
             <div key={g.date} className="day-group">
               <div className="day-header">
-                <span className="day-label">{g.label}</span>
+                <span className="day-label">
+                  {g.label}
+                  {isHoliday && (
+                    <span style={{ marginLeft: 8, padding: "1px 8px", borderRadius: 10, background: "#c0392b", color: "#fff", fontSize: "0.8em", fontWeight: 600 }}>
+                      Holiday · 2× rate
+                    </span>
+                  )}
+                </span>
                 <span className="day-subtotal">{fmtMoney(g.subtotal)}</span>
               </div>
               <table className="lines-table">
@@ -301,31 +317,29 @@ export default function InvoicePdfView({ id }: { id: string }) {
                   <tr>
                     <th>Position</th>
                     <th>Specialty</th>
-                    {anyShift    ? <th>Shift</th>                  : null}
-                    {anyCrewGt1  ? <th className="num">Crew</th>   : null}
+                    {anyShift   ? <th>Shift</th>                  : null}
+                    {anyCrewGt1 ? <th className="num">Crew</th>   : null}
                     <th className="num">ST Hrs</th>
-                    {anyOt       ? <th className="num">OT Hrs</th> : null}
-                    {anyDt       ? <th className="num">DT Hrs</th> : null}
-                    {anyHoliday  ? <th className="num">Hol Hrs</th>: null}
+                    {anyOt      ? <th className="num">OT Hrs</th> : null}
+                    {anyDt      ? <th className="num">DT Hrs</th> : null}
                     <th className="num">Rate</th>
-                    {anyOt       ? <th className="num">$/OT</th>   : null}
-                    {anyDt || anyHoliday ? <th className="num">$/DT</th> : null}
-                    {anyTravel   ? <th className="num">Travel</th> : null}
+                    {anyOt      ? <th className="num">$/OT</th>   : null}
+                    {anyDt      ? <th className="num">$/DT</th>   : null}
+                    {anyTravel  ? <th className="num">Travel</th> : null}
                     <th className="num">Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {g.lines.map(({ line, positionName, specialtyName }, i) => {
-                    const isDayMode    = isDayModeLine(line);
-                    const crewCount    = Number(line.crewCount ?? line.qty ?? 1);
-                    const hours        = Number(line.hours        || 0);
-                    const otHours      = Number(line.otHours      || 0);
-                    const dtHours      = Number(line.dtHours      || 0);
-                    const holidayHours = Number(line.holidayHours || 0);
-                    const travel       = Number(line.travel       || 0);
-                    const otRate       = Number(line.otRate       || 0);
-                    const dtRate       = Number(line.dtRate       || 0);
-                    const rateDisplay  = isDayMode
+                    const isDayMode = isDayModeLine(line);
+                    const crewCount = Number(line.crewCount ?? line.qty ?? 1);
+                    const hours     = Number(line.hours   || 0);
+                    const otHours   = Number(line.otHours || 0);
+                    const dtHours   = Number(line.dtHours || 0);
+                    const travel    = Number(line.travel  || 0);
+                    const otRate    = Number(line.otRate  || 0);
+                    const dtRate    = Number(line.dtRate  || 0);
+                    const rateDisplay = isDayMode
                       ? `${fmtMoney(line.baseDay)} / day`
                       : `${fmtMoney(line.baseHourly)} / hr`;
 
@@ -334,18 +348,15 @@ export default function InvoicePdfView({ id }: { id: string }) {
                         <tr>
                           <td>{positionName}</td>
                           <td>{specialtyName}</td>
-                          {anyShift    ? <td>{(line.shiftId ? shiftsById.get(line.shiftId) : "") || ""}</td> : null}
-                          {anyCrewGt1  ? <td className="num">{crewCount}</td> : null}
+                          {anyShift   ? <td>{(line.shiftId ? shiftsById.get(line.shiftId) : "") || ""}</td> : null}
+                          {anyCrewGt1 ? <td className="num">{crewCount}</td> : null}
                           <td className="num">{isDayMode ? "—" : (hours || "")}</td>
-                          {anyOt       ? <td className="num">{otHours      || ""}</td> : null}
-                          {anyDt       ? <td className="num">{dtHours      || ""}</td> : null}
-                          {anyHoliday  ? <td className="num">{holidayHours || ""}</td> : null}
+                          {anyOt      ? <td className="num">{otHours || ""}</td> : null}
+                          {anyDt      ? <td className="num">{dtHours || ""}</td> : null}
                           <td className="num">{rateDisplay}</td>
-                          {anyOt       ? <td className="num">{otRate > 0 ? fmtMoney(otRate) : ""}</td> : null}
-                          {anyDt || anyHoliday
-                            ? <td className="num">{dtRate > 0 ? fmtMoney(dtRate) : ""}</td>
-                            : null}
-                          {anyTravel   ? <td className="num">{travel > 0 ? fmtMoney(travel) : ""}</td> : null}
+                          {anyOt      ? <td className="num">{otRate > 0 ? fmtMoney(otRate) : ""}</td> : null}
+                          {anyDt      ? <td className="num">{dtRate > 0 ? fmtMoney(dtRate) : ""}</td> : null}
+                          {anyTravel  ? <td className="num">{travel > 0 ? fmtMoney(travel) : ""}</td> : null}
                           <td className="num">{fmtMoney(line.total)}</td>
                         </tr>
                       </React.Fragment>
@@ -354,7 +365,8 @@ export default function InvoicePdfView({ id }: { id: string }) {
                 </tbody>
               </table>
             </div>
-          ))}
+            );
+          })}
         </section>
       )}
 

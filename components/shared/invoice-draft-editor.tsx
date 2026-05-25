@@ -189,9 +189,11 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     setInvoiceDays(newDays);
 
     // Recompute line totals for that date with the new flag.
+    // Auto-zero otHours/dtHours when flipping ON — holiday 2× supersedes
+    // OT/DT premiums (2026-05-25 decision). Flipping OFF doesn't restore.
     const newLines = invoice.lines.map((l) => {
       if (l.quoteDate !== date) return l;
-      const merged = { ...l };
+      const merged = next ? { ...l, otHours: 0, dtHours: 0 } : { ...l };
       merged.total = computeLineTotal(merged, { dayIsHoliday: next });
       return merged;
     });
@@ -539,7 +541,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           <h3 className="section-title" style={{ margin: 0, marginBottom: 8 }}>🎄 Holiday days</h3>
           <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
             Flag any date as a holiday to bill base, OT, and DT for every line on that date at 2× rate.
-            Travel is not multiplied. Per-line <code>Hol Hrs</code> stays separate (manual override).
+            Travel is not multiplied. OT/DT inputs are disabled on holiday days — all hours bill at 2× base.
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
             {invoiceDates.map((date) => {
@@ -601,7 +603,6 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
               <th title="Total ST person-hours (0 on day-rate lines)">ST Hrs</th>
               <th title="Total OT person-hours across crew">OT Hrs</th>
               <th title="Total DT person-hours across crew">DT Hrs</th>
-              <th title="Total holiday person-hours (billed at $/DT)">Hol Hrs</th>
               <th>$/hr</th>
               <th>$/day</th>
               <th>$/OT</th>
@@ -613,9 +614,11 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           </thead>
           <tbody>
             {invoice.lines.length === 0 ? (
-              <tr><td colSpan={17} className="muted">No line items.</td></tr>
+              <tr><td colSpan={16} className="muted">No line items.</td></tr>
             ) : invoice.lines.map((l, i) => {
               const isDayMode = isDayModeLine(l);
+              // Day-level holiday → OT/DT inputs disabled, 2× supersedes premiums.
+              const lineDayIsHoliday = !!(l.quoteDate && holidayByDate.get(l.quoteDate));
               // Specialty is authoritative — derive position from
               // specialty.position_id when set. Falls back to the line's
               // positionId, then best-effort matches the legacy
@@ -733,30 +736,22 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                       <input
                         type="number"
                         value={l.otHours || 0}
+                        disabled={lineDayIsHoliday}
                         onChange={(e) => updateLine(i, { otHours: parseFloat(e.target.value) || 0 })}
                         step="0.5"
-                        style={{ width: 60 }}
-                        title="Total OT person-hours billed at $/OT"
+                        style={{ width: 60, opacity: lineDayIsHoliday ? 0.4 : 1 }}
+                        title={lineDayIsHoliday ? "Disabled on holiday days — all hours bill at 2× base, OT not applied." : "Total OT person-hours billed at $/OT"}
                       />
                     </td>
                     <td>
                       <input
                         type="number"
                         value={l.dtHours || 0}
+                        disabled={lineDayIsHoliday}
                         onChange={(e) => updateLine(i, { dtHours: parseFloat(e.target.value) || 0 })}
                         step="0.5"
-                        style={{ width: 60 }}
-                        title="Total DT person-hours billed at $/DT"
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        value={l.holidayHours || 0}
-                        onChange={(e) => updateLine(i, { holidayHours: parseFloat(e.target.value) || 0 })}
-                        step="0.5"
-                        style={{ width: 60 }}
-                        title="Holiday person-hours bill at $/DT"
+                        style={{ width: 60, opacity: lineDayIsHoliday ? 0.4 : 1 }}
+                        title={lineDayIsHoliday ? "Disabled on holiday days — all hours bill at 2× base, DT not applied." : "Total DT person-hours billed at $/DT"}
                       />
                     </td>
                     <td>
@@ -792,18 +787,22 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                       <input
                         type="number"
                         value={l.otRate}
+                        disabled={lineDayIsHoliday}
                         onChange={(e) => updateLine(i, { otRate: parseFloat(e.target.value) || 0 })}
                         step="0.01"
-                        style={{ width: 65 }}
+                        style={{ width: 65, opacity: lineDayIsHoliday ? 0.4 : 1 }}
+                        title={lineDayIsHoliday ? "Disabled on holiday days — OT rate not applied." : undefined}
                       />
                     </td>
                     <td>
                       <input
                         type="number"
                         value={l.dtRate}
+                        disabled={lineDayIsHoliday}
                         onChange={(e) => updateLine(i, { dtRate: parseFloat(e.target.value) || 0 })}
                         step="0.01"
-                        style={{ width: 65 }}
+                        style={{ width: 65, opacity: lineDayIsHoliday ? 0.4 : 1 }}
+                        title={lineDayIsHoliday ? "Disabled on holiday days — DT rate not applied." : undefined}
                       />
                     </td>
                     <td>

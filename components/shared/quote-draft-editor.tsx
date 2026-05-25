@@ -270,7 +270,6 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       hours: 0,
       otHours: 0,
       dtHours: 0,
-      holidayHours: 0,
       travel: rateRow.travel ?? 0,
       baseHourly: rateRow.hourly ?? 0,
       baseDay: rateRow.day ?? 0,
@@ -309,9 +308,13 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     setQuoteDays(newDays);
 
     // Recompute totals for every line on this date with the new flag.
+    // Also auto-zero otHours/dtHours when flipping ON, since the holiday
+    // 2× rule supersedes OT/DT premiums (2026-05-25 decision). Flipping
+    // back OFF doesn't restore them — operator re-enters if they were
+    // meaningful in the first place.
     const newLines = quote.lines.map((l) => {
       if (l.quoteDate !== day.date) return l;
-      const merged = { ...l };
+      const merged = next ? { ...l, otHours: 0, dtHours: 0 } : { ...l };
       merged.total = computeLineTotal(merged, { dayIsHoliday: next });
       return merged;
     });
@@ -490,6 +493,11 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     const lineSpecialties = effectivePositionId
       ? specialties.filter((s) => s.positionId === effectivePositionId)
       : [];
+    // On a holiday day, OT/DT inputs are disabled — the holiday 2× multiplier
+    // supersedes OT/DT premiums per the 2026-05-25 Connor decision. Greyed
+    // inputs make this visible; their values stay zero (auto-zeroed when the
+    // day flag is turned on via toggleDayHoliday).
+    const lineDayIsHoliday = !!(line.quoteDate && holidayByDate.get(line.quoteDate));
     return (
     <tr key={globalIndex} style={linesWithStaleRates.has(globalIndex) ? { background: "#fff8e1" } : undefined}>
       <td>
@@ -548,9 +556,8 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       </td>
       <td><input className="num" type="number" value={line.crewCount ?? line.qty ?? 1} onChange={(e) => { const c = parseInt(e.target.value, 10) || 0; updateLine(globalIndex, { crewCount: c, qty: c }); }} step="1" min="0" style={{ width: 50 }} title="Worker count. Multiplies day rate; informational on hourly." /></td>
       <td><input className="num" type="number" value={line.hours} onChange={(e) => updateLine(globalIndex, { hours: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.5" title="Total ST person-hours (0 on day-rate lines)" /></td>
-      <td><input className="num" type="number" value={line.otHours || 0} onChange={(e) => updateLine(globalIndex, { otHours: parseFloat(e.target.value) || 0 })} style={{ width: 55 }} step="0.5" title="Total OT person-hours" /></td>
-      <td><input className="num" type="number" value={line.dtHours || 0} onChange={(e) => updateLine(globalIndex, { dtHours: parseFloat(e.target.value) || 0 })} style={{ width: 55 }} step="0.5" title="Total DT person-hours" /></td>
-      <td><input className="num" type="number" value={line.holidayHours} onChange={(e) => updateLine(globalIndex, { holidayHours: parseFloat(e.target.value) || 0 })} style={{ width: 55 }} step="0.5" title="Holiday person-hours bill at $/DT" /></td>
+      <td><input className="num" type="number" value={line.otHours || 0} disabled={lineDayIsHoliday} onChange={(e) => updateLine(globalIndex, { otHours: parseFloat(e.target.value) || 0 })} style={{ width: 55, opacity: lineDayIsHoliday ? 0.4 : 1 }} step="0.5" title={lineDayIsHoliday ? "Disabled on holiday days — all hours bill at 2× base, OT not applied." : "Total OT person-hours"} /></td>
+      <td><input className="num" type="number" value={line.dtHours || 0} disabled={lineDayIsHoliday} onChange={(e) => updateLine(globalIndex, { dtHours: parseFloat(e.target.value) || 0 })} style={{ width: 55, opacity: lineDayIsHoliday ? 0.4 : 1 }} step="0.5" title={lineDayIsHoliday ? "Disabled on holiday days — all hours bill at 2× base, DT not applied." : "Total DT person-hours"} /></td>
       <td><input className="num" type="number" value={line.travel} onChange={(e) => updateLine(globalIndex, { travel: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="Flat travel charge per line" /></td>
       <td><input className="num" type="number" value={line.baseHourly} onChange={(e) => {
         const h = parseFloat(e.target.value) || 0;
@@ -565,8 +572,8 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         });
       }} style={{ width: 70 }} step="0.01" title="Hourly rate. Changing this auto-derives Day (×10), OT (×1.5), and DT (×2). Override any of those manually after if needed." /></td>
       <td><input className="num" type="number" value={line.baseDay} onChange={(e) => updateLine(globalIndex, { baseDay: parseFloat(e.target.value) || 0 })} style={{ width: 70 }} step="0.01" /></td>
-      <td><input className="num" type="number" value={line.otRate} onChange={(e) => updateLine(globalIndex, { otRate: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="OT rate — informational; OT computed at timesheet time" /></td>
-      <td><input className="num" type="number" value={line.dtRate} onChange={(e) => updateLine(globalIndex, { dtRate: parseFloat(e.target.value) || 0 })} style={{ width: 60 }} step="0.01" title="DT rate — informational; DT computed at timesheet time" /></td>
+      <td><input className="num" type="number" value={line.otRate} disabled={lineDayIsHoliday} onChange={(e) => updateLine(globalIndex, { otRate: parseFloat(e.target.value) || 0 })} style={{ width: 60, opacity: lineDayIsHoliday ? 0.4 : 1 }} step="0.01" title={lineDayIsHoliday ? "Disabled on holiday days — OT rate not applied." : "OT rate — informational; OT computed at timesheet time"} /></td>
+      <td><input className="num" type="number" value={line.dtRate} disabled={lineDayIsHoliday} onChange={(e) => updateLine(globalIndex, { dtRate: parseFloat(e.target.value) || 0 })} style={{ width: 60, opacity: lineDayIsHoliday ? 0.4 : 1 }} step="0.01" title={lineDayIsHoliday ? "Disabled on holiday days — DT rate not applied." : "DT rate — informational; DT computed at timesheet time"} /></td>
       <td>
         <select
           value={ruleToTriggerValue(line.rule)}
@@ -882,7 +889,6 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
                         <th title="Total ST person-hours">ST Hrs</th>
                         <th title="Total OT person-hours">OT Hrs</th>
                         <th title="Total DT person-hours">DT Hrs</th>
-                        <th title="Total holiday person-hours (billed at $/DT)">Hol Hrs</th>
                         <th>Travel</th>
                         <th>$/hr</th><th>$/day</th><th>$/OT</th><th>$/DT</th>
                         <th>Rule</th><th>Mode</th><th>Total</th><th></th>

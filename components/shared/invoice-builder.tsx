@@ -117,28 +117,27 @@ function recalcLineFromMeta(line: QuoteLine, meta: LineMeta): QuoteLine {
     endTime: meta.endTime ?? line.endTime,
   };
 
-  // Updated 2026-05-12: line carries explicit ST/OT/DT/holiday person-hours
-  // + crewCount. Same formula as lib/rates/line-calc.ts (kept inline here
-  // because the legacy invoice-builder is on its way out and pulling the
-  // shared helper would mean retrofitting more of this file's types).
-  const crewCount    = Number(line.crewCount ?? line.qty ?? 1);
-  const hours        = Number(line.hours        || 0);
-  const otHours      = Number(line.otHours      || 0);
-  const dtHours      = Number(line.dtHours      || 0);
-  const holidayHours = Number(line.holidayHours || 0);
-  const travel       = Number(line.travel       || 0);
-  const baseHourly   = Number(line.baseHourly   || 0);
-  const baseDay      = Number(line.baseDay      || 0);
-  const otRate       = Number(line.otRate       || 0);
-  const dtRate       = Number(line.dtRate       || 0);
+  // Updated 2026-05-25: per-line holiday_hours dropped. Holiday is now a
+  // day-level fact (invoice_days.is_holiday). The legacy invoice-builder
+  // is on its way out and doesn't have day-flag awareness — leave its
+  // formula as non-holiday math. Anyone using the new flow should be on
+  // invoice-draft-editor instead.
+  const crewCount = Number(line.crewCount ?? line.qty ?? 1);
+  const hours     = Number(line.hours     || 0);
+  const otHours   = Number(line.otHours   || 0);
+  const dtHours   = Number(line.dtHours   || 0);
+  const travel    = Number(line.travel    || 0);
+  const baseHourly = Number(line.baseHourly || 0);
+  const baseDay    = Number(line.baseDay    || 0);
+  const otRate     = Number(line.otRate     || 0);
+  const dtRate     = Number(line.dtRate     || 0);
 
   const base = meta.rateMode === "hourly"
     ? hours * baseHourly
     : crewCount * baseDay;
   const total = base
-    + otHours      * otRate
-    + dtHours      * dtRate
-    + holidayHours * dtRate
+    + otHours * otRate
+    + dtHours * dtRate
     + travel;
 
   return {
@@ -340,7 +339,6 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
       hours: 0,
       otHours: 0,
       dtHours: 0,
-      holidayHours: 0,
       travel: 0,
       baseHourly: 0,
       baseDay: 0,

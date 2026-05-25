@@ -2,42 +2,48 @@
  * Shared line-total calculation, used by quote-draft-editor, invoice-draft-
  * editor, and any future line-aware screen.
  *
- * As of 2026-05-12 the line shape carries explicit ST/OT/DT/holiday person-
- * hours plus crew_count. The rule string is informational only — no longer
+ * As of 2026-05-12 the line shape carries explicit ST/OT/DT person-hours
+ * plus crew_count. The rule string is informational only — no longer
  * parsed at calc time. This decouples per-worker OT splits (decided at
  * import/entry time) from the runtime total formula.
  *
- * As of 2026-05-24 (Holiday Phase 2) the formula optionally honors a
- * day-level `is_holiday` flag (sourced from quote_days / invoice_days):
- * when true, the work portion (base + OT + DT) gets HOLIDAY_MULTIPLIER
- * (= 2.0×) applied. The per-line `holidayHours` field still adds at
- * dtRate without an additional multiplier (it semantically represents
- * "already-holiday-rate hours" — keeping it un-multiplied avoids
- * double-counting). Travel is always pass-through.
+ * As of 2026-05-25 (Holiday cleanup) holiday treatment is purely day-level,
+ * sourced from quote_days / invoice_days. When the parent day is flagged
+ * holiday, ALL work bills at 2× base — OT/DT distinctions don't apply
+ * (Connor: "everything at holiday rate, period"). The per-line
+ * `holiday_hours` column was dropped as redundant.
  *
- * FORMULA (with H = HOLIDAY_MULTIPLIER when dayIsHoliday else 1)
+ * FORMULA
  *
- *   Day mode:
- *     total = H × (crewCount × baseDay)
- *           + H × otHours × otRate
- *           + H × dtHours × dtRate
- *           +     holidayHours × dtRate
- *           +     travel
+ *   Non-holiday day mode:
+ *     total = crewCount × baseDay
+ *           + otHours × otRate
+ *           + dtHours × dtRate
+ *           + travel
  *
- *   Hourly mode:
- *     total = H × (hours × baseHourly)
- *           + H × otHours × otRate
- *           + H × dtHours × dtRate
- *           +     holidayHours × dtRate
- *           +     travel
+ *   Non-holiday hourly mode:
+ *     total = hours × baseHourly
+ *           + otHours × otRate
+ *           + dtHours × dtRate
+ *           + travel
+ *
+ *   Holiday day mode:
+ *     total = HOLIDAY_MULTIPLIER × crewCount × baseDay  +  travel
+ *
+ *   Holiday hourly mode:
+ *     total = HOLIDAY_MULTIPLIER × hours × baseHourly   +  travel
+ *
+ *   OT/DT terms vanish entirely on holiday days (operator can't enter them
+ *   — the editor disables those inputs and auto-zeros otHours / dtHours
+ *   whenever the day flag is on).
  *
  * SEMANTICS
  *
  *   - crewCount = explicit worker count. Multiplier on day-rate base ONLY;
  *     informational on hourly lines (hours is already total person-hours).
  *   - hours = total ST person-hours. 0 on day-rate lines (day rate covers ST).
- *   - otHours / dtHours / holidayHours = total person-hours billed at their
- *     respective rates.
+ *   - otHours / dtHours = total person-hours billed at OT/DT rates (only
+ *     applicable to non-holiday days).
  *   - travel = flat per line, regardless of crew count or holiday status.
  *
  *   Mode detection: rateMode='day' OR (baseDay>0 AND hours=0 AND rateMode!='hourly').
@@ -47,10 +53,9 @@
 
 import type { QuoteLine } from "@/lib/store/types";
 
-/** 2.0× — the holiday multiplier applied to base/OT/DT work when the
- *  parent day is flagged as a holiday. Hardcoded for now (per the
- *  2026-05-24 design decision); migrate to a settings table if real
- *  variation emerges. */
+/** 2.0× — the holiday multiplier applied to base hours when the parent
+ *  day is flagged as a holiday. Hardcoded for now (per the 2026-05-24
+ *  design decision); migrate to a settings table if real variation emerges. */
 export const HOLIDAY_MULTIPLIER = 2.0;
 
 export function isDayModeLine(l: Pick<QuoteLine, "rateMode" | "baseDay" | "hours">): boolean {
@@ -63,7 +68,7 @@ export function isDayModeLine(l: Pick<QuoteLine, "rateMode" | "baseDay" | "hours
 export function computeLineTotal(
   l: Pick<QuoteLine,
     "rateMode" | "crewCount" | "qty" | "hours" | "otHours" | "dtHours"
-    | "holidayHours" | "travel" | "baseHourly" | "baseDay" | "otRate" | "dtRate"
+    | "travel" | "baseHourly" | "baseDay" | "otRate" | "dtRate"
   >,
   opts: { dayIsHoliday?: boolean } = {},
 ): number {
@@ -71,24 +76,25 @@ export function computeLineTotal(
   const hours        = Number(l.hours        || 0);
   const otHours      = Number(l.otHours      || 0);
   const dtHours      = Number(l.dtHours      || 0);
-  const holidayHours = Number(l.holidayHours || 0);
   const travel       = Number(l.travel       || 0);
   const baseHourly   = Number(l.baseHourly   || 0);
   const baseDay      = Number(l.baseDay      || 0);
   const otRate       = Number(l.otRate       || 0);
   const dtRate       = Number(l.dtRate       || 0);
 
-  const H = opts.dayIsHoliday ? HOLIDAY_MULTIPLIER : 1;
-
   const base = isDayModeLine(l)
     ? crewCount * baseDay
     : hours     * baseHourly;
 
-  const total = H * base
-    + H * otHours      * otRate
-    + H * dtHours      * dtRate
-    +     holidayHours * dtRate
-    +     travel;
+  if (opts.dayIsHoliday) {
+    // Holiday rule: flat 2× base, OT/DT do NOT stack. Travel pass-through.
+    return Math.round((HOLIDAY_MULTIPLIER * base + travel) * 100) / 100;
+  }
+
+  const total = base
+    + otHours * otRate
+    + dtHours * dtRate
+    + travel;
 
   return Math.round(total * 100) / 100;
 }

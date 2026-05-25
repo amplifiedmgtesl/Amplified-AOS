@@ -38,8 +38,6 @@ export type QuoteLine = {
   otHours: number;
   /** Total DT person-hours billed at dtRate. Explicit since 2026-05-12. */
   dtHours: number;
-  /** Total holiday person-hours billed at dtRate (treated as DT premium). */
-  holidayHours: number;
   travel: number;
   baseHourly: number;
   baseDay: number;
