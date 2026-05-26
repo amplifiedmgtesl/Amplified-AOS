@@ -423,13 +423,22 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
       setSelectedIds(new Set());
     } finally { setBusyBatch(null); }
   }
-  // True if at least one selected row is approved-but-not-invoice-bound
-  // (i.e. eligible to unlock). Drives the visibility of the Unlock button.
-  const hasUnlockableSelection = useMemo(() => {
-    if (!timesheet) return false;
-    return timesheet.rows.some((r) =>
-      selectedIds.has(r.id) && r.status === "approved" && !r.invoiceLineId
-    );
+  // Per-action eligibility counts for the batch buttons. Each button label
+  // shows the actionable count (not the raw selection count) so the operator
+  // sees the truth about what a click will do. Buttons disable at 0.
+  //   approve: rows not already approved (and have an employee)
+  //   reject:  rows not already rejected and NOT super-frozen by invoice binding
+  //   unlock:  approved rows that aren't invoice-bound
+  //   delete:  rows not approved (DB freeze blocks delete on approved)
+  const eligible = useMemo(() => {
+    if (!timesheet) return { approve: 0, reject: 0, unlock: 0, delete: 0 };
+    const sel = timesheet.rows.filter((r) => selectedIds.has(r.id));
+    return {
+      approve: sel.filter((r) => r.status !== "approved" && r.employeeKey).length,
+      reject:  sel.filter((r) => r.status !== "rejected" && r.employeeKey && !(r.status === "approved" && r.invoiceLineId)).length,
+      unlock:  sel.filter((r) => r.status === "approved" && !r.invoiceLineId).length,
+      delete:  sel.filter((r) => r.status !== "approved").length,
+    };
   }, [timesheet, selectedIds]);
   function handleDeleteSelected() {
     if (!timesheet) return;
@@ -567,41 +576,42 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
         {/* Batch action bar — appears when one or more rows are ticked (admin only). */}
         {!hidePayAlways && selectedIds.size > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: "6px 12px",
-                        background: "#eaf2fb", border: "1px solid #b6c8e0", borderRadius: 8 }}>
+                        background: "#eaf2fb", border: "1px solid #b6c8e0", borderRadius: 8, flexWrap: "wrap" }}>
             <strong style={{ fontSize: 13 }}>{selectedIds.size} selected</strong>
             <button
               onClick={handleApproveSelected}
-              disabled={!!busyBatch}
+              disabled={!!busyBatch || eligible.approve === 0}
+              title={eligible.approve === 0 ? "No selected rows are eligible to approve" : `Approve ${eligible.approve} of ${selectedIds.size}`}
               style={{ padding: "4px 12px", fontSize: 12 }}
             >
-              {busyBatch === "approve" ? "Approving…" : `Approve ${selectedIds.size}`}
+              {busyBatch === "approve" ? "Approving…" : `Approve ${eligible.approve}`}
             </button>
             <button
               className="secondary"
               onClick={handleRejectSelected}
-              disabled={!!busyBatch}
+              disabled={!!busyBatch || eligible.reject === 0}
+              title={eligible.reject === 0 ? "No selected rows are eligible to reject (invoice-bound rows can't be rejected — unlink the invoice line first)" : `Reject ${eligible.reject} of ${selectedIds.size}`}
               style={{ padding: "4px 12px", fontSize: 12, color: "#a00", borderColor: "#e0a0a0" }}
             >
-              {busyBatch === "reject" ? "Rejecting…" : `Reject ${selectedIds.size}`}
+              {busyBatch === "reject" ? "Rejecting…" : `Reject ${eligible.reject}`}
             </button>
-            {hasUnlockableSelection && (
-              <button
-                className="secondary"
-                onClick={handleUnlockSelected}
-                disabled={!!busyBatch}
-                style={{ padding: "4px 12px", fontSize: 12 }}
-                title="Move approved rows back to 'submitted' so they can be edited"
-              >
-                🔓 Unlock for edit
-              </button>
-            )}
+            <button
+              className="secondary"
+              onClick={handleUnlockSelected}
+              disabled={!!busyBatch || eligible.unlock === 0}
+              title={eligible.unlock === 0 ? "No approved+unbound rows selected" : `Unlock ${eligible.unlock} approved entr${eligible.unlock === 1 ? "y" : "ies"} for editing`}
+              style={{ padding: "4px 12px", fontSize: 12 }}
+            >
+              🔓 Unlock {eligible.unlock}
+            </button>
             <button
               className="danger"
               onClick={handleDeleteSelected}
-              disabled={!!busyBatch}
+              disabled={!!busyBatch || eligible.delete === 0}
+              title={eligible.delete === 0 ? "All selected rows are approved (locked). Unlock first to delete." : `Delete ${eligible.delete} of ${selectedIds.size}`}
               style={{ padding: "4px 12px", fontSize: 12 }}
             >
-              {busyBatch === "delete" ? "Deleting…" : `Delete ${selectedIds.size}`}
+              {busyBatch === "delete" ? "Deleting…" : `Delete ${eligible.delete}`}
             </button>
             <button className="secondary" onClick={() => setSelectedIds(new Set())} disabled={!!busyBatch} style={{ padding: "4px 10px", fontSize: 12 }}>
               Clear

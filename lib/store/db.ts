@@ -550,6 +550,7 @@ export interface StaffEntryReviewRow {
   userId: string | null;
   jobSheetId: string | null;
   jobId: string | null;          // Phase 1: canonical job_requests link
+  invoiceLineId: string | null;  // Phase C: super-frozen when set (no status changes)
   timesheetId: string | null;
   jobClient: string;
   jobEventName: string;
@@ -575,7 +576,7 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
     .from("timesheet_entries")
     .select(`
       id, work_date, position, first_name, last_name, email, employee_key, user_id,
-      job_sheet_id, job_id, timesheet_id, time_in1, time_out1, time_in2, time_out2,
+      job_sheet_id, job_id, invoice_line_id, timesheet_id, time_in1, time_out1, time_in2, time_out2,
       meal_break_1_minutes, meal_break_2_minutes,
       std_hours, ot_hours, dt_hours, total_hours, total_pay,
       status, notes, updated_at
@@ -607,6 +608,7 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
     userId: r.user_id ?? null,
     jobSheetId: r.job_sheet_id ?? null,
     jobId: r.job_id ?? null,
+    invoiceLineId: r.invoice_line_id ?? null,
     timesheetId: r.timesheet_id ?? null,
     jobClient: r.job_sheet_id ? jobMap.get(r.job_sheet_id)?.client ?? "" : "",
     jobEventName: r.job_sheet_id ? jobMap.get(r.job_sheet_id)?.eventName ?? "" : "",

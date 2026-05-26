@@ -156,9 +156,15 @@ export default function TimesheetReview() {
   }
 
   async function handleRejectSelected() {
-    const targets = filtered.filter((r) => selectedIds.has(r.id) && r.status !== "rejected");
+    const eligibleRows = filtered.filter((r) => selectedIds.has(r.id) && r.status !== "rejected");
+    // Invoice-bound approved rows are super-frozen — DB trigger blocks status changes.
+    const lockedByInvoice = eligibleRows.filter((r) => r.status === "approved" && r.invoiceLineId);
+    const targets = eligibleRows.filter((r) => !(r.status === "approved" && r.invoiceLineId));
     if (targets.length === 0) return;
-    if (!confirm(`Reject ${targets.length} timesheet entr${targets.length === 1 ? "y" : "ies"}?`)) return;
+    const lockedNote = lockedByInvoice.length > 0
+      ? `\n\n${lockedByInvoice.length} invoice-bound entr${lockedByInvoice.length === 1 ? "y will" : "ies will"} be skipped (unlink from invoice first).`
+      : "";
+    if (!confirm(`Reject ${targets.length} timesheet entr${targets.length === 1 ? "y" : "ies"}?${lockedNote}`)) return;
     setBusyBatch("reject");
     try {
       for (const r of targets) {
@@ -191,6 +197,21 @@ export default function TimesheetReview() {
     [filtered, selectedIds],
   );
   const allVisibleSelected = filtered.length > 0 && selectedVisibleCount === filtered.length;
+
+  // Per-action eligibility for the batch buttons. Matches the same model
+  // used on the timekeeping editor screen so the labels never lie about
+  // what a click will do.
+  //   approve: selected rows that aren't already approved
+  //   reject:  selected rows that aren't already rejected and aren't
+  //            super-frozen by invoice binding (invoice-bound rows can't
+  //            change status until the invoice line is unlinked)
+  const eligible = useMemo(() => {
+    const sel = filtered.filter((r) => selectedIds.has(r.id));
+    return {
+      approve: sel.filter((r) => r.status !== "approved").length,
+      reject:  sel.filter((r) => r.status !== "rejected" && !(r.status === "approved" && r.invoiceLineId)).length,
+    };
+  }, [filtered, selectedIds]);
 
   // Clear selection whenever filters change — otherwise an offscreen row
   // could end up acted on without the operator seeing it.
@@ -254,22 +275,24 @@ export default function TimesheetReview() {
         {/* Batch action bar — appears when the operator has ticked one or more rows */}
         {selectedVisibleCount > 0 ? (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px",
-                        background: "#eaf2fb", border: "1px solid #b6c8e0", borderRadius: 8 }}>
+                        background: "#eaf2fb", border: "1px solid #b6c8e0", borderRadius: 8, flexWrap: "wrap" }}>
             <strong style={{ fontSize: 13 }}>{selectedVisibleCount} selected</strong>
             <button
               onClick={handleApproveSelected}
-              disabled={!!busyBatch}
+              disabled={!!busyBatch || eligible.approve === 0}
+              title={eligible.approve === 0 ? "All selected rows are already approved" : `Approve ${eligible.approve} of ${selectedVisibleCount}`}
               style={{ padding: "4px 12px", fontSize: 12 }}
             >
-              {busyBatch === "approve" ? "Approving…" : `Approve ${selectedVisibleCount}`}
+              {busyBatch === "approve" ? "Approving…" : `Approve ${eligible.approve}`}
             </button>
             <button
               className="secondary"
               onClick={handleRejectSelected}
-              disabled={!!busyBatch}
+              disabled={!!busyBatch || eligible.reject === 0}
+              title={eligible.reject === 0 ? "No selected rows are eligible to reject (invoice-bound rows can't be rejected — unlink the invoice line first)" : `Reject ${eligible.reject} of ${selectedVisibleCount}`}
               style={{ padding: "4px 12px", fontSize: 12, color: "#a00", borderColor: "#e0a0a0" }}
             >
-              {busyBatch === "reject" ? "Rejecting…" : `Reject ${selectedVisibleCount}`}
+              {busyBatch === "reject" ? "Rejecting…" : `Reject ${eligible.reject}`}
             </button>
             <button className="secondary" onClick={() => setSelectedIds(new Set())} disabled={!!busyBatch} style={{ padding: "4px 10px", fontSize: 12 }}>
               Clear
