@@ -316,6 +316,47 @@ async function loadRateCardRows(profileId: string): Promise<any[]> {
   return data ?? [];
 }
 
+/**
+ * Resolve the rate card for a specific job_request. Honors the job's
+ * `rate_card_profile_id` override (the pin) if set; otherwise falls back
+ * to `pickRateCardForJob(client_id, request_date)`. Returns the same
+ * shape as `pickRateCardForJob`. Lets other features (timekeeping,
+ * job-costing) consume the exact same rate card the quote would.
+ */
+export async function resolveRateCardForJob(
+  jobRequestId: string,
+): Promise<{ id: string; rows: any[]; terms: string | null; holidayMultiplier: number } | null> {
+  const jr = await supabase
+    .from("job_requests")
+    .select("client_id, request_date, rate_card_profile_id")
+    .eq("id", jobRequestId)
+    .maybeSingle();
+  if (jr.error) throw jr.error;
+  if (!jr.data) return null;
+  const job = jr.data as any;
+
+  // Pinned override wins.
+  if (job.rate_card_profile_id) {
+    const pinnedRes = await supabase
+      .from("rate_card_profiles")
+      .select("*")
+      .eq("id", job.rate_card_profile_id)
+      .maybeSingle();
+    if (pinnedRes.error) throw pinnedRes.error;
+    if (pinnedRes.data) {
+      const rows = await loadRateCardRows(pinnedRes.data.id);
+      return {
+        id: pinnedRes.data.id,
+        rows,
+        terms: pinnedRes.data.terms ?? null,
+        holidayMultiplier: pinnedRes.data.holiday_multiplier != null
+          ? Number(pinnedRes.data.holiday_multiplier) : 2.0,
+      };
+    }
+  }
+  return pickRateCardForJob(job.client_id, job.request_date);
+}
+
 // ─── Write operations ────────────────────────────────────────────────────────
 
 /** Create a new draft from a job_request. Picks the appropriate rate card by
