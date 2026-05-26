@@ -94,6 +94,7 @@ export async function getEntryCountsForJob(jobSheetId: string) { return db.getEn
 export async function approveStaffEntry(entryId: string, timesheetId: string) { return db.approveStaffEntry(entryId, timesheetId); }
 export async function rejectStaffEntry(entryId: string) { return db.rejectStaffEntry(entryId); }
 export async function setEntryApproved(entryId: string) { return db.setEntryApproved(entryId); }
+export async function setEntrySubmitted(entryId: string) { return db.setEntrySubmitted(entryId); }
 export async function pullApprovedTimesheetSummary(jobSheetId: string) { return db.pullApprovedTimesheetSummary(jobSheetId); }
 
 export function getTimesheetByJobSheetId(jobSheetId: string): Timesheet | null {

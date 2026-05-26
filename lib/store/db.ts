@@ -636,6 +636,18 @@ export async function setEntryApproved(entryId: string): Promise<void> {
   if (error) console.error("[db] setEntryApproved:", error);
 }
 
+// Phase 1 follow-up: flip an approved entry back to 'submitted' so it
+// becomes editable again. Used by the bulk "Unlock for edit" action on
+// the timekeeping grid. The freeze trigger (20260525d) permits this
+// transition unless the entry is invoice-bound — caller pre-filters.
+export async function setEntrySubmitted(entryId: string): Promise<void> {
+  const { error } = await supabase
+    .from("timesheet_entries")
+    .update({ status: "submitted", updated_at: new Date().toISOString() })
+    .eq("id", entryId);
+  if (error) console.error("[db] setEntrySubmitted:", error);
+}
+
 export async function getApprovedEntriesForJob(jobSheetId: string): Promise<import("./types").TimeEntry[]> {
   const { data, error } = await supabase
     .from("timesheet_entries")
@@ -1204,6 +1216,7 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     sortOrder: r.sort_order ?? 0,
     createdAt: r.created_at ?? undefined,
     jobId: r.job_id ?? null,
+    invoiceLineId: r.invoice_line_id ?? null,
   };
 }
 

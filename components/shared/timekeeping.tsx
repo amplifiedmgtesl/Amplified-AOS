@@ -10,7 +10,7 @@ import {
   ensureTimesheetForJobRequest,
   upsertTimesheet, positionNames, loadEmployees,
   getPendingStaffEntriesByJobId,
-  approveStaffEntry, rejectStaffEntry, setEntryApproved,
+  approveStaffEntry, rejectStaffEntry, setEntryApproved, setEntrySubmitted,
 } from "@/lib/store/app-store";
 import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
 import { parseMinutes } from "@/lib/time-utils";
@@ -379,9 +379,16 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   }
   async function handleRejectSelected() {
     if (!timesheet) return;
-    const targets = timesheet.rows.filter((r) => selectedIds.has(r.id) && r.status !== "rejected" && r.employeeKey);
+    // Approved-AND-invoice-bound rows can't be re-rejected (DB trigger blocks
+    // the status change). Filter them out and warn if any were skipped.
+    const eligible = timesheet.rows.filter((r) => selectedIds.has(r.id) && r.status !== "rejected" && r.employeeKey);
+    const lockedByInvoice = eligible.filter((r) => r.status === "approved" && r.invoiceLineId);
+    const targets = eligible.filter((r) => !(r.status === "approved" && r.invoiceLineId));
     if (targets.length === 0) return;
-    if (!confirm(`Reject ${targets.length} timesheet ${targets.length === 1 ? "entry" : "entries"}?`)) return;
+    const lockedNote = lockedByInvoice.length > 0
+      ? `\n\n${lockedByInvoice.length} invoice-bound entr${lockedByInvoice.length === 1 ? "y will" : "ies will"} be skipped (unlink from invoice first).`
+      : "";
+    if (!confirm(`Reject ${targets.length} timesheet ${targets.length === 1 ? "entry" : "entries"}?${lockedNote}`)) return;
     setBusyBatch("reject");
     try {
       for (const r of targets) {
@@ -393,12 +400,54 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
       setSelectedIds(new Set());
     } finally { setBusyBatch(null); }
   }
+  // Unlock approved rows back to 'submitted' so they can be edited. DB trigger
+  // permits this transition. Invoice-bound rows are excluded (super-frozen) —
+  // operator must unlink via the invoice draft editor first.
+  async function handleUnlockSelected() {
+    if (!timesheet) return;
+    const targets = timesheet.rows.filter((r) =>
+      selectedIds.has(r.id)
+      && r.status === "approved"
+      && !r.invoiceLineId
+    );
+    if (targets.length === 0) return;
+    if (!confirm(`Unlock ${targets.length} approved ${targets.length === 1 ? "entry" : "entries"} for edit? Each will move back to 'submitted' — the prior approval is lost.`)) return;
+    setBusyBatch("approve"); // reuse spinner state visually
+    try {
+      for (const r of targets) {
+        try { await setEntrySubmitted(r.id); }
+        catch (e) { console.error("[timekeeping] batch unlock row failed:", r.id, e); }
+      }
+      const ids = new Set(targets.map((r) => r.id));
+      persist({ ...timesheet, rows: timesheet.rows.map((r) => ids.has(r.id) ? { ...r, status: "submitted" } : r) });
+      setSelectedIds(new Set());
+    } finally { setBusyBatch(null); }
+  }
+  // True if at least one selected row is approved-but-not-invoice-bound
+  // (i.e. eligible to unlock). Drives the visibility of the Unlock button.
+  const hasUnlockableSelection = useMemo(() => {
+    if (!timesheet) return false;
+    return timesheet.rows.some((r) =>
+      selectedIds.has(r.id) && r.status === "approved" && !r.invoiceLineId
+    );
+  }, [timesheet, selectedIds]);
   function handleDeleteSelected() {
     if (!timesheet) return;
     const count = selectedIds.size;
     if (count === 0) return;
-    if (!confirm(`Delete ${count} timesheet row${count === 1 ? "" : "s"}? This removes them from the timesheet on save.`)) return;
-    persist({ ...timesheet, rows: timesheet.rows.filter((r) => !selectedIds.has(r.id)) });
+    // Approved rows are DB-frozen against DELETE; skip them and warn.
+    const approvedCount = timesheet.rows.filter((r) => selectedIds.has(r.id) && r.status === "approved").length;
+    const deletable = timesheet.rows.filter((r) => selectedIds.has(r.id) && r.status !== "approved");
+    if (deletable.length === 0) {
+      alert(`All ${count} selected ${count === 1 ? "entry is" : "entries are"} approved and cannot be deleted. Unlock them first.`);
+      return;
+    }
+    const skippedNote = approvedCount > 0
+      ? `\n\n${approvedCount} approved entr${approvedCount === 1 ? "y" : "ies"} will be skipped (unlock first to delete).`
+      : "";
+    if (!confirm(`Delete ${deletable.length} timesheet row${deletable.length === 1 ? "" : "s"}? This removes them from the timesheet on save.${skippedNote}`)) return;
+    const ids = new Set(deletable.map((r) => r.id));
+    persist({ ...timesheet, rows: timesheet.rows.filter((r) => !ids.has(r.id)) });
     setSelectedIds(new Set());
   }
 
@@ -535,6 +584,17 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
             >
               {busyBatch === "reject" ? "Rejecting…" : `Reject ${selectedIds.size}`}
             </button>
+            {hasUnlockableSelection && (
+              <button
+                className="secondary"
+                onClick={handleUnlockSelected}
+                disabled={!!busyBatch}
+                style={{ padding: "4px 12px", fontSize: 12 }}
+                title="Move approved rows back to 'submitted' so they can be edited"
+              >
+                🔓 Unlock for edit
+              </button>
+            )}
             <button
               className="danger"
               onClick={handleDeleteSelected}
@@ -699,32 +759,46 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     const idx = allRows.indexOf(row);
                     const band = `line-band-${idx % 4}`;
                     const unlinked = !row.employeeKey;
+                    // Freeze guard: while status='approved' the DB rejects content
+                    // changes. Mirror that in the UI so inputs are disabled instead
+                    // of silently no-oping on save. Invoice-bound rows are double
+                    // locked (also can't be un-approved) — visually the same here.
+                    const isLocked = row.status === "approved";
+                    const lockedClass = isLocked ? " line-locked" : "";
                     return (
                     <tbody key={row.id} className={`line-employee ${isCollapsed ? "is-collapsed-day" : ""}`} data-day={row.workDate || "no-date"}>
-                    <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}`}>
+                    <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}${lockedClass}`} style={isLocked ? { opacity: 0.85 } : undefined}>
                       <td colSpan={r1Spans.emp}>
-                        <EmployeeAutoFill
-                          employeeKey={row.employeeKey}
-                          employees={employees}
-                          fallbackName={[row.firstName, row.lastName].filter(Boolean).join(" ")}
-                          onSelect={(emp) => updateRow(row.id, {
-                            employeeKey: emp.employeeKey,
-                            firstName: emp.firstName || emp.fullName.split(" ")[0] || "",
-                            lastName: emp.lastName || emp.fullName.split(" ").slice(1).join(" ") || "",
-                            phone: emp.phone || "",
-                            email: emp.email || "",
-                            status: row.status === "approved" ? "approved" : "submitted",
-                          })}
-                        />
-                        {unlinked ? <div className="unlinked-hint">⚠ Link an employee to enable this row</div> : null}
+                        {isLocked ? (
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>
+                            {[row.firstName, row.lastName].filter(Boolean).join(" ") || row.email || "(unnamed)"}
+                          </div>
+                        ) : (
+                          <>
+                            <EmployeeAutoFill
+                              employeeKey={row.employeeKey}
+                              employees={employees}
+                              fallbackName={[row.firstName, row.lastName].filter(Boolean).join(" ")}
+                              onSelect={(emp) => updateRow(row.id, {
+                                employeeKey: emp.employeeKey,
+                                firstName: emp.firstName || emp.fullName.split(" ")[0] || "",
+                                lastName: emp.lastName || emp.fullName.split(" ").slice(1).join(" ") || "",
+                                phone: emp.phone || "",
+                                email: emp.email || "",
+                                status: row.status === "approved" ? "approved" : "submitted",
+                              })}
+                            />
+                            {unlinked ? <div className="unlinked-hint">⚠ Link an employee to enable this row</div> : null}
+                          </>
+                        )}
                       </td>
-                      <td colSpan={r1Spans.pos}><select className="input-tight" value={row.position} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select><span className="print-time">{row.position || ""}</span></td>
+                      <td colSpan={r1Spans.pos}><select className="input-tight" value={row.position} disabled={isLocked} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select><span className="print-time">{row.position || ""}</span></td>
                       <td colSpan={r1Spans.start}>
-                        <input type="date" className="input-tight" value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} />
+                        <input type="date" className="input-tight" disabled={isLocked} value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} />
                         <span className="print-time">{row.workDate || ""}</span>
                       </td>
                       <td colSpan={r1Spans.end}>
-                        <input type="date" className="input-tight" value={row.endDate ?? ""} onChange={(e)=>updateRow(row.id, { endDate: e.target.value })} />
+                        <input type="date" className="input-tight" disabled={isLocked} value={row.endDate ?? ""} onChange={(e)=>updateRow(row.id, { endDate: e.target.value })} />
                         <span className="print-time">{row.endDate || ""}</span>
                         {(() => {
                           const in1 = parseMinutes(row.timeIn1 ?? "");
@@ -753,7 +827,9 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                             />
                           )}
                           {row.employeeKey && row.status === "approved" && (
-                            <span className="badge pill-green" style={{ fontSize: 11 }}>Approved</span>
+                            <span className="badge pill-green" style={{ fontSize: 11 }} title={row.invoiceLineId ? "Approved AND billed onto an invoice line — unlink invoice first to change anything" : "Approved — unlock to edit"}>
+                              {row.invoiceLineId ? "🔒 Billed" : "🔒 Approved"}
+                            </span>
                           )}
                           {row.employeeKey && row.status === "rejected" && (
                             <span className="badge" style={{ fontSize: 11, background: "#fde8e8", color: "#c0392b" }}>Rejected</span>
@@ -762,29 +838,39 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                             <span className="badge" style={{ fontSize: 11, background: "#e8f0fe", color: "#1a56c4" }}>Pending</span>
                           )}
                           {/* Per-row Delete kept as a tiny escape hatch (one-off cleanup
-                              during editing). Bulk Delete is in the batch action bar. */}
-                          <button className="secondary" onClick={() => removeRow(row.id)} style={{ padding: "2px 8px", fontSize: 11 }}>Delete</button>
+                              during editing). Bulk Delete is in the batch action bar.
+                              Disabled while approved — the DB freeze trigger would reject
+                              the delete anyway. */}
+                          <button
+                            className="secondary"
+                            onClick={() => removeRow(row.id)}
+                            disabled={isLocked}
+                            title={isLocked ? "Unlock this entry first to delete it" : "Remove this row from the timesheet on next save"}
+                            style={{ padding: "2px 8px", fontSize: 11 }}
+                          >
+                            Delete
+                          </button>
                         </div>
                       </td>
                     </tr>
-                    <tr className={`line-row line-row-end ${band}`}>
+                    <tr className={`line-row line-row-end ${band}${lockedClass}`} style={isLocked ? { opacity: 0.85 } : undefined}>
                       <td className="sig-box"></td>
-                      <td><select className="input-tight" value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn1 || ""}</span></td>
-                      <td><select className="input-tight" value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut1 || ""}</span></td>
-                      <td><select className="input-tight" value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak1Minutes ?? row.lunchMinutes ?? 0}</span></td>
+                      <td><select className="input-tight" disabled={isLocked} value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn1 || ""}</span></td>
+                      <td><select className="input-tight" disabled={isLocked} value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut1 || ""}</span></td>
+                      <td><select className="input-tight" disabled={isLocked} value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak1Minutes ?? row.lunchMinutes ?? 0}</span></td>
                       <td className="sig-box"></td>
-                      <td><select className="input-tight" value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn2 || ""}</span></td>
-                      <td><select className="input-tight" value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut2 || ""}</span></td>
-                      <td><select className="input-tight" value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak2Minutes ?? 0}</span></td>
+                      <td><select className="input-tight" disabled={isLocked} value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn2 || ""}</span></td>
+                      <td><select className="input-tight" disabled={isLocked} value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut2 || ""}</span></td>
+                      <td><select className="input-tight" disabled={isLocked} value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak2Minutes ?? 0}</span></td>
                       <td className="hide-print">{row.stdHours.toFixed(2)}</td>
                       <td className="hide-print">{row.otHours.toFixed(2)}</td>
                       <td className="hide-print">{row.dtHours.toFixed(2)}</td>
                       <td className="hide-print">{row.totalHours.toFixed(2)}</td>
                       {showPay ? (
                         <>
-                          <td className="hide-print"><select className="input-tight" value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td className="hide-print"><select className="input-tight" value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td className="hide-print"><select className="input-tight" value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print"><select className="input-tight" disabled={isLocked} value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print"><select className="input-tight" disabled={isLocked} value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print"><select className="input-tight" disabled={isLocked} value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
                           <td className="hide-print">${row.totalPay.toFixed(2)}</td>
                         </>
                       ) : null}

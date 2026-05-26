@@ -108,6 +108,11 @@ export type TimeEntry = {
   // confident match existed. NULL on legacy rows whose job_sheet has
   // no corresponding job_request (see migration 20260525c).
   jobId?: string | null;
+  // Phase C invoice rewrite back-reference: set when the entry has been
+  // pulled onto an invoice line. While non-NULL, the freeze trigger
+  // (20260525d) super-locks the row — status changes are blocked until
+  // the invoice line is unlinked via the invoice draft editor.
+  invoiceLineId?: string | null;
 };
 
 export type Timesheet = {
