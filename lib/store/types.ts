@@ -118,6 +118,13 @@ export type TimeEntry = {
   // already use. NULL means "any shift / unspecified" (legacy + jobs
   // with 0 or 1 shifts).
   shiftId?: string | null;
+  // Phase 3 (2026-05-26): canonical position + specialty FKs. Backfilled
+  // by name-match from the legacy `position` text on existing rows; new
+  // rows write both columns. The text `position` field stays in place as
+  // a historical snapshot and fallback display for legacy rows where the
+  // name didn't resolve to a positions.id.
+  positionId?: string | null;
+  specialtyId?: string | null;
 };
 
 export type Timesheet = {

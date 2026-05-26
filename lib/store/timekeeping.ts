@@ -142,16 +142,46 @@ export function blankTimeEntry(id: string): TimeEntry {
     status: "submitted",
   });
 }
+/**
+ * Aggregate timesheet entries for downstream consumers (Labor Summary panels,
+ * invoice "Pull labor actuals" flow).
+ *
+ * Phase 3 (2026-05-26): group by canonical (positionId, specialtyId) when
+ * present, falling back to the legacy text `position` for rows that haven't
+ * been normalized yet. Output preserves the legacy `position` string for
+ * display + back-compat with callers that haven't migrated to IDs yet.
+ */
 export function summarizeTimesheet(
   timesheet: Timesheet | null,
   filter?: (row: TimeEntry) => boolean,
 ) {
   if (!timesheet) return [];
-  const map = new Map<string, { position:string; workers:number; stdHours:number; otHours:number; dtHours:number; totalHours:number; totalPay:number }>();
+  type Agg = {
+    position: string;
+    positionId: string | null;
+    specialtyId: string | null;
+    workers: number;
+    stdHours: number; otHours: number; dtHours: number;
+    totalHours: number; totalPay: number;
+  };
+  const map = new Map<string, Agg>();
   const rows = filter ? timesheet.rows.filter(filter) : timesheet.rows;
   rows.forEach((r) => {
-    const key = r.position || "Unassigned";
-    if (!map.has(key)) map.set(key, { position:key, workers:0, stdHours:0, otHours:0, dtHours:0, totalHours:0, totalPay:0 });
+    // Prefer (positionId, specialtyId) as the canonical key. Fall back to
+    // the legacy text so unnormalized rows still appear in their own bucket.
+    const key = r.positionId
+      ? `${r.positionId}|${r.specialtyId || ""}`
+      : `text:${r.position || "Unassigned"}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        position: r.position || "Unassigned",
+        positionId: r.positionId ?? null,
+        specialtyId: r.specialtyId ?? null,
+        workers: 0,
+        stdHours: 0, otHours: 0, dtHours: 0,
+        totalHours: 0, totalPay: 0,
+      });
+    }
     const agg = map.get(key)!;
     agg.workers += 1;
     agg.stdHours += r.stdHours;

@@ -121,6 +121,27 @@ function EmployeeAutoFill({
 
 export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?: boolean }) {
   const POSITIONS = positionNames();
+  // Phase 3: master tables for cascading Position → Specialty selects.
+  // Loaded once and shared across rows.
+  const allPositions = useMemo(() => loadPositions().filter((p) => p.isActive !== false), []);
+  const allSpecialties = useMemo(() => loadSpecialties().filter((s) => s.isActive !== false), []);
+  const positionNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of allPositions) m.set(p.id, p.name);
+    return m;
+  }, [allPositions]);
+  const specialtyNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of allSpecialties) m.set(s.id, s.name);
+    return m;
+  }, [allSpecialties]);
+  // For a given positionId, the valid specialties. Used to populate the
+  // Specialty dropdown and to invalidate an obsolete specialty selection
+  // when the user changes Position.
+  function specialtiesFor(positionId: string | null | undefined) {
+    if (!positionId) return [];
+    return allSpecialties.filter((s) => s.positionId === positionId);
+  }
   const [refreshKey, setRefreshKey] = useState(0);
   const sheets = useMemo(() => loadJobSheets(), [refreshKey]);
   const jobRequests = useMemo(() => loadJobRequests(), [refreshKey]);
@@ -364,6 +385,8 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
         nextRows.push(computeTimeEntry({
           ...blankTimeEntry(`crew-${Date.now()}-${idx}`),
           position: posName,
+          positionId: slot.positionId,
+          specialtyId: slot.specialtyId,
           firstName: emp?.firstName || emp?.fullName?.split(" ")?.[0] || "",
           lastName:  emp?.lastName  || emp?.fullName?.split(" ")?.slice(1).join(" ") || "",
           phone: emp?.phone || "",
@@ -748,7 +771,9 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                 // right edge of Meal 2 in print (where hour cols are hidden).
                 // Row 2 has 12 cells without pay (Sig+3 times)x2 + 4 hidden hours,
                 // or 16 with pay (+ 4 hidden rate cells).
-                const r1Spans = { pos: 2, emp: 2, start: 2, end: 2 };
+                // Phase 3 (2026-05-26): split the old 2-cell "Position" header
+                // into Position + Specialty, each 1 cell wide. Total still 8.
+                const r1Spans = { pos: 1, spc: 1, emp: 2, start: 2, end: 2 };
                 const phantomSpan = showPay ? 8 : 4;
                 // Total table column count for the per-employee summary
                 // row's colSpan: 12 visible + 4 hidden hours + 4 hidden rate
@@ -781,6 +806,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                   <tr>
                     <th colSpan={r1Spans.emp}>Name</th>
                     <th colSpan={r1Spans.pos}>Position</th>
+                    <th colSpan={r1Spans.spc}>Specialty</th>
                     <th colSpan={r1Spans.start}>Start Date</th>
                     <th colSpan={r1Spans.end}>End Date</th>
                     <th colSpan={phantomSpan} className="hide-print"></th>
@@ -899,7 +925,51 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                           </>
                         )}
                       </td>
-                      <td colSpan={r1Spans.pos}><select className="input-tight" value={row.position} disabled={isLocked} onChange={(e)=>updateRow(row.id, { position:e.target.value })}>{POSITIONS.map((p)=><option key={p} value={p}>{p}</option>)}</select><span className="print-time">{row.position || ""}</span></td>
+                      {/* Position cell — Phase 3: drives positionId; legacy
+                          text `position` is kept in sync for back-compat. */}
+                      <td colSpan={r1Spans.pos}>
+                        <select
+                          className="input-tight"
+                          value={row.positionId || ""}
+                          disabled={isLocked}
+                          onChange={(e) => {
+                            const newPosId = e.target.value || null;
+                            const newPosName = newPosId ? (positionNameById.get(newPosId) || "") : "";
+                            // If the current specialty doesn't belong to the new
+                            // position, clear it so the cascading constraint holds.
+                            const validSpc = row.specialtyId
+                              && allSpecialties.some((s) => s.id === row.specialtyId && s.positionId === newPosId);
+                            updateRow(row.id, {
+                              positionId: newPosId,
+                              position: newPosName || row.position,
+                              specialtyId: validSpc ? row.specialtyId : null,
+                            });
+                          }}
+                        >
+                          <option value="">{row.position && !row.positionId ? `${row.position} (legacy)` : "— pick —"}</option>
+                          {allPositions.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                        <span className="print-time">{positionNameById.get(row.positionId || "") || row.position || ""}</span>
+                      </td>
+                      {/* Specialty cell — Phase 3: filtered by current positionId.
+                          Disabled when no position is set yet. */}
+                      <td colSpan={r1Spans.spc}>
+                        <select
+                          className="input-tight"
+                          value={row.specialtyId || ""}
+                          disabled={isLocked || !row.positionId}
+                          onChange={(e) => updateRow(row.id, { specialtyId: e.target.value || null })}
+                          title={!row.positionId ? "Pick a position first" : ""}
+                        >
+                          <option value="">{row.positionId ? "— optional —" : "—"}</option>
+                          {specialtiesFor(row.positionId).map((s) => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                        <span className="print-time">{specialtyNameById.get(row.specialtyId || "") || ""}</span>
+                      </td>
                       <td colSpan={r1Spans.start}>
                         <input type="date" className="input-tight" disabled={isLocked} value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} />
                         <span className="print-time">{row.workDate || ""}</span>

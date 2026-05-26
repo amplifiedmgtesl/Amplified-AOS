@@ -1220,6 +1220,8 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     jobId: r.job_id ?? null,
     invoiceLineId: r.invoice_line_id ?? null,
     shiftId: r.shift_id ?? null,
+    positionId: r.position_id ?? null,
+    specialtyId: r.specialty_id ?? null,
   };
 }
 
@@ -1236,6 +1238,8 @@ function timesheetEntryToRow(
     job_sheet_id: jobSheetId,
     job_id: jobId,
     shift_id: e.shiftId ?? null,
+    position_id: e.positionId ?? null,
+    specialty_id: e.specialtyId ?? null,
     employee_key: e.employeeKey ?? null,
     user_id: e.userId ?? null,
     position: e.position,
