@@ -125,6 +125,15 @@ export type TimeEntry = {
   // name didn't resolve to a positions.id.
   positionId?: string | null;
   specialtyId?: string | null;
+  // Phase 4 (2026-05-26): Pattern C holiday snapshot. Set true when the
+  // entry's workDate falls on a day flagged is_holiday on the parent
+  // job_request_days. Holiday rows compute pay as
+  //   totalHours × stdRate × holidayMultiplier
+  // (matching the quote/invoice rule — OT/DT premium does not stack).
+  // holidayMultiplier is snapshot at row creation from the resolved rate
+  // card; defaults to 2.0 in calc when null.
+  isHoliday?: boolean;
+  holidayMultiplier?: number | null;
 };
 
 export type Timesheet = {

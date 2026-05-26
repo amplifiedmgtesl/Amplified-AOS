@@ -70,7 +70,16 @@ export function computeTimeEntry(entry: TimeEntry): TimeEntry {
   const stdHours = Math.min(8, totalHours);
   const otHours = totalHours > 8 ? Math.min(4, totalHours - 8) : 0;
   const dtHours = totalHours > 12 ? totalHours - 12 : 0;
-  const totalPay = +(stdHours * entry.stdRate + otHours * entry.otRate + dtHours * entry.dtRate).toFixed(2);
+
+  // Phase 4: on a holiday row, pay = totalHours × stdRate × multiplier.
+  // OT/OT premium does NOT stack on top — matches the atomic-day, flat-2×
+  // rule in the quote/invoice calc engine (migration #28). On non-holiday
+  // rows, the existing ST/OT/DT split applies.
+  const mult = entry.isHoliday ? (entry.holidayMultiplier ?? 2.0) : 1;
+  const totalPay = entry.isHoliday
+    ? +(totalHours * entry.stdRate * mult).toFixed(2)
+    : +(stdHours * entry.stdRate + otHours * entry.otRate + dtHours * entry.dtRate).toFixed(2);
+
   return {
     ...entry,
     endDate,
@@ -140,6 +149,8 @@ export function blankTimeEntry(id: string): TimeEntry {
     dtRate: 70,
     totalPay: 0,
     status: "submitted",
+    isHoliday: false,
+    holidayMultiplier: null,
   });
 }
 /**

@@ -1222,6 +1222,8 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     shiftId: r.shift_id ?? null,
     positionId: r.position_id ?? null,
     specialtyId: r.specialty_id ?? null,
+    isHoliday: !!r.is_holiday,
+    holidayMultiplier: r.holiday_multiplier == null ? null : Number(r.holiday_multiplier),
   };
 }
 
@@ -1240,6 +1242,8 @@ function timesheetEntryToRow(
     shift_id: e.shiftId ?? null,
     position_id: e.positionId ?? null,
     specialty_id: e.specialtyId ?? null,
+    is_holiday: !!e.isHoliday,
+    holiday_multiplier: e.holidayMultiplier ?? null,
     employee_key: e.employeeKey ?? null,
     user_id: e.userId ?? null,
     position: e.position,

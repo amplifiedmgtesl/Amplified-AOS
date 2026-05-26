@@ -349,18 +349,46 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   // Phase 2: shift label lookup for the selected job, so per-row chips can
   // show which shift each entry belongs to. Loaded once per job switch.
   const [shiftLabelById, setShiftLabelById] = useState<Map<string, string>>(new Map());
+  // Phase 4: per-date holiday lookup for the selected job. Maps YYYY-MM-DD
+  // to {isHoliday: true} for days the planner flagged. Drives auto-seeding
+  // of isHoliday on new rows + the day-group "🎄 Holiday" badge.
+  const [holidayDateSet, setHolidayDateSet] = useState<Set<string>>(new Set());
+  const [jobHolidayMultiplier, setJobHolidayMultiplier] = useState<number | null>(null);
   useEffect(() => {
-    if (pickerKind !== "job") { setShiftLabelById(new Map()); return; }
-    import("@/lib/supabase/client").then(({ supabase }) =>
+    if (pickerKind !== "job") {
+      setShiftLabelById(new Map());
+      setHolidayDateSet(new Set());
+      setJobHolidayMultiplier(null);
+      return;
+    }
+    import("@/lib/supabase/client").then(({ supabase }) => {
+      // Shifts
       supabase.from("job_request_shifts").select("id, label").eq("job_request_id", pickerKey)
         .then(({ data, error }) => {
           if (error) { console.error("[timekeeping] load shifts:", error); return; }
           const m = new Map<string, string>();
           for (const r of (data ?? []) as any[]) m.set(r.id, r.label ?? "");
           setShiftLabelById(m);
-        })
-    );
+        });
+      // Holiday days
+      supabase.from("job_request_days").select("event_date, is_holiday").eq("job_request_id", pickerKey).eq("is_holiday", true)
+        .then(({ data, error }) => {
+          if (error) { console.error("[timekeeping] load holiday days:", error); return; }
+          const s = new Set<string>();
+          for (const r of (data ?? []) as any[]) if (r.event_date) s.add(String(r.event_date));
+          setHolidayDateSet(s);
+        });
+      // Resolve the multiplier via the job's quote (which already snapshot the
+      // rate-card multiplier). Fallback 2.0 if no quote / no value.
+      supabase.from("quotes").select("holiday_multiplier").eq("job_request_id", pickerKey).order("created_at", { ascending: false }).limit(1)
+        .then(({ data, error }) => {
+          if (error) { console.error("[timekeeping] load multiplier:", error); return; }
+          const v = (data?.[0] as any)?.holiday_multiplier;
+          setJobHolidayMultiplier(v == null ? null : Number(v));
+        });
+    });
   }, [picker]);
+  const effectiveHolidayMultiplier = jobHolidayMultiplier ?? 2.0;
   async function addCrewFromJob() {
     if (!timesheet || pickerKind !== "job") return;
     setAddingCrew(true);
@@ -382,6 +410,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
         if (seen.has(key)) return;
         const emp = slot.employeeKey ? employees.find((e) => e.employeeKey === slot.employeeKey) : null;
         const posName = positions.find((p) => p.id === slot.positionId)?.name || "Stagehand";
+        const isHol = holidayDateSet.has(slot.eventDate);
         nextRows.push(computeTimeEntry({
           ...blankTimeEntry(`crew-${Date.now()}-${idx}`),
           position: posName,
@@ -397,6 +426,8 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
           timeIn1:  slot.startTime || "",
           timeOut1: slot.endTime || "",
           shiftId: slot.shiftId,
+          isHoliday: isHol,
+          holidayMultiplier: isHol ? effectiveHolidayMultiplier : null,
           status: "submitted",
         }));
         seen.add(key);
@@ -858,19 +889,29 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     acc[r.status] = (acc[r.status] || 0) + 1;
                     return acc;
                   }, {} as Record<string, number>);
+                  // Phase 4: day is "holiday" if the planner flagged its
+                  // job_request_days row OR every entry on the day has
+                  // isHoliday=true (handles legacy + manually-set rows).
+                  const dayIsHoliday = (day !== "no-date" && holidayDateSet.has(day))
+                    || (dayRows.length > 0 && dayRows.every((r) => !!r.isHoliday));
                   return (
                   <Fragment key={day}>
                     <tbody className="day-separator">
                       <tr onClick={() => toggleDay(day)} style={{ cursor: "pointer" }}>
                         <td colSpan={totalCols} style={{
                           padding: "10px 14px",
-                          background: isCollapsed ? "#f7f4ee" : "var(--accent, #2563eb)",
+                          background: isCollapsed ? "#f7f4ee" : (dayIsHoliday ? "#7a4a00" : "var(--accent, #2563eb)"),
                           color: isCollapsed ? "inherit" : "#fff",
                           borderBottom: "2px solid #333",
                         }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                             <span style={{ fontSize: 14, width: 14 }}>{isCollapsed ? "▸" : "▾"}</span>
                             <strong style={{ fontSize: 14 }}>{dayLabel}</strong>
+                            {dayIsHoliday && (
+                              <span style={{ fontSize: 12, fontWeight: 700, padding: "2px 8px", background: "#fff7e0", color: "#7a5a1a", borderRadius: 8 }}>
+                                🎄 Holiday · {Number(effectiveHolidayMultiplier)}× rate
+                              </span>
+                            )}
                             <span style={{ fontSize: 12, opacity: 0.85 }}>
                               · {dayRows.length} crew member{dayRows.length === 1 ? "" : "s"}
                             </span>
@@ -971,7 +1012,31 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         <span className="print-time">{specialtyNameById.get(row.specialtyId || "") || ""}</span>
                       </td>
                       <td colSpan={r1Spans.start}>
-                        <input type="date" className="input-tight" disabled={isLocked} value={row.workDate ?? ""} onChange={(e)=>updateRow(row.id, { workDate: e.target.value, endDate: row.endDate || e.target.value })} />
+                        <input
+                          type="date"
+                          className="input-tight"
+                          disabled={isLocked}
+                          value={row.workDate ?? ""}
+                          onChange={(e) => {
+                            const d = e.target.value;
+                            // Phase 4: auto-flip isHoliday when the new date is
+                            // flagged on the job. Honors prior manual override:
+                            // if the operator deliberately unchecked the holiday
+                            // box on a flagged day, we don't re-flip on date change.
+                            // (Heuristic: only auto-set if isHoliday is currently
+                            // false AND the new date is in the holiday set; we
+                            // intentionally don't auto-clear when moving off.)
+                            const patch: Partial<TimeEntry> = {
+                              workDate: d,
+                              endDate: row.endDate || d,
+                            };
+                            if (d && holidayDateSet.has(d) && !row.isHoliday) {
+                              patch.isHoliday = true;
+                              patch.holidayMultiplier = effectiveHolidayMultiplier;
+                            }
+                            updateRow(row.id, patch);
+                          }}
+                        />
                         <span className="print-time">{row.workDate || ""}</span>
                       </td>
                       <td colSpan={r1Spans.end}>
@@ -1014,6 +1079,29 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                           {row.employeeKey && row.status === "submitted" && (
                             <span className="badge" style={{ fontSize: 11, background: "#e8f0fe", color: "#1a56c4" }}>Pending</span>
                           )}
+                          {/* Phase 4: holiday badge + per-row override toggle. The
+                              checkbox lets the admin flip the snapshot independently
+                              of the day-level flag (e.g. day was retroactively
+                              flagged but this entry was already paid out). */}
+                          {row.isHoliday ? (
+                            <span className="badge" style={{ fontSize: 11, background: "#fff7e0", color: "#7a5a1a" }}
+                                  title={`Pay multiplier ${row.holidayMultiplier ?? 2}× applied`}>
+                              🎄 Holiday {Number(row.holidayMultiplier ?? 2)}×
+                            </span>
+                          ) : null}
+                          {!hidePayAlways && !isLocked && (
+                            <label style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 4, marginTop: 2, color: "#7a5a1a" }}>
+                              <input
+                                type="checkbox"
+                                checked={!!row.isHoliday}
+                                onChange={(e) => updateRow(row.id, {
+                                  isHoliday: e.target.checked,
+                                  holidayMultiplier: e.target.checked ? effectiveHolidayMultiplier : null,
+                                })}
+                              />
+                              Holiday
+                            </label>
+                          )}
                           {/* Per-row Delete kept as a tiny escape hatch (one-off cleanup
                               during editing). Bulk Delete is in the batch action bar.
                               Disabled while approved — the DB freeze trigger would reject
@@ -1046,8 +1134,12 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       {showPay ? (
                         <>
                           <td className="hide-print"><select className="input-tight" disabled={isLocked} value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td className="hide-print"><select className="input-tight" disabled={isLocked} value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td className="hide-print"><select className="input-tight" disabled={isLocked} value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          {/* Phase 4: OT/DT rates are inert on holiday rows
+                              (pay = totalHours × stdRate × multiplier). Disable
+                              the selects so the operator doesn't think tweaking
+                              them changes anything. */}
+                          <td className="hide-print"><select className="input-tight" disabled={isLocked || !!row.isHoliday} value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })} title={row.isHoliday ? "Inert on holiday rows — pay uses base × multiplier" : ""}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print"><select className="input-tight" disabled={isLocked || !!row.isHoliday} value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })} title={row.isHoliday ? "Inert on holiday rows — pay uses base × multiplier" : ""}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
                           <td className="hide-print">${row.totalPay.toFixed(2)}</td>
                         </>
                       ) : null}
