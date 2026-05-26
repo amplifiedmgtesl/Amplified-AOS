@@ -113,6 +113,11 @@ export type TimeEntry = {
   // (20260525d) super-locks the row — status changes are blocked until
   // the invoice line is unlinked via the invoice draft editor.
   invoiceLineId?: string | null;
+  // Phase 2 (2026-05-26): canonical FK to job_request_shifts(id). Lets
+  // timekeeping align with the same shift identity the plan and quote
+  // already use. NULL means "any shift / unspecified" (legacy + jobs
+  // with 0 or 1 shifts).
+  shiftId?: string | null;
 };
 
 export type Timesheet = {

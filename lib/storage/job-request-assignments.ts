@@ -80,3 +80,73 @@ export async function deleteAssignment(id: string): Promise<void> {
   const { error } = await supabase.from("job_request_assignments").delete().eq("id", id);
   if (error) throw error;
 }
+
+// Composite slot record used by timekeeping's "Add Crew from Job" flow.
+// Each slot = one (employee, day, shift) tuple resolved through assignments.
+// Returns the data needed to seed one TimeEntry row per slot.
+export type JobCrewSlot = {
+  assignmentId: string;
+  jobRequestDayId: string;
+  eventDate: string;               // YYYY-MM-DD
+  startTime: string | null;        // HH:MM (24h) or null
+  endTime: string | null;
+  shiftId: string | null;
+  shiftLabel: string | null;
+  positionId: string | null;
+  specialtyId: string | null;
+  employeeKey: string | null;
+};
+
+/** Load every per-day crew assignment for a job_request, joined with the
+ *  day's event_date / times and the shift label. Sorted by date then shift
+ *  then sort_order so the resulting TimeEntry rows come out in a useful
+ *  order. */
+export async function loadJobCrewSlots(jobRequestId: string): Promise<JobCrewSlot[]> {
+  const { data: days, error: dayErr } = await supabase
+    .from("job_request_days")
+    .select("id, event_date, start_time, end_time, sort_order")
+    .eq("job_request_id", jobRequestId)
+    .order("event_date", { ascending: true });
+  if (dayErr) throw dayErr;
+  if (!days || days.length === 0) return [];
+
+  const dayMap = new Map<string, { event_date: string; start_time: string | null; end_time: string | null }>();
+  for (const d of days as any[]) {
+    dayMap.set(d.id, { event_date: d.event_date, start_time: d.start_time ?? null, end_time: d.end_time ?? null });
+  }
+
+  const { data: shifts, error: shErr } = await supabase
+    .from("job_request_shifts")
+    .select("id, label, sort_order")
+    .eq("job_request_id", jobRequestId);
+  if (shErr) throw shErr;
+  const shiftMap = new Map<string, string>();
+  for (const s of (shifts ?? []) as any[]) shiftMap.set(s.id, s.label ?? "");
+
+  const dayIds = (days as any[]).map((d) => d.id);
+  const { data: aRows, error: aErr } = await supabase
+    .from("job_request_assignments")
+    .select("id, job_request_day_id, shift_id, position_id, specialty_id, employee_key, sort_order")
+    .in("job_request_day_id", dayIds)
+    .order("sort_order", { ascending: true });
+  if (aErr) throw aErr;
+
+  return (aRows ?? []).map((r: any) => {
+    const day = dayMap.get(r.job_request_day_id);
+    return {
+      assignmentId: r.id,
+      jobRequestDayId: r.job_request_day_id,
+      eventDate: day?.event_date ?? "",
+      startTime: day?.start_time ?? null,
+      endTime: day?.end_time ?? null,
+      shiftId: r.shift_id ?? null,
+      shiftLabel: r.shift_id ? (shiftMap.get(r.shift_id) ?? null) : null,
+      positionId: r.position_id ?? null,
+      specialtyId: r.specialty_id ?? null,
+      employeeKey: r.employee_key ?? null,
+    };
+  }).sort((a, b) =>
+    a.eventDate.localeCompare(b.eventDate)
+    || (a.shiftLabel ?? "").localeCompare(b.shiftLabel ?? "")
+  );
+}

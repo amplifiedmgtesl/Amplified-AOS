@@ -1219,6 +1219,7 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     createdAt: r.created_at ?? undefined,
     jobId: r.job_id ?? null,
     invoiceLineId: r.invoice_line_id ?? null,
+    shiftId: r.shift_id ?? null,
   };
 }
 
@@ -1234,6 +1235,7 @@ function timesheetEntryToRow(
     timesheet_id: timesheetId,
     job_sheet_id: jobSheetId,
     job_id: jobId,
+    shift_id: e.shiftId ?? null,
     employee_key: e.employeeKey ?? null,
     user_id: e.userId ?? null,
     position: e.position,

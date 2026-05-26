@@ -8,10 +8,11 @@ import {
   loadJobRequests, loadJobSheets, loadTimesheets,
   getTimesheetByJobId, getTimesheetByJobSheetId,
   ensureTimesheetForJobRequest,
-  upsertTimesheet, positionNames, loadEmployees,
+  upsertTimesheet, positionNames, loadEmployees, loadPositions, loadSpecialties,
   getPendingStaffEntriesByJobId,
   approveStaffEntry, rejectStaffEntry, setEntryApproved, setEntrySubmitted,
 } from "@/lib/store/app-store";
+import { loadJobCrewSlots } from "@/lib/storage/job-request-assignments";
 import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
 import { parseMinutes } from "@/lib/time-utils";
 import type { EmployeeRecord, JobRequest, JobSheet, TimeEntry, Timesheet } from "@/lib/store/types";
@@ -294,6 +295,9 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     persist({ ...timesheet, rows: [...timesheet.rows, blankTimeEntry(`row-${Date.now()}`)] });
   }
 
+  // Legacy path — pulls a flat worker list off the linked job_sheet.
+  // Phase 2 retires this for canonical jobs (which have per-day assignments);
+  // kept available for the 3 stragglers whose job_id couldn't be backfilled.
   function addWorkersFromJobSheet() {
     if (!timesheet || !currentSheet) return;
     const existingEmails = new Set(timesheet.rows.map((r) => r.email));
@@ -313,6 +317,78 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
       }));
     });
     persist({ ...timesheet, rows: nextRows });
+  }
+
+  // Phase 2 canonical path — seeds one TimeEntry per per-day crew assignment
+  // on the selected job_request. Each row carries the right workDate, shiftId,
+  // and (Phase 3) positionId/specialtyId/employeeKey from the assignment.
+  // Dedupes against existing rows by (employee_key, work_date, shift_id) so
+  // re-running the button doesn't double-add.
+  const [addingCrew, setAddingCrew] = useState(false);
+  // Phase 2: shift label lookup for the selected job, so per-row chips can
+  // show which shift each entry belongs to. Loaded once per job switch.
+  const [shiftLabelById, setShiftLabelById] = useState<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (pickerKind !== "job") { setShiftLabelById(new Map()); return; }
+    import("@/lib/supabase/client").then(({ supabase }) =>
+      supabase.from("job_request_shifts").select("id, label").eq("job_request_id", pickerKey)
+        .then(({ data, error }) => {
+          if (error) { console.error("[timekeeping] load shifts:", error); return; }
+          const m = new Map<string, string>();
+          for (const r of (data ?? []) as any[]) m.set(r.id, r.label ?? "");
+          setShiftLabelById(m);
+        })
+    );
+  }, [picker]);
+  async function addCrewFromJob() {
+    if (!timesheet || pickerKind !== "job") return;
+    setAddingCrew(true);
+    try {
+      const slots = await loadJobCrewSlots(pickerKey);
+      if (slots.length === 0) {
+        alert("This job has no per-day crew assignments yet. Add them on the Job Request → Assigned Crew tab first.");
+        return;
+      }
+      // Dedupe key — same employee on same day + same shift counts as one row.
+      const seen = new Set(timesheet.rows.map((r) =>
+        `${r.employeeKey || ""}|${r.workDate || ""}|${r.shiftId || ""}`
+      ));
+      const positions = loadPositions();
+      const employees = loadEmployees();
+      const nextRows = [...timesheet.rows];
+      slots.forEach((slot, idx) => {
+        const key = `${slot.employeeKey || ""}|${slot.eventDate}|${slot.shiftId || ""}`;
+        if (seen.has(key)) return;
+        const emp = slot.employeeKey ? employees.find((e) => e.employeeKey === slot.employeeKey) : null;
+        const posName = positions.find((p) => p.id === slot.positionId)?.name || "Stagehand";
+        nextRows.push(computeTimeEntry({
+          ...blankTimeEntry(`crew-${Date.now()}-${idx}`),
+          position: posName,
+          firstName: emp?.firstName || emp?.fullName?.split(" ")?.[0] || "",
+          lastName:  emp?.lastName  || emp?.fullName?.split(" ")?.slice(1).join(" ") || "",
+          phone: emp?.phone || "",
+          email: emp?.email || "",
+          employeeKey: slot.employeeKey || null,
+          workDate: slot.eventDate || undefined,
+          endDate:  slot.eventDate || undefined,
+          timeIn1:  slot.startTime || "",
+          timeOut1: slot.endTime || "",
+          shiftId: slot.shiftId,
+          status: "submitted",
+        }));
+        seen.add(key);
+      });
+      if (nextRows.length === timesheet.rows.length) {
+        alert(`All ${slots.length} crew assignments are already on this timesheet.`);
+        return;
+      }
+      persist({ ...timesheet, rows: nextRows });
+    } catch (e) {
+      console.error("[timekeeping] addCrewFromJob failed:", e);
+      alert("Couldn't load crew assignments — see console for details.");
+    } finally {
+      setAddingCrew(false);
+    }
   }
 
   function addManualCrew() {
@@ -562,7 +638,23 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
           </div>
         </div>
         <div className="action-row" style={{ marginTop: 12 }}>
-          <button onClick={addWorkersFromJobSheet} disabled={!currentSheet}>Add Crew from Job Sheet</button>
+          {pickerKind === "job" ? (
+            <button
+              onClick={addCrewFromJob}
+              disabled={!timesheet || addingCrew}
+              title="Seed one row per scheduled assignment from the Job Request → Assigned Crew tab"
+            >
+              {addingCrew ? "Loading…" : "Add Crew from Job"}
+            </button>
+          ) : (
+            <button
+              onClick={addWorkersFromJobSheet}
+              disabled={!currentSheet}
+              title="Legacy: pulls workers from the linked job_sheet's flat crew list"
+            >
+              Add Crew from Job Sheet
+            </button>
+          )}
           <button className="secondary" onClick={addManualCrew} disabled={!timesheet}>Add Manual Crew</button>
           <button className="secondary" onClick={addBlankRow} disabled={!timesheet}>Add Blank Row</button>
           {timesheet && timesheet.rows.length > 0 && (
@@ -779,6 +871,11 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     <tbody key={row.id} className={`line-employee ${isCollapsed ? "is-collapsed-day" : ""}`} data-day={row.workDate || "no-date"}>
                     <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}${lockedClass}`} style={isLocked ? { opacity: 0.85 } : undefined}>
                       <td colSpan={r1Spans.emp}>
+                        {row.shiftId && shiftLabelById.has(row.shiftId) && (
+                          <div style={{ fontSize: 10, color: "#1a4a7a", marginBottom: 2 }}>
+                            🕒 {shiftLabelById.get(row.shiftId)}
+                          </div>
+                        )}
                         {isLocked ? (
                           <div style={{ fontSize: 13, fontWeight: 600 }}>
                             {[row.firstName, row.lastName].filter(Boolean).join(" ") || row.email || "(unnamed)"}
