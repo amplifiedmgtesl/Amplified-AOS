@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabase/client";
 import { US_STATES, JOB_REQUEST_STATUSES } from "@/lib/constants";
 import { JobRequestAttachmentsSection } from "./job-request-attachments-section";
 import { JobRequestDaysSection } from "./job-request-days-section";
+import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { JobRequestCrewSection } from "./job-request-crew-section";
 import { JobRequestShiftsSection } from "./job-request-shifts-section";
 import { JobPrintSheet } from "./job-print-sheet";
@@ -68,6 +69,46 @@ export default function JobRequests() {
     );
   }, [rows, form.clientId, form.requestDate, form.id]);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Track the date extent of this job's day rows (min/max event_date) so
+  // we can warn when the header date range no longer covers them. Loaded
+  // lazily when editing — new jobs have no day rows yet.
+  const [dayExtent, setDayExtent] = useState<{ min: string; max: string } | null>(null);
+  useEffect(() => {
+    if (!editingId) { setDayExtent(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const days = await loadJobRequestDays(editingId);
+        if (cancelled) return;
+        const dates = days.map((d) => d.eventDate).filter(Boolean).sort();
+        setDayExtent(dates.length > 0
+          ? { min: dates[0], max: dates[dates.length - 1] }
+          : null);
+      } catch (err) {
+        console.error("[job-requests] loadJobRequestDays for header warning:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editingId, refreshKey]);
+
+  // Header-vs-days mismatch: form's date range no longer covers the actual
+  // day rows. Soft warning — header doesn't auto-add/remove days. Operator
+  // fixes by going to the Days tab and removing/adding day rows manually.
+  const headerDaysMismatch = useMemo(() => {
+    if (!dayExtent) return null;
+    const headerStart = form.requestDate;
+    const headerEnd = form.endDate || form.requestDate;
+    const issues: string[] = [];
+    if (headerStart && dayExtent.min < headerStart) {
+      issues.push(`Day rows exist on ${dayExtent.min} — earlier than the header start (${headerStart}).`);
+    }
+    if (headerEnd && dayExtent.max > headerEnd) {
+      issues.push(`Day rows exist on ${dayExtent.max} — later than the header end (${headerEnd}).`);
+    }
+    return issues.length > 0 ? issues : null;
+  }, [dayExtent, form.requestDate, form.endDate]);
+
   const [msg, setMsg] = useState("");
   const [clients, setClients] = useState<Client[]>([]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -718,6 +759,25 @@ export default function JobRequests() {
                 })}
             </select>
           </div>
+
+          {headerDaysMismatch ? (
+            <div style={{
+              marginTop: 12,
+              padding: "8px 12px",
+              background: "#fdf3d8",
+              border: "1px solid #d8a800",
+              borderRadius: 4,
+              fontSize: 13,
+            }}>
+              <strong>⚠ Header dates don't match day rows:</strong>
+              <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                {headerDaysMismatch.map((msg, i) => <li key={i}>{msg}</li>)}
+              </ul>
+              <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
+                Header date changes don't auto-add or remove day rows. Go to the Days tab to add or delete days manually (deleting a day cascades to its crew needs).
+              </div>
+            </div>
+          ) : null}
 
           {possibleDuplicates.length > 0 ? (
             <div style={{
