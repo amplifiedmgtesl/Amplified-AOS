@@ -13,7 +13,6 @@ import {
   approveStaffEntry, rejectStaffEntry, setEntryApproved, setEntrySubmitted,
 } from "@/lib/store/app-store";
 import { loadJobCrewSlots } from "@/lib/storage/job-request-assignments";
-import { resolveRateCardForJob } from "@/lib/store/quotes";
 import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
 import { parseMinutes } from "@/lib/time-utils";
 import type { EmployeeRecord, JobRequest, JobSheet, TimeEntry, Timesheet } from "@/lib/store/types";
@@ -355,35 +354,13 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
   // of isHoliday on new rows + the day-group "🎄 Holiday" badge.
   const [holidayDateSet, setHolidayDateSet] = useState<Set<string>>(new Set());
   const [jobHolidayMultiplier, setJobHolidayMultiplier] = useState<number | null>(null);
-  // Phase 5: rate-card auto-fill. Map specialty_id → { stdRate, otRate, dtRate }
-  // for the job's resolved rate card (override + fallback per
-  // resolveRateCardForJob). Used to seed rates on new rows. Falls back to the
-  // hardcoded blankTimeEntry defaults when the lookup misses.
-  const [rateBySpecialtyId, setRateBySpecialtyId] = useState<Map<string, { stdRate: number; otRate: number; dtRate: number }>>(new Map());
   useEffect(() => {
     if (pickerKind !== "job") {
       setShiftLabelById(new Map());
       setHolidayDateSet(new Set());
       setJobHolidayMultiplier(null);
-      setRateBySpecialtyId(new Map());
       return;
     }
-    // Phase 5: resolve the rate card for this job and build the
-    // specialty_id → rates map. Pinned override wins over client/date
-    // lookup (mirrors createDraftFromJob).
-    resolveRateCardForJob(pickerKey).then((rc) => {
-      if (!rc) { setRateBySpecialtyId(new Map()); return; }
-      const m = new Map<string, { stdRate: number; otRate: number; dtRate: number }>();
-      for (const r of rc.rows as any[]) {
-        if (!r.specialty_id) continue;
-        m.set(r.specialty_id, {
-          stdRate: Number(r.hourly ?? 0),
-          otRate:  Number(r.ot_rate ?? 0),
-          dtRate:  Number(r.dt_rate ?? 0),
-        });
-      }
-      setRateBySpecialtyId(m);
-    }).catch((e) => console.error("[timekeeping] resolveRateCardForJob:", e));
     import("@/lib/supabase/client").then(({ supabase }) => {
       // Shifts
       supabase.from("job_request_shifts").select("id, label").eq("job_request_id", pickerKey)
@@ -434,10 +411,6 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
         const emp = slot.employeeKey ? employees.find((e) => e.employeeKey === slot.employeeKey) : null;
         const posName = positions.find((p) => p.id === slot.positionId)?.name || "Stagehand";
         const isHol = holidayDateSet.has(slot.eventDate);
-        // Phase 5: rate-card lookup by specialty. Fall back to blankTimeEntry
-        // defaults when the rate card has no row for this specialty (e.g.
-        // bespoke roles not on the card yet).
-        const rates = slot.specialtyId ? rateBySpecialtyId.get(slot.specialtyId) : undefined;
         nextRows.push(computeTimeEntry({
           ...blankTimeEntry(`crew-${Date.now()}-${idx}`),
           position: posName,
@@ -455,7 +428,6 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
           shiftId: slot.shiftId,
           isHoliday: isHol,
           holidayMultiplier: isHol ? effectiveHolidayMultiplier : null,
-          ...(rates ? { stdRate: rates.stdRate, otRate: rates.otRate, dtRate: rates.dtRate } : {}),
           status: "submitted",
         }));
         seen.add(key);
@@ -1023,28 +995,13 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         <span className="print-time">{positionNameById.get(row.positionId || "") || row.position || ""}</span>
                       </td>
                       {/* Specialty cell — Phase 3: filtered by current positionId.
-                          Phase 5: when the user picks a specialty AND the row's
-                          rates still equal the hardcoded blankTimeEntry default
-                          (35/52/70), auto-seed the rates from the job's rate card
-                          for that specialty. Doesn't blow away manual overrides
-                          (heuristic: if any rate differs from default, leave alone). */}
+                          Disabled when no position is set yet. */}
                       <td colSpan={r1Spans.spc}>
                         <select
                           className="input-tight"
                           value={row.specialtyId || ""}
                           disabled={isLocked || !row.positionId}
-                          onChange={(e) => {
-                            const newSpcId = e.target.value || null;
-                            const isDefault = row.stdRate === 35 && row.otRate === 52 && row.dtRate === 70;
-                            const rates = newSpcId ? rateBySpecialtyId.get(newSpcId) : undefined;
-                            const patch: Partial<TimeEntry> = { specialtyId: newSpcId };
-                            if (rates && isDefault) {
-                              patch.stdRate = rates.stdRate;
-                              patch.otRate  = rates.otRate;
-                              patch.dtRate  = rates.dtRate;
-                            }
-                            updateRow(row.id, patch);
-                          }}
+                          onChange={(e) => updateRow(row.id, { specialtyId: e.target.value || null })}
                           title={!row.positionId ? "Pick a position first" : ""}
                         >
                           <option value="">{row.positionId ? "— optional —" : "—"}</option>
