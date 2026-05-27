@@ -595,8 +595,16 @@ export async function reseedDraftLinesFromJob(draftId: string): Promise<ReseedFr
 
   await persistDraft(refreshed);
 
-  // Refresh quote_days from job_request_days so day-level changes (days added
-  // or removed, holiday flag toggled on the job) propagate to the draft.
+  // Refresh quote_days from job_request_days. Wipe-then-snapshot (rather
+  // than upsert) so days that were REMOVED from the job don't leave stale
+  // rows behind, and any holiday-flag changes on the job side propagate
+  // cleanly. Safe on drafts — the quote_days freeze trigger only blocks
+  // IUD when the parent quote is frozen, and we asserted isDraft above.
+  const { error: delErr } = await supabase
+    .from("quote_days")
+    .delete()
+    .eq("quote_id", refreshed.id);
+  if (delErr) throw delErr;
   await snapshotQuoteDaysFromJob(refreshed.id, refreshed.jobRequestId);
 
   return {
