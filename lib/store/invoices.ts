@@ -18,6 +18,8 @@ import {
   snapshotInvoiceDaysFromParent,
   upsertInvoiceDay,
 } from "@/lib/storage/invoice-days";
+import { resolveRateCardForJob } from "./quotes";
+import { computeLineTotal } from "@/lib/rates/line-calc";
 
 function newInvoiceId(): string {
   return `i-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -494,6 +496,9 @@ export async function overwriteFromTimesheets(
   if (!inv.jobRequestId) throw new Error(`Invoice ${invoiceId} has no linked job_request.`);
 
   // ─── 1. Approved entries for this job (via job_id — Phase 1 column) ────
+  //   Hours, position, specialty, shift, holiday flag — actuals only.
+  //   Pay-side fields (std_rate/ot_rate/dt_rate/total_pay) are intentionally
+  //   NOT selected: invoice rates come from the rate card, not the timesheet.
   const entriesRes = await supabase
     .from("timesheet_entries")
     .select(`
@@ -501,13 +506,27 @@ export async function overwriteFromTimesheets(
       position, position_id, specialty_id, shift_id,
       employee_key,
       std_hours, ot_hours, dt_hours, total_hours,
-      std_rate, ot_rate, dt_rate, total_pay,
-      is_holiday, holiday_multiplier, invoice_line_id
+      is_holiday, invoice_line_id
     `)
     .eq("job_id", inv.jobRequestId)
     .eq("status", "approved");
   if (entriesRes.error) throw entriesRes.error;
   let entries = entriesRes.data ?? [];
+
+  // ─── 1b. Resolve rate card (bill side) ────────────────────────────────
+  //   Pinned override wins; otherwise picks the latest effective profile
+  //   for (client, request_date). Same resolution path the quote builder
+  //   uses, so the customer sees consistent rates across quote → invoice.
+  const rateCard = await resolveRateCardForJob(inv.jobRequestId);
+  const billRateBySpecialty = new Map<string, { hourly: number; otRate: number; dtRate: number }>();
+  for (const row of (rateCard?.rows ?? []) as any[]) {
+    if (!row.specialty_id) continue;
+    billRateBySpecialty.set(row.specialty_id, {
+      hourly: Number(row.hourly ?? 0),
+      otRate: Number(row.ot_rate ?? 0),
+      dtRate: Number(row.dt_rate ?? 0),
+    });
+  }
 
   // ─── 2. coveredDates filter (optional) ────────────────────────────────
   if (opts.coveredDates && opts.coveredDates.length > 0) {
@@ -532,13 +551,13 @@ export async function overwriteFromTimesheets(
   entries = entries.filter((e: any) => !alreadyBilled.has(e.id) || ownEntryIds.has(e.id));
 
   // ─── 4. Group by the canonical 5-tuple ─────────────────────────────────
-  //   (work_date, position_id-or-text, specialty_id, shift_id, is_holiday)
+  //   (work_date, position_id, specialty_id, shift_id, is_holiday)
   //
   //   Each tuple becomes one invoice_line. Distinct employee count → crew_count.
   //   ST/OT/DT person-hours are summed (explicit per-worker totals — the
-  //   timesheet calc already split them per the 8/12 cutoff or holiday rule).
-  //   total_pay is summed too: it's a faithful sum of what we paid each
-  //   contributing worker, including the holiday multiplier where applied.
+  //   timesheet calc already split them per the 8/12 cutoff). Pay-side
+  //   fields are intentionally NOT aggregated: bill rates come from the
+  //   rate card at line-build time.
   type Group = {
     workDate: string;
     endDate: string | null;
@@ -547,14 +566,9 @@ export async function overwriteFromTimesheets(
     specialtyId: string | null;
     shiftId: string | null;
     isHoliday: boolean;
-    holidayMultiplier: number | null;
     stdHours: number;
     otHours: number;
     dtHours: number;
-    stdRate: number;
-    otRate: number;
-    dtRate: number;
-    totalPay: number;
     entryIds: string[];
     workerKeys: Set<string>;
   };
@@ -584,7 +598,6 @@ export async function overwriteFromTimesheets(
       g.stdHours += Number(e.std_hours ?? 0);
       g.otHours  += Number(e.ot_hours  ?? 0);
       g.dtHours  += Number(e.dt_hours  ?? 0);
-      g.totalPay += Number(e.total_pay ?? 0);
       g.entryIds.push(e.id);
       g.workerKeys.add(workerKey);
       if (e.end_date && (!g.endDate || e.end_date > g.endDate)) g.endDate = e.end_date;
@@ -597,14 +610,9 @@ export async function overwriteFromTimesheets(
         specialtyId: e.specialty_id ?? null,
         shiftId: e.shift_id ?? null,
         isHoliday: !!e.is_holiday,
-        holidayMultiplier: e.holiday_multiplier == null ? null : Number(e.holiday_multiplier),
         stdHours: Number(e.std_hours ?? 0),
         otHours:  Number(e.ot_hours  ?? 0),
         dtHours:  Number(e.dt_hours  ?? 0),
-        stdRate:  Number(e.std_rate  ?? 0),
-        otRate:   Number(e.ot_rate   ?? 0),
-        dtRate:   Number(e.dt_rate   ?? 0),
-        totalPay: Number(e.total_pay ?? 0),
         entryIds: [e.id],
         workerKeys: new Set([workerKey]),
       });
@@ -622,9 +630,24 @@ export async function overwriteFromTimesheets(
   });
   const lineIdByGroupIndex = sorted.map(() => newLineId());
 
+  //   Bill rates come from the rate card (resolved above), keyed by
+  //   specialty_id. Groups whose specialty_id has no matching rate-card row
+  //   land with $0 rates and a console.warn — the user fills them in
+  //   manually before issuing. This is the intentional "pay vs. bill"
+  //   separation: timesheets supply hours/crew/dates only, never rates.
   const newLines: QuoteLine[] = sorted.map((g) => {
     const crewCount = g.workerKeys.size;
-    return {
+    const rate = g.specialtyId ? billRateBySpecialty.get(g.specialtyId) : undefined;
+    if (!rate) {
+      console.warn(
+        `[overwriteFromTimesheets] no rate-card row for specialty_id=${g.specialtyId ?? "(null)"} ` +
+        `(position "${g.positionText}") on ${g.workDate}. Line lands with $0 rates — set them manually.`
+      );
+    }
+    const baseHourly = rate?.hourly ?? 0;
+    const otRate     = rate?.otRate ?? 0;
+    const dtRate     = rate?.dtRate ?? 0;
+    const line: QuoteLine = {
       serviceKey: g.positionText,
       qty: crewCount,
       crewCount,
@@ -632,12 +655,12 @@ export async function overwriteFromTimesheets(
       otHours:      +g.otHours.toFixed(2),
       dtHours:      +g.dtHours.toFixed(2),
       travel:       0,
-      baseHourly:   g.stdRate,
+      baseHourly,
       baseDay:      0,
-      otRate:       g.otRate,
-      dtRate:       g.dtRate,
+      otRate,
+      dtRate,
       rule:         g.isHoliday ? "Holiday timesheet actuals" : "Timesheet actuals",
-      total:        +g.totalPay.toFixed(2),
+      total:        0,
       positionId:   g.positionId ?? undefined,
       specialtyId:  g.specialtyId ?? undefined,
       specialty:    g.positionText,  // legacy display fallback
@@ -647,6 +670,11 @@ export async function overwriteFromTimesheets(
       rateMode:     "hourly",
       sourceKind:   "timesheet_entry",
     };
+    line.total = +computeLineTotal(line, {
+      dayIsHoliday: g.isHoliday,
+      holidayMultiplier: inv.holidayMultiplier,
+    }).toFixed(2);
+    return line;
   });
 
   const subtotal = +newLines.reduce((s, l) => s + (l.total || 0), 0).toFixed(2);

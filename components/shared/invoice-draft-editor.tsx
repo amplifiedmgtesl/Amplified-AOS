@@ -51,6 +51,18 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     status: string;
     isDraft: boolean;
   } | null>(null);
+  // Read-only comparison: approved timesheet entries aggregated by position.
+  // Rendered below the line items so the operator can cross-check that the
+  // billable lines reflect what the field actually worked. Hours only — pay
+  // belongs to the future payroll project, not the bill side.
+  const [timesheetSummary, setTimesheetSummary] = useState<Array<{
+    position: string;
+    workers: number;
+    stdHours: number;
+    otHours: number;
+    dtHours: number;
+    totalHours: number;
+  }>>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,6 +134,38 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           // at one the operator since deactivated.
           const s = await loadShifts(q.jobRequestId, { includeInactive: true });
           if (!cancelled) setShifts(s);
+
+          // Approved timesheet aggregate for the comparison panel.
+          const tsRes = await supabase
+            .from("timesheet_entries")
+            .select("position, employee_key, std_hours, ot_hours, dt_hours, total_hours")
+            .eq("job_id", q.jobRequestId)
+            .eq("status", "approved");
+          if (!cancelled && !tsRes.error) {
+            const map = new Map<string, { workers: Set<string>; stdHours: number; otHours: number; dtHours: number; totalHours: number; unlinked: number }>();
+            for (const r of tsRes.data ?? []) {
+              const pos = (r.position as string) || "Unknown";
+              let bucket = map.get(pos);
+              if (!bucket) {
+                bucket = { workers: new Set(), stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, unlinked: 0 };
+                map.set(pos, bucket);
+              }
+              if (r.employee_key) bucket.workers.add(r.employee_key as string);
+              else bucket.unlinked++;
+              bucket.stdHours   += Number(r.std_hours   ?? 0);
+              bucket.otHours    += Number(r.ot_hours    ?? 0);
+              bucket.dtHours    += Number(r.dt_hours    ?? 0);
+              bucket.totalHours += Number(r.total_hours ?? 0);
+            }
+            setTimesheetSummary(Array.from(map.entries()).map(([position, v]) => ({
+              position,
+              workers: v.workers.size + v.unlinked,
+              stdHours:   +v.stdHours.toFixed(2),
+              otHours:    +v.otHours.toFixed(2),
+              dtHours:    +v.dtHours.toFixed(2),
+              totalHours: +v.totalHours.toFixed(2),
+            })));
+          }
           // For final drafts, surface the linked deposit invoice so the
           // user can see what's being applied (or warn if none exists).
           if (q.invoiceType === "final") {
@@ -869,6 +913,42 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         </table>
       </div>
       </>
+      ) : null}
+
+      {timesheetSummary.length > 0 ? (
+        <div style={{ marginTop: 16 }}>
+          <h3 className="section-title" style={{ marginBottom: 4 }}>Approved Timesheet Actuals (comparison)</h3>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+            Read-only roll-up of approved timesheet entries for this job — cross-check the line items above
+            reflect what the field worked. Rates and totals are intentionally bill-side concerns; payroll lives elsewhere.
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Position</th>
+                  <th>Workers</th>
+                  <th>ST Hrs</th>
+                  <th>OT Hrs</th>
+                  <th>DT Hrs</th>
+                  <th>Total Hrs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {timesheetSummary.map((r) => (
+                  <tr key={r.position}>
+                    <td>{r.position}</td>
+                    <td>{r.workers}</td>
+                    <td>{r.stdHours.toFixed(2)}</td>
+                    <td>{r.otHours.toFixed(2)}</td>
+                    <td>{r.dtHours.toFixed(2)}</td>
+                    <td>{r.totalHours.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : null}
 
       <div className="action-row">
