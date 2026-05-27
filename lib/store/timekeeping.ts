@@ -125,10 +125,17 @@ function inferPairDatesLocal(
   return { in1Date, out1Date, in2Date, out2Date };
 }
 
+// Default position for a freshly-seeded row. Operator picks via the
+// cascading dropdown — this just keeps the row FK-clean from the start
+// (position_id is the source of truth post-Phase 3; "Stagehand" is the
+// canonical default position for event labor in this system).
+const DEFAULT_POSITION_ID = "pos-01";
+
 export function blankTimeEntry(id: string): TimeEntry {
   return computeTimeEntry({
     id,
     position: "Stagehand",
+    positionId: DEFAULT_POSITION_ID,
     firstName: "",
     lastName: "",
     phone: "",

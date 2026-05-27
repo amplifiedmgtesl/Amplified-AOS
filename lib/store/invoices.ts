@@ -560,13 +560,20 @@ export async function overwriteFromTimesheets(
   };
   const groups = new Map<string, Group>();
   for (const e of entries) {
-    // Legacy entries with NULL position_id (25 stragglers on dev — "Crew",
-    // "Fork Op") fall back to text-keyed grouping so they still aggregate
-    // cleanly instead of every row becoming its own line.
-    const posKey = e.position_id ? `pid:${e.position_id}` : `txt:${(e.position ?? "").trim().toLowerCase()}`;
+    // Position is FK-only post-Phase-3 (data cleanup 2026-05-26 re-pointed
+    // the last 25 legacy text-only entries). Any entry that lands here
+    // without a position_id is a data integrity issue — log and skip
+    // rather than silently producing a malformed line.
+    if (!e.position_id) {
+      console.warn(
+        `[overwriteFromTimesheets] skipping entry ${e.id} — no position_id. ` +
+        `Position text was "${e.position ?? ""}". Fix the entry then re-pull.`
+      );
+      continue;
+    }
     const key = [
       e.work_date ?? "",
-      posKey,
+      e.position_id,
       e.specialty_id ?? "",
       e.shift_id ?? "",
       e.is_holiday ? "h" : "n",
