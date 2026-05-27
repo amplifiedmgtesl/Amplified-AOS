@@ -22,7 +22,6 @@ function rowToLedger(r: any): CustomerCreditLedgerEntry {
     transactionType: r.transaction_type,
     amount: Number(r.amount),
     relatedInvoiceId: r.related_invoice_id ?? undefined,
-    relatedPaymentId: r.related_payment_id ?? undefined,
     refundReference: r.refund_reference ?? undefined,
     refundMemo: r.refund_memo ?? undefined,
     refundDate: r.refund_date ?? undefined,
@@ -81,27 +80,9 @@ export async function applyCreditToInvoice(
   return data as string;
 }
 
-/** Record an overpayment as customer credit. Used when a payment exceeds
- *  the invoice balance and the user chose "hold as credit." */
-export async function recordOverpayment(
-  clientId: string,
-  amount: number,
-  paymentId: string,
-  notes?: string,
-): Promise<string> {
-  const id = newLedgerId();
-  const { error } = await supabase.from("customer_credit_ledger").insert({
-    id,
-    client_id: clientId,
-    transaction_date: new Date().toISOString().slice(0, 10),
-    transaction_type: "overpayment",
-    amount,
-    related_payment_id: paymentId,
-    notes: notes ?? null,
-  });
-  if (error) throw error;
-  return id;
-}
+// (recordOverpayment removed 2026-05-27 along with the customer_payments
+// table. Overpayment-to-credit flow has no UI today; if/when re-added,
+// it will FK to invoice_payments instead.)
 
 /** Record a manual credit grant (admin gesture, dispute resolution, etc.). */
 export async function recordManualCredit(

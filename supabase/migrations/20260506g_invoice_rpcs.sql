@@ -2,8 +2,11 @@
 --
 --   issue_invoice_draft(p_invoice_id)              — promote draft to frozen
 --   link_orphan_invoice(p_invoice_id, p_quote_id, p_job_id) — adopt legacy orphan
---   record_customer_payment(...)                   — atomic payment + allocations
 --   apply_credit_to_invoice(p_client_id, p_invoice_id, p_amount) — ledger entry
+--
+-- (record_customer_payment was removed 2026-05-27 — collapsed to a
+-- plain INSERT into invoice_payments since the two-table model was
+-- over-engineered for a single-invoice flow.)
 --
 -- Companion: docs/invoice-rewrite-plan.md
 
@@ -199,71 +202,6 @@ $$;
 
 REVOKE ALL ON FUNCTION link_orphan_invoice(text, text, text) FROM public;
 GRANT EXECUTE ON FUNCTION link_orphan_invoice(text, text, text) TO authenticated;
-
--- ─── record_customer_payment ─────────────────────────────────────────────────
--- Atomic insert of customer_payments + payment_allocations. Allocations are
--- passed as JSON: [{"invoice_id": "...", "amount": 1234.56, "notes": "..."}]
--- Returns the new payment id.
-CREATE OR REPLACE FUNCTION record_customer_payment(
-  p_id              text,
-  p_client_id       text,
-  p_payment_date    date,
-  p_payment_method  text,
-  p_payment_amount  numeric,
-  p_reference_number text,
-  p_memo            text,
-  p_received_date   date,
-  p_received_by     uuid,
-  p_deposited_date  date,
-  p_deposited_by    uuid,
-  p_notes           text,
-  p_allocations     jsonb  -- array of { invoice_id, amount, notes }
-)
-RETURNS text
-LANGUAGE plpgsql AS $$
-DECLARE
-  v_alloc jsonb;
-  v_alloc_id text;
-  v_total_allocated numeric := 0;
-BEGIN
-  -- Insert the payment first
-  INSERT INTO customer_payments (
-    id, client_id, payment_date, payment_method, payment_amount,
-    reference_number, memo, received_date, received_by,
-    deposited_date, deposited_by, notes
-  ) VALUES (
-    p_id, p_client_id, p_payment_date, p_payment_method, p_payment_amount,
-    p_reference_number, p_memo, p_received_date, p_received_by,
-    p_deposited_date, p_deposited_by, p_notes
-  );
-
-  -- Insert allocations. The over-allocation trigger enforces SUM <= payment_amount.
-  IF p_allocations IS NOT NULL THEN
-    FOR v_alloc IN SELECT * FROM jsonb_array_elements(p_allocations)
-    LOOP
-      v_alloc_id := 'pa-' || encode(gen_random_bytes(10), 'hex');
-      INSERT INTO payment_allocations (id, payment_id, invoice_id, amount, notes)
-      VALUES (
-        v_alloc_id,
-        p_id,
-        v_alloc->>'invoice_id',
-        (v_alloc->>'amount')::numeric,
-        v_alloc->>'notes'
-      );
-      v_total_allocated := v_total_allocated + (v_alloc->>'amount')::numeric;
-    END LOOP;
-  END IF;
-
-  RETURN p_id;
-END;
-$$;
-
-REVOKE ALL ON FUNCTION record_customer_payment(
-  text, text, date, text, numeric, text, text, date, uuid, date, uuid, text, jsonb
-) FROM public;
-GRANT EXECUTE ON FUNCTION record_customer_payment(
-  text, text, date, text, numeric, text, text, date, uuid, date, uuid, text, jsonb
-) TO authenticated;
 
 -- ─── apply_credit_to_invoice ─────────────────────────────────────────────────
 -- Atomic: validates the client has enough available credit, then inserts the

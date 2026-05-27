@@ -285,39 +285,25 @@ export type InvoiceDraft = {
   updatedBy?: string;
 };
 
-// ─── Customer payments + credits (Phase C invoice rewrite) ──────────────────
+// ─── Invoice payments + credits (Phase C invoice rewrite) ──────────────────
 export type PaymentMethod = "check" | "ach" | "credit_card" | "cash" | "wire" | "zelle" | "venmo" | "money_order" | "other";
 
-export type CustomerPayment = {
+/** One payment received against one invoice. Replaces the prior
+ *  customer_payments + payment_allocations two-table model
+ *  (2026-05-27 redesign — single-invoice flow). */
+export type InvoicePayment = {
   id: string;
-  clientId: string;
+  invoiceId: string;
   paymentDate: string;             // YYYY-MM-DD
   paymentMethod: PaymentMethod;
-  paymentAmount: number;
+  amount: number;
   /** Check #, CC transaction id, Venmo id, etc. — the rail's identifier. */
   referenceNumber?: string;
   /** What the customer wrote on the memo line. */
   memo?: string;
-  receivedDate?: string;
-  receivedBy?: string;
-  depositedDate?: string;
-  depositedBy?: string;
   /** Internal AES notes. */
   notes?: string;
   isActive: boolean;
-  createdAt?: string;
-  updatedAt?: string;
-  createdBy?: string;
-  updatedBy?: string;
-};
-
-export type PaymentAllocation = {
-  id: string;
-  paymentId: string;
-  invoiceId: string;
-  amount: number;
-  allocatedDate: string;
-  notes?: string;
   createdAt?: string;
   updatedAt?: string;
   createdBy?: string;
@@ -333,12 +319,73 @@ export type CustomerCreditLedgerEntry = {
   transactionType: CreditTransactionType;
   amount: number;                  // always positive; sign comes from type
   relatedInvoiceId?: string;
-  relatedPaymentId?: string;
   refundReference?: string;
   refundMemo?: string;
   refundDate?: string;
   notes?: string;
   isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
+// ─── Payroll (Phase 1) ─────────────────────────────────────────────────────
+// A payroll_run is the "paydate header" — a group of approved timesheet
+// entries snapshotted for payment on a given pay_date. payroll_run_entries
+// carries the snapshot of hours/rates/pay so the run's totals stay correct
+// even if a source timesheet entry is later (post-void) edited.
+export type PayrollRunStatus = "draft" | "finalized" | "exported" | "voided";
+
+export type PayrollRun = {
+  id: string;
+  payDate: string;             // YYYY-MM-DD
+  periodStart?: string;
+  periodEnd?: string;
+  status: PayrollRunStatus;
+  notes?: string;
+  // Cached rollups maintained by trigger.
+  entryCount: number;
+  employeeCount: number;
+  totalHours: number;
+  totalPay: number;
+  // Lifecycle audit
+  finalizedAt?: string;
+  finalizedBy?: string;
+  exportedAt?: string;
+  exportedBy?: string;
+  voidedAt?: string;
+  voidedBy?: string;
+  voidReason?: string;
+  // Standard audit
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
+export type PayrollRunEntry = {
+  id: string;
+  payrollRunId: string;
+  timesheetEntryId: string;
+  // Snapshot fields — frozen at the moment the entry was added to the run.
+  employeeKey?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  workDate?: string;
+  position?: string;
+  jobId?: string;
+  stdHours: number;
+  otHours: number;
+  dtHours: number;
+  totalHours: number;
+  stdRate: number;
+  otRate: number;
+  dtRate: number;
+  isHoliday: boolean;
+  holidayMultiplier?: number;
+  totalPay: number;
   createdAt?: string;
   updatedAt?: string;
   createdBy?: string;

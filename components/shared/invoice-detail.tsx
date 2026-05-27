@@ -19,16 +19,20 @@ import {
   loadInvoice,
   reviseInvoice,
   markSent,
-  markPaid,
   voidInvoice,
   displayStatus,
   balanceDue,
   linkOrphanInvoice,
 } from "@/lib/store/invoices";
 import { getAvailableCredit, applyCreditToInvoice } from "@/lib/store/customer-credits";
+import {
+  recordInvoicePayment,
+  loadInvoicePayments,
+  deactivateInvoicePayment,
+} from "@/lib/store/invoice-payments";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { supabase } from "@/lib/supabase/client";
-import type { InvoiceDraft, JobRequestShift } from "@/lib/store/types";
+import type { InvoiceDraft, JobRequestShift, InvoicePayment, PaymentMethod } from "@/lib/store/types";
 
 export default function InvoiceDetail({ id }: { id: string }) {
   const router = useRouter();
@@ -40,11 +44,24 @@ export default function InvoiceDetail({ id }: { id: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Payments applied to this invoice. invoices.paid_amount is kept in sync
+  // by the refresh_invoice_paid_amount trigger; this just loads them for
+  // the panel.
+  const [payments, setPayments] = useState<InvoicePayment[]>([]);
+
   // Modal states
   const [voidOpen, setVoidOpen] = useState(false);
   const [voidReason, setVoidReason] = useState("");
   const [creditOpen, setCreditOpen] = useState(false);
   const [creditAmount, setCreditAmount] = useState("");
+  const [payOpen, setPayOpen] = useState(false);
+  const [payDate, setPayDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [payMethod, setPayMethod] = useState<PaymentMethod>("check");
+  const [payAmount, setPayAmount] = useState("");
+  const [payReference, setPayReference] = useState("");
+  const [payMemo, setPayMemo] = useState("");
+  const [payNotes, setPayNotes] = useState("");
+  const [paySaving, setPaySaving] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkJobs, setLinkJobs] = useState<Array<{ id: string; job_no: string; client: string; event_name: string; request_date: string }>>([]);
   const [linkQuotes, setLinkQuotes] = useState<Array<{ id: string; quote_no: string; client: string; event_name: string }>>([]);
@@ -83,6 +100,8 @@ export default function InvoiceDetail({ id }: { id: string }) {
           const bal = await getAvailableCredit(q.clientId);
           if (!cancelled) setCreditBalance(bal);
         }
+        const pays = await loadInvoicePayments(q.id);
+        if (!cancelled) setPayments(pays);
         setLoading(false);
       })
       .catch((err) => {
@@ -100,6 +119,10 @@ export default function InvoiceDetail({ id }: { id: string }) {
     if (q?.clientId) {
       setCreditBalance(await getAvailableCredit(q.clientId));
     }
+    if (q) {
+      const pays = await loadInvoicePayments(q.id);
+      setPayments(pays);
+    }
   }
 
   async function onMarkSent() {
@@ -108,11 +131,56 @@ export default function InvoiceDetail({ id }: { id: string }) {
     catch (err: any) { alert(`Mark Sent failed: ${err.message || err}`); }
   }
 
-  async function onMarkPaid() {
+  function openRecordPayment() {
     if (!invoice) return;
-    if (!confirm("Mark this invoice as paid?")) return;
-    try { await markPaid(invoice.id); await refresh(); }
-    catch (err: any) { alert(`Mark Paid failed: ${err.message || err}`); }
+    // Pre-fill amount with the remaining balance so the common case
+    // (customer paid exactly what they owed) is one click.
+    setPayAmount(balanceDue(invoice).toFixed(2));
+    setPayDate(new Date().toISOString().slice(0, 10));
+    setPayMethod("check");
+    setPayReference("");
+    setPayMemo("");
+    setPayNotes("");
+    setPayOpen(true);
+  }
+
+  async function onConfirmRecordPayment() {
+    if (!invoice) return;
+    if (!invoice.clientId) { alert("Invoice has no client_id — can't record payment."); return; }
+    const amt = parseFloat(payAmount);
+    if (!amt || amt <= 0) { alert("Payment amount must be greater than zero."); return; }
+    const balance = balanceDue(invoice);
+    if (amt > balance + 0.005) {
+      if (!confirm(`Payment ($${amt.toFixed(2)}) is greater than the balance due ($${balance.toFixed(2)}). Save anyway?`)) return;
+    }
+    setPaySaving(true);
+    try {
+      await recordInvoicePayment({
+        invoiceId: invoice.id,
+        paymentDate: payDate,
+        paymentMethod: payMethod,
+        amount: amt,
+        referenceNumber: payReference || undefined,
+        memo: payMemo || undefined,
+        notes: payNotes || undefined,
+      });
+      setPayOpen(false);
+      await refresh();
+    } catch (err: any) {
+      alert(`Record payment failed: ${err.message || err}`);
+    } finally {
+      setPaySaving(false);
+    }
+  }
+
+  async function onVoidPayment(paymentId: string) {
+    if (!confirm("Void this payment? The invoice's paid amount + status will recompute automatically.")) return;
+    try {
+      await deactivateInvoicePayment(paymentId);
+      await refresh();
+    } catch (err: any) {
+      alert(`Void payment failed: ${err.message || err}`);
+    }
   }
 
   async function onRevise() {
@@ -331,6 +399,58 @@ export default function InvoiceDetail({ id }: { id: string }) {
         </div>
       </div>
 
+      {/* Payments applied to this invoice */}
+      {payments.length > 0 ? (
+        <>
+          <h3 className="section-title">Payments</h3>
+          <div style={{ overflowX: "auto", marginBottom: 12 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Method</th>
+                  <th>Reference</th>
+                  <th>Memo</th>
+                  <th style={{ textAlign: "right" }}>Amount</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((p) => (
+                  <tr key={p.id}>
+                    <td>{p.paymentDate}</td>
+                    <td>{p.paymentMethod}</td>
+                    <td>{p.referenceNumber || "—"}</td>
+                    <td>{p.memo || "—"}</td>
+                    <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      ${p.amount.toFixed(2)}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="secondary"
+                        style={{ fontSize: 11, padding: "2px 8px", color: "#a00" }}
+                        onClick={() => onVoidPayment(p.id)}
+                        title="Void this payment — invoice's paid amount + status will recompute"
+                      >
+                        Void
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                <tr>
+                  <td colSpan={4} style={{ textAlign: "right", fontWeight: 600 }}>Total paid:</td>
+                  <td style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                    ${payments.reduce((s, p) => s + p.amount, 0).toFixed(2)}
+                  </td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
+
       {invoice.notes ? <><h3 className="section-title">Notes</h3><div style={{ whiteSpace: "pre-wrap", marginBottom: 12 }}>{invoice.notes}</div></> : null}
       {invoice.terms ? <><h3 className="section-title">Terms</h3><div style={{ whiteSpace: "pre-wrap", marginBottom: 12 }}>{invoice.terms}</div></> : null}
 
@@ -340,8 +460,8 @@ export default function InvoiceDetail({ id }: { id: string }) {
         {!isFinalAndDone && invoice.status !== "sent" && invoice.status !== "paid" ? (
           <button className="secondary" onClick={onMarkSent}>Mark Sent</button>
         ) : null}
-        {!isFinalAndDone && !isPaid ? (
-          <button className="secondary" onClick={onMarkPaid}>Mark Paid</button>
+        {!isFinalAndDone && balanceDue(invoice) > 0 ? (
+          <button onClick={openRecordPayment}>Record Payment</button>
         ) : null}
         {!isFinalAndDone ? (
           <button className="secondary" onClick={onRevise}>Revise</button>
@@ -367,6 +487,64 @@ export default function InvoiceDetail({ id }: { id: string }) {
           <div className="action-row" style={{ marginTop: 8 }}>
             <button onClick={onConfirmVoid} disabled={!voidReason.trim()}>Confirm Void</button>
             <button className="secondary" onClick={() => { setVoidOpen(false); setVoidReason(""); }}>Cancel</button>
+          </div>
+        </div>
+      ) : null}
+
+      {payOpen ? (
+        <div className="card" style={{ marginTop: 16 }}>
+          <h3 className="section-title">Record payment</h3>
+          <div className="muted" style={{ marginBottom: 8 }}>
+            Balance due: ${balanceDue(invoice).toFixed(2)} · Already paid: ${invoice.paidAmount.toFixed(2)}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 8 }}>
+            <label>
+              <div className="muted">Payment date</div>
+              <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} />
+            </label>
+            <label>
+              <div className="muted">Method</div>
+              <select value={payMethod} onChange={(e) => setPayMethod(e.target.value as PaymentMethod)}>
+                <option value="check">Check</option>
+                <option value="ach">ACH</option>
+                <option value="wire">Wire</option>
+                <option value="credit_card">Credit card</option>
+                <option value="cash">Cash</option>
+                <option value="zelle">Zelle</option>
+                <option value="venmo">Venmo</option>
+                <option value="money_order">Money order</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label>
+              <div className="muted">Amount</div>
+              <input
+                type="number"
+                step={0.01}
+                min={0}
+                value={payAmount}
+                onChange={(e) => setPayAmount(e.target.value)}
+                placeholder="0.00"
+              />
+            </label>
+            <label>
+              <div className="muted">Reference # (check #, txn id, etc.)</div>
+              <input type="text" value={payReference} onChange={(e) => setPayReference(e.target.value)} placeholder="optional" />
+            </label>
+            <label style={{ gridColumn: "1 / -1" }}>
+              <div className="muted">Customer memo (memo line, Venmo note, etc.)</div>
+              <input type="text" value={payMemo} onChange={(e) => setPayMemo(e.target.value)} placeholder="optional" />
+            </label>
+            <label style={{ gridColumn: "1 / -1" }}>
+              <div className="muted">Internal notes</div>
+              <textarea rows={2} value={payNotes} onChange={(e) => setPayNotes(e.target.value)} placeholder="optional" />
+            </label>
+          </div>
+          <div className="action-row">
+            <button onClick={onConfirmRecordPayment} disabled={paySaving || !payAmount || parseFloat(payAmount) <= 0}>
+              {paySaving ? "Saving…" : "Save Payment"}
+            </button>
+            <button className="secondary" onClick={() => setPayOpen(false)} disabled={paySaving}>Cancel</button>
           </div>
         </div>
       ) : null}

@@ -30,7 +30,10 @@ CREATE TABLE IF NOT EXISTS customer_credit_ledger (
                       )),
   amount              numeric NOT NULL CHECK (amount > 0),
   related_invoice_id  text REFERENCES invoices(id),
-  related_payment_id  text REFERENCES customer_payments(id),
+  -- (related_payment_id removed 2026-05-27 along with the customer_payments
+  -- table. Overpayment-to-credit flow has no UI today; if/when re-added,
+  -- a related_invoice_payment_id text REFERENCES invoice_payments(id) can
+  -- ship at that time.)
   refund_reference    text,                  -- check #, etc., when type='refunded'
   refund_memo         text,                  -- what was on the memo line
   refund_date         date,
@@ -46,8 +49,6 @@ CREATE INDEX IF NOT EXISTS customer_credit_ledger_client_idx
   ON customer_credit_ledger(client_id);
 CREATE INDEX IF NOT EXISTS customer_credit_ledger_invoice_idx
   ON customer_credit_ledger(related_invoice_id) WHERE related_invoice_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS customer_credit_ledger_payment_idx
-  ON customer_credit_ledger(related_payment_id) WHERE related_payment_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS customer_credit_ledger_date_idx
   ON customer_credit_ledger(transaction_date);
 
