@@ -105,8 +105,9 @@ client hasn't requested a change in your test scenario.
 - [ ] From the issued quote → **Revise** → a new draft opens with
       `_REV2` projected number.
 - [ ] Confirm the revision-draft starts with the parent's lines.
-- [ ] Go back to the job → bump one position's quantity (e.g. 5 → 7)
-      and add an extra position. Save the job.
+- [ ] Go back to the job → bump one position's quantity (e.g. 5 → 7),
+      add an extra position, **and add a third day with one crew need
+      on it** (exercises the day-added path). Save the job.
 - [ ] Return to the revision draft (Job → Continue Draft).
 - [ ] Click **⟳ Sync from Job** in the Line items header bar.
 - [ ] Confirm the dialog warns about replacing lines + losing manual
@@ -114,7 +115,10 @@ client hasn't requested a change in your test scenario.
 - [ ] Verify the post-action alert reports the line-count delta
       (e.g. "8 → 10 lines").
 - [ ] Verify the new lines reflect the **updated job** (new qty, new
-      position).
+      position, third day appears).
+- [ ] (Optional) Remove the third day on the job, return to the draft,
+      click Sync again → confirm the day-3 strip + its lines vanish
+      cleanly (no ghost day in the editor).
 - [ ] **Issue Revision** → confirm parent flips to `superseded` and new
       quote has `_REV2` suffix.
 
