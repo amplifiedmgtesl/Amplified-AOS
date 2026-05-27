@@ -640,7 +640,7 @@ function createDepositInvoiceDraft() {
   return (
     <div className="grid">
       <div className="card hide-print">
-        <h2 className="section-title">Invoice Control Center</h2>
+        <h2 className="section-title">Invoice Control Center{activeId && <span className="record-id" title="Invoice id">{activeId}</span>}</h2>
 
         {locked ? (
           <div className="badge" style={{ marginBottom: 12, background: "#fde6d9", borderColor: "#c48457", color: "#7a3f14" }}>
@@ -668,7 +668,6 @@ function createDepositInvoiceDraft() {
             <select value={activeId} onChange={(e) => chooseInvoice(e.target.value)}>
               {drafts.map((d) => <option key={d.id} value={d.id}>{d.invoiceNo} — {d.client}</option>)}
             </select>
-            {activeId && <span className="record-id" title="Invoice id">{activeId}</span>}
           </div>
           <div><small>Invoice Number</small><input value={invoice.invoiceNo} onChange={(e) => patch({ invoiceNo: e.target.value })} disabled={locked} /></div>
           <div><small>Status</small><select value={invoice.status} onChange={(e) => patch({ status: e.target.value })}><option value="draft">draft</option><option value="sent">sent</option><option value="partial">partial</option><option value="paid">paid</option></select></div>

@@ -9,7 +9,32 @@
       "Bash(python \"C:/amplified/build_infrastructure_pdf.py\")",
       "Bash(python -c ':*)",
       "Bash(python \"C:\\\\amplified\\\\build_infrastructure_pdf.py\")",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(git ls-tree *)",
+      "mcp__a38a0148-3278-4100-93e2-01adc1963134__list_projects",
+      "mcp__a38a0148-3278-4100-93e2-01adc1963134__execute_sql",
+      "Bash(claude mcp *)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git show *)",
+      "Read(//tmp/**)",
+      "Bash(git fetch *)",
+      "mcp__a38a0148-3278-4100-93e2-01adc1963134__apply_migration",
+      "Bash(git -C C:/amplified/Amplified-AOS/.claude/worktrees/dev-banner status --short)",
+      "Bash(git -C C:/amplified/Amplified-AOS/.claude/worktrees/dev-banner merge --ff-only phase1-timekeeping-jobid)",
+      "Bash(git -C C:/amplified/Amplified-AOS/.claude/worktrees/dev-banner push origin dev)",
+      "Bash(python docs/build_cleanup_workbook.py)",
+      "Bash(python docs/build_cleanup_workbook_prod.py)",
+      "Bash(Select-String -Pattern \"Timekeeping|Phase\")",
+      "Read(//c/Users/johnobrien/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/f7f071d7-8d1a-45b8-b583-a0b9224d06c0/ba5ea0ee-d18d-4b14-ac06-8ea8c12ff606/skills/xlsx/**)",
+      "Bash(python -c \"import pandas as pd; sheets=pd.read_excel\\(r'C:\\\\amplified\\\\Amplified-AOS\\\\docs\\\\cleanup-review-prod-2026-05-26.xlsx', sheet_name=None\\); [print\\(f'=== {n} \\({len\\(df\\)} rows\\) ==='+chr\\(10\\)+', '.join\\(df.columns.astype\\(str\\)\\)+chr\\(10\\)+df.head\\(3\\).to_string\\(\\)\\) for n,df in sheets.items\\(\\)]\")",
+      "Bash(python -c \"from openpyxl import load_workbook; wb=load_workbook\\(r'docs\\\\cleanup-review-prod-2026-05-26.xlsx', data_only=True\\); [print\\(f'=== {s} \\({wb[s].max_row-1} rows, {wb[s].max_column} cols\\) ==='\\) or print\\(' | '.join\\(str\\(c.value\\) for c in wb[s][1]\\)\\) or [print\\(' | '.join\\(str\\(wb[s].cell\\(r,c\\).value\\) for c in range\\(1, wb[s].max_column+1\\)\\)\\) for r in range\\(2, min\\(5, wb[s].max_row+1\\)\\)] for s in wb.sheetnames]\")",
+      "Bash(set PYTHONIOENCODING=utf-8)",
+      "Bash(python -c \"from openpyxl import load_workbook; wb=load_workbook\\(r'docs\\\\cleanup-review-prod-2026-05-26.xlsx', data_only=True\\); [print\\(f'=== [{i}] {s} \\({wb[s].max_row} rows\\) ==='+chr\\(10\\)+' | '.join\\(str\\(c.value\\)[:40] if c.value else '' for c in wb[s][4]\\)\\) for i,s in enumerate\\(wb.sheetnames\\)]\")",
+      "Bash(python -c ' *)"
     ]
   }
 }

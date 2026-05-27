@@ -303,7 +303,6 @@ export default function JobRequests() {
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   }} title={r.eventName}>
                     {r.eventName || <span style={{ fontStyle: "italic", opacity: 0.7 }}>(no event name)</span>}
-                    <span className="record-id" title="Job request id">{r.id}</span>
                   </div>
                   {overdue && (
                     <div style={{
@@ -339,7 +338,7 @@ export default function JobRequests() {
           </div>
         ) : (
         <div className="card">
-          <h2 className="section-title">{mode === "edit" ? "Edit Job Request" : "New Job Request"}</h2>
+          <h2 className="section-title">{mode === "edit" ? "Edit Job Request" : "New Job Request"}{editingId && <span className="record-id" title="Job request id">{editingId}</span>}</h2>
 
           {deleteMsg && (
             <div style={{ background: "#fff3f3", border: "1px solid #e0a0a0", borderRadius: 8, padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#a00", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
