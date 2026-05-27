@@ -200,7 +200,7 @@ export default function TimesheetReview() {
             {filtered.map((r) => (
               <tr key={r.id}>
                 <td>{r.workDate || "—"}</td>
-                <td>{fullName(r)}</td>
+                <td>{fullName(r)}<span className="record-id" title="Entry id">{r.id}</span></td>
                 <td>
                   {r.jobSheetId
                     ? jobLabel(r)

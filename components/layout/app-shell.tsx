@@ -23,6 +23,7 @@ const nav = [
 ] as const;
 
 const STORAGE_KEY = "aos.sidebar.collapsed";
+const SHOW_IDS_KEY = "aos.showIds";
 
 export function AppShell({
   title,
@@ -35,6 +36,7 @@ export function AppShell({
 }) {
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState<boolean>(true);
+  const [showIds, setShowIds] = useState<boolean>(false);
 
   // Role guard. Crew leaders must never see the admin shell — its nav
   // exposes the full app (Quotes, Invoices, Rate Card, Employees with
@@ -70,6 +72,11 @@ export function AppShell({
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw === "1") setCollapsed(true);
+      const ids = localStorage.getItem(SHOW_IDS_KEY);
+      if (ids === "1") {
+        setShowIds(true);
+        document.body.classList.add("show-ids");
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -77,6 +84,12 @@ export function AppShell({
     const next = !collapsed;
     setCollapsed(next);
     try { localStorage.setItem(STORAGE_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+  }
+  function toggleShowIds() {
+    const next = !showIds;
+    setShowIds(next);
+    try { localStorage.setItem(SHOW_IDS_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+    document.body.classList.toggle("show-ids", next);
   }
 
   async function handleSignOut() {
@@ -129,6 +142,13 @@ export function AppShell({
         ))}
 
         <div style={{ marginTop: "auto", paddingTop: 24 }}>
+          <button
+            onClick={toggleShowIds}
+            title={collapsed ? (showIds ? "Hide record IDs" : "Show record IDs") : undefined}
+            style={{ width: "100%", background: showIds ? "#3a3a2a" : "transparent", border: "1px solid #555", color: "#999", borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: 11, marginBottom: 8 }}
+          >
+            {collapsed ? "🆔" : (showIds ? "🆔 IDs: on" : "🆔 Show IDs")}
+          </button>
           <button
             onClick={handleSignOut}
             title={collapsed ? "Sign out" : undefined}

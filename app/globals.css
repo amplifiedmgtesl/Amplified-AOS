@@ -600,3 +600,28 @@ td, th {
     page-break-inside: avoid;
   }
 }
+
+/* Admin debug: record-ID reveal. Hidden by default. Toggled on via the
+   "Show IDs" button in the sidebar (AppShell sets body.show-ids). Used
+   during data-cleanup sessions where we need to reference specific
+   records by GUID. Cost-free when off. */
+.record-id { display: none; }
+body.show-ids .record-id {
+  display: inline;
+  font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: #888;
+  background: #f4f0e6;
+  padding: 1px 5px;
+  border: 1px solid #d7c6aa;
+  border-radius: 4px;
+  margin-left: 6px;
+  user-select: all;
+  cursor: text;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+body.show-ids .record-id::before { content: "🆔 "; }
+@media print {
+  .record-id { display: none !important; }
+}

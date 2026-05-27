@@ -882,7 +882,7 @@ export default function QuoteBuilder() {
           <div><small>Saved Quote Drafts</small><select value={activeDraftId} onChange={(e)=>loadDraft(e.target.value)}><option value="">Select Draft</option>{draftWorkspaces.map((d)=><option key={d.id} value={d.id}>{d.name} — {new Date(d.updatedAt).toLocaleString()}</option>)}</select></div>
           <div><small>Draft Name</small><input value={draftName} onChange={(e)=>setDraftName(e.target.value)} /></div>
           <div className="action-row" style={{ alignItems: "end" }}><button onClick={() => saveDraft()}>Save Draft</button></div>
-          <div><small>Saved Quotes</small><select value={activeSavedQuoteId} onChange={(e)=>loadSavedQuote(e.target.value)}><option value="">New / Unsaved Quote</option>{savedQuotes.map((q)=><option key={q.id} value={q.id}>{q.client} — {q.eventName}</option>)}</select></div>
+          <div><small>Saved Quotes</small><select value={activeSavedQuoteId} onChange={(e)=>loadSavedQuote(e.target.value)}><option value="">New / Unsaved Quote</option>{savedQuotes.map((q)=><option key={q.id} value={q.id}>{q.client} — {q.eventName}</option>)}</select>{activeSavedQuoteId && <span className="record-id" title="Quote id">{activeSavedQuoteId}</span>}</div>
 
           <div>
             <small>Client</small>

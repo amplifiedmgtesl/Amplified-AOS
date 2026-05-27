@@ -305,6 +305,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               <option value="">Select job sheet</option>
               {sheets.map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
             </select>
+            {jobSheetId && <span className="record-id" title="Job sheet id (timesheet id = timesheet-<jobSheetId>)">{jobSheetId}</span>}
           </div>
           {!hidePayAlways && (
             <div className="list-card">

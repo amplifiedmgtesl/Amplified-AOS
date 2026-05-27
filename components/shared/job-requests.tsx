@@ -303,6 +303,7 @@ export default function JobRequests() {
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   }} title={r.eventName}>
                     {r.eventName || <span style={{ fontStyle: "italic", opacity: 0.7 }}>(no event name)</span>}
+                    <span className="record-id" title="Job request id">{r.id}</span>
                   </div>
                   {overdue && (
                     <div style={{
