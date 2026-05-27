@@ -25,6 +25,7 @@ import {
   issueDraft,
   deleteDraft,
   pickRateCardForJob,
+  reseedDraftLinesFromJob,
 } from "@/lib/store/quotes";
 import type { QuoteDraft, QuoteLine, Position, Specialty, JobRequestShift } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
@@ -447,6 +448,38 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     }
   }
 
+  async function onSyncFromJob() {
+    if (!quote) return;
+    if (!quote.jobRequestId) {
+      alert("This draft has no linked job_request to sync from.");
+      return;
+    }
+    if (!confirm(
+      "Re-seed line items from the linked job's current crew needs + rate card?\n\n" +
+      "• ALL current line items will be replaced.\n" +
+      "• Day-level holiday flags will refresh from the job.\n" +
+      "• Use this when the client requested changes and you've already updated the job.\n\n" +
+      "Manual line edits will be lost — there's no undo."
+    )) return;
+    setSaving("saving");
+    try {
+      // Persist any unsaved header edits first so they survive the reload.
+      await saveDraft(quote);
+      const result = await reseedDraftLinesFromJob(quote.id);
+      setQuote(result.draft);
+      setSaving("saved");
+      setTimeout(() => setSaving("idle"), 2000);
+      const parts = [
+        `Re-seeded from job: ${result.previousLineCount} → ${result.newLineCount} line${result.newLineCount === 1 ? "" : "s"}.`,
+      ];
+      if (result.rateCardSwitched) parts.push("Rate card switched (job's pinned card or effective-date pick changed).");
+      alert(parts.join("\n"));
+    } catch (err: any) {
+      setSaving("idle");
+      alert(`Sync from Job failed: ${err.message || err}`);
+    }
+  }
+
   async function onIssue() {
     if (!quote) return;
     if (!confirm("Issue this quote? Once issued it becomes read-only and a permanent quote_no is assigned.")) return;
@@ -814,6 +847,16 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       {/* Lines per day */}
       <div className="action-row" style={{ alignItems: "baseline", marginBottom: 8 }}>
         <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Line items</h3>
+        {quote.jobRequestId ? (
+          <button
+            className="secondary"
+            onClick={onSyncFromJob}
+            title="Replace lines with a fresh seed from the linked job's crew needs + rate card. Use after the client requests changes that you updated on the job."
+            style={{ fontSize: 12 }}
+          >
+            ⟳ Sync from Job
+          </button>
+        ) : null}
         {days.length > 1 ? (
           <>
             <button

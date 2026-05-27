@@ -359,11 +359,16 @@ export async function resolveRateCardForJob(
 
 // ─── Write operations ────────────────────────────────────────────────────────
 
-/** Create a new draft from a job_request. Picks the appropriate rate card by
- *  effective date, seeds lines from crew_needs if any exist, otherwise from
- *  the rate card on day 1 only (multi-day jobs let user "Copy from Day N-1"). */
-export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDraft> {
-  // Load the job, its days, and any crew needs.
+/** Shared line-seeding logic used by createDraftFromJob (initial seed) and
+ *  reseedDraftLinesFromJob (re-sync after job edits). Reads the job + its
+ *  days + crew_needs, resolves the right rate card, and returns the QuoteLines
+ *  that should populate the draft. Doesn't touch the database directly. */
+async function buildLinesFromJob(jobRequestId: string): Promise<{
+  lines: QuoteLine[];
+  rateCardId: string;
+  holidayMultiplier: number;
+  terms: string;
+}> {
   const jobRes = await supabase.from("job_requests").select("*").eq("id", jobRequestId).maybeSingle();
   if (jobRes.error) throw jobRes.error;
   if (!jobRes.data) throw new Error(`Job request not found: ${jobRequestId}`);
@@ -376,7 +381,6 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
     .order("sort_order");
   if (daysRes.error) throw daysRes.error;
   const days = daysRes.data ?? [];
-  // Fall back to a synthetic single-day if no day rows exist.
   const effectiveDays = days.length > 0
     ? days
     : [{
@@ -397,8 +401,6 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
     crewNeeds = cnRes.data ?? [];
   }
 
-  // Look up position + specialty names so lines have human-readable labels
-  // even when the (position, specialty) pair isn't in the chosen rate card.
   const allPosIds = Array.from(new Set([
     ...crewNeeds.map((n: any) => n.position_id).filter(Boolean),
   ]));
@@ -420,8 +422,6 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
     (specialtiesRes.data ?? []).map((s: any) => [s.id, s.name]),
   );
 
-  // Honor the job's pinned rate_card_profile_id if set; otherwise auto-resolve
-  // by client + start date.
   let rateCard: { id: string; rows: any[]; terms: string | null; holidayMultiplier: number } | null = null;
   if (job.rate_card_profile_id) {
     const pinnedRes = await supabase
@@ -431,15 +431,10 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
       .maybeSingle();
     if (pinnedRes.error) throw pinnedRes.error;
     if (pinnedRes.data) {
-      const rows = await supabase
-        .from("rate_card_profile_rows")
-        .select("*")
-        .eq("profile_id", pinnedRes.data.id)
-        .order("sort_order");
-      if (rows.error) throw rows.error;
+      const rows = await loadRateCardRows(pinnedRes.data.id);
       rateCard = {
         id: pinnedRes.data.id,
-        rows: rows.data ?? [],
+        rows,
         terms: pinnedRes.data.terms ?? null,
         holidayMultiplier: pinnedRes.data.holiday_multiplier != null ? Number(pinnedRes.data.holiday_multiplier) : 2.0,
       };
@@ -452,8 +447,6 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
     throw new Error("No applicable rate card found (no client card, no master default).");
   }
 
-  // Terms: prefer the picked rate card's terms; fall back to the global default.
-  // Mirrors the legacy quote-builder's loadProfileIntoCurrent + loadTerms logic.
   let terms = rateCard.terms || "";
   if (!terms) {
     const globalTerms = await supabase
@@ -461,16 +454,74 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
       .select("value")
       .eq("key", "terms")
       .maybeSingle();
-    // Final fallback is an empty string. Master rate card should always have
-    // populated terms (seeded by migration 20260504g), so this only matters if
-    // someone explicitly clears them.
     terms = globalTerms.data?.value || "";
   }
+
+  const lines: QuoteLine[] = [];
+  if (crewNeeds.length > 0) {
+    for (const day of effectiveDays) {
+      const needs = crewNeeds.filter((n: any) => n.job_request_day_id === day.id);
+      for (const need of needs) {
+        const rate = need.specialty_id
+          ? rateCard.rows.find((rr: any) => rr.specialty_id === need.specialty_id)
+          : undefined;
+        const hours = need.hours ?? day.expected_hours ?? 0;
+        lines.push(buildLineFromRate(rate, {
+          qty: need.quantity,
+          hours,
+          quoteDate: day.event_date,
+          startTime: day.start_time,
+          endTime: day.end_time,
+          positionId: need.position_id,
+          specialtyId: need.specialty_id,
+          department: positionNameById.get(need.position_id) ?? undefined,
+          specialty: specialtyNameById.get(need.specialty_id) ?? undefined,
+        }));
+      }
+    }
+  } else {
+    const day1 = effectiveDays[0];
+    for (const rr of rateCard.rows) {
+      lines.push(buildLineFromRate(rr, {
+        qty: 0,
+        quoteDate: day1.event_date,
+        startTime: day1.start_time,
+        endTime: day1.end_time,
+        positionId: rr.position_id,
+        specialtyId: rr.specialty_id,
+        department: rr.position ?? undefined,
+        specialty: rr.specialty ?? undefined,
+      }));
+    }
+  }
+
+  return {
+    lines,
+    rateCardId: rateCard.id,
+    holidayMultiplier: rateCard.holidayMultiplier,
+    terms,
+  };
+}
+
+/** Create a new draft from a job_request. Picks the appropriate rate card by
+ *  effective date, seeds lines from crew_needs if any exist, otherwise from
+ *  the rate card on day 1 only (multi-day jobs let user "Copy from Day N-1"). */
+export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDraft> {
+  // Look up clientId quickly so the draft has it set before lines load.
+  const jobLookup = await supabase
+    .from("job_requests")
+    .select("client_id")
+    .eq("id", jobRequestId)
+    .maybeSingle();
+  if (jobLookup.error) throw jobLookup.error;
+  if (!jobLookup.data) throw new Error(`Job request not found: ${jobRequestId}`);
+
+  const seed = await buildLinesFromJob(jobRequestId);
 
   const draftId = newQuoteId();
   const draft: QuoteDraft = {
     id: draftId,
-    clientId: job.client_id ?? undefined,
+    clientId: jobLookup.data.client_id ?? undefined,
     client: "",
     eventName: "",
     venue: "",
@@ -479,72 +530,19 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
     endDate: "",
     startTime: "",
     endTime: "",
-    total: 0,
+    total: Math.round(seed.lines.reduce((s, l) => s + (l.total || 0), 0) * 100) / 100,
     deposit: 0,
     status: null,
     notes: "",
-    terms,
-    lines: [],
+    terms: seed.terms,
+    lines: seed.lines,
     isDraft: true,
     jobRequestId: jobRequestId,
     linkedJobRequestId: jobRequestId,
     revisionNo: 1,
-    rateCardProfileId: rateCard.id,
-    holidayMultiplier: rateCard.holidayMultiplier,
+    rateCardProfileId: seed.rateCardId,
+    holidayMultiplier: seed.holidayMultiplier,
   };
-
-  // Seed lines.
-  if (crewNeeds.length > 0) {
-    // Crew-needs path: only positions actually scoped on the job
-    for (const day of effectiveDays) {
-      const needs = crewNeeds.filter((n: any) => n.job_request_day_id === day.id);
-      for (const need of needs) {
-        // Match by specialty_id only — rate_card_profile_rows has no
-        // position_id column (specialty implies position 1:1).
-        const rate = need.specialty_id
-          ? rateCard.rows.find((rr: any) => rr.specialty_id === need.specialty_id)
-          : undefined;
-        // hours: prefer the per-need override; fall back to the day's expected
-        // hours; final fallback 0 (user fills in on the line).
-        const hours = need.hours ?? day.expected_hours ?? 0;
-        draft.lines.push(buildLineFromRate(rate, {
-          qty: need.quantity,
-          hours,
-          quoteDate: day.event_date,
-          startTime: day.start_time,
-          endTime: day.end_time,
-          positionId: need.position_id,
-          specialtyId: need.specialty_id,
-          // Resolve names so the line has labels even when no rate card row matches.
-          department: positionNameById.get(need.position_id) ?? undefined,
-          specialty: specialtyNameById.get(need.specialty_id) ?? undefined,
-        }));
-      }
-    }
-  } else {
-    // No crew needs: seed day 1 with full rate card. Days 2+ stay empty until
-    // the user uses the "Copy from Day N-1" button in the UI.
-    const day1 = effectiveDays[0];
-    for (const rr of rateCard.rows) {
-      draft.lines.push(buildLineFromRate(rr, {
-        qty: 0,
-        quoteDate: day1.event_date,
-        startTime: day1.start_time,
-        endTime: day1.end_time,
-        positionId: rr.position_id,
-        specialtyId: rr.specialty_id,
-        // Rate card rows already carry these as denormalized strings.
-        department: rr.position ?? undefined,
-        specialty: rr.specialty ?? undefined,
-      }));
-    }
-  }
-
-  // Seed quote.total from the line totals computed during seeding so the
-  // editor's subtotal display is correct on first render (no longer waiting
-  // for the user to edit a line to trigger a recompute). Round to cents.
-  const rawTotal = draft.lines.reduce((s, l) => s + (l.total || 0), 0);
-  draft.total = Math.round(rawTotal * 100) / 100;
 
   await persistDraft(draft);
 
@@ -553,6 +551,60 @@ export async function createDraftFromJob(jobRequestId: string): Promise<QuoteDra
   await snapshotQuoteDaysFromJob(draft.id, jobRequestId);
 
   return draft;
+}
+
+/** Re-seed a draft's lines from its linked job_request. Used when the job's
+ *  crew_needs / days / pinned rate card have changed since the draft was
+ *  initially created — e.g. client requested changes after a quote was
+ *  drafted (or revised). Blows away all current lines and replaces them
+ *  with the fresh seed; the holiday-day snapshot is also refreshed so any
+ *  day-level changes on the job flow through.
+ *
+ *  Returns the refreshed draft plus a small summary so the UI can confirm
+ *  what just happened.
+ */
+export type ReseedFromJobResult = {
+  draft: QuoteDraft;
+  previousLineCount: number;
+  newLineCount: number;
+  rateCardSwitched: boolean;
+};
+
+export async function reseedDraftLinesFromJob(draftId: string): Promise<ReseedFromJobResult> {
+  const draft = await loadQuote(draftId);
+  if (!draft) throw new Error(`Quote not found: ${draftId}`);
+  if (!draft.isDraft) throw new Error(`Cannot reseed a frozen quote (id=${draftId}). Use Revise.`);
+  if (!draft.jobRequestId) throw new Error(`Draft ${draftId} has no linked job_request.`);
+
+  const previousLineCount = draft.lines.length;
+  const previousRateCardId = draft.rateCardProfileId;
+
+  const seed = await buildLinesFromJob(draft.jobRequestId);
+
+  const refreshed: QuoteDraft = {
+    ...draft,
+    lines: seed.lines,
+    total: Math.round(seed.lines.reduce((s, l) => s + (l.total || 0), 0) * 100) / 100,
+    rateCardProfileId: seed.rateCardId,
+    holidayMultiplier: seed.holidayMultiplier,
+    // Terms: only adopt the seed terms if the draft's are empty, so we don't
+    // overwrite operator edits to the terms block. Same conservative stance
+    // as Revise.
+    terms: draft.terms && draft.terms.trim() !== "" ? draft.terms : seed.terms,
+  };
+
+  await persistDraft(refreshed);
+
+  // Refresh quote_days from job_request_days so day-level changes (days added
+  // or removed, holiday flag toggled on the job) propagate to the draft.
+  await snapshotQuoteDaysFromJob(refreshed.id, refreshed.jobRequestId);
+
+  return {
+    draft: refreshed,
+    previousLineCount,
+    newLineCount: seed.lines.length,
+    rateCardSwitched: !!previousRateCardId && previousRateCardId !== seed.rateCardId,
+  };
 }
 
 /** Create a new draft as a revision of an existing frozen quote. Carries forward
