@@ -50,6 +50,13 @@ ______________________________________________________________________
 - [ ] Click **open** on the candidate → form swaps to that job.
 - [ ] Cancel out (don't save the duplicate).
 
+### Header-vs-days mismatch warning
+
+- [ ] On the saved 2-day job, drop the header end date back by one day.
+      Confirm the amber **"Header dates don't match day rows"** warning
+      appears.
+- [ ] Restore the original end date → warning clears.
+
 ### Days, crew, shifts
 
 - [ ] **Days tab**: confirm both day rows appear. Tick the 🎄 Holiday
