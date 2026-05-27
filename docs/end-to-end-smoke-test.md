@@ -145,8 +145,18 @@ ______________________________________________________________________
 - [ ] Confirm subtotal = quote total × deposit_pct (rounded to cents).
 - [ ] **Issue Invoice** → confirm frozen, `invoice_no` ends `_DEP`.
 - [ ] **Mark Sent** → status flips to `sent`.
-- [ ] **Record Payment** for the full deposit amount → status flips to
-      `paid`.
+- [ ] **Mark Paid** → status flips to `paid`.
+      *Note: Mark Paid today is a binary lifecycle flip — no payment
+      method, reference number, or partial allocation captured. The
+      multi-invoice "Record Payment" form (single check across several
+      invoices, overpayment → credit ledger) is future work; not
+      needed for the deposit-to-final flow exercised here.*
+
+### One-active-deposit-per-job guard
+
+- [ ] On the same issued quote → click **Generate Deposit** again →
+      confirm it's blocked (the partial unique index allows only one
+      non-superseded/non-void deposit per job). Useful to know exists.
 
 Notes / issues:
 
@@ -186,6 +196,23 @@ ______________________________________________________________________
 
 - [ ] From the issued quote → **Generate Final**.
 - [ ] Final draft editor opens with lines copied from the quote.
+
+### Deposit auto-applies on final-draft creation
+
+This is the most important math check in the whole walkthrough. The
+final invoice's `depositApplied` field is filled at draft creation
+from the issued deposit invoice's subtotal — operator does not have
+to apply it manually.
+
+- [ ] Verify the header / summary panel on the new final draft shows:
+      - [ ] **Subtotal**: matches the quote total (sum of seeded lines)
+      - [ ] **Deposit applied**: −(the issued deposit's amount)
+      - [ ] **Balance due**: subtotal − deposit applied
+- [ ] If the math is off by a cent, flag it (rounding edge cases on
+      odd deposit percentages).
+
+### Overwrite from Timesheets
+
 - [ ] Click **Overwrite from Timesheets**.
 - [ ] **Verify the post-action alert** reports:
       - [ ] `N new lines from M of T approved entries`
@@ -209,7 +236,25 @@ ______________________________________________________________________
       sorted after it.
 
 - [ ] **Issue Invoice** → frozen, `invoice_no` ends `_INV`.
-- [ ] **Mark Sent** → balance shows = total − deposit applied.
+- [ ] **Mark Sent** → status flips to `sent`. Balance due unchanged
+      (still = subtotal − deposit applied).
+- [ ] **Mark Paid** → status flips to `paid`. Balance due now $0.
+
+### End-of-job state check
+
+- [ ] Open the deposit invoice → confirm `paid`.
+- [ ] Open the final invoice → confirm `paid`, balance $0.
+- [ ] On the job → confirm both invoices listed and both marked paid.
+
+### Out of scope today (no UI yet — flag if Connor asks)
+
+- Recording a partial payment (e.g. customer sent $5,000 against a
+  $7,000 final).
+- One customer payment allocated across multiple invoices.
+- Overpayment routing excess to the credit ledger.
+- Apply Credit button on an open invoice (only appears when the client
+  has a non-zero credit balance, which today can only get there via the
+  missing payment-recording flow above).
 
 Notes / issues:
 
