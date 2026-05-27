@@ -347,7 +347,10 @@ export default function TimesheetReview() {
                   />
                 </td>
                 <td>{r.workDate || "—"}</td>
-                <td>{fullName(r)}</td>
+                <td>
+                  {fullName(r)}
+                  <span className="record-id" title="Timesheet entry id">{r.id}</span>
+                </td>
                 <td>
                   {(r.jobId || r.jobSheetId)
                     ? jobLabel(r, jobNoById)

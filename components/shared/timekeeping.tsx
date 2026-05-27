@@ -943,6 +943,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                             🕒 {shiftLabelById.get(row.shiftId)}
                           </div>
                         )}
+                        <span className="record-id" title="Timesheet entry id">{row.id}</span>
                         {isLocked ? (
                           <div style={{ fontSize: 13, fontWeight: 600 }}>
                             {[row.firstName, row.lastName].filter(Boolean).join(" ") || row.email || "(unnamed)"}
