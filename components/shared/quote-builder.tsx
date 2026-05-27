@@ -863,7 +863,7 @@ export default function QuoteBuilder() {
       <div className="card hide-print">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <h2 className="section-title" style={{ margin: 0 }}>Quote Builder{activeSavedQuoteId && <span className="record-id" title="Quote id">{activeSavedQuoteId}</span>}</h2>
+            <h2 className="section-title" style={{ margin: 0 }}>Quote Builder{(activeSavedQuoteId || activeDraftId) && <span className="record-id" title={activeSavedQuoteId ? "Saved quote id" : "Draft id"}>{activeSavedQuoteId || activeDraftId}</span>}</h2>
             <button
               className="secondary"
               onClick={() => loadSavedQuote("")}
