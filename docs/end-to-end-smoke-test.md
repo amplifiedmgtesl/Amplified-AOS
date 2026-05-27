@@ -145,12 +145,34 @@ ______________________________________________________________________
 - [ ] Confirm subtotal = quote total × deposit_pct (rounded to cents).
 - [ ] **Issue Invoice** → confirm frozen, `invoice_no` ends `_DEP`.
 - [ ] **Mark Sent** → status flips to `sent`.
-- [ ] **Mark Paid** → status flips to `paid`.
-      *Note: Mark Paid today is a binary lifecycle flip — no payment
-      method, reference number, or partial allocation captured. The
-      multi-invoice "Record Payment" form (single check across several
-      invoices, overpayment → credit ledger) is future work; not
-      needed for the deposit-to-final flow exercised here.*
+
+### Record a payment
+
+- [ ] Click **Record Payment** → modal opens with amount pre-filled to
+      the current balance due.
+- [ ] Set payment date (today), method (e.g. `check`), reference # (any
+      string), memo (optional). Save.
+- [ ] Verify the **Payments** panel below the pricing summary now
+      shows the new row with date, method, reference, amount.
+- [ ] Verify status auto-flipped to **paid** (no Mark Paid button
+      anymore — the auto-paid trigger fires when paid_amount covers
+      the balance).
+- [ ] Verify the Pricing summary now shows `Paid: −$X` and Balance
+      due: `$0.00`.
+
+### Partial payment + Void
+
+- [ ] (Optional) Skip these if you only want to test the happy path.
+- [ ] On a fresh invoice (or temporarily Revise this one), click
+      Record Payment but set the amount to LESS than balance due
+      (e.g. half). Save.
+- [ ] Confirm Payments panel shows the partial row; status stays
+      `sent` (NOT paid); balance shows the remaining amount.
+- [ ] Record a second payment for the remainder → status now flips
+      to `paid`.
+- [ ] In the Payments panel, click **Void** on one of the payments →
+      confirm the running total + balance due recompute and status
+      reverts to `sent`.
 
 ### One-active-deposit-per-job guard
 
@@ -238,7 +260,9 @@ to apply it manually.
 - [ ] **Issue Invoice** → frozen, `invoice_no` ends `_INV`.
 - [ ] **Mark Sent** → status flips to `sent`. Balance due unchanged
       (still = subtotal − deposit applied).
-- [ ] **Mark Paid** → status flips to `paid`. Balance due now $0.
+- [ ] **Record Payment** for the full balance → Payments panel shows
+      the row; auto-paid trigger flips status to `paid`; balance due
+      now $0.
 
 ### End-of-job state check
 
@@ -248,13 +272,13 @@ to apply it manually.
 
 ### Out of scope today (no UI yet — flag if Connor asks)
 
-- Recording a partial payment (e.g. customer sent $5,000 against a
-  $7,000 final).
-- One customer payment allocated across multiple invoices.
+- One customer payment allocated across multiple invoices (one check
+  covering both the deposit and the final). Today each invoice tracks
+  its own payments independently.
 - Overpayment routing excess to the credit ledger.
 - Apply Credit button on an open invoice (only appears when the client
   has a non-zero credit balance, which today can only get there via the
-  missing payment-recording flow above).
+  missing overpayment flow above).
 
 Notes / issues:
 
