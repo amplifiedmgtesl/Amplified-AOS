@@ -131,5 +131,6 @@ export const DOC_TYPE_OPTIONS: { value: JobRequestAttachmentType; label: string 
   { value: "scope_packet", label: "Scope Packet" },
   { value: "contract",     label: "Contract" },
   { value: "photo",        label: "Photo" },
+  { value: "timesheet",    label: "Timesheet" },
   { value: "other",        label: "Other" },
 ];

@@ -527,6 +527,7 @@ export type JobRequestAttachmentType =
   | "scope_packet"
   | "contract"
   | "photo"
+  | "timesheet"
   | "other";
 
 export type JobRequestAttachment = {
