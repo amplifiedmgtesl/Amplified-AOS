@@ -53,6 +53,20 @@ export default function JobRequests() {
   const rows = useMemo(() => loadJobRequests(), [refreshKey]);
   const [mode, setMode] = useState<Mode>("none");
   const [form, setForm] = useState<JobRequest>({ ...BLANK });
+
+  // Possible-duplicate detection: same client + same start date as an
+  // existing job. Soft warning only — legitimate cases exist (e.g. a venue
+  // running two stages on the same day gets two job_requests by design).
+  // Excludes the row currently being edited.
+  const possibleDuplicates = useMemo(() => {
+    if (!form.clientId || !form.requestDate) return [];
+    const editingId = form.id || "";
+    return rows.filter((r) =>
+      r.id !== editingId &&
+      r.clientId === form.clientId &&
+      r.requestDate === form.requestDate,
+    );
+  }, [rows, form.clientId, form.requestDate, form.id]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
   const [clients, setClients] = useState<Client[]>([]);
@@ -281,11 +295,26 @@ export default function JobRequests() {
     setRefreshKey((x) => x + 1);
   }
 
+  /** Build a confirm-dialog message listing possible duplicates, returns
+   *  true when the user wants to proceed anyway. Returns true immediately
+   *  when there are no candidates so non-duplicate saves never prompt. */
+  function confirmIfDuplicates(): boolean {
+    if (possibleDuplicates.length === 0) return true;
+    const lines = possibleDuplicates.map((d) => {
+      const code = clientById.get(d.clientId)?.code ?? "";
+      return `  • ${d.eventName || "(no event name)"} — ${code} · ${d.requestDate}${d.endDate && d.endDate !== d.requestDate ? `–${d.endDate}` : ""}${d.status ? ` · ${d.status}` : ""}`;
+    });
+    return confirm(
+      `Possible duplicate${possibleDuplicates.length === 1 ? "" : "s"} — this client already has a job starting ${form.requestDate}:\n\n${lines.join("\n")}\n\nSave anyway? (Legitimate cases include multiple stages at the same venue on the same day.)`
+    );
+  }
+
   function save() {
     if (!form.clientId) { setMsg("Please select a client before saving."); return; }
     if (!form.eventName.trim()) { setMsg("Please enter an event name before saving."); return; }
     if (!form.requestDate) { setMsg("Please pick an event start date before saving."); return; }
     if (form.endDate && form.endDate < form.requestDate) { setMsg("End date can't be before the start date."); return; }
+    if (!confirmIfDuplicates()) return;
     const row = normalized({
       ...form,
       id: form.id || `jobreq-${Date.now()}`,
@@ -312,6 +341,7 @@ export default function JobRequests() {
     if (!form.eventName.trim()) { setMsg("Please enter an event name before saving."); return; }
     if (!form.requestDate) { setMsg("Please pick an event start date before saving."); return; }
     if (form.endDate && form.endDate < form.requestDate) { setMsg("End date can't be before the start date."); return; }
+    if (!confirmIfDuplicates()) return;
     const row = normalized({
       ...form,
       id: form.id || `jobreq-${Date.now()}`,
@@ -688,6 +718,42 @@ export default function JobRequests() {
                 })}
             </select>
           </div>
+
+          {possibleDuplicates.length > 0 ? (
+            <div style={{
+              marginTop: 12,
+              padding: "8px 12px",
+              background: "#fdf3d8",
+              border: "1px solid #d8a800",
+              borderRadius: 4,
+              fontSize: 13,
+            }}>
+              <strong>⚠ Possible duplicate:</strong> this client already has a job starting {form.requestDate}.
+              <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                {possibleDuplicates.map((d) => {
+                  const code = clientById.get(d.clientId)?.code ?? "";
+                  return (
+                    <li key={d.id}>
+                      {d.eventName || "(no event name)"} — {code} · {d.requestDate}
+                      {d.endDate && d.endDate !== d.requestDate ? `–${d.endDate}` : ""}
+                      {d.status ? ` · ${d.status}` : ""}
+                      {d.jobNo ? <> · <code>{d.jobNo}</code></> : null}
+                      {" "}
+                      <button
+                        type="button"
+                        className="link"
+                        style={{ marginLeft: 6, padding: 0, background: "none", border: "none", color: "#0366d6", cursor: "pointer", textDecoration: "underline" }}
+                        onClick={() => { setEditingId(d.id); setForm(d); setMode("edit"); }}
+                      >open</button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
+                Legitimate cases (e.g. multiple stages at the same venue on the same day) can still save — you'll be asked to confirm.
+              </div>
+            </div>
+          ) : null}
 
           <div className="action-row" style={{ marginTop: 12 }}>
             <button onClick={save}>Save</button>
