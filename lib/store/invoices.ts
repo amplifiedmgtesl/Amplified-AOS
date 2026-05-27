@@ -485,10 +485,28 @@ export async function createFinalDraftFromQuote(
  *
  *  Throws if the invoice is frozen, not final, or has no jobRequestId.
  */
+export type OverwriteFromTimesheetsResult = {
+  invoice: InvoiceDraft;
+  /** Lines preserved (source_kind='manual_override'). */
+  keptManualLineCount: number;
+  /** New lines created from timesheet aggregates. */
+  newLineCount: number;
+  /** Approved timesheet entries considered before dedupe. */
+  totalEntries: number;
+  /** Entries that landed in the new lines (after dedupe + skip). */
+  consumedEntries: number;
+  /** Per-reason breakdown of entries / groups that didn't produce a line. */
+  skipped: Array<{
+    kind: "no_position_id" | "no_rate_card_row";
+    entryId?: string;
+    detail: string;
+  }>;
+};
+
 export async function overwriteFromTimesheets(
   invoiceId: string,
   opts: { coveredDates?: string[] } = {},
-): Promise<InvoiceDraft> {
+): Promise<OverwriteFromTimesheetsResult> {
   const inv = await loadInvoice(invoiceId);
   if (!inv) throw new Error(`Invoice not found: ${invoiceId}`);
   if (!inv.isDraft) throw new Error(`Cannot overwrite a frozen invoice (id=${invoiceId}). Use Revise.`);
@@ -512,6 +530,8 @@ export async function overwriteFromTimesheets(
     .eq("status", "approved");
   if (entriesRes.error) throw entriesRes.error;
   let entries = entriesRes.data ?? [];
+  const totalEntries = entries.length;
+  const skipped: OverwriteFromTimesheetsResult["skipped"] = [];
 
   // ─── 1b. Resolve rate card (bill side) ────────────────────────────────
   //   Pinned override wins; otherwise picks the latest effective profile
@@ -534,18 +554,29 @@ export async function overwriteFromTimesheets(
     entries = entries.filter((e: any) => e.work_date && dateSet.has(e.work_date));
   }
 
-  // ─── 3. Dedupe ─────────────────────────────────────────────────────────
+  // ─── 3. Dedupe + partition existing lines ──────────────────────────────
   //   alreadyBilled = entries currently bound to active (non-superseded,
-  //   non-void) invoices. ownEntryIds = entries currently bound to THIS
-  //   draft's existing lines (they'll be replaced — re-include them).
+  //   non-void) invoices. ownEntryIds = entries currently bound to lines on
+  //   THIS draft that we're ABOUT to delete (they get re-included since
+  //   they'll be replaced).
+  //
+  //   Existing lines are partitioned by source_kind:
+  //     * source_kind='manual_override' → preserved (user-typed, can't be
+  //       reconstructed from timesheets)
+  //     * everything else → deleted and rebuilt from current entries
   const alreadyBilled = await getAlreadyBilledTimesheetEntryIds(inv.jobRequestId);
   const ownLinesRes = await supabase
-    .from("invoice_lines").select("id").eq("invoice_id", invoiceId);
+    .from("invoice_lines").select("id, source_kind, sort_order")
+    .eq("invoice_id", invoiceId);
   if (ownLinesRes.error) throw ownLinesRes.error;
-  const ownLineIds = Array.from(new Set((ownLinesRes.data ?? []).map((r: any) => r.id)));
+  const allOwnLines = (ownLinesRes.data ?? []) as Array<{ id: string; source_kind: string | null; sort_order: number | null }>;
+  const keptManualLines = allOwnLines.filter((r) => r.source_kind === "manual_override");
+  const replaceableLineIds = allOwnLines
+    .filter((r) => r.source_kind !== "manual_override")
+    .map((r) => r.id);
   const ownEntryIdsRes = await supabase
     .from("timesheet_entries").select("id")
-    .in("invoice_line_id", ownLineIds.length > 0 ? ownLineIds : ["__none__"]);
+    .in("invoice_line_id", replaceableLineIds.length > 0 ? replaceableLineIds : ["__none__"]);
   if (ownEntryIdsRes.error) throw ownEntryIdsRes.error;
   const ownEntryIds = new Set((ownEntryIdsRes.data ?? []).map((r: any) => r.id));
   entries = entries.filter((e: any) => !alreadyBilled.has(e.id) || ownEntryIds.has(e.id));
@@ -579,10 +610,9 @@ export async function overwriteFromTimesheets(
     // without a position_id is a data integrity issue — log and skip
     // rather than silently producing a malformed line.
     if (!e.position_id) {
-      console.warn(
-        `[overwriteFromTimesheets] skipping entry ${e.id} — no position_id. ` +
-        `Position text was "${e.position ?? ""}". Fix the entry then re-pull.`
-      );
+      const detail = `Position text was "${e.position ?? ""}" on ${e.work_date ?? "(no date)"}. Fix the entry then re-pull.`;
+      console.warn(`[overwriteFromTimesheets] skipping entry ${e.id} — no position_id. ${detail}`);
+      skipped.push({ kind: "no_position_id", entryId: e.id, detail });
       continue;
     }
     const key = [
@@ -639,10 +669,9 @@ export async function overwriteFromTimesheets(
     const crewCount = g.workerKeys.size;
     const rate = g.specialtyId ? billRateBySpecialty.get(g.specialtyId) : undefined;
     if (!rate) {
-      console.warn(
-        `[overwriteFromTimesheets] no rate-card row for specialty_id=${g.specialtyId ?? "(null)"} ` +
-        `(position "${g.positionText}") on ${g.workDate}. Line lands with $0 rates — set them manually.`
-      );
+      const detail = `specialty_id=${g.specialtyId ?? "(null)"} (position "${g.positionText}") on ${g.workDate} — line lands at $0 rates, set manually before issuing.`;
+      console.warn(`[overwriteFromTimesheets] no rate-card row: ${detail}`);
+      skipped.push({ kind: "no_rate_card_row", detail });
     }
     const baseHourly = rate?.hourly ?? 0;
     const otRate     = rate?.otRate ?? 0;
@@ -677,8 +706,6 @@ export async function overwriteFromTimesheets(
     return line;
   });
 
-  const subtotal = +newLines.reduce((s, l) => s + (l.total || 0), 0).toFixed(2);
-
   // ─── 6. Sync invoice_days with the pulled holiday flags ────────────────
   //   The invoice's calc engine reads invoice_days to decide holiday
   //   treatment. Since we split holiday vs non-holiday into different
@@ -705,21 +732,33 @@ export async function overwriteFromTimesheets(
     }
   }
 
-  // ─── 7. Persist lines: delete existing → insert new → back-link entries ─
-  // Delete existing draft lines (clears entry pointers via ON DELETE SET NULL).
-  const { error: delErr } = await supabase
-    .from("invoice_lines")
-    .delete()
-    .eq("invoice_id", invoiceId);
-  if (delErr) throw delErr;
+  // ─── 7. Persist lines: delete REPLACEABLE → insert new → back-link ─────
+  //   Manual-override lines are preserved as-is. Only quote_line +
+  //   timesheet_entry sourced lines (plus legacy NULL source_kind) get
+  //   wiped and rebuilt. ON DELETE SET NULL on timesheet_entries.invoice_line_id
+  //   releases their back-pointers automatically.
+  if (replaceableLineIds.length > 0) {
+    const { error: delErr } = await supabase
+      .from("invoice_lines")
+      .delete()
+      .in("id", replaceableLineIds);
+    if (delErr) throw delErr;
+  }
 
+  // New lines sort AFTER any preserved manual lines.
+  const sortOrderOffset = keptManualLines.reduce(
+    (max, l) => Math.max(max, (l.sort_order ?? -1) + 1),
+    0,
+  );
+  let consumedEntries = 0;
   if (newLines.length > 0) {
-    const rows = newLines.map((l, i) => invoiceLineToRow(invoiceId, l, i, lineIdByGroupIndex[i]));
+    const rows = newLines.map((l, i) =>
+      invoiceLineToRow(invoiceId, l, i + sortOrderOffset, lineIdByGroupIndex[i]),
+    );
     const { error: insErr } = await supabase.from("invoice_lines").insert(rows);
     if (insErr) throw insErr;
 
-    // Back-link entries → invoice_line_id
-    // One UPDATE per group; entry counts are small (dozens at most).
+    // Back-link entries → invoice_line_id. One UPDATE per group.
     for (let i = 0; i < sorted.length; i++) {
       const lineId = lineIdByGroupIndex[i];
       const ids = sorted[i].entryIds;
@@ -729,21 +768,37 @@ export async function overwriteFromTimesheets(
         .update({ invoice_line_id: lineId })
         .in("id", ids);
       if (linkErr) throw linkErr;
+      consumedEntries += ids.length;
     }
   }
 
-  // 8. Update invoice header subtotal + amount_due
-  const newAmountDue = +(subtotal - (inv.depositApplied ?? 0) - (inv.creditsApplied ?? 0)).toFixed(2);
+  // 8. Update invoice header subtotal + amount_due. Subtotal sums BOTH
+  //    preserved manual lines and the freshly-inserted ones — reload to get
+  //    a truthful total without recomputing manual line math here.
+  const finalLinesRes = await supabase
+    .from("invoice_lines").select("total").eq("invoice_id", invoiceId);
+  if (finalLinesRes.error) throw finalLinesRes.error;
+  const finalSubtotal = +((finalLinesRes.data ?? []).reduce(
+    (s: number, r: any) => s + Number(r.total ?? 0), 0,
+  )).toFixed(2);
+  const newAmountDue = +(finalSubtotal - (inv.depositApplied ?? 0) - (inv.creditsApplied ?? 0)).toFixed(2);
   const { error: hdrErr } = await supabase
     .from("invoices")
-    .update({ subtotal, amount_due: newAmountDue, updated_at: new Date().toISOString() })
+    .update({ subtotal: finalSubtotal, amount_due: newAmountDue, updated_at: new Date().toISOString() })
     .eq("id", invoiceId)
     .eq("is_draft", true);
   if (hdrErr) throw hdrErr;
 
   const refreshed = await loadInvoice(invoiceId);
   if (!refreshed) throw new Error(`Invoice vanished after overwrite: ${invoiceId}`);
-  return refreshed;
+  return {
+    invoice: refreshed,
+    keptManualLineCount: keptManualLines.length,
+    newLineCount: newLines.length,
+    totalEntries,
+    consumedEntries,
+    skipped,
+  };
 }
 
 /** Save an in-progress draft. Throws if the row is frozen. */

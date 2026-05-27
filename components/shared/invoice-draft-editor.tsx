@@ -343,20 +343,42 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
   async function onOverwriteFromTimesheets() {
     if (!invoice) return;
     if (!confirm(
-      "Replace this draft's line items with aggregated approved timesheet entries?\n\n" +
-      "Entries already billed on a non-superseded / non-void invoice will be skipped. " +
-      "Each contributing entry gets linked to the new invoice line so it won't be re-billed."
+      "Replace timesheet-sourced line items with aggregated approved timesheet entries?\n\n" +
+      "• Manual lines you typed in (source = 'manual') are preserved.\n" +
+      "• Quote-sourced and prior timesheet-sourced lines are rebuilt.\n" +
+      "• Entries already billed on a non-superseded invoice are skipped.\n" +
+      "• Each contributing entry gets linked to its new line so it won't double-bill."
     )) return;
     setSaving("saving");
     try {
       // Persist any unsaved header edits first.
       await saveDraft(invoice);
-      const refreshed = await overwriteFromTimesheets(invoice.id, {
+      const result = await overwriteFromTimesheets(invoice.id, {
         coveredDates: invoice.coveredDates,
       });
-      setInvoice(refreshed);
+      setInvoice(result.invoice);
       setSaving("saved");
       setTimeout(() => setSaving("idle"), 2000);
+
+      // Surface what just happened. Counts always show; skipped reasons
+      // shown verbosely so the operator can fix data and re-pull.
+      const lines: string[] = [
+        `${result.newLineCount} new line${result.newLineCount === 1 ? "" : "s"} from ${result.consumedEntries} of ${result.totalEntries} approved entries.`,
+        `${result.keptManualLineCount} manual line${result.keptManualLineCount === 1 ? "" : "s"} preserved.`,
+      ];
+      if (result.skipped.length > 0) {
+        const byKind = new Map<string, number>();
+        for (const s of result.skipped) byKind.set(s.kind, (byKind.get(s.kind) ?? 0) + 1);
+        if (byKind.get("no_position_id")) {
+          lines.push(`\n⚠ ${byKind.get("no_position_id")} entr${byKind.get("no_position_id") === 1 ? "y" : "ies"} skipped — missing position_id (fix in Timekeeping and re-pull).`);
+        }
+        if (byKind.get("no_rate_card_row")) {
+          lines.push(`\n⚠ ${byKind.get("no_rate_card_row")} line${byKind.get("no_rate_card_row") === 1 ? "" : "s"} landed at $0 — specialty has no rate-card row. Edit rates manually before issuing.`);
+        }
+        lines.push("\nDetails:");
+        for (const s of result.skipped) lines.push(`  • ${s.detail}`);
+      }
+      alert(lines.join("\n"));
     } catch (err: any) {
       setSaving("idle");
       alert(`Overwrite failed: ${err.message || err}`);
