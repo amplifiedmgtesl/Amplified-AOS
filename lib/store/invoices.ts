@@ -243,19 +243,16 @@ export async function getAlreadyBilledQuoteLineIds(jobRequestId: string): Promis
 }
 
 // ─── Already-billed timesheet_entry ids (for re-invoicing prevention) ────────
-// An entry is "already billed" when its invoice_line_id points at a line
-// whose parent invoice is non-superseded and non-void. Voided/superseded
-// invoice lines effectively release the entry back to the pool.
+// An entry is "already billed" when its invoice_line_id is non-null. The DB
+// trigger `invoices_release_entries_trg` (migration 20260527b) clears the
+// back-pointer the moment its parent invoice transitions to superseded/void,
+// so a non-null pointer is, by definition, a link to an ACTIVE invoice line.
+// One filter, no joins, no nested-OR-on-foreign-table gymnastics.
 export async function getAlreadyBilledTimesheetEntryIds(jobRequestId: string): Promise<Set<string>> {
-  // 1. Find timesheets for this job (timesheet.job_sheet_id OR via job_id when
-  //    the schema is migrated; use whichever links exist now).
-  // 2. Their entries.
-  // 3. Filter to entries whose invoice_line_id resolves to an active invoice.
   const { data, error } = await supabase
     .from("timesheet_entries")
-    .select("id, invoice_line_id, invoice_lines!inner(invoice_id, invoices!inner(job_request_id, status))")
-    .eq("invoice_lines.invoices.job_request_id", jobRequestId)
-    .or("status.is.null,and(status.neq.superseded,status.neq.void)", { foreignTable: "invoice_lines.invoices" })
+    .select("id")
+    .eq("job_id", jobRequestId)
     .not("invoice_line_id", "is", null);
   if (error) throw error;
   return new Set((data ?? []).map((r: any) => r.id));
