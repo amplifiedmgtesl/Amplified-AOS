@@ -16,6 +16,7 @@ import {
   snapshotInvoiceDaysFromQuote,
   snapshotInvoiceDaysFromJob,
   snapshotInvoiceDaysFromParent,
+  upsertInvoiceDay,
 } from "@/lib/storage/invoice-days";
 
 function newInvoiceId(): string {
@@ -450,16 +451,35 @@ export async function createFinalDraftFromQuote(
 
 /** Overwrite a final-invoice draft's lines from approved timesheet entries.
  *
- *  Aggregates approved timesheet_entries belonging to job_sheets linked to the
- *  invoice's job_request, excludes entries already billed on a non-superseded
- *  / non-void invoice line, optionally filters to coveredDates, then groups
- *  by (work_date × position) into one invoice_line each. After the new lines
- *  land in the DB, every contributing timesheet_entry's `invoice_line_id` is
- *  set so the entry is excluded from future imports.
+ *  Rewritten 2026-05-26 for the post-Phase-1..4 timekeeping world. Queries
+ *  `timesheet_entries.job_id` directly (Phase 1) — the old job_sheets
+ *  routing referenced a column that never existed and would throw. Groups
+ *  by the canonical 5-tuple (work_date, position_id, specialty_id,
+ *  shift_id, is_holiday) so each invoice line is uniquely keyed and the
+ *  downstream calc engine doesn't merge incompatible rows.
  *
- *  Replaces the draft's existing lines. The draft's existing lines (if any
- *  came from a previous overwrite) get their entry pointers cleared via
- *  ON DELETE SET NULL when those lines are deleted by persistDraft.
+ *  Splits:
+ *    * Different shifts on the same day → different lines (rate card may
+ *      vary per shift; planning side already separates them).
+ *    * Holiday vs non-holiday entries → different lines (multiplier rule
+ *      vs ST/OT/DT split makes the calc semantics incompatible).
+ *
+ *  Carries forward: position_id, specialty_id, shift_id onto each line so
+ *  the invoice retains the normalized identity. Legacy entries with NULL
+ *  position_id (pre-Phase-3 stragglers) fall back to text-grouping by
+ *  the legacy `position` column.
+ *
+ *  Side effect: ensures `invoice_days` has a row for every workDate in
+ *  the pulled set with is_holiday matching the entry group. This keeps
+ *  the invoice's holiday display + calc consistent with the source of
+ *  truth on the timekeeping side.
+ *
+ *  Dedupe model (unchanged): an entry is "already billed" when its
+ *  invoice_line_id resolves to a non-superseded / non-void invoice. Those
+ *  are excluded. Entries currently pointing at THIS draft's own lines are
+ *  re-included (the lines get replaced as part of the overwrite). The DB
+ *  freeze trigger prevents status changes on invoice-bound entries, so
+ *  by the time we get here the input set is internally consistent.
  *
  *  Throws if the invoice is frozen, not final, or has no jobRequestId.
  */
@@ -473,73 +493,61 @@ export async function overwriteFromTimesheets(
   if (inv.invoiceType !== "final") throw new Error(`Overwrite from timesheets is final-only (id=${invoiceId}, type=${inv.invoiceType ?? "null"}).`);
   if (!inv.jobRequestId) throw new Error(`Invoice ${invoiceId} has no linked job_request.`);
 
-  // 1. job_sheets for this job_request
-  const sheetsRes = await supabase
-    .from("job_sheets")
-    .select("id")
-    .eq("linked_job_request_id", inv.jobRequestId);
-  if (sheetsRes.error) throw sheetsRes.error;
-  const jobSheetIds = (sheetsRes.data ?? []).map((r: any) => r.id);
-  if (jobSheetIds.length === 0) {
-    throw new Error(`No job_sheets linked to job_request ${inv.jobRequestId}.`);
-  }
-
-  // 2. approved entries for those sheets
+  // ─── 1. Approved entries for this job (via job_id — Phase 1 column) ────
   const entriesRes = await supabase
     .from("timesheet_entries")
-    .select("id, work_date, end_date, position, employee_key, std_hours, ot_hours, dt_hours, total_hours, std_rate, ot_rate, dt_rate, total_pay, invoice_line_id")
-    .in("job_sheet_id", jobSheetIds)
+    .select(`
+      id, work_date, end_date,
+      position, position_id, specialty_id, shift_id,
+      employee_key,
+      std_hours, ot_hours, dt_hours, total_hours,
+      std_rate, ot_rate, dt_rate, total_pay,
+      is_holiday, holiday_multiplier, invoice_line_id
+    `)
+    .eq("job_id", inv.jobRequestId)
     .eq("status", "approved");
   if (entriesRes.error) throw entriesRes.error;
   let entries = entriesRes.data ?? [];
 
-  // 3. filter to coveredDates if specified
+  // ─── 2. coveredDates filter (optional) ────────────────────────────────
   if (opts.coveredDates && opts.coveredDates.length > 0) {
     const dateSet = new Set(opts.coveredDates);
     entries = entries.filter((e: any) => e.work_date && dateSet.has(e.work_date));
   }
 
-  // 4. exclude already-billed entries (their invoice_line_id resolves to an active invoice line)
-  //    But include entries currently pointing at THIS draft's existing lines — those will be
-  //    re-aggregated and re-linked. Easiest: pass through the already-billed set, then
-  //    let the caller's draft-line replacement handle re-linkage.
+  // ─── 3. Dedupe ─────────────────────────────────────────────────────────
+  //   alreadyBilled = entries currently bound to active (non-superseded,
+  //   non-void) invoices. ownEntryIds = entries currently bound to THIS
+  //   draft's existing lines (they'll be replaced — re-include them).
   const alreadyBilled = await getAlreadyBilledTimesheetEntryIds(inv.jobRequestId);
-  // Entries currently linked to lines on THIS invoice are filtered out of "alreadyBilled"
-  // by virtue of those lines being about to be deleted (and replaced) — but
-  // getAlreadyBilledTimesheetEntryIds reads the live DB, so they're flagged. Strip them.
-  const thisInvoiceLineIds = new Set(inv.lines.map((l: any) => (l as any).id).filter(Boolean));
-  // We don't carry line ids through QuoteLine, so use a direct query for this draft's line ids:
   const ownLinesRes = await supabase
-    .from("invoice_lines")
-    .select("id")
-    .eq("invoice_id", invoiceId);
+    .from("invoice_lines").select("id").eq("invoice_id", invoiceId);
   if (ownLinesRes.error) throw ownLinesRes.error;
-  const ownLineIdSet = new Set((ownLinesRes.data ?? []).map((r: any) => r.id));
+  const ownLineIds = Array.from(new Set((ownLinesRes.data ?? []).map((r: any) => r.id)));
   const ownEntryIdsRes = await supabase
-    .from("timesheet_entries")
-    .select("id")
-    .in("invoice_line_id", Array.from(ownLineIdSet).length > 0 ? Array.from(ownLineIdSet) : ["__none__"]);
+    .from("timesheet_entries").select("id")
+    .in("invoice_line_id", ownLineIds.length > 0 ? ownLineIds : ["__none__"]);
   if (ownEntryIdsRes.error) throw ownEntryIdsRes.error;
   const ownEntryIds = new Set((ownEntryIdsRes.data ?? []).map((r: any) => r.id));
-
   entries = entries.filter((e: any) => !alreadyBilled.has(e.id) || ownEntryIds.has(e.id));
 
-  // 5. Group by (work_date × position).
+  // ─── 4. Group by the canonical 5-tuple ─────────────────────────────────
+  //   (work_date, position_id-or-text, specialty_id, shift_id, is_holiday)
   //
-  // Aggregation uses the explicit-ST/OT/DT data model (2026-05-12). Each
-  // entry already carries per-worker tier splits (std_hours / ot_hours /
-  // dt_hours from the timesheet calc, which respects the rule per-worker).
-  // We just sum across workers in the group and count distinct employees
-  // for crewCount.
-  //
-  // This is hourly-mode aggregation only — day-rate work isn't normally
-  // tracked through hour-by-hour timesheets, and even if it were, summing
-  // ot/dt across mixed-hours workers is correct under the new line model
-  // (ot/dt are explicit person-hours, not derived from a rule + uniform hrs).
+  //   Each tuple becomes one invoice_line. Distinct employee count → crew_count.
+  //   ST/OT/DT person-hours are summed (explicit per-worker totals — the
+  //   timesheet calc already split them per the 8/12 cutoff or holiday rule).
+  //   total_pay is summed too: it's a faithful sum of what we paid each
+  //   contributing worker, including the holiday multiplier where applied.
   type Group = {
     workDate: string;
     endDate: string | null;
-    position: string;
+    positionId: string | null;
+    positionText: string;       // for display + legacy fallback grouping
+    specialtyId: string | null;
+    shiftId: string | null;
+    isHoliday: boolean;
+    holidayMultiplier: number | null;
     stdHours: number;
     otHours: number;
     dtHours: number;
@@ -552,7 +560,17 @@ export async function overwriteFromTimesheets(
   };
   const groups = new Map<string, Group>();
   for (const e of entries) {
-    const key = `${e.work_date ?? ""}|${e.position ?? ""}`;
+    // Legacy entries with NULL position_id (25 stragglers on dev — "Crew",
+    // "Fork Op") fall back to text-keyed grouping so they still aggregate
+    // cleanly instead of every row becoming its own line.
+    const posKey = e.position_id ? `pid:${e.position_id}` : `txt:${(e.position ?? "").trim().toLowerCase()}`;
+    const key = [
+      e.work_date ?? "",
+      posKey,
+      e.specialty_id ?? "",
+      e.shift_id ?? "",
+      e.is_holiday ? "h" : "n",
+    ].join("|");
     const workerKey = e.employee_key ?? `entry-${e.id}`;
     const g = groups.get(key);
     if (g) {
@@ -567,7 +585,12 @@ export async function overwriteFromTimesheets(
       groups.set(key, {
         workDate: e.work_date ?? "",
         endDate: e.end_date ?? null,
-        position: e.position ?? "",
+        positionId: e.position_id ?? null,
+        positionText: e.position ?? "",
+        specialtyId: e.specialty_id ?? null,
+        shiftId: e.shift_id ?? null,
+        isHoliday: !!e.is_holiday,
+        holidayMultiplier: e.holiday_multiplier == null ? null : Number(e.holiday_multiplier),
         stdHours: Number(e.std_hours ?? 0),
         otHours:  Number(e.ot_hours  ?? 0),
         dtHours:  Number(e.dt_hours  ?? 0),
@@ -581,19 +604,21 @@ export async function overwriteFromTimesheets(
     }
   }
 
-  // 6. build invoice lines, sorted by date then position
+  // ─── 5. Build invoice lines ────────────────────────────────────────────
+  //   Sort: date → shift → position text. Stable id assignment up front so
+  //   we can back-link entries in one round-trip.
   const sorted = Array.from(groups.values()).sort((a, b) => {
     if (a.workDate !== b.workDate) return a.workDate.localeCompare(b.workDate);
-    return a.position.localeCompare(b.position);
+    const aShift = a.shiftId ?? ""; const bShift = b.shiftId ?? "";
+    if (aShift !== bShift) return aShift.localeCompare(bShift);
+    return (a.positionText || "").localeCompare(b.positionText || "");
   });
-
-  // We need stable ids up front so we can map entry → line id without a round trip.
   const lineIdByGroupIndex = sorted.map(() => newLineId());
 
   const newLines: QuoteLine[] = sorted.map((g) => {
     const crewCount = g.workerKeys.size;
     return {
-      serviceKey: g.position,
+      serviceKey: g.positionText,
       qty: crewCount,
       crewCount,
       hours:        +g.stdHours.toFixed(2),
@@ -604,22 +629,49 @@ export async function overwriteFromTimesheets(
       baseDay:      0,
       otRate:       g.otRate,
       dtRate:       g.dtRate,
-      rule:         "Timesheet actuals",
+      rule:         g.isHoliday ? "Holiday timesheet actuals" : "Timesheet actuals",
       total:        +g.totalPay.toFixed(2),
-      specialty:    g.position,
-      shiftId:      undefined,
-      quoteDate: g.workDate,
-      endDate: g.endDate ?? undefined,
-      rateMode: "hourly",
-      sourceKind: "timesheet_entry",
+      positionId:   g.positionId ?? undefined,
+      specialtyId:  g.specialtyId ?? undefined,
+      specialty:    g.positionText,  // legacy display fallback
+      shiftId:      g.shiftId ?? undefined,
+      quoteDate:    g.workDate,
+      endDate:      g.endDate ?? undefined,
+      rateMode:     "hourly",
+      sourceKind:   "timesheet_entry",
     };
   });
 
   const subtotal = +newLines.reduce((s, l) => s + (l.total || 0), 0).toFixed(2);
 
-  // 7. Persist: replace lines via direct SQL so we can assign known ids,
-  //    then back-link entries.
-  // Delete existing draft lines (this clears entry pointers via ON DELETE SET NULL)
+  // ─── 6. Sync invoice_days with the pulled holiday flags ────────────────
+  //   The invoice's calc engine reads invoice_days to decide holiday
+  //   treatment. Since we split holiday vs non-holiday into different
+  //   lines, every group on a given date has a consistent isHoliday flag.
+  //   Upsert one invoice_days row per distinct workDate.
+  const dateHolidayMap = new Map<string, boolean>();
+  for (const g of sorted) {
+    if (!g.workDate) continue;
+    // If somehow two groups for the same date have different flags (data
+    // anomaly — entries on same date split on is_holiday), OR them so the
+    // invoice flags the day as holiday. The freeze trigger on the
+    // timekeeping side prevents this from happening in normal flow.
+    const prior = dateHolidayMap.get(g.workDate);
+    dateHolidayMap.set(g.workDate, !!prior || g.isHoliday);
+  }
+  for (const [date, isHol] of dateHolidayMap.entries()) {
+    try {
+      await upsertInvoiceDay({ invoiceId, invoiceDate: date, isHoliday: isHol });
+    } catch (e) {
+      // The freeze trigger on invoice_days blocks writes if the invoice
+      // is frozen — but we already guard isDraft above. Any other failure
+      // is logged but doesn't abort the pull (lines are still useful).
+      console.error("[overwriteFromTimesheets] upsertInvoiceDay failed:", date, e);
+    }
+  }
+
+  // ─── 7. Persist lines: delete existing → insert new → back-link entries ─
+  // Delete existing draft lines (clears entry pointers via ON DELETE SET NULL).
   const { error: delErr } = await supabase
     .from("invoice_lines")
     .delete()
