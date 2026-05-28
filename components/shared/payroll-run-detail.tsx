@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   getPayrollRun,
   getPayrollRunEntries,
-  getPayrollRunPrintExtras,
   finalizePayrollRun,
   reopenPayrollRun,
   voidPayrollRun,
@@ -16,12 +15,10 @@ import {
   addEntriesToPayrollRun,
   PAYROLL_OT_MULTIPLIER,
   PAYROLL_DT_MULTIPLIER,
-  type PayrollRunPrintExtras,
   type PayrollCandidateRow,
 } from "@/lib/store/payroll";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "@/lib/store/types";
 import { loadJobRequests } from "@/lib/store/app-store";
-import { printWithTitle } from "@/lib/print-with-title";
 
 function statusBadge(s: PayrollRunStatus) {
   const map: Record<PayrollRunStatus, { bg: string; fg: string; label: string }> = {
@@ -299,7 +296,6 @@ function BaseRateInput({
 export default function PayrollRunDetail({ runId }: { runId: string }) {
   const [run, setRun] = useState<PayrollRun | null>(null);
   const [entries, setEntries] = useState<PayrollRunEntry[]>([]);
-  const [printExtras, setPrintExtras] = useState<Map<string, PayrollRunPrintExtras>>(new Map());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -311,14 +307,12 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
 
   async function load() {
     setLoading(true);
-    const [r, es, ex] = await Promise.all([
+    const [r, es] = await Promise.all([
       getPayrollRun(runId),
       getPayrollRunEntries(runId),
-      getPayrollRunPrintExtras(runId),
     ]);
     setRun(r);
     setEntries(es);
-    setPrintExtras(ex);
     if (r) {
       setPayDate(r.payDate);
       setPeriodStart(r.periodStart ?? "");
@@ -422,62 +416,15 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
     finally { setBusy(null); }
   }
 
-  // ─── Print payload (matches the production timekeeping payroll output) ────
-  // Build a sorted, flat list of rows with the live time/meal fields merged
-  // in. Then aggregate by employee for the summary table + grand total.
-  type PrintRow = PayrollRunEntry & PayrollRunPrintExtras;
-  const printRows: PrintRow[] = entries
-    .map((e) => ({
-      ...e,
-      timeIn1:  printExtras.get(e.timesheetEntryId)?.timeIn1  ?? "",
-      timeOut1: printExtras.get(e.timesheetEntryId)?.timeOut1 ?? "",
-      timeIn2:  printExtras.get(e.timesheetEntryId)?.timeIn2  ?? "",
-      timeOut2: printExtras.get(e.timesheetEntryId)?.timeOut2 ?? "",
-      mealBreak1Minutes: printExtras.get(e.timesheetEntryId)?.mealBreak1Minutes ?? 0,
-      mealBreak2Minutes: printExtras.get(e.timesheetEntryId)?.mealBreak2Minutes ?? 0,
-    }))
-    .sort((a, b) => {
-      const da = a.workDate || ""; const db = b.workDate || "";
-      if (da !== db) return da.localeCompare(db);
-      const an = `${a.lastName ?? ""} ${a.firstName ?? ""}`;
-      const bn = `${b.lastName ?? ""} ${b.firstName ?? ""}`;
-      return an.localeCompare(bn);
-    });
-
-  type EmpAgg = { name: string; position: string; stdHours: number; otHours: number; dtHours: number; totalHours: number; totalPay: number; entries: number };
-  const byEmp = new Map<string, EmpAgg>();
-  for (const r of printRows) {
-    const name = `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || r.email || "—";
-    const cur = byEmp.get(name) ?? { name, position: r.position ?? "", stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, totalPay: 0, entries: 0 };
-    cur.stdHours += r.stdHours;
-    cur.otHours  += r.otHours;
-    cur.dtHours  += r.dtHours;
-    cur.totalHours += r.totalHours;
-    cur.totalPay   += r.totalPay;
-    cur.entries += 1;
-    if (!cur.position && r.position) cur.position = r.position;
-    byEmp.set(name, cur);
-  }
-  const empRows = Array.from(byEmp.values()).sort((a, b) => a.name.localeCompare(b.name));
-  const grand = printRows.reduce(
-    (acc, r) => ({
-      stdHours: acc.stdHours + r.stdHours,
-      otHours:  acc.otHours  + r.otHours,
-      dtHours:  acc.dtHours  + r.dtHours,
-      totalHours: acc.totalHours + r.totalHours,
-      totalPay:   acc.totalPay   + r.totalPay,
-    }),
-    { stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, totalPay: 0 },
-  );
-  const fmtDay = (s: string) => {
-    if (!s) return "";
-    const d = new Date(s + "T00:00:00");
-    return `${d.toLocaleDateString(undefined, { weekday: "short" })} ${s}`;
-  };
+  // Printable report now lives at /payroll/[id]/pdf (separate route,
+  // no AppShell chrome — same flow as /quotes/[id]/pdf and
+  // /invoices/[id]/pdf). The button in the header opens that page in a
+  // new tab; the operator hits "Print / Save as PDF" from there.
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      {/* Header */}
+      {/* Header — no longer needs hide-print since the print stream
+          lives on a separate route. Kept as the on-screen view only. */}
       <div className="card">
         {/* Title row — matches the All Quotes / All Invoices convention:
             H2 fills the left, "← All Runs" badge anchors the right. */}
@@ -494,11 +441,11 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
         <div className="action-row hide-print" style={{ marginBottom: 12, justifyContent: "flex-end", gap: 8 }}>
           <button
             className="secondary"
-            onClick={() => printWithTitle(["Payroll Report", run.payDate, run.notes || undefined])}
+            onClick={() => window.open(`/payroll/${run.id}/pdf`, "_blank")}
             disabled={!!busy || entries.length === 0}
-            title={entries.length === 0 ? "No entries to print" : "Print / Download PDF of this payroll run"}
+            title={entries.length === 0 ? "No entries to print" : "Open printable payroll report"}
           >
-            📄 Print Payroll Report
+            📄 Print / PDF
           </button>
           {isDraft && (
             <>
@@ -676,143 +623,6 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
         )}
       </div>
 
-      {/* ─── Print-only payroll report ────────────────────────────────────
-          Hidden on screen via .show-print; rendered into the print stream
-          when "Print Payroll Report" is clicked. Modeled after the
-          production timekeeping payroll output (one-row-per-entry detail
-          + per-employee summary + grand total), with the new payroll-run
-          header info on top (pay date, period, status, run id, notes). */}
-      <div className="show-print">
-        {/* Report header */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 16, marginBottom: 12, borderBottom: "2px solid #181410", paddingBottom: 8 }}>
-          <img src="/branding/client-logo.png" alt="Logo" style={{ height: 48 }} />
-          <div style={{ flex: 1 }}>
-            <h2 style={{ margin: 0, fontSize: 18 }}>Payroll Report</h2>
-            <div style={{ fontSize: 11, marginTop: 4, display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 12, rowGap: 2 }}>
-              <strong>Pay Date:</strong><span>{run.payDate}</span>
-              {(run.periodStart || run.periodEnd) && (
-                <>
-                  <strong>Period:</strong>
-                  <span>{run.periodStart ?? "…"} → {run.periodEnd ?? "…"}</span>
-                </>
-              )}
-              <strong>Status:</strong><span style={{ textTransform: "capitalize" }}>{run.status}</span>
-              <strong>Run ID:</strong><span style={{ fontFamily: "monospace", fontSize: 10 }}>{run.id}</span>
-              {run.notes && (<><strong>Notes:</strong><span>{run.notes}</span></>)}
-              {run.finalizedAt && (<><strong>Finalized:</strong><span>{new Date(run.finalizedAt).toLocaleString()}</span></>)}
-            </div>
-          </div>
-          <div style={{ textAlign: "right", fontSize: 10 }}>
-            <div className="muted">Generated {new Date().toLocaleString()}</div>
-            <div style={{ marginTop: 4 }}>
-              <strong>{run.entryCount}</strong> entries · <strong>{run.employeeCount}</strong> employees
-            </div>
-            <div>
-              <strong>{run.totalHours.toFixed(1)}</strong> hrs · <strong>${run.totalPay.toFixed(2)}</strong>
-            </div>
-          </div>
-        </div>
-
-        {/* Detail: one row per entry */}
-        <h3 style={{ fontSize: 12, margin: "0 0 6px 0" }}>Payroll Detail</h3>
-        <table style={{ width: "100%", fontSize: 9.5, borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ background: "#f3e6cf" }}>
-              <th style={{ textAlign: "left",  padding: "3px 5px" }}>Date</th>
-              <th style={{ textAlign: "left",  padding: "3px 5px" }}>Employee</th>
-              <th style={{ textAlign: "left",  padding: "3px 5px" }}>Position</th>
-              <th style={{ textAlign: "left",  padding: "3px 5px" }}>Job</th>
-              <th style={{ textAlign: "left",  padding: "3px 5px" }}>In 1</th>
-              <th style={{ textAlign: "left",  padding: "3px 5px" }}>Out 1</th>
-              <th style={{ textAlign: "right", padding: "3px 5px" }}>M1</th>
-              <th style={{ textAlign: "left",  padding: "3px 5px" }}>In 2</th>
-              <th style={{ textAlign: "left",  padding: "3px 5px" }}>Out 2</th>
-              <th style={{ textAlign: "right", padding: "3px 5px" }}>M2</th>
-              <th style={{ textAlign: "right", padding: "3px 5px" }}>STD</th>
-              <th style={{ textAlign: "right", padding: "3px 5px" }}>OT</th>
-              <th style={{ textAlign: "right", padding: "3px 5px" }}>DT</th>
-              <th style={{ textAlign: "right", padding: "3px 5px" }}>Total</th>
-              <th style={{ textAlign: "right", padding: "3px 5px" }}>$/STD</th>
-              <th style={{ textAlign: "right", padding: "3px 5px" }}>$/OT</th>
-              <th style={{ textAlign: "right", padding: "3px 5px" }}>$/DT</th>
-              <th style={{ textAlign: "right", padding: "3px 5px" }}>Pay</th>
-            </tr>
-          </thead>
-          <tbody>
-            {printRows.length === 0 ? (
-              <tr><td colSpan={18} style={{ textAlign: "center", color: "#888", padding: 6 }}>No entries.</td></tr>
-            ) : printRows.map((r) => (
-              <tr key={r.id} style={{ borderBottom: "1px solid #ead7b8" }}>
-                <td style={{ padding: "3px 5px" }}>{fmtDay(r.workDate || "")}{r.isHoliday && " 🎄"}</td>
-                <td style={{ padding: "3px 5px" }}>{`${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || r.email || "—"}</td>
-                <td style={{ padding: "3px 5px" }}>{r.position || ""}</td>
-                <td style={{ padding: "3px 5px", fontFamily: "monospace" }}>
-                  {r.jobId ? (jobInfoById.get(r.jobId)?.jobNo ?? "") : ""}
-                </td>
-                <td style={{ padding: "3px 5px" }}>{r.timeIn1}</td>
-                <td style={{ padding: "3px 5px" }}>{r.timeOut1}</td>
-                <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.mealBreak1Minutes || ""}</td>
-                <td style={{ padding: "3px 5px" }}>{r.timeIn2}</td>
-                <td style={{ padding: "3px 5px" }}>{r.timeOut2}</td>
-                <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.mealBreak2Minutes || ""}</td>
-                <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.stdHours.toFixed(2)}</td>
-                <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.otHours.toFixed(2)}</td>
-                <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.dtHours.toFixed(2)}</td>
-                <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.totalHours.toFixed(2)}</td>
-                <td style={{ padding: "3px 5px", textAlign: "right" }}>${r.stdRate.toFixed(2)}</td>
-                <td style={{ padding: "3px 5px", textAlign: "right" }}>${r.otRate.toFixed(2)}</td>
-                <td style={{ padding: "3px 5px", textAlign: "right" }}>${r.dtRate.toFixed(2)}</td>
-                <td style={{ padding: "3px 5px", textAlign: "right", fontWeight: 600 }}>${r.totalPay.toFixed(2)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {/* Per-employee summary */}
-        {empRows.length > 0 && (
-          <div style={{ marginTop: 16, pageBreakInside: "avoid" }}>
-            <h3 style={{ fontSize: 12, margin: "0 0 6px 0" }}>Payroll Summary by Employee</h3>
-            <table style={{ width: "100%", fontSize: 10, borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ background: "#f3e6cf" }}>
-                  <th style={{ textAlign: "left",  padding: "3px 6px" }}>Employee</th>
-                  <th style={{ textAlign: "left",  padding: "3px 6px" }}>Position</th>
-                  <th style={{ textAlign: "right", padding: "3px 6px" }}>Entries</th>
-                  <th style={{ textAlign: "right", padding: "3px 6px" }}>STD</th>
-                  <th style={{ textAlign: "right", padding: "3px 6px" }}>OT</th>
-                  <th style={{ textAlign: "right", padding: "3px 6px" }}>DT</th>
-                  <th style={{ textAlign: "right", padding: "3px 6px" }}>Total Hrs</th>
-                  <th style={{ textAlign: "right", padding: "3px 6px" }}>Total Pay</th>
-                </tr>
-              </thead>
-              <tbody>
-                {empRows.map((r) => (
-                  <tr key={r.name} style={{ borderBottom: "1px solid #ead7b8" }}>
-                    <td style={{ padding: "3px 6px" }}>{r.name}</td>
-                    <td style={{ padding: "3px 6px" }}>{r.position}</td>
-                    <td style={{ textAlign: "right", padding: "3px 6px" }}>{r.entries}</td>
-                    <td style={{ textAlign: "right", padding: "3px 6px" }}>{r.stdHours.toFixed(2)}</td>
-                    <td style={{ textAlign: "right", padding: "3px 6px" }}>{r.otHours.toFixed(2)}</td>
-                    <td style={{ textAlign: "right", padding: "3px 6px" }}>{r.dtHours.toFixed(2)}</td>
-                    <td style={{ textAlign: "right", padding: "3px 6px" }}>{r.totalHours.toFixed(2)}</td>
-                    <td style={{ textAlign: "right", padding: "3px 6px" }}>${r.totalPay.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr style={{ borderTop: "2px solid #181410", fontWeight: 700 }}>
-                  <th colSpan={3} style={{ textAlign: "left", padding: "4px 6px" }}>Grand Total</th>
-                  <th style={{ textAlign: "right", padding: "4px 6px" }}>{grand.stdHours.toFixed(2)}</th>
-                  <th style={{ textAlign: "right", padding: "4px 6px" }}>{grand.otHours.toFixed(2)}</th>
-                  <th style={{ textAlign: "right", padding: "4px 6px" }}>{grand.dtHours.toFixed(2)}</th>
-                  <th style={{ textAlign: "right", padding: "4px 6px" }}>{grand.totalHours.toFixed(2)}</th>
-                  <th style={{ textAlign: "right", padding: "4px 6px" }}>${grand.totalPay.toFixed(2)}</th>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
