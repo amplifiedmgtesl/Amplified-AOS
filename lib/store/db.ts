@@ -569,6 +569,10 @@ export interface StaffEntryReviewRow {
   status: string | null;
   notes: string;
   updatedAt: string;
+  /** Set when the entry is currently included in a (non-voided) payroll run.
+   *  Surfaces a lock badge in the review UI; further status changes are
+   *  blocked on the run side until the run is voided. */
+  payrollRunId: string | null;
 }
 
 export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]> {
@@ -583,6 +587,19 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
     `)
     .order("updated_at", { ascending: false });
   if (error) { console.error("[db] getAllStaffReviewEntries:", error); return []; }
+
+  // Lookup: which entries are currently in a payroll run? Used to badge
+  // them as locked in the review UI.
+  const entryIds = (data ?? []).map((r: any) => r.id);
+  const payrollRunByEntry = new Map<string, string>();
+  if (entryIds.length > 0) {
+    const { data: pre, error: preErr } = await supabase
+      .from("payroll_run_entries")
+      .select("timesheet_entry_id, payroll_run_id")
+      .in("timesheet_entry_id", entryIds);
+    if (preErr) { console.error("[db] getAllStaffReviewEntries payroll lookup:", preErr); }
+    for (const r of pre ?? []) payrollRunByEntry.set((r as any).timesheet_entry_id, (r as any).payroll_run_id);
+  }
 
   const jobIds = Array.from(new Set((data ?? []).map((r: any) => r.job_sheet_id).filter(Boolean)));
   const jobMap = new Map<string, { client: string; eventName: string; date: string }>();
@@ -627,6 +644,7 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
     status: r.status ?? null,
     notes: r.notes ?? "",
     updatedAt: r.updated_at ?? "",
+    payrollRunId: payrollRunByEntry.get(r.id) ?? null,
   }));
 }
 

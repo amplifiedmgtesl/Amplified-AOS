@@ -41,6 +41,19 @@ function statusBadge(r: StaffEntryReviewRow) {
   return <span className="badge" style={{ background: "#fff4d6", color: "#7a5a1a" }}>Pending</span>;
 }
 
+function payrollLockBadge(r: StaffEntryReviewRow) {
+  if (!r.payrollRunId) return null;
+  return (
+    <span
+      className="badge"
+      title={`Locked by payroll run ${r.payrollRunId}. Void the run to release.`}
+      style={{ background: "#efe2fb", color: "#5a1a7a", marginLeft: 4, fontSize: 11 }}
+    >
+      💰 Payroll
+    </span>
+  );
+}
+
 export default function TimesheetReview() {
   const [rows, setRows] = useState<StaffEntryReviewRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -158,12 +171,19 @@ export default function TimesheetReview() {
   async function handleRejectSelected() {
     const eligibleRows = filtered.filter((r) => selectedIds.has(r.id) && r.status !== "rejected");
     // Invoice-bound approved rows are super-frozen — DB trigger blocks status changes.
+    // Payroll-locked rows can't transition status either until the run is voided.
     const lockedByInvoice = eligibleRows.filter((r) => r.status === "approved" && r.invoiceLineId);
-    const targets = eligibleRows.filter((r) => !(r.status === "approved" && r.invoiceLineId));
+    const lockedByPayroll = eligibleRows.filter((r) => r.payrollRunId);
+    const targets = eligibleRows.filter((r) => !(r.status === "approved" && r.invoiceLineId) && !r.payrollRunId);
     if (targets.length === 0) return;
-    const lockedNote = lockedByInvoice.length > 0
-      ? `\n\n${lockedByInvoice.length} invoice-bound entr${lockedByInvoice.length === 1 ? "y will" : "ies will"} be skipped (unlink from invoice first).`
-      : "";
+    const lockedNotes: string[] = [];
+    if (lockedByInvoice.length > 0) {
+      lockedNotes.push(`${lockedByInvoice.length} invoice-bound entr${lockedByInvoice.length === 1 ? "y" : "ies"} will be skipped (unlink from invoice first).`);
+    }
+    if (lockedByPayroll.length > 0) {
+      lockedNotes.push(`${lockedByPayroll.length} payroll-locked entr${lockedByPayroll.length === 1 ? "y" : "ies"} will be skipped (void the payroll run first).`);
+    }
+    const lockedNote = lockedNotes.length > 0 ? `\n\n${lockedNotes.join("\n")}` : "";
     if (!confirm(`Reject ${targets.length} timesheet entr${targets.length === 1 ? "y" : "ies"}?${lockedNote}`)) return;
     setBusyBatch("reject");
     try {
@@ -209,7 +229,7 @@ export default function TimesheetReview() {
     const sel = filtered.filter((r) => selectedIds.has(r.id));
     return {
       approve: sel.filter((r) => r.status !== "approved").length,
-      reject:  sel.filter((r) => r.status !== "rejected" && !(r.status === "approved" && r.invoiceLineId)).length,
+      reject:  sel.filter((r) => r.status !== "rejected" && !(r.status === "approved" && r.invoiceLineId) && !r.payrollRunId).length,
     };
   }, [filtered, selectedIds]);
 
@@ -366,7 +386,7 @@ export default function TimesheetReview() {
                 <td>{r.dtHours > 0 ? r.dtHours.toFixed(1) : "—"}</td>
                 <td><strong>{r.totalHours.toFixed(1)}</strong></td>
                 <td>${r.totalPay.toFixed(2)}</td>
-                <td>{statusBadge(r)}</td>
+                <td>{statusBadge(r)}{payrollLockBadge(r)}</td>
               </tr>
               );
             })}

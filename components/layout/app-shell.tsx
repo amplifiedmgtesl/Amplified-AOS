@@ -23,6 +23,7 @@ const nav = [
   ["/job-sheets", "📑", "Job Sheets"],
   ["/timekeeping", "⏱️", "Timekeeping"],
   ["/timekeeping/review", "✅", "Timesheet Review"],
+  ["/payroll", "💰", "Payroll"],
   ["/job-costing", "📈", "Job Costing"],
   ["/employee-directory", "👥", "Employees"],
   // ["/call-sheets", "📞", "Call Sheets"],  // Hidden — duplicate of Job Sheets. Code kept under app/call-sheets/ but excluded from nav + analysis.
