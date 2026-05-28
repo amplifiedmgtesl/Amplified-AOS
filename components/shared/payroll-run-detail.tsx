@@ -265,43 +265,47 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
     <div style={{ display: "grid", gap: 16 }}>
       {/* Header */}
       <div className="card">
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <Link href="/payroll" className="muted" style={{ textDecoration: "none" }}>← All runs</Link>
-            <h2 style={{ margin: 0 }}>Pay Date: {run.payDate}</h2>
-            {statusBadge(run.status)}
-            <span className="record-id" title="Payroll run id">{run.id}</span>
-          </div>
-          <div style={{ display: "flex", gap: 8 }} className="hide-print">
-            <button
-              className="secondary"
-              onClick={() => printWithTitle(["Payroll Report", run.payDate, run.notes || undefined])}
-              disabled={!!busy || entries.length === 0}
-              title={entries.length === 0 ? "No entries to print" : "Print / Download PDF of this payroll run"}
-            >
-              📄 Print Payroll Report
-            </button>
-            {isDraft && (
-              <>
-                <button onClick={handleFinalize} disabled={!!busy || entries.length === 0}>
-                  {busy === "finalize" ? "Finalizing…" : "Finalize"}
-                </button>
-                <button className="secondary" onClick={handleVoid} disabled={!!busy} style={{ color: "#a00", borderColor: "#e0a0a0" }}>
-                  {busy === "void" ? "Voiding…" : "Void"}
-                </button>
-              </>
-            )}
-            {isFinalized && (
-              <>
-                <button className="secondary" onClick={handleReopen} disabled={!!busy}>
-                  {busy === "reopen" ? "Reopening…" : "Reopen"}
-                </button>
-                <button className="secondary" onClick={handleVoid} disabled={!!busy} style={{ color: "#a00", borderColor: "#e0a0a0" }}>
-                  {busy === "void" ? "Voiding…" : "Void"}
-                </button>
-              </>
-            )}
-          </div>
+        {/* Title row — matches the All Quotes / All Invoices convention:
+            H2 fills the left, "← All Runs" badge anchors the right. */}
+        <div className="action-row" style={{ marginBottom: 12, alignItems: "baseline" }}>
+          <h2 className="section-title" style={{ margin: 0, flex: 1 }}>
+            Pay Date: {run.payDate}
+            <span style={{ marginLeft: 12 }}>{statusBadge(run.status)}</span>
+            <span className="record-id" title="Payroll run id" style={{ marginLeft: 8 }}>{run.id}</span>
+          </h2>
+          <Link href="/payroll" className="badge">← All Runs</Link>
+        </div>
+
+        {/* Action buttons (separate row so the back link stays anchored) */}
+        <div className="action-row hide-print" style={{ marginBottom: 12, justifyContent: "flex-end", gap: 8 }}>
+          <button
+            className="secondary"
+            onClick={() => printWithTitle(["Payroll Report", run.payDate, run.notes || undefined])}
+            disabled={!!busy || entries.length === 0}
+            title={entries.length === 0 ? "No entries to print" : "Print / Download PDF of this payroll run"}
+          >
+            📄 Print Payroll Report
+          </button>
+          {isDraft && (
+            <>
+              <button onClick={handleFinalize} disabled={!!busy || entries.length === 0}>
+                {busy === "finalize" ? "Finalizing…" : "Finalize"}
+              </button>
+              <button className="secondary" onClick={handleVoid} disabled={!!busy} style={{ color: "#a00", borderColor: "#e0a0a0" }}>
+                {busy === "void" ? "Voiding…" : "Void"}
+              </button>
+            </>
+          )}
+          {isFinalized && (
+            <>
+              <button className="secondary" onClick={handleReopen} disabled={!!busy}>
+                {busy === "reopen" ? "Reopening…" : "Reopen"}
+              </button>
+              <button className="secondary" onClick={handleVoid} disabled={!!busy} style={{ color: "#a00", borderColor: "#e0a0a0" }}>
+                {busy === "void" ? "Voiding…" : "Void"}
+              </button>
+            </>
+          )}
         </div>
 
         <div className="grid" style={{ gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
