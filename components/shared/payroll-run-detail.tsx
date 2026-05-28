@@ -12,9 +12,12 @@ import {
   removeEntryFromRun,
   updatePayrollRunMeta,
   updatePayrollRunEntryBaseRate,
+  getPayrollCandidates,
+  addEntriesToPayrollRun,
   PAYROLL_OT_MULTIPLIER,
   PAYROLL_DT_MULTIPLIER,
   type PayrollRunPrintExtras,
+  type PayrollCandidateRow,
 } from "@/lib/store/payroll";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "@/lib/store/types";
 import { loadJobRequests } from "@/lib/store/app-store";
@@ -33,6 +36,196 @@ function statusBadge(s: PayrollRunStatus) {
 
 function fullName(e: PayrollRunEntry) {
   return `${e.firstName ?? ""} ${e.lastName ?? ""}`.trim() || e.email || "—";
+}
+
+/** Inline candidate picker for adding late-approved entries to an existing
+ *  draft run. Same filters as the New Run wizard but scoped to "add to
+ *  this run" — confirm pushes the selected rows into payroll_run_entries
+ *  via addEntriesToPayrollRun.
+ *
+ *  existingTimesheetIds is passed so we can de-dup any candidate row that
+ *  happens to already be on the run (shouldn't normally happen — the DB
+ *  unique index would reject — but it's a friendlier UX to hide them). */
+function AddEntriesPanel({
+  runId,
+  existingTimesheetIds,
+  onAdded,
+}: {
+  runId: string;
+  existingTimesheetIds: string[];
+  onAdded: () => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [employmentType, setEmploymentType] = useState<"" | "staff" | "contractor">("");
+  const [rows, setRows] = useState<PayrollCandidateRow[]>([]);
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+
+  const existingSet = useMemo(() => new Set(existingTimesheetIds), [existingTimesheetIds]);
+
+  async function runSearch() {
+    setLoading(true);
+    try {
+      const data = await getPayrollCandidates({
+        dateFrom: dateFrom || undefined,
+        dateTo:   dateTo   || undefined,
+        employmentType: employmentType || undefined,
+      });
+      // Hide entries already on this run (belt-and-suspenders — the
+      // candidate query already filters out anything in a payroll_run).
+      const fresh = data.filter((r) => !existingSet.has(r.timesheetEntryId));
+      setRows(fresh);
+      setExcluded(new Set());
+      setHasSearched(true);
+    } finally { setLoading(false); }
+  }
+
+  const included = rows.filter((r) => !excluded.has(r.timesheetEntryId));
+  const totals = {
+    entries: included.length,
+    hours: included.reduce((s, r) => s + r.totalHours, 0),
+    pay:   included.reduce((s, r) => s + r.totalPay, 0),
+  };
+
+  async function handleAdd() {
+    if (included.length === 0) return;
+    setSubmitting(true);
+    try {
+      const n = await addEntriesToPayrollRun(runId, included);
+      setOpen(false);
+      setRows([]);
+      setExcluded(new Set());
+      setHasSearched(false);
+      await onAdded();
+      // Tiny confirmation — non-blocking.
+      console.log(`[payroll] added ${n} entries to run ${runId}`);
+    } catch (e: any) {
+      alert(`Add failed: ${e?.message ?? "unknown error"}`);
+    } finally { setSubmitting(false); }
+  }
+
+  return (
+    <div className="card hide-print">
+      <div className="action-row" style={{ alignItems: "center", justifyContent: "space-between" }}>
+        <strong style={{ fontSize: 14 }}>Add more entries</strong>
+        <button
+          className="secondary"
+          onClick={() => setOpen((v) => !v)}
+          style={{ fontSize: 12, padding: "4px 10px" }}
+        >
+          {open ? "Hide" : "+ Pick more"}
+        </button>
+      </div>
+      {open && (
+        <>
+          <div className="muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 8 }}>
+            Pulls approved timesheet entries that aren't already on a payroll run.
+            Use to grab anything approved after this run was created.
+          </div>
+          <div className="grid" style={{ gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+            <div>
+              <small>From date</small>
+              <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+            </div>
+            <div>
+              <small>To date</small>
+              <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
+            <div>
+              <small>Employment type</small>
+              <select value={employmentType} onChange={(e) => setEmploymentType(e.target.value as any)}>
+                <option value="">Any (staff + contractor)</option>
+                <option value="staff">Staff (W-2)</option>
+                <option value="contractor">Contractor (1099)</option>
+              </select>
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-end" }}>
+              <button onClick={runSearch} disabled={loading} style={{ width: "100%" }}>
+                {loading ? "Searching…" : "Search candidates"}
+              </button>
+            </div>
+          </div>
+
+          {hasSearched && (
+            <div style={{ marginTop: 12 }}>
+              {rows.length === 0 ? (
+                <div className="muted" style={{ padding: "8px 0" }}>
+                  No new candidates match. (Already-on-this-run entries are filtered out automatically.)
+                </div>
+              ) : (
+                <>
+                  <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+                    <strong>{totals.entries}</strong> selected ·{" "}
+                    <strong>{totals.hours.toFixed(1)}</strong> hrs ·{" "}
+                    <strong>${totals.pay.toFixed(2)}</strong>
+                    {excluded.size > 0 && <span> ({excluded.size} excluded)</span>}
+                  </div>
+                  <div className="table-scroll" style={{ maxHeight: 320, overflowY: "auto" }}>
+                    <table style={{ marginBottom: 0 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ width: 28 }}></th>
+                          <th>Date</th>
+                          <th>Employee</th>
+                          <th>Job</th>
+                          <th>Position</th>
+                          <th style={{ textAlign: "right" }}>Total</th>
+                          <th style={{ textAlign: "right" }}>Pay</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((r) => {
+                          const isExcluded = excluded.has(r.timesheetEntryId);
+                          return (
+                            <tr key={r.timesheetEntryId} style={isExcluded ? { opacity: 0.45 } : undefined}>
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  checked={!isExcluded}
+                                  onChange={() => setExcluded((p) => {
+                                    const n = new Set(p);
+                                    if (n.has(r.timesheetEntryId)) n.delete(r.timesheetEntryId);
+                                    else n.add(r.timesheetEntryId);
+                                    return n;
+                                  })}
+                                />
+                              </td>
+                              <td>{r.workDate || "—"}{r.isHoliday && <span className="badge" style={{ marginLeft: 6, background: "#ffe9c2", color: "#7a4a1a", fontSize: 11 }}>Holiday</span>}</td>
+                              <td>{`${r.firstName} ${r.lastName}`.trim() || r.email || "—"}</td>
+                              <td>
+                                {r.jobId ? (
+                                  <>
+                                    <span style={{ fontFamily: "monospace", fontSize: 12 }}>{r.jobNo ?? r.jobId}</span>
+                                    {r.jobEventName && <span className="muted" style={{ fontSize: 11, marginLeft: 6 }}>{r.jobEventName}</span>}
+                                  </>
+                                ) : <span className="muted">Office / Remote</span>}
+                              </td>
+                              <td>{r.position || "—"}</td>
+                              <td style={{ textAlign: "right" }}><strong>{r.totalHours.toFixed(1)}</strong></td>
+                              <td style={{ textAlign: "right" }}>${r.totalPay.toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="action-row" style={{ marginTop: 10, justifyContent: "flex-end" }}>
+                    <button onClick={handleAdd} disabled={submitting || totals.entries === 0}>
+                      {submitting ? "Adding…" : `Add ${totals.entries} entr${totals.entries === 1 ? "y" : "ies"} to run`}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
 }
 
 /** Small inline editor for the per-entry base pay rate. Local state holds
@@ -351,6 +544,16 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
           </div>
         )}
       </div>
+
+      {/* Add more entries — draft runs only. Lets the operator pull in
+          late-approved entries without voiding + recreating the run. */}
+      {isDraft && (
+        <AddEntriesPanel
+          runId={runId}
+          existingTimesheetIds={entries.map((e) => e.timesheetEntryId)}
+          onAdded={load}
+        />
+      )}
 
       {/* Entries (on-screen view, hidden when printing) */}
       <div className="card hide-print">

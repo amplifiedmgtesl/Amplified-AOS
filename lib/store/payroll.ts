@@ -346,6 +346,56 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
   return id;
 }
 
+/** Add more candidate entries to an existing draft run. Snapshots each
+ *  candidate into a new payroll_run_entries row exactly the way
+ *  createPayrollRun does. The DB freeze trigger guards against doing
+ *  this on a finalized/exported run; the partial-unique index on
+ *  timesheet_entry_id guards against double-inclusion across runs.
+ *
+ *  Returns the count of rows actually inserted (will throw if Postgres
+ *  rejects any single row — partial-insert state is then rolled back by
+ *  the supabase-js batch). */
+export async function addEntriesToPayrollRun(
+  runId: string,
+  entries: PayrollCandidateRow[],
+): Promise<number> {
+  if (entries.length === 0) return 0;
+  // Safety: refuse to insert against a non-draft run client-side. The DB
+  // freeze trigger will also reject, but a clean preflight error is nicer.
+  const { data: runRow, error: runErr } = await supabase
+    .from("payroll_runs").select("status").eq("id", runId).single();
+  if (runErr) throw runErr;
+  if ((runRow as any).status !== "draft") {
+    throw new Error(`Cannot add entries — run is ${(runRow as any).status}. Reopen it first.`);
+  }
+
+  const rows = entries.map((e) => ({
+    id: newRunEntryId(),
+    payroll_run_id: runId,
+    timesheet_entry_id: e.timesheetEntryId,
+    employee_key: e.employeeKey,
+    first_name: e.firstName,
+    last_name: e.lastName,
+    email: e.email,
+    work_date: e.workDate,
+    position: e.position,
+    job_id: e.jobId,
+    std_hours: e.stdHours,
+    ot_hours: e.otHours,
+    dt_hours: e.dtHours,
+    total_hours: e.totalHours,
+    std_rate: e.stdRate,
+    ot_rate: e.otRate,
+    dt_rate: e.dtRate,
+    is_holiday: e.isHoliday,
+    holiday_multiplier: e.holidayMultiplier,
+    total_pay: e.totalPay,
+  }));
+  const { error } = await supabase.from("payroll_run_entries").insert(rows);
+  if (error) throw error;
+  return rows.length;
+}
+
 /** Update meta on a draft run. Locked runs reject all edits except status
  *  transitions (handled by finalizeRun / voidRun). */
 export async function updatePayrollRunMeta(
