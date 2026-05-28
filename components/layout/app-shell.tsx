@@ -18,9 +18,7 @@ const nav = [
   ["/job-requests", "📨", "Jobs"],
   ["/quotes", "🧾", "Quotes"],
   ["/invoices", "💵", "Invoices"],
-  ["/invoice-builder", "📄", "Invoice Builder (legacy)"],
   ["/rate-card", "📋", "Rate Card"],
-  ["/job-sheets", "📑", "Job Sheets"],
   ["/timekeeping", "⏱️", "Timekeeping"],
   ["/timekeeping/review", "✅", "Timesheet Review"],
   ["/payroll", "💰", "Payroll"],
@@ -28,6 +26,10 @@ const nav = [
   ["/employee-directory", "👥", "Employees"],
   // ["/call-sheets", "📞", "Call Sheets"],  // Hidden — duplicate of Job Sheets. Code kept under app/call-sheets/ but excluded from nav + analysis.
   ["/maintenance", "⚙️", "Maintenance"],
+  // Legacy entries — kept in the nav for now since data still flows through
+  // them, but parked at the bottom to signal they're on the way out.
+  ["/job-sheets", "📑", "Job Sheets (legacy)"],
+  ["/invoice-builder", "📄", "Invoice Builder (legacy)"],
 ] as const;
 
 const STORAGE_KEY = "aos.sidebar.collapsed";
