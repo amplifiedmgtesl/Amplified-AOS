@@ -105,12 +105,15 @@ export type PayrollCandidateRow = {
   otHours: number;
   dtHours: number;
   totalHours: number;
-  stdRate: number;
-  otRate: number;
-  dtRate: number;
+  // NOTE: no rate fields here intentionally. timesheet_entries carries BILL
+  // rates only (renamed bill_std_rate / bill_ot_rate / bill_dt_rate / bill_total
+  // in migration 20260528b). Payroll must not snapshot bill numbers as if
+  // they were pay — that bug is what motivated the rename. Base pay rate
+  // defaults to 0 on snapshot; the operator fills it in per row on the run
+  // detail page. When the standalone payroll project lands and provides a
+  // real pay-rate source, candidate enrichment swaps in here.
   isHoliday: boolean;
   holidayMultiplier: number | null;
-  totalPay: number;
 };
 
 /** Approved, unpaid timesheet entries that are eligible for a new payroll run.
@@ -118,14 +121,16 @@ export type PayrollCandidateRow = {
  *  row (the partial-unique constraint enforces single-membership). */
 export async function getPayrollCandidates(filters: PayrollCandidateFilters): Promise<PayrollCandidateRow[]> {
   // Pull approved entries, excluding any already in a payroll run.
+  // Intentionally NOT selecting bill_std_rate / bill_ot_rate / bill_dt_rate /
+  // bill_total — those are billing fields and have no business being copied
+  // into payroll snapshots.
   let q = supabase
     .from("timesheet_entries")
     .select(`
       id, work_date, position, first_name, last_name, email, employee_key,
       job_id, job_sheet_id,
       std_hours, ot_hours, dt_hours, total_hours,
-      std_rate, ot_rate, dt_rate,
-      is_holiday, holiday_multiplier, total_pay, status
+      is_holiday, holiday_multiplier, status
     `)
     .eq("status", "approved");
 
@@ -199,12 +204,8 @@ export async function getPayrollCandidates(filters: PayrollCandidateFilters): Pr
       otHours: Number(r.ot_hours ?? 0),
       dtHours: Number(r.dt_hours ?? 0),
       totalHours: Number(r.total_hours ?? 0),
-      stdRate: Number(r.std_rate ?? 0),
-      otRate: Number(r.ot_rate ?? 0),
-      dtRate: Number(r.dt_rate ?? 0),
       isHoliday: !!r.is_holiday,
       holidayMultiplier: r.holiday_multiplier == null ? null : Number(r.holiday_multiplier),
-      totalPay: Number(r.total_pay ?? 0),
     };
   });
 
@@ -313,6 +314,11 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
     });
   if (insErr) throw insErr;
 
+  // Snapshot with pay rates set to 0 — there's no structural pay-rate
+  // source in the system today (the future payroll project owns that;
+  // see project_payroll.md). Operator fills in the base rate per row on
+  // the run detail page; the BaseRateInput editor recomputes OT/DT/total
+  // via updatePayrollRunEntryBaseRate.
   const rows = input.entries.map((e) => ({
     id: newRunEntryId(),
     payroll_run_id: id,
@@ -328,12 +334,12 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
     ot_hours: e.otHours,
     dt_hours: e.dtHours,
     total_hours: e.totalHours,
-    std_rate: e.stdRate,
-    ot_rate: e.otRate,
-    dt_rate: e.dtRate,
+    std_rate: 0,
+    ot_rate:  0,
+    dt_rate:  0,
     is_holiday: e.isHoliday,
     holiday_multiplier: e.holidayMultiplier,
-    total_pay: e.totalPay,
+    total_pay: 0,
   }));
 
   const { error: rowsErr } = await supabase.from("payroll_run_entries").insert(rows);
@@ -369,6 +375,8 @@ export async function addEntriesToPayrollRun(
     throw new Error(`Cannot add entries — run is ${(runRow as any).status}. Reopen it first.`);
   }
 
+  // Same pattern as createPayrollRun: snapshot with pay rates set to 0.
+  // Operator fills them in per row on the run detail page.
   const rows = entries.map((e) => ({
     id: newRunEntryId(),
     payroll_run_id: runId,
@@ -384,12 +392,12 @@ export async function addEntriesToPayrollRun(
     ot_hours: e.otHours,
     dt_hours: e.dtHours,
     total_hours: e.totalHours,
-    std_rate: e.stdRate,
-    ot_rate: e.otRate,
-    dt_rate: e.dtRate,
+    std_rate: 0,
+    ot_rate:  0,
+    dt_rate:  0,
     is_holiday: e.isHoliday,
     holiday_multiplier: e.holidayMultiplier,
-    total_pay: e.totalPay,
+    total_pay: 0,
   }));
   const { error } = await supabase.from("payroll_run_entries").insert(rows);
   if (error) throw error;
@@ -489,6 +497,49 @@ export async function updatePayrollRunEntryBaseRate(
     })
     .eq("id", runEntryId);
   if (error) throw error;
+}
+
+/** Re-normalize every entry on a draft run: OT = std × 1.5, DT = std × 2,
+ *  total_pay recomputed accordingly. Useful after pulling in entries that
+ *  were typed with legacy non-multiplier-consistent rates (35/52/70 etc.).
+ *  Returns the count of rows updated. */
+export async function normalizePayrollRunRates(runId: string): Promise<number> {
+  const { data: runRow, error: runErr } = await supabase
+    .from("payroll_runs").select("status").eq("id", runId).single();
+  if (runErr) throw runErr;
+  if ((runRow as any).status !== "draft") {
+    throw new Error(`Cannot recalculate — run is ${(runRow as any).status}. Reopen it first.`);
+  }
+  const { data, error } = await supabase
+    .from("payroll_run_entries")
+    .select("id, std_hours, ot_hours, dt_hours, total_hours, std_rate, is_holiday, holiday_multiplier")
+    .eq("payroll_run_id", runId);
+  if (error) throw error;
+
+  let updated = 0;
+  for (const r of (data ?? []) as any[]) {
+    const calc = recomputePayFromBase({
+      baseRate: Number(r.std_rate ?? 0),
+      stdHours: Number(r.std_hours ?? 0),
+      otHours:  Number(r.ot_hours  ?? 0),
+      dtHours:  Number(r.dt_hours  ?? 0),
+      totalHours: Number(r.total_hours ?? 0),
+      isHoliday: !!r.is_holiday,
+      holidayMultiplier: r.holiday_multiplier,
+    });
+    const { error: updErr } = await supabase
+      .from("payroll_run_entries")
+      .update({
+        std_rate: calc.stdRate,
+        ot_rate:  calc.otRate,
+        dt_rate:  calc.dtRate,
+        total_pay: calc.totalPay,
+      })
+      .eq("id", r.id);
+    if (updErr) throw updErr;
+    updated += 1;
+  }
+  return updated;
 }
 
 /** Remove an entry from a draft run. The DB freeze trigger blocks this if

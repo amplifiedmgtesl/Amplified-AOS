@@ -71,14 +71,17 @@ export function computeTimeEntry(entry: TimeEntry): TimeEntry {
   const otHours = totalHours > 8 ? Math.min(4, totalHours - 8) : 0;
   const dtHours = totalHours > 12 ? totalHours - 12 : 0;
 
-  // Phase 4: on a holiday row, pay = totalHours × stdRate × multiplier.
-  // OT/OT premium does NOT stack on top — matches the atomic-day, flat-2×
+  // Phase 4: on a holiday row, bill = totalHours × billStdRate × multiplier.
+  // OT/DT premium does NOT stack on top — matches the atomic-day, flat-2×
   // rule in the quote/invoice calc engine (migration #28). On non-holiday
   // rows, the existing ST/OT/DT split applies.
+  //
+  // (Note: these are BILLING totals — what AES bills the client. Pay
+  // totals live separately on payroll_run_entries. Renamed in 20260528b.)
   const mult = entry.isHoliday ? (entry.holidayMultiplier ?? 2.0) : 1;
-  const totalPay = entry.isHoliday
-    ? +(totalHours * entry.stdRate * mult).toFixed(2)
-    : +(stdHours * entry.stdRate + otHours * entry.otRate + dtHours * entry.dtRate).toFixed(2);
+  const billTotal = entry.isHoliday
+    ? +(totalHours * entry.billStdRate * mult).toFixed(2)
+    : +(stdHours * entry.billStdRate + otHours * entry.billOtRate + dtHours * entry.billDtRate).toFixed(2);
 
   return {
     ...entry,
@@ -87,7 +90,7 @@ export function computeTimeEntry(entry: TimeEntry): TimeEntry {
     otHours: +otHours.toFixed(2),
     dtHours: +dtHours.toFixed(2),
     totalHours: +totalHours.toFixed(2),
-    totalPay
+    billTotal,
   };
 }
 
@@ -151,10 +154,10 @@ export function blankTimeEntry(id: string): TimeEntry {
     otHours: 0,
     dtHours: 0,
     totalHours: 0,
-    stdRate: 35,
-    otRate: 52,
-    dtRate: 70,
-    totalPay: 0,
+    billStdRate: 35,
+    billOtRate: 52,
+    billDtRate: 70,
+    billTotal: 0,
     status: "submitted",
     isHoliday: false,
     holidayMultiplier: null,
@@ -180,7 +183,7 @@ export function summarizeTimesheet(
     specialtyId: string | null;
     workers: number;
     stdHours: number; otHours: number; dtHours: number;
-    totalHours: number; totalPay: number;
+    totalHours: number; billTotal: number;
   };
   const map = new Map<string, Agg>();
   const rows = filter ? timesheet.rows.filter(filter) : timesheet.rows;
@@ -197,7 +200,7 @@ export function summarizeTimesheet(
         specialtyId: r.specialtyId ?? null,
         workers: 0,
         stdHours: 0, otHours: 0, dtHours: 0,
-        totalHours: 0, totalPay: 0,
+        totalHours: 0, billTotal: 0,
       });
     }
     const agg = map.get(key)!;
@@ -206,7 +209,7 @@ export function summarizeTimesheet(
     agg.otHours += r.otHours;
     agg.dtHours += r.dtHours;
     agg.totalHours += r.totalHours;
-    agg.totalPay += r.totalPay;
+    agg.billTotal += r.billTotal;
   });
   return Array.from(map.values()).map((r)=>({
     ...r,
@@ -214,6 +217,6 @@ export function summarizeTimesheet(
     otHours:+r.otHours.toFixed(2),
     dtHours:+r.dtHours.toFixed(2),
     totalHours:+r.totalHours.toFixed(2),
-    totalPay:+r.totalPay.toFixed(2),
+    billTotal:+r.billTotal.toFixed(2),
   }));
 }

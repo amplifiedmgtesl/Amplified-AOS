@@ -594,9 +594,9 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
     const rows = timesheet?.rows || [];
     return rows.reduce((acc, r) => {
       acc.stdHours += r.stdHours; acc.otHours += r.otHours; acc.dtHours += r.dtHours;
-      acc.totalHours += r.totalHours; acc.totalPay += r.totalPay;
+      acc.totalHours += r.totalHours; acc.billTotal += r.billTotal;
       return acc;
-    }, { stdHours:0, otHours:0, dtHours:0, totalHours:0, totalPay:0 });
+    }, { stdHours:0, otHours:0, dtHours:0, totalHours:0, billTotal:0 });
   }, [timesheet]);
 
   // Unique dates touched by any row (workDate + endDate covers cross-midnight
@@ -826,10 +826,10 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                   <col className="col-hidden" />{/* DT HRS */}
                   <col className="col-hidden" />{/* TOTAL HRS */}
                   {showPay && <>
-                    <col className="col-hidden" />{/* STD RATE */}
-                    <col className="col-hidden" />{/* OT RATE */}
-                    <col className="col-hidden" />{/* DT RATE */}
-                    <col className="col-hidden" />{/* TOTAL PAY */}
+                    <col className="col-hidden" />{/* STD BILL */}
+                    <col className="col-hidden" />{/* OT BILL */}
+                    <col className="col-hidden" />{/* DT BILL */}
+                    <col className="col-hidden" />{/* TOTAL BILL */}
                   </>}
                   <col className="col-hidden" />{/* Action */}
                 </colgroup>
@@ -869,10 +869,10 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     <th className="hide-print">DT HRS</th>
                     <th className="hide-print">TOTAL HRS</th>
                     {showPay ? <>
-                      <th className="hide-print">STD RATE</th>
-                      <th className="hide-print">OT RATE</th>
-                      <th className="hide-print">DT RATE</th>
-                      <th className="hide-print">TOTAL PAY</th>
+                      <th className="hide-print" title="Billing rate (not pay). Pay lives on the Payroll screen.">STD BILL</th>
+                      <th className="hide-print" title="Billing rate (not pay). Pay lives on the Payroll screen.">OT BILL</th>
+                      <th className="hide-print" title="Billing rate (not pay). Pay lives on the Payroll screen.">DT BILL</th>
+                      <th className="hide-print" title="Billing total = hours × billing rates. Pay total lives on the Payroll screen.">TOTAL BILL</th>
                     </> : null}
                   </tr>
                 </thead>
@@ -1134,14 +1134,14 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       <td className="hide-print">{row.totalHours.toFixed(2)}</td>
                       {showPay ? (
                         <>
-                          <td className="hide-print"><select className="input-tight" disabled={isLocked} value={row.stdRate} onChange={(e)=>updateRow(row.id, { stdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print"><select className="input-tight" disabled={isLocked} value={row.billStdRate} onChange={(e)=>updateRow(row.id, { billStdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
                           {/* Phase 4: OT/DT rates are inert on holiday rows
-                              (pay = totalHours × stdRate × multiplier). Disable
+                              (bill = totalHours × billStdRate × multiplier). Disable
                               the selects so the operator doesn't think tweaking
                               them changes anything. */}
-                          <td className="hide-print"><select className="input-tight" disabled={isLocked || !!row.isHoliday} value={row.otRate} onChange={(e)=>updateRow(row.id, { otRate:Number(e.target.value) })} title={row.isHoliday ? "Inert on holiday rows — pay uses base × multiplier" : ""}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td className="hide-print"><select className="input-tight" disabled={isLocked || !!row.isHoliday} value={row.dtRate} onChange={(e)=>updateRow(row.id, { dtRate:Number(e.target.value) })} title={row.isHoliday ? "Inert on holiday rows — pay uses base × multiplier" : ""}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td className="hide-print">${row.totalPay.toFixed(2)}</td>
+                          <td className="hide-print"><select className="input-tight" disabled={isLocked || !!row.isHoliday} value={row.billOtRate} onChange={(e)=>updateRow(row.id, { billOtRate:Number(e.target.value) })} title={row.isHoliday ? "Inert on holiday rows — bill uses base × multiplier" : ""}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print"><select className="input-tight" disabled={isLocked || !!row.isHoliday} value={row.billDtRate} onChange={(e)=>updateRow(row.id, { billDtRate:Number(e.target.value) })} title={row.isHoliday ? "Inert on holiday rows — bill uses base × multiplier" : ""}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
+                          <td className="hide-print">${row.billTotal.toFixed(2)}</td>
                         </>
                       ) : null}
                     </tr>
@@ -1158,7 +1158,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     <th>{totals.otHours.toFixed(2)}</th>
                     <th>{totals.dtHours.toFixed(2)}</th>
                     <th>{totals.totalHours.toFixed(2)}</th>
-                    {showPay ? <><th></th><th></th><th></th><th>${totals.totalPay.toFixed(2)}</th></> : null}
+                    {showPay ? <><th></th><th></th><th></th><th>${totals.billTotal.toFixed(2)}</th></> : null}
                     <th></th>
                   </tr>
                 </tfoot>
@@ -1174,7 +1174,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table>
-                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hidePayAlways && <th>Total Pay</th>}</tr></thead>
+                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hidePayAlways && <th>Total Bill</th>}</tr></thead>
                   <tbody>
                     {summary.length === 0 ? (
                       <tr><td colSpan={hidePayAlways ? 6 : 7} className="muted" style={{ textAlign: "center" }}>No entries.</td></tr>
@@ -1186,7 +1186,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         <td>{r.otHours.toFixed(2)}</td>
                         <td>{r.dtHours.toFixed(2)}</td>
                         <td>{r.totalHours.toFixed(2)}</td>
-                        {!hidePayAlways && <td>${r.totalPay.toFixed(2)}</td>}
+                        {!hidePayAlways && <td>${r.billTotal.toFixed(2)}</td>}
                       </tr>
                     ))}
                   </tbody>
@@ -1201,7 +1201,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table>
-                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hidePayAlways && <th>Total Pay</th>}</tr></thead>
+                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hidePayAlways && <th>Total Bill</th>}</tr></thead>
                   <tbody>
                     {approvedSummary.length === 0 ? (
                       <tr><td colSpan={hidePayAlways ? 6 : 7} className="muted" style={{ textAlign: "center" }}>No approved entries yet.</td></tr>
@@ -1213,7 +1213,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         <td>{r.otHours.toFixed(2)}</td>
                         <td>{r.dtHours.toFixed(2)}</td>
                         <td>{r.totalHours.toFixed(2)}</td>
-                        {!hidePayAlways && <td>${r.totalPay.toFixed(2)}</td>}
+                        {!hidePayAlways && <td>${r.billTotal.toFixed(2)}</td>}
                       </tr>
                     ))}
                   </tbody>

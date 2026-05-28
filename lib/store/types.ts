@@ -94,10 +94,18 @@ export type TimeEntry = {
   otHours: number;
   dtHours: number;
   totalHours: number;
-  stdRate: number;
-  otRate: number;
-  dtRate: number;
-  totalPay: number;
+  // ─── Billing rates (NOT pay rates) ────────────────────────────────────
+  // These are the rates AES bills the client. Same multiplier shape as the
+  // rate card (OT = 1.5× std, DT = 2× std, per Connor) but admin-typed
+  // per row today (no automatic source). billTotal = computed bill total
+  // for this entry (hours × bill rates). Renamed from std_rate/ot_rate/
+  // dt_rate/total_pay in migration 20260528b so the names no longer imply
+  // pay-side. Pay rates live separately on payroll_run_entries — see
+  // lib/store/payroll.ts.
+  billStdRate: number;
+  billOtRate: number;
+  billDtRate: number;
+  billTotal: number;
   employeeKey?: string | null; // links to employees table
   userId?: string | null;      // set for staff-submitted entries
   status?: string | null;      // null=admin-created, submitted|approved|rejected for staff entries

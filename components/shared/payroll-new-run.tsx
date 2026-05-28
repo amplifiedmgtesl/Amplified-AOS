@@ -111,16 +111,18 @@ export default function PayrollNewRun() {
   }, [rows]);
 
   const totals = useMemo(() => {
-    let entries = 0, hours = 0, pay = 0;
+    let entries = 0, hours = 0;
     const employeeSet = new Set<string>();
     for (const r of rows) {
       if (excludedIds.has(r.timesheetEntryId)) continue;
       entries += 1;
       hours += r.totalHours;
-      pay += r.totalPay;
       if (r.employeeKey) employeeSet.add(r.employeeKey);
     }
-    return { entries, hours, pay, employees: employeeSet.size };
+    // Pay totals are intentionally absent here — candidate rows carry hours
+    // only. Pay rates get filled in per row on the run detail page after
+    // creation; the run header recomputes totals via the DB trigger.
+    return { entries, hours, employees: employeeSet.size };
   }, [rows, excludedIds]);
 
   function toggleRow(entryId: string) {
@@ -229,19 +231,20 @@ export default function PayrollNewRun() {
               <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
                 <strong>{totals.entries}</strong> entr{totals.entries === 1 ? "y" : "ies"} ·{" "}
                 <strong>{totals.employees}</strong> employees ·{" "}
-                <strong>{totals.hours.toFixed(1)}</strong> hrs ·{" "}
-                <strong>${totals.pay.toFixed(2)}</strong> pay
+                <strong>{totals.hours.toFixed(1)}</strong> hrs
                 {excludedIds.size > 0 && (
                   <span style={{ marginLeft: 8 }}>
                     ({excludedIds.size} excluded)
                   </span>
                 )}
+                <span style={{ marginLeft: 8, fontStyle: "italic" }}>
+                  · pay rates assigned on the run detail page
+                </span>
               </div>
 
               {grouped.map((g) => {
                 const groupExcluded = g.rows.every((r) => excludedIds.has(r.timesheetEntryId));
                 const groupPartial = !groupExcluded && g.rows.some((r) => excludedIds.has(r.timesheetEntryId));
-                const groupTotalsPay = g.rows.reduce((s, r) => s + (excludedIds.has(r.timesheetEntryId) ? 0 : r.totalPay), 0);
                 const groupTotalsHrs = g.rows.reduce((s, r) => s + (excludedIds.has(r.timesheetEntryId) ? 0 : r.totalHours), 0);
                 return (
                   <div key={g.label + (g.employeeKey ?? "")} style={{ marginBottom: 14, border: "1px solid #eee", borderRadius: 6 }}>
@@ -257,7 +260,7 @@ export default function PayrollNewRun() {
                         <span className="muted" style={{ fontSize: 12 }}>({g.rows.length} entr{g.rows.length === 1 ? "y" : "ies"})</span>
                       </label>
                       <div style={{ fontSize: 13 }}>
-                        <strong>{groupTotalsHrs.toFixed(1)}</strong> hrs · <strong>${groupTotalsPay.toFixed(2)}</strong>
+                        <strong>{groupTotalsHrs.toFixed(1)}</strong> hrs
                       </div>
                     </div>
                     <div className="table-scroll">
@@ -272,7 +275,6 @@ export default function PayrollNewRun() {
                             <th style={{ textAlign: "right" }}>OT</th>
                             <th style={{ textAlign: "right" }}>DT</th>
                             <th style={{ textAlign: "right" }}>Total</th>
-                            <th style={{ textAlign: "right" }}>Pay</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -290,7 +292,6 @@ export default function PayrollNewRun() {
                                 <td style={{ textAlign: "right" }}>{r.otHours > 0 ? r.otHours.toFixed(1) : "—"}</td>
                                 <td style={{ textAlign: "right" }}>{r.dtHours > 0 ? r.dtHours.toFixed(1) : "—"}</td>
                                 <td style={{ textAlign: "right" }}><strong>{r.totalHours.toFixed(1)}</strong></td>
-                                <td style={{ textAlign: "right" }}>${r.totalPay.toFixed(2)}</td>
                               </tr>
                             );
                           })}
@@ -329,7 +330,7 @@ export default function PayrollNewRun() {
           </div>
           <div className="action-row" style={{ marginTop: 12, justifyContent: "space-between", alignItems: "center" }}>
             <div className="muted" style={{ fontSize: 13 }}>
-              Will create a <strong>draft</strong> run with <strong>{totals.entries}</strong> entr{totals.entries === 1 ? "y" : "ies"} totaling <strong>${totals.pay.toFixed(2)}</strong>.
+              Will create a <strong>draft</strong> run with <strong>{totals.entries}</strong> entr{totals.entries === 1 ? "y" : "ies"} ({totals.hours.toFixed(1)} hrs). Pay rates assigned per row on the run detail page.
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <Link href="/payroll" className="button secondary">Cancel</Link>

@@ -130,9 +130,9 @@ export default function TimesheetReview() {
       (acc, r) => ({
         entries: acc.entries + 1,
         hours: acc.hours + r.totalHours,
-        pay: acc.pay + r.totalPay,
+        bill: acc.bill + r.billTotal,
       }),
-      { entries: 0, hours: 0, pay: 0 }
+      { entries: 0, hours: 0, bill: 0 }
     );
   }, [filtered]);
 
@@ -288,7 +288,7 @@ export default function TimesheetReview() {
             <>
               <strong>{totals.entries}</strong> entr{totals.entries === 1 ? "y" : "ies"} ·{" "}
               <strong>{totals.hours.toFixed(1)}</strong> hrs ·{" "}
-              <strong>${totals.pay.toFixed(2)}</strong> pay
+              <strong>${totals.bill.toFixed(2)}</strong> bill
             </>
           )}
         </div>
@@ -345,7 +345,7 @@ export default function TimesheetReview() {
               <th>OT</th>
               <th>DT</th>
               <th>Total</th>
-              <th>Pay</th>
+              <th title="Billing total — what AES bills the client. Pay totals live on the Payroll screen.">Bill</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -385,7 +385,7 @@ export default function TimesheetReview() {
                 <td>{r.otHours > 0 ? r.otHours.toFixed(1) : "—"}</td>
                 <td>{r.dtHours > 0 ? r.dtHours.toFixed(1) : "—"}</td>
                 <td><strong>{r.totalHours.toFixed(1)}</strong></td>
-                <td>${r.totalPay.toFixed(2)}</td>
+                <td>${r.billTotal.toFixed(2)}</td>
                 <td>{statusBadge(r)}{payrollLockBadge(r)}</td>
               </tr>
               );

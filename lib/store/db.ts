@@ -565,7 +565,10 @@ export interface StaffEntryReviewRow {
   otHours: number;
   dtHours: number;
   totalHours: number;
-  totalPay: number;
+  /** Billing total for the entry (hours × bill rates). NOT pay. Renamed
+   *  from `totalPay` to match the rate-column rename in migration
+   *  20260528b — pay rates live on payroll_run_entries, not here. */
+  billTotal: number;
   status: string | null;
   notes: string;
   updatedAt: string;
@@ -582,7 +585,7 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
       id, work_date, position, first_name, last_name, email, employee_key, user_id,
       job_sheet_id, job_id, invoice_line_id, timesheet_id, time_in1, time_out1, time_in2, time_out2,
       meal_break_1_minutes, meal_break_2_minutes,
-      std_hours, ot_hours, dt_hours, total_hours, total_pay,
+      std_hours, ot_hours, dt_hours, total_hours, bill_total,
       status, notes, updated_at
     `)
     .order("updated_at", { ascending: false });
@@ -640,7 +643,7 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
     otHours: Number(r.ot_hours ?? 0),
     dtHours: Number(r.dt_hours ?? 0),
     totalHours: Number(r.total_hours ?? 0),
-    totalPay: Number(r.total_pay ?? 0),
+    billTotal: Number(r.bill_total ?? 0),
     status: r.status ?? null,
     notes: r.notes ?? "",
     updatedAt: r.updated_at ?? "",
@@ -785,7 +788,7 @@ export async function pullApprovedTimesheetSummary(jobSheetId: string): Promise<
 }>> {
   const { data, error } = await supabase
     .from("timesheet_entries")
-    .select("position, employee_key, std_hours, ot_hours, dt_hours, total_hours, total_pay")
+    .select("position, employee_key, std_hours, ot_hours, dt_hours, total_hours, bill_total")
     .eq("job_sheet_id", jobSheetId)
     .eq("status", "approved");
   if (error) { console.error("[db] pullApprovedTimesheetSummary:", error); return []; }
@@ -817,7 +820,11 @@ export async function pullApprovedTimesheetSummary(jobSheetId: string): Promise<
     entry.otHours    += Number(row.ot_hours    ?? 0);
     entry.dtHours    += Number(row.dt_hours    ?? 0);
     entry.totalHours += Number(row.total_hours ?? 0);
-    entry.totalPay   += Number(row.total_pay   ?? 0);
+    // Field renamed bill_total in migration 20260528b. Output key stays
+    // `totalPay` for now — that name lives on InvoiceDraft.timesheetSummary
+    // and renaming it cascades through every invoice display. Functionally
+    // it has always been a billing number, not pay.
+    entry.totalPay   += Number(row.bill_total  ?? 0);
   }
 
   return Array.from(map.entries()).map(([position, v]) => ({
@@ -1226,10 +1233,14 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     otHours: Number(r.ot_hours ?? 0),
     dtHours: Number(r.dt_hours ?? 0),
     totalHours: Number(r.total_hours ?? 0),
-    stdRate: Number(r.std_rate) || 35,
-    otRate: Number(r.ot_rate) || 52,
-    dtRate: Number(r.dt_rate) || 70,
-    totalPay: Number(r.total_pay ?? 0),
+    // Billing rates — renamed from std_rate/ot_rate/dt_rate/total_pay in
+    // migration 20260528b. NOT pay rates. The 35/52/70 default mirrors
+    // the legacy placeholder used by blankTimeEntry — operator overrides
+    // per row as needed.
+    billStdRate: Number(r.bill_std_rate) || 35,
+    billOtRate: Number(r.bill_ot_rate) || 52,
+    billDtRate: Number(r.bill_dt_rate) || 70,
+    billTotal: Number(r.bill_total ?? 0),
     employeeKey: r.employee_key ?? null,
     userId: r.user_id ?? null,
     status: r.status ?? null,
@@ -1283,10 +1294,10 @@ function timesheetEntryToRow(
     ot_hours: e.otHours,
     dt_hours: e.dtHours,
     total_hours: e.totalHours,
-    std_rate: e.stdRate,
-    ot_rate: e.otRate,
-    dt_rate: e.dtRate,
-    total_pay: e.totalPay,
+    bill_std_rate: e.billStdRate,
+    bill_ot_rate:  e.billOtRate,
+    bill_dt_rate:  e.billDtRate,
+    bill_total:    e.billTotal,
     sort_order: sortOrder,
     status: e.status ?? null,
     updated_at: new Date().toISOString(),

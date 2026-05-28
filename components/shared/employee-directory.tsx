@@ -335,7 +335,9 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
               .map((ts) => ({ ts, entries: ts.rows.filter((r) => r.employeeKey === activeEmployee.employeeKey) }))
               .filter((x) => x.entries.length > 0);
             const totalHours = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalHours, 0), 0);
-            const totalPay = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalPay, 0), 0);
+            // billTotal renamed from totalPay in 20260528b — these are billing
+            // numbers, not pay. Pay totals live on payroll_run_entries.
+            const totalPay = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.billTotal, 0), 0);
             return (
               <div style={{ marginTop: 16 }}>
                 <div className="action-row" style={{ marginBottom: 8 }}>
@@ -458,18 +460,19 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
                 .filter((x) => x.entries.length > 0)
                 .sort((a, b) => b.ts.id.localeCompare(a.ts.id));
               const totalHours = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalHours, 0), 0);
-              const totalPay   = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalPay, 0), 0);
+              // Billing totals (renamed in 20260528b). Labels updated to "Bill".
+              const totalBill  = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.billTotal, 0), 0);
               return (
                 <>
                   <div className={hidePay ? "grid2" : "grid3"} style={{ marginBottom: 16 }}>
                     <div className="metric-card"><div className="metric-label">Timesheets</div><div className="metric-value">{tsWithEntries.length}</div></div>
                     <div className="metric-card"><div className="metric-label">Total Hours</div><div className="metric-value">{totalHours.toFixed(1)}</div></div>
                     {!hidePay && (
-                      <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
+                      <div className="metric-card"><div className="metric-label">Total Bill</div><div className="metric-value">${totalBill.toFixed(2)}</div></div>
                     )}
                   </div>
                   <table>
-                    <thead><tr><th>Timesheet</th><th>Position</th><th>Std Hrs</th><th>OT Hrs</th><th>DT Hrs</th><th>Total Hrs</th>{!hidePay && <th>Total Pay</th>}</tr></thead>
+                    <thead><tr><th>Timesheet</th><th>Position</th><th>Std Hrs</th><th>OT Hrs</th><th>DT Hrs</th><th>Total Hrs</th>{!hidePay && <th>Total Bill</th>}</tr></thead>
                     <tbody>
                       {tsWithEntries.map(({ ts, entries }) =>
                         entries.map((r) => (
@@ -480,7 +483,7 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
                             <td>{r.otHours.toFixed(1)}</td>
                             <td>{r.dtHours.toFixed(1)}</td>
                             <td>{r.totalHours.toFixed(1)}</td>
-                            {!hidePay && <td>${r.totalPay.toFixed(2)}</td>}
+                            {!hidePay && <td>${r.billTotal.toFixed(2)}</td>}
                           </tr>
                         ))
                       )}

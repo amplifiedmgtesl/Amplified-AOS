@@ -11,6 +11,7 @@ import {
   removeEntryFromRun,
   updatePayrollRunMeta,
   updatePayrollRunEntryBaseRate,
+  normalizePayrollRunRates,
   getPayrollCandidates,
   addEntriesToPayrollRun,
   PAYROLL_OT_MULTIPLIER,
@@ -102,7 +103,8 @@ function AddEntriesPanel({
   const totals = {
     entries: included.length,
     hours: included.reduce((s, r) => s + r.totalHours, 0),
-    pay:   included.reduce((s, r) => s + r.totalPay, 0),
+    // Pay totals come from the snapshot AFTER add — operator types rates
+    // per row on the run detail page. Candidate rows carry hours only.
   };
 
   async function handleAdd() {
@@ -181,9 +183,9 @@ function AddEntriesPanel({
                 <>
                   <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
                     <strong>{totals.entries}</strong> selected ·{" "}
-                    <strong>{totals.hours.toFixed(1)}</strong> hrs ·{" "}
-                    <strong>${totals.pay.toFixed(2)}</strong>
+                    <strong>{totals.hours.toFixed(1)}</strong> hrs
                     {excluded.size > 0 && <span> ({excluded.size} excluded)</span>}
+                    <span style={{ marginLeft: 8, fontStyle: "italic" }}>· pay rates set after add</span>
                   </div>
                   <div className="table-scroll" style={{ maxHeight: 320, overflowY: "auto" }}>
                     <table style={{ marginBottom: 0 }}>
@@ -195,7 +197,6 @@ function AddEntriesPanel({
                           <th>Job</th>
                           <th>Position</th>
                           <th style={{ textAlign: "right" }}>Total</th>
-                          <th style={{ textAlign: "right" }}>Pay</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -224,7 +225,6 @@ function AddEntriesPanel({
                               </td>
                               <td>{r.position || "—"}</td>
                               <td style={{ textAlign: "right" }}><strong>{r.totalHours.toFixed(1)}</strong></td>
-                              <td style={{ textAlign: "right" }}>${r.totalPay.toFixed(2)}</td>
                             </tr>
                           );
                         })}
@@ -392,6 +392,25 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
     catch (e: any) { alert(`Void failed: ${e?.message ?? "unknown error"}`); }
     finally { setBusy(null); }
   }
+  async function handleNormalizeRates() {
+    if (!isDraft) return;
+    if (!confirm(
+      `Recalculate every entry's OT and DT from the base rate?\n\n` +
+      `OT = base × ${PAYROLL_OT_MULTIPLIER}\n` +
+      `DT = base × ${PAYROLL_DT_MULTIPLIER}\n` +
+      `Holiday rows: base × holiday multiplier (no OT/DT stack).\n\n` +
+      `Total pay updates accordingly.`
+    )) return;
+    setBusy("normalize");
+    try {
+      const n = await normalizePayrollRunRates(runId);
+      await load();
+      alert(`Recalculated ${n} entr${n === 1 ? "y" : "ies"}.`);
+    } catch (e: any) {
+      alert(`Recalculate failed: ${e?.message ?? "unknown error"}`);
+    } finally { setBusy(null); }
+  }
+
   async function handleSaveBaseRate(runEntryId: string, baseRate: number) {
     if (!isDraft) return;
     if (!isFinite(baseRate) || baseRate < 0) {
@@ -449,6 +468,14 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
           </button>
           {isDraft && (
             <>
+              <button
+                className="secondary"
+                onClick={handleNormalizeRates}
+                disabled={!!busy || entries.length === 0}
+                title={`Force OT = base × ${PAYROLL_OT_MULTIPLIER}, DT = base × ${PAYROLL_DT_MULTIPLIER} on every entry. Useful when the snapshot pulled in legacy non-multiplier-consistent rates.`}
+              >
+                {busy === "normalize" ? "Recalculating…" : "🔁 Recalculate rates"}
+              </button>
               <button onClick={handleFinalize} disabled={!!busy || entries.length === 0}>
                 {busy === "finalize" ? "Finalizing…" : "Finalize"}
               </button>

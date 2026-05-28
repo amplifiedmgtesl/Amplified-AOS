@@ -170,7 +170,11 @@ function summarizeTimeEntries(rows: TimeEntry[]) {
     agg.st += Number(r.stdHours || 0);
     agg.ot += Number(r.otHours || 0);
     agg.dt += Number(r.dtHours || 0);
-    agg.avgPay += Number(r.stdRate || 0);
+    // Field renamed billStdRate in 20260528b. Note: `avgPay` is a misnomer —
+    // timesheet rates have always been bill-side, not pay. The job-costing
+    // module has its own per-line pay/bill rates; this aggregate is just a
+    // rough average of the rates currently on the timesheet rows.
+    agg.avgPay += Number(r.billStdRate || 0);
     agg.count += 1;
   });
   return Array.from(map.values()).map((r) => ({
