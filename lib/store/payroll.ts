@@ -231,6 +231,48 @@ export async function getPayrollRun(id: string): Promise<PayrollRun | null> {
   return data ? rowToRun(data) : null;
 }
 
+/** Time/meal fields fetched live from timesheet_entries for the print view.
+ *  Keyed by timesheet_entry_id. Used to enrich the print output without
+ *  bloating the payroll_run_entries snapshot (timesheet_entries are frozen
+ *  once approved, so these values are stable for the life of an active run).
+ */
+export type PayrollRunPrintExtras = {
+  timeIn1: string;
+  timeOut1: string;
+  timeIn2: string;
+  timeOut2: string;
+  mealBreak1Minutes: number;
+  mealBreak2Minutes: number;
+};
+
+export async function getPayrollRunPrintExtras(runId: string): Promise<Map<string, PayrollRunPrintExtras>> {
+  const { data: refs, error: refsErr } = await supabase
+    .from("payroll_run_entries")
+    .select("timesheet_entry_id")
+    .eq("payroll_run_id", runId);
+  if (refsErr) { console.error("[payroll] print extras refs:", refsErr); return new Map(); }
+  const ids = (refs ?? []).map((r: any) => r.timesheet_entry_id);
+  if (ids.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from("timesheet_entries")
+    .select("id, time_in1, time_out1, time_in2, time_out2, meal_break_1_minutes, meal_break_2_minutes")
+    .in("id", ids);
+  if (error) { console.error("[payroll] print extras:", error); return new Map(); }
+  const m = new Map<string, PayrollRunPrintExtras>();
+  for (const r of data ?? []) {
+    const row = r as any;
+    m.set(row.id, {
+      timeIn1: row.time_in1 ?? "",
+      timeOut1: row.time_out1 ?? "",
+      timeIn2: row.time_in2 ?? "",
+      timeOut2: row.time_out2 ?? "",
+      mealBreak1Minutes: Number(row.meal_break_1_minutes ?? 0),
+      mealBreak2Minutes: Number(row.meal_break_2_minutes ?? 0),
+    });
+  }
+  return m;
+}
+
 export async function getPayrollRunEntries(runId: string): Promise<PayrollRunEntry[]> {
   const { data, error } = await supabase
     .from("payroll_run_entries")
