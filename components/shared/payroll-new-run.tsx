@@ -16,8 +16,11 @@ function fullName(r: PayrollCandidateRow) {
 
 function jobLabel(r: PayrollCandidateRow): string {
   if (!r.jobId) return "Office / Remote";
-  const parts = [r.jobNo, r.jobClient, r.jobEventName].filter(Boolean);
-  return parts.join(" — ") || "(untitled job)";
+  // Job number alone is sufficient — encodes client + event + date.
+  // Fall back to client/event only for legacy jobs without a code.
+  return r.jobNo
+    || [r.jobClient, r.jobEventName].filter(Boolean).join(" — ")
+    || "(untitled job)";
 }
 
 export default function PayrollNewRun() {
@@ -75,7 +78,9 @@ export default function PayrollNewRun() {
         .filter((j) => j.id)
         .map((j) => ({
           id: j.id,
-          label: [j.jobNo, j.client, j.eventName].filter(Boolean).join(" — ") || "(untitled)",
+          // job_no is enough — it encodes client + event + date. Fall
+          // back to client/event for legacy jobs without a generated code.
+          label: j.jobNo || [j.client, j.eventName].filter(Boolean).join(" — ") || "(untitled)",
         }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     );

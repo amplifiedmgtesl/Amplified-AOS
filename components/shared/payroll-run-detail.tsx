@@ -58,6 +58,7 @@ function AddEntriesPanel({
   const [open, setOpen] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [jobFilter, setJobFilter] = useState("");
   const [employmentType, setEmploymentType] = useState<"" | "staff" | "contractor">("");
   const [rows, setRows] = useState<PayrollCandidateRow[]>([]);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
@@ -67,12 +68,28 @@ function AddEntriesPanel({
 
   const existingSet = useMemo(() => new Set(existingTimesheetIds), [existingTimesheetIds]);
 
+  // Job options for the dropdown — same source as the New Run wizard.
+  // Loaded from the in-memory job_requests cache.
+  const jobOptions = useMemo(() => {
+    return loadJobRequests()
+      .filter((j) => j.id)
+      .map((j) => ({
+        id: j.id,
+        // Job number is sufficient to identify the event — keep the
+        // dropdown label compact. Fall back to client+event for jobs
+        // that don't yet have a generated job_no.
+        label: j.jobNo || [j.client, j.eventName].filter(Boolean).join(" — ") || "(untitled)",
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, []);
+
   async function runSearch() {
     setLoading(true);
     try {
       const data = await getPayrollCandidates({
         dateFrom: dateFrom || undefined,
         dateTo:   dateTo   || undefined,
+        jobIds:   jobFilter ? [jobFilter] : undefined,
         employmentType: employmentType || undefined,
       });
       // Hide entries already on this run (belt-and-suspenders — the
@@ -126,7 +143,7 @@ function AddEntriesPanel({
             Pulls approved timesheet entries that aren't already on a payroll run.
             Use to grab anything approved after this run was created.
           </div>
-          <div className="grid" style={{ gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+          <div className="grid" style={{ gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
             <div>
               <small>From date</small>
               <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
@@ -134,6 +151,13 @@ function AddEntriesPanel({
             <div>
               <small>To date</small>
               <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+            </div>
+            <div>
+              <small>Job</small>
+              <select value={jobFilter} onChange={(e) => setJobFilter(e.target.value)}>
+                <option value="">— Any job —</option>
+                {jobOptions.map((j) => <option key={j.id} value={j.id}>{j.label}</option>)}
+              </select>
             </div>
             <div>
               <small>Employment type</small>
@@ -196,13 +220,10 @@ function AddEntriesPanel({
                               </td>
                               <td>{r.workDate || "—"}{r.isHoliday && <span className="badge" style={{ marginLeft: 6, background: "#ffe9c2", color: "#7a4a1a", fontSize: 11 }}>Holiday</span>}</td>
                               <td>{`${r.firstName} ${r.lastName}`.trim() || r.email || "—"}</td>
-                              <td>
-                                {r.jobId ? (
-                                  <>
-                                    <span style={{ fontFamily: "monospace", fontSize: 12 }}>{r.jobNo ?? r.jobId}</span>
-                                    {r.jobEventName && <span className="muted" style={{ fontSize: 11, marginLeft: 6 }}>{r.jobEventName}</span>}
-                                  </>
-                                ) : <span className="muted">Office / Remote</span>}
+                              <td style={{ fontFamily: "monospace", fontSize: 12 }}>
+                                {r.jobId
+                                  ? (r.jobNo ?? r.jobId)
+                                  : <span className="muted" style={{ fontFamily: "inherit" }}>Office / Remote</span>}
                               </td>
                               <td>{r.position || "—"}</td>
                               <td style={{ textAlign: "right" }}><strong>{r.totalHours.toFixed(1)}</strong></td>
@@ -608,19 +629,10 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                         return (
                         <tr key={r.id}>
                           <td>{r.workDate || "—"}{r.isHoliday && <span className="badge" style={{ marginLeft: 6, background: "#ffe9c2", color: "#7a4a1a", fontSize: 11 }}>Holiday {mult}×</span>}</td>
-                          <td>
-                            {r.jobId ? (() => {
-                              const info = jobInfoById.get(r.jobId);
-                              const code = info?.jobNo ?? r.jobId;
-                              return (
-                                <>
-                                  <div style={{ fontFamily: "monospace", fontSize: 12 }}>{code}</div>
-                                  {info?.label && (
-                                    <div className="muted" style={{ fontSize: 11 }}>{info.label}</div>
-                                  )}
-                                </>
-                              );
-                            })() : <span className="muted">Office / Remote</span>}
+                          <td style={{ fontFamily: "monospace", fontSize: 12 }}>
+                            {r.jobId
+                              ? (jobInfoById.get(r.jobId)?.jobNo ?? r.jobId)
+                              : <span className="muted" style={{ fontFamily: "inherit" }}>Office / Remote</span>}
                           </td>
                           <td>{r.position || "—"}</td>
                           <td style={{ textAlign: "right" }}>{r.stdHours.toFixed(1)}</td>
@@ -734,19 +746,8 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                 <td style={{ padding: "3px 5px" }}>{fmtDay(r.workDate || "")}{r.isHoliday && " 🎄"}</td>
                 <td style={{ padding: "3px 5px" }}>{`${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || r.email || "—"}</td>
                 <td style={{ padding: "3px 5px" }}>{r.position || ""}</td>
-                <td style={{ padding: "3px 5px" }}>
-                  {r.jobId ? (() => {
-                    const info = jobInfoById.get(r.jobId);
-                    const code = info?.jobNo ?? "";
-                    return (
-                      <>
-                        <span style={{ fontFamily: "monospace" }}>{code}</span>
-                        {info?.eventName && (
-                          <span style={{ marginLeft: 4, color: "#555" }}>· {info.eventName}</span>
-                        )}
-                      </>
-                    );
-                  })() : ""}
+                <td style={{ padding: "3px 5px", fontFamily: "monospace" }}>
+                  {r.jobId ? (jobInfoById.get(r.jobId)?.jobNo ?? "") : ""}
                 </td>
                 <td style={{ padding: "3px 5px" }}>{r.timeIn1}</td>
                 <td style={{ padding: "3px 5px" }}>{r.timeOut1}</td>
