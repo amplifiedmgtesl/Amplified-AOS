@@ -349,6 +349,12 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
     throw rowsErr;
   }
 
+  // Super-freeze: stamp payroll_run_id on each source timesheet_entry so
+  // the freeze trigger blocks edits to the source. Cleared automatically
+  // by the payroll_runs_void_releases_entries trigger on void, or by
+  // removeEntryFromRun on per-entry removal.
+  await stampTimesheetEntriesWithRun(id, input.entries.map((e) => e.timesheetEntryId));
+
   return id;
 }
 
@@ -401,6 +407,10 @@ export async function addEntriesToPayrollRun(
   }));
   const { error } = await supabase.from("payroll_run_entries").insert(rows);
   if (error) throw error;
+
+  // Super-freeze the newly-added source entries.
+  await stampTimesheetEntriesWithRun(runId, entries.map((e) => e.timesheetEntryId));
+
   return rows.length;
 }
 
@@ -417,6 +427,27 @@ export async function updatePayrollRunMeta(
   if (patch.notes       !== undefined) dbPatch.notes        = patch.notes       || null;
   const { error } = await supabase.from("payroll_runs").update(dbPatch).eq("id", id);
   if (error) throw error;
+}
+
+/** Helper: stamp `timesheet_entries.payroll_run_id = runId` on a batch
+ *  of entry IDs. Called when entries are added to a run (createPayrollRun
+ *  / addEntriesToPayrollRun). The freeze trigger uses this column to
+ *  super-freeze the source row while the run is non-voided. Cleared by:
+ *    * removeEntryFromRun — per-entry removal
+ *    * payroll_runs_void_releases_entries (DB trigger) — void cascade
+ */
+async function stampTimesheetEntriesWithRun(runId: string, entryIds: string[]): Promise<void> {
+  if (entryIds.length === 0) return;
+  const { error } = await supabase
+    .from("timesheet_entries")
+    .update({ payroll_run_id: runId })
+    .in("id", entryIds);
+  if (error) {
+    // Don't throw — the snapshot is already saved and totals will compute
+    // correctly. The super-freeze just won't kick in until a follow-up
+    // sync. Log loud so it's visible in the console.
+    console.error("[payroll] stampTimesheetEntriesWithRun:", error);
+  }
 }
 
 // ─── Pay-rate multipliers (Phase 1) ───────────────────────────────────────
@@ -543,13 +574,55 @@ export async function normalizePayrollRunRates(runId: string): Promise<number> {
 }
 
 /** Remove an entry from a draft run. The DB freeze trigger blocks this if
- *  the run is finalized/exported. */
+ *  the run is finalized/exported. Also clears the source entry's
+ *  payroll_run_id so it leaves the super-freeze. */
 export async function removeEntryFromRun(runEntryId: string): Promise<void> {
+  // Look up the timesheet_entry_id before deleting, so we can clear the
+  // source row's payroll_run_id afterwards.
+  const { data: pre, error: lookupErr } = await supabase
+    .from("payroll_run_entries")
+    .select("timesheet_entry_id")
+    .eq("id", runEntryId)
+    .single();
+  if (lookupErr) throw lookupErr;
+  const timesheetEntryId = (pre as any)?.timesheet_entry_id as string | undefined;
+
   const { error } = await supabase.from("payroll_run_entries").delete().eq("id", runEntryId);
   if (error) throw error;
+
+  if (timesheetEntryId) {
+    const { error: clearErr } = await supabase
+      .from("timesheet_entries")
+      .update({ payroll_run_id: null })
+      .eq("id", timesheetEntryId);
+    if (clearErr) console.error("[payroll] removeEntryFromRun clear payroll_run_id:", clearErr);
+  }
+}
+
+/** Count entries on a run that still have a zero pay rate. Used by the
+ *  detail UI to surface a banner + disable the Finalize button, and by
+ *  finalizePayrollRun() as a server-side guard. */
+export async function countUnratedEntries(runId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("payroll_run_entries")
+    .select("id", { count: "exact", head: true })
+    .eq("payroll_run_id", runId)
+    .eq("std_rate", 0);
+  if (error) { console.error("[payroll] countUnratedEntries:", error); return 0; }
+  return count ?? 0;
 }
 
 export async function finalizePayrollRun(id: string): Promise<void> {
+  // Guard: refuse to finalize while any entry still has std_rate = 0.
+  // The operator must set a base pay rate on every row first (the
+  // BaseRateInput on the detail page does this).
+  const unrated = await countUnratedEntries(id);
+  if (unrated > 0) {
+    throw new Error(
+      `Cannot finalize — ${unrated} entr${unrated === 1 ? "y has" : "ies have"} no base pay rate set. ` +
+      `Fill in the Base $/hr for every row first.`
+    );
+  }
   const { error } = await supabase
     .from("payroll_runs")
     .update({ status: "finalized", finalized_at: new Date().toISOString() })

@@ -354,6 +354,12 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
   const isFinalized = run.status === "finalized";
   const isVoided = run.status === "voided";
 
+  // Count entries with no pay rate set — derived locally from the loaded
+  // entries. Used to surface the "needs rates" banner and disable Finalize.
+  // Server-side guard in finalizePayrollRun() covers the race condition.
+  const unratedCount = entries.filter((e) => (e.stdRate ?? 0) === 0).length;
+  const finalizeBlocked = unratedCount > 0;
+
   async function handleSaveMeta() {
     if (!isDraft) return;
     setBusy("save");
@@ -472,11 +478,21 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                 className="secondary"
                 onClick={handleNormalizeRates}
                 disabled={!!busy || entries.length === 0}
-                title={`Force OT = base × ${PAYROLL_OT_MULTIPLIER}, DT = base × ${PAYROLL_DT_MULTIPLIER} on every entry. Useful when the snapshot pulled in legacy non-multiplier-consistent rates.`}
+                title={`Force OT = base × ${PAYROLL_OT_MULTIPLIER}, DT = base × ${PAYROLL_DT_MULTIPLIER} on every entry. Useful after bulk-typing base rates.`}
               >
                 {busy === "normalize" ? "Recalculating…" : "🔁 Recalculate rates"}
               </button>
-              <button onClick={handleFinalize} disabled={!!busy || entries.length === 0}>
+              <button
+                onClick={handleFinalize}
+                disabled={!!busy || entries.length === 0 || finalizeBlocked}
+                title={
+                  entries.length === 0
+                    ? "No entries on this run"
+                    : finalizeBlocked
+                      ? `${unratedCount} entr${unratedCount === 1 ? "y has" : "ies have"} no base pay rate set. Fill in Base $/hr first.`
+                      : "Lock this run — included entries become read-only on the timesheet side."
+                }
+              >
                 {busy === "finalize" ? "Finalizing…" : "Finalize"}
               </button>
               <button className="secondary" onClick={handleVoid} disabled={!!busy} style={{ color: "#a00", borderColor: "#e0a0a0" }}>
@@ -548,6 +564,19 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
           existingTimesheetIds={entries.map((e) => e.timesheetEntryId)}
           onAdded={load}
         />
+      )}
+
+      {/* Banner: needs pay rates before finalize. Draft-only. */}
+      {isDraft && finalizeBlocked && (
+        <div className="card" style={{ background: "#fff4d6", borderColor: "#e0c070" }}>
+          <strong style={{ color: "#7a5a1a" }}>
+            ⚠ {unratedCount} entr{unratedCount === 1 ? "y has" : "ies have"} no base pay rate set.
+          </strong>
+          <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
+            Fill in <strong>Base $/hr</strong> for every row before finalizing. OT and DT will derive
+            automatically (OT = base × {PAYROLL_OT_MULTIPLIER}, DT = base × {PAYROLL_DT_MULTIPLIER}).
+          </div>
+        </div>
       )}
 
       {/* Entries (on-screen view, hidden when printing) */}
