@@ -115,10 +115,15 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
   }
   useEffect(() => { load(); }, [runId]);
 
-  // job_no lookup for nicer entry rows.
-  const jobNoById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const j of loadJobRequests()) if (j.jobNo) m.set(j.id, j.jobNo);
+  // Job lookup for nicer entry rows. We surface jobNo as the primary
+  // identifier (Connor uses it to confirm the event at a glance) plus
+  // a short label "{client} — {eventName}" as secondary text.
+  const jobInfoById = useMemo(() => {
+    const m = new Map<string, { jobNo: string | null; client: string; eventName: string; label: string }>();
+    for (const j of loadJobRequests()) {
+      const label = [j.client, j.eventName].filter(Boolean).join(" — ");
+      m.set(j.id, { jobNo: j.jobNo ?? null, client: j.client ?? "", eventName: j.eventName ?? "", label });
+    }
     return m;
   }, [entries]);
 
@@ -396,7 +401,20 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                         return (
                         <tr key={r.id}>
                           <td>{r.workDate || "—"}{r.isHoliday && <span className="badge" style={{ marginLeft: 6, background: "#ffe9c2", color: "#7a4a1a", fontSize: 11 }}>Holiday {mult}×</span>}</td>
-                          <td>{r.jobId ? (jobNoById.get(r.jobId) ?? r.jobId) : <span className="muted">Office / Remote</span>}</td>
+                          <td>
+                            {r.jobId ? (() => {
+                              const info = jobInfoById.get(r.jobId);
+                              const code = info?.jobNo ?? r.jobId;
+                              return (
+                                <>
+                                  <div style={{ fontFamily: "monospace", fontSize: 12 }}>{code}</div>
+                                  {info?.label && (
+                                    <div className="muted" style={{ fontSize: 11 }}>{info.label}</div>
+                                  )}
+                                </>
+                              );
+                            })() : <span className="muted">Office / Remote</span>}
+                          </td>
                           <td>{r.position || "—"}</td>
                           <td style={{ textAlign: "right" }}>{r.stdHours.toFixed(1)}</td>
                           <td style={{ textAlign: "right" }}>{r.otHours > 0 ? r.otHours.toFixed(1) : "—"}</td>
@@ -509,7 +527,20 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                 <td style={{ padding: "3px 5px" }}>{fmtDay(r.workDate || "")}{r.isHoliday && " 🎄"}</td>
                 <td style={{ padding: "3px 5px" }}>{`${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || r.email || "—"}</td>
                 <td style={{ padding: "3px 5px" }}>{r.position || ""}</td>
-                <td style={{ padding: "3px 5px" }}>{r.jobId ? (jobNoById.get(r.jobId) ?? "") : ""}</td>
+                <td style={{ padding: "3px 5px" }}>
+                  {r.jobId ? (() => {
+                    const info = jobInfoById.get(r.jobId);
+                    const code = info?.jobNo ?? "";
+                    return (
+                      <>
+                        <span style={{ fontFamily: "monospace" }}>{code}</span>
+                        {info?.eventName && (
+                          <span style={{ marginLeft: 4, color: "#555" }}>· {info.eventName}</span>
+                        )}
+                      </>
+                    );
+                  })() : ""}
+                </td>
                 <td style={{ padding: "3px 5px" }}>{r.timeIn1}</td>
                 <td style={{ padding: "3px 5px" }}>{r.timeOut1}</td>
                 <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.mealBreak1Minutes || ""}</td>
