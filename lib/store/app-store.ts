@@ -134,7 +134,7 @@ export function addWorkerToTimesheet(jobSheetId: string, worker: JobSheetWorker)
     id: `timesheet-${jobSheetId}`,
     jobSheetId,
     title: "Timekeeping Sheet",
-    hidePayColumns: false,
+    hideBillColumns: false,
     rows: [],
   };
   const exists = base.rows.some(

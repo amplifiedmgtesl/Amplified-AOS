@@ -24,11 +24,11 @@ function activeEmployees() {
   return loadEmployees().filter((e) => !deleted.has(e.employeeKey));
 }
 
-export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hidePay?: boolean } = {}) {
+export default function EmployeeDirectory({ hideBill: hideBillProp = false }: { hideBill?: boolean } = {}) {
   // Belt + suspenders: even if this component somehow renders inside an
   // admin shell, force-hide pay if the viewer is a crew_leader.
   const viewerRole = useUserRole();
-  const hidePay = hidePayProp || viewerRole === "crew_leader";
+  const hideBill = hideBillProp || viewerRole === "crew_leader";
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("");
   const [cityFilter, setCityFilter] = useState("");
@@ -351,10 +351,10 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
                 {tsWithEntries.length === 0
                   ? <div className="muted">No timesheet entries found for this employee.</div>
                   : (
-                    <div className={hidePay ? "grid2" : "grid3"}>
+                    <div className={hideBill ? "grid2" : "grid3"}>
                       <div className="metric-card"><div className="metric-label">Timesheets</div><div className="metric-value">{tsWithEntries.length}</div></div>
                       <div className="metric-card"><div className="metric-label">Total Hours</div><div className="metric-value">{totalHours.toFixed(1)}</div></div>
-                      {!hidePay && (
+                      {!hideBill && (
                         <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
                       )}
                     </div>
@@ -464,15 +464,15 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
               const totalBill  = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.billTotal, 0), 0);
               return (
                 <>
-                  <div className={hidePay ? "grid2" : "grid3"} style={{ marginBottom: 16 }}>
+                  <div className={hideBill ? "grid2" : "grid3"} style={{ marginBottom: 16 }}>
                     <div className="metric-card"><div className="metric-label">Timesheets</div><div className="metric-value">{tsWithEntries.length}</div></div>
                     <div className="metric-card"><div className="metric-label">Total Hours</div><div className="metric-value">{totalHours.toFixed(1)}</div></div>
-                    {!hidePay && (
+                    {!hideBill && (
                       <div className="metric-card"><div className="metric-label">Total Bill</div><div className="metric-value">${totalBill.toFixed(2)}</div></div>
                     )}
                   </div>
                   <table>
-                    <thead><tr><th>Timesheet</th><th>Position</th><th>Std Hrs</th><th>OT Hrs</th><th>DT Hrs</th><th>Total Hrs</th>{!hidePay && <th>Total Bill</th>}</tr></thead>
+                    <thead><tr><th>Timesheet</th><th>Position</th><th>Std Hrs</th><th>OT Hrs</th><th>DT Hrs</th><th>Total Hrs</th>{!hideBill && <th>Total Bill</th>}</tr></thead>
                     <tbody>
                       {tsWithEntries.map(({ ts, entries }) =>
                         entries.map((r) => (
@@ -483,7 +483,7 @@ export default function EmployeeDirectory({ hidePay: hidePayProp = false }: { hi
                             <td>{r.otHours.toFixed(1)}</td>
                             <td>{r.dtHours.toFixed(1)}</td>
                             <td>{r.totalHours.toFixed(1)}</td>
-                            {!hidePay && <td>${r.billTotal.toFixed(2)}</td>}
+                            {!hideBill && <td>${r.billTotal.toFixed(2)}</td>}
                           </tr>
                         ))
                       )}

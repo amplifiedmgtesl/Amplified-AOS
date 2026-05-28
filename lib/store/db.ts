@@ -847,7 +847,9 @@ function syncTimesheet(t: Timesheet) {
       job_sheet_id: t.jobSheetId,
       job_id: t.jobId ?? null,
       title: t.title,
-      hide_pay_columns: t.hidePayColumns,
+      // DB column kept as hide_pay_columns to avoid an extra migration;
+      // the TS field is hideBillColumns since these are bill rates.
+      hide_pay_columns: t.hideBillColumns,
     })
     .then(({ error }) => { if (error) console.error("[db] syncTimesheet header error:", error); });
 
@@ -1205,7 +1207,7 @@ function rowToTimesheet(r: any, entries: any[]): Timesheet {
     jobSheetId: r.job_sheet_id ?? "",
     jobId: r.job_id ?? null,
     title: r.title ?? "",
-    hidePayColumns: r.hide_pay_columns ?? false,
+    hideBillColumns: r.hide_pay_columns ?? false,
     rows: entries
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
       .map(rowToTimeEntry),

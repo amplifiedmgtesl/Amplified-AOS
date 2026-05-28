@@ -153,7 +153,13 @@ export type Timesheet = {
   // for any downstream linkage (invoice draft pulls, holiday math, etc.).
   jobId?: string | null;
   title: string;
-  hidePayColumns: boolean;
+  /** When true, the bill rate / total columns (STD BILL, OT BILL, DT BILL,
+   *  TOTAL BILL) are hidden in the timekeeping editor. Originally named
+   *  hide_pay_columns / hidePayColumns when those columns were misleadingly
+   *  labeled "pay" — they were always bill data. Field renamed to
+   *  hideBillColumns in the code; DB column stays hide_pay_columns for now
+   *  to avoid an extra migration (mapper translates). */
+  hideBillColumns: boolean;
   rows: TimeEntry[];
 };
 

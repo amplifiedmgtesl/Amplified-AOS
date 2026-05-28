@@ -119,7 +119,7 @@ function EmployeeAutoFill({
   );
 }
 
-export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?: boolean }) {
+export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways?: boolean }) {
   const POSITIONS = positionNames();
   // Phase 3: master tables for cascading Position → Specialty selects.
   // Loaded once and shared across rows.
@@ -166,7 +166,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
 
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
   const [dayFilter, setDayFilter] = useState<string>("all");
-  // Bulk selection (admin only — gated on !hidePayAlways at render time).
+  // Bulk selection (admin only — gated on !hideBillAlways at render time).
   // Cleared whenever the picker switches timesheets so we never act on
   // entries from a different job.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -199,7 +199,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
         ensureTimesheetForJobRequest(jobId, { jobTitle: title }).then((id) => {
           setTimesheet({
             id, jobId, jobSheetId: "", title,
-            hidePayColumns: false, rows: [],
+            hideBillColumns: false, rows: [],
           });
         }).catch((e) => console.error("[timekeeping] ensure failed:", e));
       }
@@ -215,7 +215,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
           jobSheetId: sheet.id,
           jobId: null,
           title: sheet.title,
-          hidePayColumns: false,
+          hideBillColumns: false,
           rows: [],
         });
       }
@@ -648,18 +648,28 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               )}
             </select>
           </div>
-          {!hidePayAlways && (
+          {!hideBillAlways && (
             <div className="list-card">
               <strong>Linked Invoice / Quote Detail</strong>
               <div className="muted">Use this page to generate time-based labor breakdowns that feed quote and invoice detail.</div>
             </div>
           )}
-          {!hidePayAlways && (
+          {!hideBillAlways && (
             <div className="list-card">
-              <strong>Hide Pay Columns</strong>
+              <strong>Hide Bill Columns</strong>
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                Hides STD BILL / OT BILL / DT BILL / TOTAL BILL when sharing
+                this view with someone who shouldn't see billing data.
+              </div>
               <div className="action-row" style={{ marginTop: 8 }}>
-                <button className="secondary" onClick={() => timesheet && persist({ ...timesheet, hidePayColumns: !hidePayAlways && !timesheet.hidePayColumns })}>
-                  {timesheet?.hidePayColumns ? "Show Pay Columns" : "Hide Pay Columns"}
+                <button
+                  className="secondary"
+                  onClick={() => timesheet && persist({
+                    ...timesheet,
+                    hideBillColumns: !hideBillAlways && !timesheet.hideBillColumns,
+                  })}
+                >
+                  {timesheet?.hideBillColumns ? "Show Bill Columns" : "Hide Bill Columns"}
                 </button>
               </div>
             </div>
@@ -720,7 +730,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
           )}
         </div>
         {/* Batch action bar — appears when one or more rows are ticked (admin only). */}
-        {!hidePayAlways && selectedIds.size > 0 && (
+        {!hideBillAlways && selectedIds.size > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: "6px 12px",
                         background: "#eaf2fb", border: "1px solid #b6c8e0", borderRadius: 8, flexWrap: "wrap" }}>
             <strong style={{ fontSize: 13 }}>{selectedIds.size} selected</strong>
@@ -795,7 +805,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
           <>
             <div style={{ overflowX: "auto" }}>
               {(() => {
-                const showPay = !hidePayAlways && !timesheet.hidePayColumns;
+                const showBill = !hideBillAlways && !timesheet.hideBillColumns;
                 // Row-1 layout: Position | Name | Start | End | (phantom for
                 // hidden hour/rate cols). Each visible row-1 label spans exactly
                 // 2 row-2 cells so the right edge of End Date aligns with the
@@ -805,11 +815,11 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                 // Phase 3 (2026-05-26): split the old 2-cell "Position" header
                 // into Position + Specialty, each 1 cell wide. Total still 8.
                 const r1Spans = { pos: 1, spc: 1, emp: 2, start: 2, end: 2 };
-                const phantomSpan = showPay ? 8 : 4;
+                const phantomSpan = showBill ? 8 : 4;
                 // Total table column count for the per-employee summary
                 // row's colSpan: 12 visible + 4 hidden hours + 4 hidden rate
                 // (if pay) + 1 action = 13 (no pay) or 17 (with pay).
-                const totalCols = (showPay ? 16 : 12) + 1;
+                const totalCols = (showBill ? 16 : 12) + 1;
                 return (
               <table className="timesheet-grid line-table">
                 <colgroup>
@@ -825,7 +835,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                   <col className="col-hidden" />{/* OT HRS */}
                   <col className="col-hidden" />{/* DT HRS */}
                   <col className="col-hidden" />{/* TOTAL HRS */}
-                  {showPay && <>
+                  {showBill && <>
                     <col className="col-hidden" />{/* STD BILL */}
                     <col className="col-hidden" />{/* OT BILL */}
                     <col className="col-hidden" />{/* DT BILL */}
@@ -842,7 +852,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     <th colSpan={r1Spans.end}>End Date</th>
                     <th colSpan={phantomSpan} className="hide-print"></th>
                     <th rowSpan={2} className="hide-print" style={{ minWidth: 90 }}>
-                      {!hidePayAlways && timesheet.rows.length > 0 && (() => {
+                      {!hideBillAlways && timesheet.rows.length > 0 && (() => {
                         const allSel = timesheet.rows.every((r) => selectedIds.has(r.id));
                         const someSel = !allSel && timesheet.rows.some((r) => selectedIds.has(r.id));
                         return (
@@ -868,7 +878,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     <th className="hide-print">OT HRS</th>
                     <th className="hide-print">DT HRS</th>
                     <th className="hide-print">TOTAL HRS</th>
-                    {showPay ? <>
+                    {showBill ? <>
                       <th className="hide-print" title="Billing rate (not pay). Pay lives on the Payroll screen.">STD BILL</th>
                       <th className="hide-print" title="Billing rate (not pay). Pay lives on the Payroll screen.">OT BILL</th>
                       <th className="hide-print" title="Billing rate (not pay). Pay lives on the Payroll screen.">DT BILL</th>
@@ -1060,7 +1070,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       <td colSpan={phantomSpan} className="hide-print"></td>
                       <td rowSpan={2} className="hide-print" style={{ verticalAlign: "middle" }}>
                         <div className="action-row" style={{ flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
-                          {!hidePayAlways && (
+                          {!hideBillAlways && (
                             <input
                               type="checkbox"
                               aria-label="Select row"
@@ -1090,7 +1100,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                               🎄 Holiday {Number(row.holidayMultiplier ?? 2)}×
                             </span>
                           ) : null}
-                          {!hidePayAlways && !isLocked && (
+                          {!hideBillAlways && !isLocked && (
                             <label style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 4, marginTop: 2, color: "#7a5a1a" }}>
                               <input
                                 type="checkbox"
@@ -1132,7 +1142,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                       <td className="hide-print">{row.otHours.toFixed(2)}</td>
                       <td className="hide-print">{row.dtHours.toFixed(2)}</td>
                       <td className="hide-print">{row.totalHours.toFixed(2)}</td>
-                      {showPay ? (
+                      {showBill ? (
                         <>
                           <td className="hide-print"><select className="input-tight" disabled={isLocked} value={row.billStdRate} onChange={(e)=>updateRow(row.id, { billStdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
                           {/* Phase 4: OT/DT rates are inert on holiday rows
@@ -1158,7 +1168,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                     <th>{totals.otHours.toFixed(2)}</th>
                     <th>{totals.dtHours.toFixed(2)}</th>
                     <th>{totals.totalHours.toFixed(2)}</th>
-                    {showPay ? <><th></th><th></th><th></th><th>${totals.billTotal.toFixed(2)}</th></> : null}
+                    {showBill ? <><th></th><th></th><th></th><th>${totals.billTotal.toFixed(2)}</th></> : null}
                     <th></th>
                   </tr>
                 </tfoot>
@@ -1174,10 +1184,10 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table>
-                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hidePayAlways && <th>Total Bill</th>}</tr></thead>
+                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hideBillAlways && <th>Total Bill</th>}</tr></thead>
                   <tbody>
                     {summary.length === 0 ? (
-                      <tr><td colSpan={hidePayAlways ? 6 : 7} className="muted" style={{ textAlign: "center" }}>No entries.</td></tr>
+                      <tr><td colSpan={hideBillAlways ? 6 : 7} className="muted" style={{ textAlign: "center" }}>No entries.</td></tr>
                     ) : summary.map((r) => (
                       <tr key={r.position}>
                         <td>{r.position}</td>
@@ -1186,7 +1196,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         <td>{r.otHours.toFixed(2)}</td>
                         <td>{r.dtHours.toFixed(2)}</td>
                         <td>{r.totalHours.toFixed(2)}</td>
-                        {!hidePayAlways && <td>${r.billTotal.toFixed(2)}</td>}
+                        {!hideBillAlways && <td>${r.billTotal.toFixed(2)}</td>}
                       </tr>
                     ))}
                   </tbody>
@@ -1201,10 +1211,10 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table>
-                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hidePayAlways && <th>Total Bill</th>}</tr></thead>
+                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hideBillAlways && <th>Total Bill</th>}</tr></thead>
                   <tbody>
                     {approvedSummary.length === 0 ? (
-                      <tr><td colSpan={hidePayAlways ? 6 : 7} className="muted" style={{ textAlign: "center" }}>No approved entries yet.</td></tr>
+                      <tr><td colSpan={hideBillAlways ? 6 : 7} className="muted" style={{ textAlign: "center" }}>No approved entries yet.</td></tr>
                     ) : approvedSummary.map((r) => (
                       <tr key={r.position}>
                         <td>{r.position}</td>
@@ -1213,7 +1223,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
                         <td>{r.otHours.toFixed(2)}</td>
                         <td>{r.dtHours.toFixed(2)}</td>
                         <td>{r.totalHours.toFixed(2)}</td>
-                        {!hidePayAlways && <td>${r.billTotal.toFixed(2)}</td>}
+                        {!hideBillAlways && <td>${r.billTotal.toFixed(2)}</td>}
                       </tr>
                     ))}
                   </tbody>
@@ -1224,7 +1234,7 @@ export default function Timekeeping({ hidePayAlways = false }: { hidePayAlways?:
         )}
       </div>
 
-      {!hidePayAlways && pendingEntries.length > 0 && (
+      {!hideBillAlways && pendingEntries.length > 0 && (
         <div className="card hide-print">
           <h3 className="section-title">⏳ Staff Submissions Pending Review ({pendingEntries.length})</h3>
           <div style={{ overflowX: "auto" }}>
