@@ -361,6 +361,86 @@ export async function updatePayrollRunMeta(
   if (error) throw error;
 }
 
+// ─── Pay-rate multipliers (Phase 1) ───────────────────────────────────────
+// Connor's confirmed rule (see memory: project_payroll.md): pay multipliers
+// match the bill multipliers exactly. OT = 1.5x base, DT = 2.0x base. On
+// holiday rows the OT/DT premium does NOT stack — pay collapses to
+// total_hours × base × holiday_multiplier (snapshotted on the entry).
+//
+// These constants live here for Phase 1 so the payroll module can recompute
+// rates client-side when the operator edits a base rate. The future payroll
+// project will source actual pay rates from a dedicated table; the
+// multipliers themselves are expected to stay the same.
+export const PAYROLL_OT_MULTIPLIER = 1.5;
+export const PAYROLL_DT_MULTIPLIER = 2.0;
+
+/** Pure helper: given a base rate and the hour/holiday context, return the
+ *  derived OT/DT rates and total pay. Mirrored on both the store side
+ *  (for the persisted snapshot) and the UI side (for live preview). */
+export function recomputePayFromBase(input: {
+  baseRate: number;
+  stdHours: number;
+  otHours: number;
+  dtHours: number;
+  totalHours: number;
+  isHoliday: boolean;
+  holidayMultiplier?: number | null;
+}): { stdRate: number; otRate: number; dtRate: number; totalPay: number } {
+  const base = Math.max(0, input.baseRate || 0);
+  const otRate = +(base * PAYROLL_OT_MULTIPLIER).toFixed(4);
+  const dtRate = +(base * PAYROLL_DT_MULTIPLIER).toFixed(4);
+  let totalPay: number;
+  if (input.isHoliday) {
+    const mult = input.holidayMultiplier ?? 2.0;
+    totalPay = +(input.totalHours * base * mult).toFixed(2);
+  } else {
+    totalPay = +(
+      input.stdHours * base +
+      input.otHours  * otRate +
+      input.dtHours  * dtRate
+    ).toFixed(2);
+  }
+  return { stdRate: base, otRate, dtRate, totalPay };
+}
+
+/** Update a single payroll_run_entries row's base pay rate. Recomputes
+ *  ot_rate / dt_rate / total_pay per Connor's rule (OT=1.5x, DT=2x;
+ *  holiday collapses to base × holiday_multiplier). The header rollups
+ *  refresh automatically via the refresh_payroll_run_totals trigger.
+ *
+ *  Blocked by the DB freeze trigger on finalized/exported runs. */
+export async function updatePayrollRunEntryBaseRate(
+  runEntryId: string,
+  baseRate: number,
+): Promise<void> {
+  // Pull the row so we can recompute against its hours + holiday context.
+  const { data, error: getErr } = await supabase
+    .from("payroll_run_entries")
+    .select("std_hours, ot_hours, dt_hours, total_hours, is_holiday, holiday_multiplier")
+    .eq("id", runEntryId)
+    .single();
+  if (getErr) throw getErr;
+  const calc = recomputePayFromBase({
+    baseRate,
+    stdHours: Number((data as any).std_hours ?? 0),
+    otHours:  Number((data as any).ot_hours  ?? 0),
+    dtHours:  Number((data as any).dt_hours  ?? 0),
+    totalHours: Number((data as any).total_hours ?? 0),
+    isHoliday: !!(data as any).is_holiday,
+    holidayMultiplier: (data as any).holiday_multiplier,
+  });
+  const { error } = await supabase
+    .from("payroll_run_entries")
+    .update({
+      std_rate: calc.stdRate,
+      ot_rate:  calc.otRate,
+      dt_rate:  calc.dtRate,
+      total_pay: calc.totalPay,
+    })
+    .eq("id", runEntryId);
+  if (error) throw error;
+}
+
 /** Remove an entry from a draft run. The DB freeze trigger blocks this if
  *  the run is finalized/exported. */
 export async function removeEntryFromRun(runEntryId: string): Promise<void> {

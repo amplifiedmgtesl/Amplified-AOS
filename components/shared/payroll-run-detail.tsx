@@ -11,6 +11,9 @@ import {
   voidPayrollRun,
   removeEntryFromRun,
   updatePayrollRunMeta,
+  updatePayrollRunEntryBaseRate,
+  PAYROLL_OT_MULTIPLIER,
+  PAYROLL_DT_MULTIPLIER,
   type PayrollRunPrintExtras,
 } from "@/lib/store/payroll";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "@/lib/store/types";
@@ -30,6 +33,53 @@ function statusBadge(s: PayrollRunStatus) {
 
 function fullName(e: PayrollRunEntry) {
   return `${e.firstName ?? ""} ${e.lastName ?? ""}`.trim() || e.email || "—";
+}
+
+/** Small inline editor for the per-entry base pay rate. Local state holds
+ *  the typed value so users can type freely without firing a save per
+ *  keystroke; commit happens on blur or Enter. */
+function BaseRateInput({
+  initial,
+  disabled,
+  busy,
+  onCommit,
+}: {
+  initial: number;
+  disabled: boolean;
+  busy: boolean;
+  onCommit: (value: number) => void;
+}) {
+  const [val, setVal] = useState<string>(initial.toFixed(2));
+  // Keep local state in sync if the parent reloads with a new value.
+  useEffect(() => { setVal(initial.toFixed(2)); }, [initial]);
+
+  function commit() {
+    const num = Number(val);
+    if (!isFinite(num) || num < 0) {
+      setVal(initial.toFixed(2));
+      return;
+    }
+    if (Math.abs(num - initial) < 0.005) return;  // no-op if unchanged
+    onCommit(num);
+  }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+      <span>$</span>
+      <input
+        type="number"
+        step="0.01"
+        min="0"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+        disabled={disabled}
+        style={{ width: 64, padding: "2px 4px", fontSize: 12, textAlign: "right" }}
+        title="Base hourly pay rate. OT and DT auto-derive from this; holiday pay collapses to base × holiday multiplier."
+      />
+      {busy && <span className="muted" style={{ fontSize: 10 }}>…</span>}
+    </span>
+  );
 }
 
 export default function PayrollRunDetail({ runId }: { runId: string }) {
@@ -129,6 +179,21 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
     catch (e: any) { alert(`Void failed: ${e?.message ?? "unknown error"}`); }
     finally { setBusy(null); }
   }
+  async function handleSaveBaseRate(runEntryId: string, baseRate: number) {
+    if (!isDraft) return;
+    if (!isFinite(baseRate) || baseRate < 0) {
+      alert("Base rate must be a non-negative number.");
+      return;
+    }
+    setBusy("rate:" + runEntryId);
+    try {
+      await updatePayrollRunEntryBaseRate(runEntryId, baseRate);
+      await load();
+    } catch (e: any) {
+      alert(`Rate update failed: ${e?.message ?? "unknown error"}`);
+    } finally { setBusy(null); }
+  }
+
   async function handleRemoveEntry(runEntryId: string) {
     if (!isDraft) return;
     if (!confirm("Remove this entry from the run?")) return;
@@ -310,21 +375,47 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                         <th style={{ textAlign: "right" }}>OT</th>
                         <th style={{ textAlign: "right" }}>DT</th>
                         <th style={{ textAlign: "right" }}>Total</th>
+                        <th
+                          style={{ textAlign: "right" }}
+                          title={`Base pay rate per hour. OT auto = base × ${PAYROLL_OT_MULTIPLIER}, DT auto = base × ${PAYROLL_DT_MULTIPLIER}. Holiday rows collapse to base × holiday multiplier.`}
+                        >
+                          Base $/hr
+                        </th>
                         <th style={{ textAlign: "right" }}>Pay</th>
                         {isDraft && <th style={{ width: 90 }}></th>}
                       </tr>
                     </thead>
                     <tbody>
-                      {g.rows.map((r) => (
+                      {g.rows.map((r) => {
+                        const mult = r.holidayMultiplier ?? 2.0;
+                        const rateTooltip = r.isHoliday
+                          ? `Holiday — pay = ${r.totalHours.toFixed(2)} hrs × $${r.stdRate.toFixed(2)} × ${mult} (OT/DT premium does not stack)`
+                          : `Pay = ${r.stdHours.toFixed(2)} × $${r.stdRate.toFixed(2)}` +
+                            (r.otHours > 0 ? ` + ${r.otHours.toFixed(2)} × $${r.otRate.toFixed(2)} (OT)` : "") +
+                            (r.dtHours > 0 ? ` + ${r.dtHours.toFixed(2)} × $${r.dtRate.toFixed(2)} (DT)` : "");
+                        return (
                         <tr key={r.id}>
-                          <td>{r.workDate || "—"}{r.isHoliday && <span className="badge" style={{ marginLeft: 6, background: "#ffe9c2", color: "#7a4a1a", fontSize: 11 }}>Holiday</span>}</td>
+                          <td>{r.workDate || "—"}{r.isHoliday && <span className="badge" style={{ marginLeft: 6, background: "#ffe9c2", color: "#7a4a1a", fontSize: 11 }}>Holiday {mult}×</span>}</td>
                           <td>{r.jobId ? (jobNoById.get(r.jobId) ?? r.jobId) : <span className="muted">Office / Remote</span>}</td>
                           <td>{r.position || "—"}</td>
                           <td style={{ textAlign: "right" }}>{r.stdHours.toFixed(1)}</td>
                           <td style={{ textAlign: "right" }}>{r.otHours > 0 ? r.otHours.toFixed(1) : "—"}</td>
                           <td style={{ textAlign: "right" }}>{r.dtHours > 0 ? r.dtHours.toFixed(1) : "—"}</td>
                           <td style={{ textAlign: "right" }}><strong>{r.totalHours.toFixed(1)}</strong></td>
-                          <td style={{ textAlign: "right" }}>${r.totalPay.toFixed(2)}</td>
+                          <td style={{ textAlign: "right" }}>
+                            {isDraft ? (
+                              <BaseRateInput
+                                key={`${r.id}:${r.stdRate}`}
+                                initial={r.stdRate}
+                                disabled={!!busy}
+                                busy={busy === "rate:" + r.id}
+                                onCommit={(v) => handleSaveBaseRate(r.id, v)}
+                              />
+                            ) : (
+                              <span title={`OT $${r.otRate.toFixed(2)} · DT $${r.dtRate.toFixed(2)}`}>${r.stdRate.toFixed(2)}</span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: "right" }} title={rateTooltip}>${r.totalPay.toFixed(2)}</td>
                           {isDraft && (
                             <td style={{ textAlign: "right" }}>
                               <button
@@ -338,7 +429,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                             </td>
                           )}
                         </tr>
-                      ))}
+                      );})}
                     </tbody>
                   </table>
                 </div>
