@@ -337,6 +337,49 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     });
   }
 
+  /** Append an empty manual line. source_kind='manual_override' so it
+   *  survives a subsequent Overwrite from Timesheets pull. Defaults the
+   *  date to the earliest existing line's date, or the invoice's first
+   *  coveredDate, or today as a last resort. Operator fills in
+   *  position/specialty/hours/rates from the inline inputs. */
+  function addManualLine() {
+    if (!invoice) return;
+    const existingDates = invoice.lines
+      .map((l) => l.quoteDate)
+      .filter((d): d is string => !!d)
+      .sort();
+    const defaultDate =
+      existingDates[0]
+      ?? invoice.coveredDates?.[0]
+      ?? new Date().toISOString().slice(0, 10);
+    const newLine: QuoteLine = {
+      serviceKey: "",
+      qty: 1,
+      crewCount: 1,
+      hours: 0,
+      otHours: 0,
+      dtHours: 0,
+      travel: 0,
+      baseHourly: 0,
+      baseDay: 0,
+      otRate: 0,
+      dtRate: 0,
+      rule: "Manual line",
+      total: 0,
+      quoteDate: defaultDate,
+      rateMode: "hourly",
+      sourceKind: "manual_override",
+    };
+    const newLines = [...invoice.lines, newLine];
+    const newSubtotal = money(recomputeTotals(newLines));
+    setInvoice({
+      ...invoice,
+      lines: newLines,
+      subtotal: newSubtotal,
+      amountDue: money(newSubtotal - invoice.depositApplied - invoice.creditsApplied),
+    });
+  }
+
   async function onSave() {
     if (!invoice) return;
     setSaving("saving");
@@ -697,6 +740,13 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
       )}
       <div className="action-row" style={{ alignItems: "baseline", marginBottom: 8 }}>
         <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Line items</h3>
+        <button
+          className="secondary"
+          onClick={addManualLine}
+          title="Append a manual line (equipment, misc charge, etc.). Survives a future Overwrite from Timesheets."
+        >
+          + Add Line
+        </button>
         <button
           className="secondary"
           onClick={onOverwriteFromTimesheets}
