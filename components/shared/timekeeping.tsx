@@ -9,6 +9,7 @@ import {
   getTimesheetByJobId, getTimesheetByJobSheetId,
   ensureTimesheetForJobRequest,
   upsertTimesheet, positionNames, loadEmployees, loadPositions, loadSpecialties,
+  upsertEmployee,
   getPendingStaffEntriesByJobId,
   approveStaffEntry, rejectStaffEntry, setEntryApproved, setEntrySubmitted,
 } from "@/lib/store/app-store";
@@ -41,11 +42,16 @@ function EmployeeAutoFill({
   employeeKey,
   employees,
   onSelect,
+  onCreateNew,
   fallbackName,
 }: {
   employeeKey?: string | null;
   employees: EmployeeRecord[];
   onSelect: (emp: EmployeeRecord) => void;
+  /** Called when the operator clicks "Create employee" on a no-match
+   *  query. Implementation should upsert into the employees table,
+   *  bump the refresh key, and call onSelect with the new record. */
+  onCreateNew?: (typedName: string) => void;
   fallbackName?: string;
 }) {
   const [query, setQuery] = useState("");
@@ -87,7 +93,7 @@ function EmployeeAutoFill({
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
       />
-      {open && results.length > 0 && (
+      {open && query.length >= 2 && (results.length > 0 || onCreateNew) && (
         <div style={{
           position: "absolute",
           top: "100%",
@@ -113,6 +119,26 @@ function EmployeeAutoFill({
               </div>
             </div>
           ))}
+          {onCreateNew ? (
+            <div
+              style={{
+                padding: "8px 12px",
+                cursor: "pointer",
+                background: "#fff8e1",
+                borderTop: results.length > 0 ? "1px solid #d7c6aa" : undefined,
+                color: "#7a5a1a",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+              onMouseDown={() => { onCreateNew(query.trim()); setQuery(""); setOpen(false); }}
+              title="Create a new employee with this name and link this row to it."
+            >
+              + Create employee &ldquo;{query.trim()}&rdquo;
+              <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2, color: "#7a5a1a" }}>
+                Adds to the Employee Directory as a contractor. Edit details later from Maintenance.
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
     </div>
@@ -972,6 +998,33 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                                 email: emp.email || "",
                                 status: row.status === "approved" ? "approved" : "submitted",
                               })}
+                              onCreateNew={(typedName) => {
+                                // Add to employee master on the fly so the
+                                // person becomes searchable for future rows
+                                // and the timesheet entry has a real FK to
+                                // hang payroll / assignments off of.
+                                const parts = typedName.trim().split(/\s+/);
+                                const firstName = parts[0] ?? "";
+                                const lastName  = parts.slice(1).join(" ");
+                                const fullName  = [firstName, lastName].filter(Boolean).join(" ") || typedName.trim();
+                                const newEmployee: EmployeeRecord = {
+                                  employeeKey: `emp-${Date.now()}`,
+                                  fullName,
+                                  firstName,
+                                  lastName,
+                                  type: "contractor",  // default; user can change in Maintenance
+                                };
+                                upsertEmployee(newEmployee);
+                                setRefreshKey((k) => k + 1);
+                                updateRow(row.id, {
+                                  employeeKey: newEmployee.employeeKey,
+                                  firstName,
+                                  lastName,
+                                  phone: "",
+                                  email: "",
+                                  status: row.status === "approved" ? "approved" : "submitted",
+                                });
+                              }}
                             />
                             {unlinked ? <div className="unlinked-hint">⚠ Link an employee to enable this row</div> : null}
                           </>
