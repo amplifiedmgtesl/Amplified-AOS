@@ -51,18 +51,22 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     status: string;
     isDraft: boolean;
   } | null>(null);
-  // Read-only comparison: approved timesheet entries aggregated by position.
-  // Rendered below the line items so the operator can cross-check that the
-  // billable lines reflect what the field actually worked. Hours only — pay
-  // belongs to the future payroll project, not the bill side.
-  const [timesheetSummary, setTimesheetSummary] = useState<Array<{
+  // Read-only comparison: timesheet entries aggregated by position. Two
+  // panels rendered below the line items:
+  //   * Approved Timesheet Actuals — what's billable today
+  //   * Pending Timesheet Entries  — submitted/unapproved (heads-up that
+  //     this invoice may understate actuals until those entries are reviewed)
+  // Hours only — pay belongs to the future payroll project, not the bill side.
+  type SummaryRow = {
     position: string;
     workers: number;
     stdHours: number;
     otHours: number;
     dtHours: number;
     totalHours: number;
-  }>>([]);
+  };
+  const [timesheetSummary, setTimesheetSummary] = useState<SummaryRow[]>([]);
+  const [pendingTimesheetSummary, setPendingTimesheetSummary] = useState<SummaryRow[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -157,20 +161,28 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           const s = await loadShifts(q.jobRequestId, { includeInactive: true });
           if (!cancelled) setShifts(s);
 
-          // Approved timesheet aggregate for the comparison panel.
+          // Timesheet aggregate for the comparison panels — fetch every
+          // status (rejected is skipped during bucketing). One round-trip,
+          // two panels: approved (billable today) + pending (heads-up).
           const tsRes = await supabase
             .from("timesheet_entries")
-            .select("position, employee_key, std_hours, ot_hours, dt_hours, total_hours")
-            .eq("job_id", q.jobRequestId)
-            .eq("status", "approved");
+            .select("position, employee_key, std_hours, ot_hours, dt_hours, total_hours, status")
+            .eq("job_id", q.jobRequestId);
           if (!cancelled && !tsRes.error) {
-            const map = new Map<string, { workers: Set<string>; stdHours: number; otHours: number; dtHours: number; totalHours: number; unlinked: number }>();
+            type Bucket = { workers: Set<string>; stdHours: number; otHours: number; dtHours: number; totalHours: number; unlinked: number };
+            const approvedMap = new Map<string, Bucket>();
+            const pendingMap  = new Map<string, Bucket>();
             for (const r of tsRes.data ?? []) {
+              const status = (r as any).status ?? null;
+              if (status === "rejected") continue;
+              // Pending = anything not yet approved (admin-typed null, or
+              // staff-submitted awaiting review). Approved = approved.
+              const target = status === "approved" ? approvedMap : pendingMap;
               const pos = (r.position as string) || "Unknown";
-              let bucket = map.get(pos);
+              let bucket = target.get(pos);
               if (!bucket) {
                 bucket = { workers: new Set(), stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, unlinked: 0 };
-                map.set(pos, bucket);
+                target.set(pos, bucket);
               }
               if (r.employee_key) bucket.workers.add(r.employee_key as string);
               else bucket.unlinked++;
@@ -179,14 +191,17 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
               bucket.dtHours    += Number(r.dt_hours    ?? 0);
               bucket.totalHours += Number(r.total_hours ?? 0);
             }
-            setTimesheetSummary(Array.from(map.entries()).map(([position, v]) => ({
-              position,
-              workers: v.workers.size + v.unlinked,
-              stdHours:   +v.stdHours.toFixed(2),
-              otHours:    +v.otHours.toFixed(2),
-              dtHours:    +v.dtHours.toFixed(2),
-              totalHours: +v.totalHours.toFixed(2),
-            })));
+            const toRows = (m: Map<string, Bucket>): SummaryRow[] =>
+              Array.from(m.entries()).map(([position, v]) => ({
+                position,
+                workers: v.workers.size + v.unlinked,
+                stdHours:   +v.stdHours.toFixed(2),
+                otHours:    +v.otHours.toFixed(2),
+                dtHours:    +v.dtHours.toFixed(2),
+                totalHours: +v.totalHours.toFixed(2),
+              }));
+            setTimesheetSummary(toRows(approvedMap));
+            setPendingTimesheetSummary(toRows(pendingMap));
           }
           // For final drafts, surface the linked deposit invoice so the
           // user can see what's being applied (or warn if none exists).
@@ -1030,6 +1045,45 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
               </thead>
               <tbody>
                 {timesheetSummary.map((r) => (
+                  <tr key={r.position}>
+                    <td>{r.position}</td>
+                    <td>{r.workers}</td>
+                    <td>{r.stdHours.toFixed(2)}</td>
+                    <td>{r.otHours.toFixed(2)}</td>
+                    <td>{r.dtHours.toFixed(2)}</td>
+                    <td>{r.totalHours.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {pendingTimesheetSummary.length > 0 ? (
+        <div style={{ marginTop: 16 }}>
+          <h3 className="section-title" style={{ marginBottom: 4, color: "#7a5a1a" }}>
+            ⚠ Pending Timesheet Entries (not yet approved)
+          </h3>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+            These hours are <strong>not</strong> reflected in the approved actuals above and won't be pulled by
+            Overwrite from Timesheets until they're approved on the Timekeeping screen. Heads-up that this
+            invoice may understate actual labor until that happens.
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ background: "#fff8e1", borderLeft: "3px solid #d8a800" }}>
+              <thead>
+                <tr>
+                  <th>Position</th>
+                  <th>Workers</th>
+                  <th>ST Hrs</th>
+                  <th>OT Hrs</th>
+                  <th>DT Hrs</th>
+                  <th>Total Hrs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingTimesheetSummary.map((r) => (
                   <tr key={r.position}>
                     <td>{r.position}</td>
                     <td>{r.workers}</td>
