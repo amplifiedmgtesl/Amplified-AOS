@@ -13,6 +13,7 @@
 
 import { supabase } from "@/lib/supabase/client";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "./types";
+import { resolveRateCardForJob, pickRateCardForJob } from "./quotes";
 
 function newRunId(): string {
   return `prr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -97,6 +98,9 @@ export type PayrollCandidateRow = {
   employmentType: string | null;
   workDate: string | null;
   position: string;
+  /** Canonical specialty FK on the timesheet entry. Needed by
+   *  resolvePayRateForEntry to look up the right rate-card row. */
+  specialtyId: string | null;
   jobId: string | null;
   jobClient: string;
   jobEventName: string;
@@ -127,7 +131,7 @@ export async function getPayrollCandidates(filters: PayrollCandidateFilters): Pr
   let q = supabase
     .from("timesheet_entries")
     .select(`
-      id, work_date, position, first_name, last_name, email, employee_key,
+      id, work_date, position, specialty_id, first_name, last_name, email, employee_key,
       job_id, job_sheet_id,
       std_hours, ot_hours, dt_hours, total_hours,
       is_holiday, holiday_multiplier, status
@@ -196,6 +200,7 @@ export async function getPayrollCandidates(filters: PayrollCandidateFilters): Pr
       employmentType: r.employee_key ? (employmentByKey.get(r.employee_key) ?? null) : null,
       workDate: r.work_date ?? null,
       position: r.position ?? "",
+      specialtyId: r.specialty_id ?? null,
       jobId: r.job_id ?? null,
       jobClient: job?.client ?? "",
       jobEventName: job?.eventName ?? "",
@@ -314,32 +319,52 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
     });
   if (insErr) throw insErr;
 
-  // Snapshot with pay rates set to 0 — there's no structural pay-rate
-  // source in the system today (the future payroll project owns that;
-  // see project_payroll.md). Operator fills in the base rate per row on
-  // the run detail page; the BaseRateInput editor recomputes OT/DT/total
-  // via updatePayrollRunEntryBaseRate.
-  const rows = input.entries.map((e) => ({
-    id: newRunEntryId(),
-    payroll_run_id: id,
-    timesheet_entry_id: e.timesheetEntryId,
-    employee_key: e.employeeKey,
-    first_name: e.firstName,
-    last_name: e.lastName,
-    email: e.email,
-    work_date: e.workDate,
-    position: e.position,
-    job_id: e.jobId,
-    std_hours: e.stdHours,
-    ot_hours: e.otHours,
-    dt_hours: e.dtHours,
-    total_hours: e.totalHours,
-    std_rate: 0,
-    ot_rate:  0,
-    dt_rate:  0,
-    is_holiday: e.isHoliday,
-    holiday_multiplier: e.holidayMultiplier,
-    total_pay: 0,
+  // Snapshot rows. Pay rates auto-fill from resolvePayRateForEntry
+  // (employee override → job's rate card → master default). If no layer
+  // has a value, std_rate stays 0 and the run detail page surfaces the
+  // yellow "needs rates" banner + blocks Finalize. Operator can override
+  // any row via the BaseRateInput.
+  //
+  // Total pay is recomputed from the resolved rates via recomputePayFromBase
+  // so it's consistent with the OT/DT multiplier rule and holiday logic.
+  const rows = await Promise.all(input.entries.map(async (e) => {
+    const resolved = await resolvePayRateForEntry({
+      employeeKey: e.employeeKey,
+      specialtyId: e.specialtyId,
+      jobId: e.jobId,
+      workDate: e.workDate,
+    });
+    const calc = recomputePayFromBase({
+      baseRate: resolved.stdRate,
+      stdHours: e.stdHours,
+      otHours: e.otHours,
+      dtHours: e.dtHours,
+      totalHours: e.totalHours,
+      isHoliday: e.isHoliday,
+      holidayMultiplier: e.holidayMultiplier,
+    });
+    return {
+      id: newRunEntryId(),
+      payroll_run_id: id,
+      timesheet_entry_id: e.timesheetEntryId,
+      employee_key: e.employeeKey,
+      first_name: e.firstName,
+      last_name: e.lastName,
+      email: e.email,
+      work_date: e.workDate,
+      position: e.position,
+      job_id: e.jobId,
+      std_hours: e.stdHours,
+      ot_hours: e.otHours,
+      dt_hours: e.dtHours,
+      total_hours: e.totalHours,
+      std_rate: calc.stdRate,
+      ot_rate:  calc.otRate,
+      dt_rate:  calc.dtRate,
+      is_holiday: e.isHoliday,
+      holiday_multiplier: e.holidayMultiplier,
+      total_pay: calc.totalPay,
+    };
   }));
 
   const { error: rowsErr } = await supabase.from("payroll_run_entries").insert(rows);
@@ -381,9 +406,25 @@ export async function addEntriesToPayrollRun(
     throw new Error(`Cannot add entries — run is ${(runRow as any).status}. Reopen it first.`);
   }
 
-  // Same pattern as createPayrollRun: snapshot with pay rates set to 0.
-  // Operator fills them in per row on the run detail page.
-  const rows = entries.map((e) => ({
+  // Same auto-fill pattern as createPayrollRun: snapshot uses resolved
+  // pay rates (employee override → job rate card → master), then recompute.
+  const rows = await Promise.all(entries.map(async (e) => {
+    const resolved = await resolvePayRateForEntry({
+      employeeKey: e.employeeKey,
+      specialtyId: e.specialtyId,
+      jobId: e.jobId,
+      workDate: e.workDate,
+    });
+    const calc = recomputePayFromBase({
+      baseRate: resolved.stdRate,
+      stdHours: e.stdHours,
+      otHours: e.otHours,
+      dtHours: e.dtHours,
+      totalHours: e.totalHours,
+      isHoliday: e.isHoliday,
+      holidayMultiplier: e.holidayMultiplier,
+    });
+    return {
     id: newRunEntryId(),
     payroll_run_id: runId,
     timesheet_entry_id: e.timesheetEntryId,
@@ -398,12 +439,13 @@ export async function addEntriesToPayrollRun(
     ot_hours: e.otHours,
     dt_hours: e.dtHours,
     total_hours: e.totalHours,
-    std_rate: 0,
-    ot_rate:  0,
-    dt_rate:  0,
+    std_rate: calc.stdRate,
+    ot_rate:  calc.otRate,
+    dt_rate:  calc.dtRate,
     is_holiday: e.isHoliday,
     holiday_multiplier: e.holidayMultiplier,
-    total_pay: 0,
+    total_pay: calc.totalPay,
+    };
   }));
   const { error } = await supabase.from("payroll_run_entries").insert(rows);
   if (error) throw error;
@@ -462,6 +504,145 @@ async function stampTimesheetEntriesWithRun(runId: string, entryIds: string[]): 
 // multipliers themselves are expected to stay the same.
 export const PAYROLL_OT_MULTIPLIER = 1.5;
 export const PAYROLL_DT_MULTIPLIER = 2.0;
+
+// ─── Pay-rate resolution (Phase 1) ────────────────────────────────────────
+// Resolves the pay rate to snapshot onto a payroll_run_entries row.
+// Precedence (override-wins, not max — see project_payroll.md):
+//   1. Employee override (any of payStdRate/payOtRate/payDtRate set on
+//      the employees row wins per-column. NULL means "fall through".)
+//   2. Job's pinned rate card (resolveRateCardForJob — honors job_request
+//      pinned profile, otherwise client+date lookup)
+//   3. Default master rate card (ratecard-master-default)
+//
+// Returns { stdRate, otRate, dtRate, source } where source identifies
+// which layer answered (for debug + UI badges). Any returned rate may
+// still be 0 if no layer has a value set — the caller (createPayrollRun
+// + addEntriesToPayrollRun) snapshots 0 and the run detail page shows
+// the yellow "needs rates" banner.
+//
+// IMPORTANT: this is the ONLY place pay rates flow out of the system.
+// It is NOT called from quote/invoice flows — those use bill rates only.
+
+export type ResolvedPayRate = {
+  stdRate: number;
+  otRate: number;
+  dtRate: number;
+  /** Highest-precedence source that contributed any rate. */
+  source: "employee" | "jobRateCard" | "defaultRateCard" | "none";
+};
+
+type EmployeePayOverride = {
+  payStdRate: number | null;
+  payOtRate: number | null;
+  payDtRate: number | null;
+};
+
+/** Fetch an employee's pay-rate override columns. Returns null if the
+ *  employee row can't be found. */
+async function fetchEmployeePayOverride(employeeKey: string): Promise<EmployeePayOverride | null> {
+  const { data, error } = await supabase
+    .from("employees")
+    .select("pay_std_rate, pay_ot_rate, pay_dt_rate")
+    .eq("employee_key", employeeKey)
+    .maybeSingle();
+  if (error) { console.error("[payroll] fetchEmployeePayOverride:", error); return null; }
+  if (!data) return null;
+  const r = data as any;
+  return {
+    payStdRate: r.pay_std_rate == null ? null : Number(r.pay_std_rate),
+    payOtRate:  r.pay_ot_rate  == null ? null : Number(r.pay_ot_rate),
+    payDtRate:  r.pay_dt_rate  == null ? null : Number(r.pay_dt_rate),
+  };
+}
+
+/** Look up the pay rate for a specialty on a given rate card. Returns
+ *  zeros if the specialty has no matching row or the row has no pay
+ *  rates set (pay_hourly = 0 in DB). */
+async function payRatesForSpecialtyOnCard(
+  profileId: string,
+  specialtyId: string | null,
+): Promise<{ stdRate: number; otRate: number; dtRate: number }> {
+  if (!specialtyId) return { stdRate: 0, otRate: 0, dtRate: 0 };
+  const { data, error } = await supabase
+    .from("rate_card_profile_rows")
+    .select("pay_hourly, pay_ot_rate, pay_dt_rate")
+    .eq("profile_id", profileId)
+    .eq("specialty_id", specialtyId)
+    .maybeSingle();
+  if (error) { console.error("[payroll] payRatesForSpecialtyOnCard:", error); return { stdRate: 0, otRate: 0, dtRate: 0 }; }
+  if (!data) return { stdRate: 0, otRate: 0, dtRate: 0 };
+  const r = data as any;
+  return {
+    stdRate: Number(r.pay_hourly  ?? 0),
+    otRate:  Number(r.pay_ot_rate ?? 0),
+    dtRate:  Number(r.pay_dt_rate ?? 0),
+  };
+}
+
+/** Resolve the pay rate for a single timesheet entry context. */
+export async function resolvePayRateForEntry(input: {
+  employeeKey?: string | null;
+  specialtyId?: string | null;
+  jobId?: string | null;
+  workDate?: string | null;
+}): Promise<ResolvedPayRate> {
+  // ─── Layer 1: employee override ─────────────────────────────────────
+  let empOverride: EmployeePayOverride | null = null;
+  if (input.employeeKey) {
+    empOverride = await fetchEmployeePayOverride(input.employeeKey);
+  }
+  const anyEmpOverride = empOverride && (
+    empOverride.payStdRate != null ||
+    empOverride.payOtRate  != null ||
+    empOverride.payDtRate  != null
+  );
+
+  // ─── Layer 2 + 3: rate card (job-pinned → client+date → master) ────
+  // Resolved per-column so a partial employee override is honored without
+  // forcing the rate-card lookup to be all-or-nothing. The rate-card lookup
+  // is cached locally — same job hits one query.
+  let cardRates: { stdRate: number; otRate: number; dtRate: number } | null = null;
+  let cardSource: "jobRateCard" | "defaultRateCard" | "none" = "none";
+
+  if (input.specialtyId) {
+    // Try job-pinned rate card (or job's client+date fallback)
+    if (input.jobId) {
+      try {
+        const card = await resolveRateCardForJob(input.jobId);
+        if (card) {
+          cardRates = await payRatesForSpecialtyOnCard(card.id, input.specialtyId);
+          cardSource = card.id === "ratecard-master-default" ? "defaultRateCard" : "jobRateCard";
+        }
+      } catch (e) {
+        console.error("[payroll] resolvePayRateForEntry job rate card:", e);
+      }
+    }
+    // Fallback: master default by null clientId
+    if (!cardRates || (cardRates.stdRate === 0 && cardRates.otRate === 0 && cardRates.dtRate === 0)) {
+      try {
+        const master = await pickRateCardForJob(null, input.workDate ?? "");
+        if (master) {
+          cardRates = await payRatesForSpecialtyOnCard(master.id, input.specialtyId);
+          cardSource = "defaultRateCard";
+        }
+      } catch (e) {
+        console.error("[payroll] resolvePayRateForEntry master:", e);
+      }
+    }
+  }
+
+  // ─── Combine layers (override wins per-column) ──────────────────────
+  const stdRate = empOverride?.payStdRate ?? cardRates?.stdRate ?? 0;
+  const otRate  = empOverride?.payOtRate  ?? cardRates?.otRate  ?? 0;
+  const dtRate  = empOverride?.payDtRate  ?? cardRates?.dtRate  ?? 0;
+
+  const source: ResolvedPayRate["source"] =
+    anyEmpOverride ? "employee" :
+    cardRates && cardRates.stdRate > 0 ? cardSource :
+    "none";
+
+  return { stdRate, otRate, dtRate, source };
+}
 
 /** Pure helper: given a base rate and the hour/holiday context, return the
  *  derived OT/DT rates and total pay. Mirrored on both the store side

@@ -97,6 +97,8 @@ export default function MasterRateCardEditor() {
       specialtyId: first?.id ?? "",
       department: posName, position: posName, specialty: first?.name ?? "",
       hourly: 35, day: 350, otRate: 52.5, dtRate: 70,
+      // Pay rates default to 0 — admin enters them explicitly.
+      payHourly: 0, payOtRate: 0, payDtRate: 0,
       dtAfter: "10" as TriggerOption, travel: 0, show: true,
     }]);
   }
@@ -178,8 +180,17 @@ export default function MasterRateCardEditor() {
             <thead>
               <tr>
                 <th>Show</th><th>Position</th><th>Specialty</th>
-                <th>Hourly</th><th>Day</th><th>OT Rate</th><th>DT Rate</th>
+                <th colSpan={4} style={{ textAlign: "center", borderBottom: "1px solid #d7c6aa" }} title="Bill rates: what AES bills the client">Bill</th>
+                <th colSpan={3} style={{ textAlign: "center", borderBottom: "1px solid #d7c6aa", background: "#fff4d6" }} title="Pay rates: what AES pays the worker. ADMIN-ONLY — never appears on client-facing documents.">Pay</th>
                 <th>OT Trigger</th><th>Travel</th><th></th>
+              </tr>
+              <tr>
+                <th></th><th></th><th></th>
+                <th>Hourly</th><th>Day</th><th>OT</th><th>DT</th>
+                <th style={{ background: "#fff4d6" }}>Hourly</th>
+                <th style={{ background: "#fff4d6" }}>OT</th>
+                <th style={{ background: "#fff4d6" }}>DT</th>
+                <th></th><th></th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -224,6 +235,29 @@ export default function MasterRateCardEditor() {
                     <td><input type="number" value={row.day} onChange={(e) => updateRow(index, { day: Number(e.target.value || 0) })} /></td>
                     <td><input type="number" value={row.otRate} onChange={(e) => updateRow(index, { otRate: Number(e.target.value || 0) })} /></td>
                     <td><input type="number" value={row.dtRate} onChange={(e) => updateRow(index, { dtRate: Number(e.target.value || 0) })} /></td>
+                    {/* ── Pay rates (admin-only, never client-facing) ── */}
+                    <td style={{ background: "#fffaeb" }}>
+                      <input type="number" value={row.payHourly}
+                        title="Pay rate (what AES pays the worker). NEVER printed on client docs."
+                        onChange={(e) => {
+                          const h = Number(e.target.value || 0);
+                          updateRow(index, {
+                            payHourly: h,
+                            payOtRate: Number((h * 1.5).toFixed(2)),
+                            payDtRate: Number((h * 2).toFixed(2)),
+                          });
+                        }} />
+                    </td>
+                    <td style={{ background: "#fffaeb" }}>
+                      <input type="number" value={row.payOtRate}
+                        title="Pay OT rate. Defaults to payHourly × 1.5."
+                        onChange={(e) => updateRow(index, { payOtRate: Number(e.target.value || 0) })} />
+                    </td>
+                    <td style={{ background: "#fffaeb" }}>
+                      <input type="number" value={row.payDtRate}
+                        title="Pay DT rate. Defaults to payHourly × 2."
+                        onChange={(e) => updateRow(index, { payDtRate: Number(e.target.value || 0) })} />
+                    </td>
                     <td>
                       <select value={row.dtAfter} onChange={(e) => updateRow(index, { dtAfter: e.target.value as TriggerOption })}>
                         <option value="none">No OT (flat)</option>

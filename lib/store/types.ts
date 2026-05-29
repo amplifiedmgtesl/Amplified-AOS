@@ -560,6 +560,14 @@ export type EmployeeRecord = {
   notes?: string;
   profilePicture?: string;
   source?: string;
+  // ─── Per-employee pay rate override (added 2026-05-28) ──────────────────
+  // NULL on any column = "use rate card". Set value = override that wins
+  // regardless of rate card. Used by the payroll module's resolvePayRateForEntry
+  // helper when snapshotting a payroll run. NEVER rendered on client-facing
+  // documents (quotes, invoices).
+  payStdRate?: number | null;
+  payOtRate?: number | null;
+  payDtRate?: number | null;
 };
 
 

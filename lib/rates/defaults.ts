@@ -20,10 +20,20 @@ export type RateRow = {
   department: string;    // derived = position name; kept for backward compat
   position: string;
   specialty: string;
+  // ─── Billing rates (what AES bills the client) ──────────────────────────
   hourly: number;
   day: number;
   otRate: number;
   dtRate: number;
+  // ─── Pay rates (what AES pays the worker) ───────────────────────────────
+  // Added 2026-05-28 (migration 20260528d). Admin-only — never rendered
+  // on quote/invoice PDFs or anywhere client-facing. The payroll module
+  // pulls these via resolvePayRateForEntry when snapshotting a run. 0 means
+  // "not set" — the payroll module surfaces a banner + blocks finalize.
+  payHourly: number;
+  payOtRate: number;
+  payDtRate: number;
+  // ─── Other ──────────────────────────────────────────────────────────────
   dtAfter: TriggerOption;
   travel: number;
   show: boolean;
@@ -32,6 +42,13 @@ const makeRow = (specialtyId: string, position: string, specialty: string, hourl
   specialtyId, department: position, position, specialty, hourly, day,
   otRate: Number((hourly * 1.5).toFixed(2)),
   dtRate: Number((hourly * 2.0).toFixed(2)),
+  // Pay rates default to 0 — there's no derivation rule, and silently
+  // seeding them from bill rates would re-introduce the bill-vs-pay
+  // confusion the rest of Phase 1 worked to eliminate. Admin enters them
+  // explicitly in the rate card editor.
+  payHourly: 0,
+  payOtRate: 0,
+  payDtRate: 0,
   dtAfter: "10",
   travel: 0,
   show: true

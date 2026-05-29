@@ -280,6 +280,60 @@ export default function EmployeeDirectory({ hideBill: hideBillProp = false }: { 
             </div>
           </div>
 
+          {/* ─── Pay Rate Override (admin-only) ──────────────────────────
+              These values override the rate-card default for this employee
+              when payroll resolves the pay rate. NULL = "use rate card";
+              any set value WINS regardless of rate card. ADMIN-ONLY — never
+              shown to crew leaders (hideBill strips the section). */}
+          {!hideBill && (
+            <div style={{ marginTop: 16 }}>
+              <h3 className="section-title">Pay Rate Override</h3>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                Optional. Leave blank to use the rate card for this employee's
+                specialty. Any value entered overrides the rate card — per
+                column (set just std to keep OT/DT from rate card, etc.).
+              </div>
+              <div className="grid grid3" style={{ gap: 12 }}>
+                <div>
+                  <small>Std $/hr</small>
+                  <input
+                    type="number" step="0.01" min="0"
+                    placeholder="(rate card)"
+                    value={activeEmployee.payStdRate ?? ""}
+                    onChange={(e) => updateActiveField(
+                      "payStdRate",
+                      e.target.value === "" ? null : Number(e.target.value),
+                    )}
+                  />
+                </div>
+                <div>
+                  <small>OT $/hr</small>
+                  <input
+                    type="number" step="0.01" min="0"
+                    placeholder="(rate card)"
+                    value={activeEmployee.payOtRate ?? ""}
+                    onChange={(e) => updateActiveField(
+                      "payOtRate",
+                      e.target.value === "" ? null : Number(e.target.value),
+                    )}
+                  />
+                </div>
+                <div>
+                  <small>DT $/hr</small>
+                  <input
+                    type="number" step="0.01" min="0"
+                    placeholder="(rate card)"
+                    value={activeEmployee.payDtRate ?? ""}
+                    onChange={(e) => updateActiveField(
+                      "payDtRate",
+                      e.target.value === "" ? null : Number(e.target.value),
+                    )}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div style={{ marginTop: 16 }}>
             <h3 className="section-title">Notes</h3>
             <textarea value={activeEmployee.notes || ""} onChange={(e)=>saveActiveNotes(e.target.value)} />

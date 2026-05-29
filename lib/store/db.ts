@@ -979,6 +979,10 @@ function syncRateCardProfileRows(profile: RateCardProfile) {
           day:       row.day,
           ot_rate:   row.otRate,
           dt_rate:   row.dtRate,
+          // Pay rates — admin-only, never rendered to client. Default 0.
+          pay_hourly:  row.payHourly  ?? 0,
+          pay_ot_rate: row.payOtRate ?? 0,
+          pay_dt_rate: row.payDtRate ?? 0,
           dt_after:  row.dtAfter,
           travel:    row.travel,
           show:      row.show,
@@ -1330,6 +1334,10 @@ function rowToEmployee(r: any): EmployeeRecord {
     notes: r.notes ?? undefined,
     profilePicture: r.profile_picture ?? undefined,
     source: r.source ?? undefined,
+    // Pay-rate override (admin-only, never client-facing). NULL = use rate card.
+    payStdRate: r.pay_std_rate == null ? null : Number(r.pay_std_rate),
+    payOtRate:  r.pay_ot_rate  == null ? null : Number(r.pay_ot_rate),
+    payDtRate:  r.pay_dt_rate  == null ? null : Number(r.pay_dt_rate),
   };
 }
 
@@ -1382,6 +1390,10 @@ function rowToRateRow(pr: any): RateRow {
     day:      pr.day      ?? 0,
     otRate:   pr.ot_rate  ?? 0,
     dtRate:   pr.dt_rate  ?? 0,
+    // Pay rates (admin-only, never client-facing). Default 0 means "not set".
+    payHourly: Number(pr.pay_hourly  ?? 0),
+    payOtRate: Number(pr.pay_ot_rate ?? 0),
+    payDtRate: Number(pr.pay_dt_rate ?? 0),
     dtAfter:  (pr.dt_after ?? "10") as import("../rates/defaults").TriggerOption,
     travel:   pr.travel   ?? 0,
     show:     pr.show     ?? true,
@@ -1638,6 +1650,16 @@ function employeeToRow(e: EmployeeRecord, isDeleted: boolean) {
     notes: e.notes ?? null,
     profile_picture: e.profilePicture ?? null,
     source: e.source ?? null,
+    // Pay-rate override columns. Sent as null when undefined so writes
+    // from screens that don't touch payroll don't clobber overrides set
+    // elsewhere — wait, they would clobber. Use ?? null on intentional
+    // fields only. employeeToRow gets called on every save, so the
+    // override must be round-tripped through the form. EmployeeRecord
+    // carries it (rowToEmployee reads it), so screens that don't show
+    // the field still pass the existing value through unchanged.
+    pay_std_rate: e.payStdRate ?? null,
+    pay_ot_rate:  e.payOtRate  ?? null,
+    pay_dt_rate:  e.payDtRate  ?? null,
     is_deleted: isDeleted,
   };
 }
