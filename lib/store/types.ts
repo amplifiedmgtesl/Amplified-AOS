@@ -565,6 +565,11 @@ export type EmployeeRecord = {
   // regardless of rate card. Used by the payroll module's resolvePayRateForEntry
   // helper when snapshotting a payroll run. NEVER rendered on client-facing
   // documents (quotes, invoices).
+  /** Date the person was added to the roster. NULL on legacy rows
+   *  pre-2026-05-28; the on-the-fly create flow from Timekeeping
+   *  stamps this with today's date so HR can identify onboarding
+   *  backlog without coordinator action. */
+  hireDate?: string;
   payStdRate?: number | null;
   payOtRate?: number | null;
   payDtRate?: number | null;

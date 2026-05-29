@@ -1013,6 +1013,10 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                                   firstName,
                                   lastName,
                                   type: "contractor",  // default; user can change in Maintenance
+                                  // Auto-stamp hire date with today so HR's
+                                  // onboarding backlog catches this person
+                                  // without coordinator action.
+                                  hireDate: new Date().toISOString().slice(0, 10),
                                 };
                                 upsertEmployee(newEmployee);
                                 setRefreshKey((k) => k + 1);

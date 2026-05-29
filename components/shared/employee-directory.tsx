@@ -277,6 +277,16 @@ export default function EmployeeDirectory({ hideBill: hideBillProp = false }: { 
                   {employmentTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
+              <div>
+                <small title="Date this person was added to the roster — drives HR's onboarding backlog. Auto-stamped when added on-the-fly from Timekeeping; editable here for backfill or corrections.">
+                  Hire Date
+                </small>
+                <input
+                  type="date"
+                  value={activeEmployee.hireDate || ""}
+                  onChange={(e) => updateActiveField("hireDate", e.target.value)}
+                />
+              </div>
             </div>
           </div>
 

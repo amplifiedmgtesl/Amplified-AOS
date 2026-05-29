@@ -1334,6 +1334,7 @@ function rowToEmployee(r: any): EmployeeRecord {
     notes: r.notes ?? undefined,
     profilePicture: r.profile_picture ?? undefined,
     source: r.source ?? undefined,
+    hireDate: r.hire_date ?? undefined,
     // Pay-rate override (admin-only, never client-facing). NULL = use rate card.
     payStdRate: r.pay_std_rate == null ? null : Number(r.pay_std_rate),
     payOtRate:  r.pay_ot_rate  == null ? null : Number(r.pay_ot_rate),
@@ -1650,6 +1651,7 @@ function employeeToRow(e: EmployeeRecord, isDeleted: boolean) {
     notes: e.notes ?? null,
     profile_picture: e.profilePicture ?? null,
     source: e.source ?? null,
+    hire_date: e.hireDate ?? null,
     // Pay-rate override columns. Sent as null when undefined so writes
     // from screens that don't touch payroll don't clobber overrides set
     // elsewhere — wait, they would clobber. Use ?? null on intentional
