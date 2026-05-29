@@ -23,6 +23,11 @@ clean afterward.
   checks: stray lines on deposits (current design = zero), subtotal
   vs quote × deposit_pct mismatch, and stale `deposit_applied` on
   finals.
+- **`05_fix_deposit_stray_lines.sql`** — corrective. Targets only the
+  safe sub-set from `04` Check 1: deposits where `lines_sum ==
+  subtotal` (deleting the stray lines doesn't change any displayed
+  value). Bypasses the invoice_lines freeze trigger inside the
+  transaction. Idempotent.
 
 ## Prod cutover playbook (run in order)
 
@@ -32,7 +37,12 @@ clean afterward.
 4. `03_audit_frozen.sql` — share output with Connor. Decide per-row:
    * Leave alone — original PDF stands.
    * Revise — creates a new revision and supersedes the original.
-5. `04_audit_deposits.sql` — same per-row decision flow with Connor.
+5. `04_audit_deposits.sql` — share Checks 2, 2b, 3 with Connor for
+   per-row decision (Check 1 results auto-cleaned by step 6).
+6. `05_fix_deposit_stray_lines.sql` — auto-cleans Check 1 stray
+   lines where `lines_sum == subtotal` (safe, displayed values
+   unchanged).
+7. Re-run `04` Check 1 — should return 0 rows.
 
 ## Why these live in `docs/`, not `supabase/migrations/`
 
