@@ -15,13 +15,13 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { loadInvoice, balanceDue } from "@/lib/store/invoices";
+import { loadInvoice } from "@/lib/store/invoices";
 import { loadCompanySettings, type CompanySettings } from "@/lib/store/company-settings";
 import type { InvoiceDraft, JobRequestShift } from "@/lib/store/types";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { loadInvoiceDays, invoiceHolidayLookup } from "@/lib/storage/invoice-days";
 import { supabase } from "@/lib/supabase/client";
-import { isDayModeLine } from "@/lib/rates/line-calc";
+import { isDayModeLine, computeLineTotal } from "@/lib/rates/line-calc";
 
 type LoadedJob = {
   id: string;
@@ -142,7 +142,10 @@ export default function InvoicePdfView({ id }: { id: string }) {
 
   const isDeposit = invoice.invoiceType === "deposit";
 
-  // For final invoices: group lines by quoteDate
+  // For final invoices: group lines by quoteDate. Recompute each line's
+  // total LIVE from the current holiday flags + multiplier so the printed
+  // value stays correct even if line.total persisted before a Holiday was
+  // toggled on. Editor heals storage on save; PDF is defensive.
   const dayGroups: DayGroup[] = (() => {
     if (isDeposit) return [];
     const dayMap = new Map<string, DayGroup>();
@@ -154,12 +157,23 @@ export default function InvoicePdfView({ id }: { id: string }) {
         ?? line.department
         ?? "—";
       const specialtyName = spc?.name ?? line.specialty ?? "—";
+      const dayIsHoliday = !!holidayByDate.get(key);
+      const liveTotal = computeLineTotal(line, {
+        dayIsHoliday,
+        holidayMultiplier: invoice.holidayMultiplier,
+      });
       const group = dayMap.get(key)!;
-      group.lines.push({ line, positionName, specialtyName });
-      group.subtotal += line.total || 0;
+      group.lines.push({ line: { ...line, total: liveTotal }, positionName, specialtyName });
+      group.subtotal += liveTotal;
     }
     return Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
   })();
+
+  // Live invoice subtotal — sum of live day subtotals. Used in printed
+  // summary so it stays consistent with the per-line totals above.
+  const liveInvoiceSubtotal = isDeposit
+    ? Number(invoice.subtotal ?? 0)
+    : Math.round(dayGroups.reduce((s, g) => s + g.subtotal, 0) * 100) / 100;
 
   const dateRange =
     job?.request_date && job?.end_date && job.end_date !== job.request_date
@@ -175,7 +189,15 @@ export default function InvoicePdfView({ id }: { id: string }) {
   const displayInvoiceNo = invoice.invoiceNo
     ?? (job?.job_no ? `${job.job_no}${isDeposit ? "_DEP" : "_INV"}${invoice.parentInvoiceId ? `_REV${invoice.revisionNo - 1}` : ""} (DRAFT)` : "(DRAFT)");
 
-  const balance     = balanceDue(invoice);
+  // Live balance uses the recomputed subtotal so the printed numbers stay
+  // self-consistent. Falls back to the stored subtotal for deposit invoices
+  // (no per-line recompute happens for deposits — they have no lines).
+  const balance = Math.round((
+    liveInvoiceSubtotal
+    - Number(invoice.depositApplied ?? 0)
+    - Number(invoice.creditsApplied ?? 0)
+    - Number(invoice.paidAmount ?? 0)
+  ) * 100) / 100;
   // Holiday is now a day-level badge on the day-group header — no per-line column.
   const anyTravel   = invoice.lines.some((l) => (l.travel || 0) > 0);
   const anyShift    = invoice.lines.some((l) => !!l.shiftId);
@@ -250,7 +272,7 @@ export default function InvoicePdfView({ id }: { id: string }) {
       <section className="pricing-summary top">
         <table>
           <tbody>
-            <tr><td>Subtotal</td><td>{fmtMoney(invoice.subtotal)}</td></tr>
+            <tr><td>Subtotal</td><td>{fmtMoney(liveInvoiceSubtotal)}</td></tr>
             {invoice.depositApplied > 0 ? (
               <tr><td>Deposit applied</td><td>−{fmtMoney(invoice.depositApplied)}</td></tr>
             ) : null}
@@ -374,7 +396,7 @@ export default function InvoicePdfView({ id }: { id: string }) {
       <section className="pricing-summary bottom">
         <table>
           <tbody>
-            <tr><td>Subtotal</td><td>{fmtMoney(invoice.subtotal)}</td></tr>
+            <tr><td>Subtotal</td><td>{fmtMoney(liveInvoiceSubtotal)}</td></tr>
             {invoice.depositApplied > 0 ? (
               <tr><td>Deposit applied</td><td>−{fmtMoney(invoice.depositApplied)}</td></tr>
             ) : null}
@@ -632,7 +654,26 @@ export default function InvoicePdfView({ id }: { id: string }) {
             max-width: none;
           }
           .hide-print { display: none !important; }
-          .day-group, .pay-to { break-inside: avoid; }
+          /* Keep day sections + pay-to block together when they fit. */
+          .day-group, .pay-to {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          /* Don't strand a day header at the bottom of a page with its
+             table starting on the next page. */
+          .day-header {
+            break-after: avoid;
+            page-break-after: avoid;
+          }
+          /* When a day's table IS too large to fit on one page (rare),
+             repeat the column headers at the top of each continuation. */
+          .lines-table thead {
+            display: table-header-group;
+          }
+          .lines-table tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
           /* terms intentionally NOT in the avoid list — long T&Cs should flow */
         }
       `}</style>

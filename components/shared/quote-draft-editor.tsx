@@ -144,6 +144,34 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         const qds = await loadQuoteDays(q.id);
         if (!cancelled) setQuoteDays(qds);
 
+        // Heal stale line totals: a draft saved BEFORE a Holiday day flag
+        // was flipped on can carry un-doubled totals on the affected day's
+        // lines. The recompute path catches edits going forward but not
+        // already-saved values. Run a one-time pass on load and patch the
+        // local quote object (autosave watcher will persist on the next
+        // user edit, OR we save explicitly here if drift was found).
+        const healMap = new Map<string, boolean>();
+        for (const d of qds) healMap.set(d.quoteDate, d.isHoliday);
+        const healedLines = q.lines.map((l) => {
+          const dayIsHoliday = !!(l.quoteDate && healMap.get(l.quoteDate));
+          const liveTotal = computeLineTotal(l, {
+            dayIsHoliday,
+            holidayMultiplier: q.holidayMultiplier,
+          });
+          return Math.abs(liveTotal - (l.total || 0)) > 0.005
+            ? { ...l, total: liveTotal }
+            : l;
+        });
+        const driftFound = healedLines.some((l, i) => l !== q.lines[i]);
+        if (driftFound) {
+          q.lines = healedLines;
+          q.total = Math.round(healedLines.reduce((s, l) => s + (l.total || 0), 0) * 100) / 100;
+          // Persist immediately so subsequent loads + the PDF route both
+          // see consistent stored values (PDF also recomputes live as
+          // belt-and-braces).
+          try { await saveDraft(q); } catch (e) { console.warn("[quote-draft-editor] heal autosave failed:", e); }
+        }
+
         // Build the day list. If no day rows, synthesize a single day from the job.
         const dayRows = (daysRes.data ?? []) as any[];
         const dayInfos: DayInfo[] = dayRows.length > 0

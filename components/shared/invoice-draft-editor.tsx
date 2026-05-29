@@ -95,6 +95,30 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         const ids = await loadInvoiceDays(q.id);
         if (!cancelled) setInvoiceDays(ids);
 
+        // Heal stale line totals from before a Holiday flag was toggled.
+        // Same pattern as quote-draft-editor — patch local state + persist
+        // when drift detected so the PDF + detail view see consistent
+        // values without needing to re-edit a line first.
+        const healMap = new Map<string, boolean>();
+        for (const d of ids) healMap.set(d.invoiceDate, d.isHoliday);
+        const healedLines = q.lines.map((l) => {
+          const dayIsHoliday = !!(l.quoteDate && healMap.get(l.quoteDate));
+          const liveTotal = computeLineTotal(l, {
+            dayIsHoliday,
+            holidayMultiplier: q.holidayMultiplier,
+          });
+          return Math.abs(liveTotal - (l.total || 0)) > 0.005
+            ? { ...l, total: liveTotal }
+            : l;
+        });
+        const driftFound = healedLines.some((l, i) => l !== q.lines[i]);
+        if (driftFound) {
+          q.lines = healedLines;
+          q.subtotal = Math.round(healedLines.reduce((s, l) => s + (l.total || 0), 0) * 100) / 100;
+          q.amountDue = +(q.subtotal - (q.depositApplied ?? 0) - (q.creditsApplied ?? 0)).toFixed(2);
+          try { await saveDraft(q); } catch (e) { console.warn("[invoice-draft-editor] heal autosave failed:", e); }
+        }
+
         // Load positions + specialties for cascading dropdowns on line rows.
         // Mirrors the quote-draft-editor pattern: position picks filter the
         // available specialties; specialty_id is authoritative for the FK

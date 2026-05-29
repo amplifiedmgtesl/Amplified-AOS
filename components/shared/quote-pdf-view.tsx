@@ -28,6 +28,7 @@ import { loadCompanySettings, type CompanySettings } from "@/lib/store/company-s
 import type { QuoteDraft, JobRequestShift } from "@/lib/store/types";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { loadQuoteDays, holidayLookup } from "@/lib/storage/quote-days";
+import { computeLineTotal } from "@/lib/rates/line-calc";
 import { supabase } from "@/lib/supabase/client";
 
 type LoadedJob = {
@@ -175,7 +176,11 @@ export default function QuotePdfView({ id }: { id: string }) {
   if (error) return <div style={{ padding: 40 }} className="muted">{error}</div>;
   if (!quote) return null;
 
-  // Group lines by quoteDate.
+  // Group lines by quoteDate. Recompute each line's total LIVE from the
+  // current holiday flags + multiplier rather than trusting the persisted
+  // line.total. Drafts saved before a day was toggled to Holiday would
+  // otherwise print stale (un-doubled) totals. Persisted total may differ
+  // from displayed; the editor heals it on save.
   const dayMap = new Map<string, DayGroup>();
   for (const line of quote.lines) {
     const key = line.quoteDate || "(no date)";
@@ -186,11 +191,28 @@ export default function QuotePdfView({ id }: { id: string }) {
       ?? line.department
       ?? "—";
     const specialtyName = spc?.name ?? line.specialty ?? "—";
+    const dayIsHoliday = !!holidayByDate.get(key);
+    const liveTotal = computeLineTotal(line, {
+      dayIsHoliday,
+      holidayMultiplier: quote.holidayMultiplier,
+    });
     const group = dayMap.get(key)!;
-    group.lines.push({ line, positionName, specialtyName });
-    group.subtotal += line.total || 0;
+    group.lines.push({ line: { ...line, total: liveTotal }, positionName, specialtyName });
+    group.subtotal += liveTotal;
   }
   const dayGroups = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+  // Live quote subtotal — sum of live day subtotals. Used in the printed
+  // pricing summary so it stays consistent with the per-line totals above.
+  // Diverges from quote.total only when persisted line totals are stale
+  // (e.g. a Holiday flag was flipped after lines were created).
+  const liveQuoteTotal = Math.round(
+    dayGroups.reduce((s, g) => s + g.subtotal, 0) * 100,
+  ) / 100;
+  const liveDeposit = Math.round(
+    liveQuoteTotal * ((quote.depositPct ?? 0) / 100) * 100,
+  ) / 100;
+  const liveBalanceDue = Math.round((liveQuoteTotal - liveDeposit) * 100) / 100;
 
   // OT/DT column visibility: include the column only when at least one line
   // actually uses it (keeps simple quotes clean). Holiday is now a day-level
@@ -282,14 +304,14 @@ export default function QuotePdfView({ id }: { id: string }) {
       <section className="pricing-summary top">
         <table>
           <tbody>
-            <tr><td>Subtotal</td><td>{fmtMoney(quote.total)}</td></tr>
+            <tr><td>Subtotal</td><td>{fmtMoney(liveQuoteTotal)}</td></tr>
             <tr>
               <td>Deposit ({quote.depositPct ?? 0}%)</td>
-              <td>{fmtMoney(quote.deposit)}</td>
+              <td>{fmtMoney(liveDeposit)}</td>
             </tr>
             <tr className="balance-row">
               <td>Balance due upon completion</td>
-              <td>{fmtMoney(balanceDue)}</td>
+              <td>{fmtMoney(liveBalanceDue)}</td>
             </tr>
           </tbody>
         </table>
@@ -374,14 +396,14 @@ export default function QuotePdfView({ id }: { id: string }) {
       <section className="pricing-summary bottom">
         <table>
           <tbody>
-            <tr><td>Subtotal</td><td>{fmtMoney(quote.total)}</td></tr>
+            <tr><td>Subtotal</td><td>{fmtMoney(liveQuoteTotal)}</td></tr>
             <tr>
               <td>Deposit ({quote.depositPct ?? 0}%)</td>
-              <td>{fmtMoney(quote.deposit)}</td>
+              <td>{fmtMoney(liveDeposit)}</td>
             </tr>
             <tr className="balance-row">
               <td>Balance due upon completion</td>
-              <td>{fmtMoney(balanceDue)}</td>
+              <td>{fmtMoney(liveBalanceDue)}</td>
             </tr>
           </tbody>
         </table>
@@ -824,8 +846,28 @@ export default function QuotePdfView({ id }: { id: string }) {
           .hide-print {
             display: none !important;
           }
+          /* Keep each day's section together when it fits on a page. Print
+             engines vary in how aggressively they honor this — set both
+             properties for broad coverage. */
           .day-group {
             break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          /* Never strand a day header at the very bottom of a page with
+             its table starting on the next page. */
+          .day-header {
+            break-after: avoid;
+            page-break-after: avoid;
+          }
+          /* When a day's table IS too big to fit on one page (rare), repeat
+             the column headers at the top of each continuation page. Default
+             browser behavior collapses thead — this forces it back on. */
+          .lines-table thead {
+            display: table-header-group;
+          }
+          .lines-table tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
         }
       `}</style>
