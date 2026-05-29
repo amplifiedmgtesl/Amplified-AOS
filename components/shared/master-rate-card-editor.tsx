@@ -181,15 +181,15 @@ export default function MasterRateCardEditor() {
               <tr>
                 <th>Show</th><th>Position</th><th>Specialty</th>
                 <th colSpan={4} style={{ textAlign: "center", borderBottom: "1px solid #d7c6aa" }} title="Bill rates: what AES bills the client">Bill</th>
-                <th colSpan={3} style={{ textAlign: "center", borderBottom: "1px solid #d7c6aa", background: "#fff4d6" }} title="Pay rates: what AES pays the worker. ADMIN-ONLY — never appears on client-facing documents.">Pay</th>
+                <th colSpan={3} style={{ textAlign: "center", borderBottom: "1px solid #d7c6aa", background: "#fff4d6", color: "#181410" }} title="Pay rates: what AES pays the worker. ADMIN-ONLY — never appears on client-facing documents.">Pay</th>
                 <th>OT Trigger</th><th>Travel</th><th></th>
               </tr>
               <tr>
                 <th></th><th></th><th></th>
                 <th>Hourly</th><th>Day</th><th>OT</th><th>DT</th>
-                <th style={{ background: "#fff4d6" }}>Hourly</th>
-                <th style={{ background: "#fff4d6" }}>OT</th>
-                <th style={{ background: "#fff4d6" }}>DT</th>
+                <th style={{ background: "#fff4d6", color: "#181410" }}>Hourly</th>
+                <th style={{ background: "#fff4d6", color: "#181410" }}>OT</th>
+                <th style={{ background: "#fff4d6", color: "#181410" }}>DT</th>
                 <th></th><th></th><th></th>
               </tr>
             </thead>
