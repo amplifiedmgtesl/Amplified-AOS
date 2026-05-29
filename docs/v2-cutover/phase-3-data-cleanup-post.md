@@ -32,25 +32,15 @@ companion notes (the two-path backfill SQL committed in dev).
 Why: `spc-1776715035819` was added via UI later, doesn't match the
 `spc-NN-NN` ID convention, duplicates a legitimate specialty name.
 
-⚠ Re-audit on prod FIRST. Phase 0 Section 6 should have shown the
-current refs. If counts differ from dev's 3 refs, decide per-row
-whether to re-point or delete differently.
+✅ Phase 0 Section 6 confirmed prod has **ZERO references** across all 4
+referrer tables. Simplified to a single DELETE:
 
 ```sql
-ALTER TABLE quote_lines   DISABLE TRIGGER quote_lines_freeze_iud_trg;
-ALTER TABLE invoice_lines DISABLE TRIGGER invoice_lines_freeze_iud_trg;
-UPDATE rate_card_profile_rows    SET specialty_id = 'spc-08-01' WHERE specialty_id = 'spc-1776715035819';
-UPDATE job_request_crew_needs    SET specialty_id = 'spc-08-01' WHERE specialty_id = 'spc-1776715035819';
-UPDATE job_request_assignments   SET specialty_id = 'spc-08-01' WHERE specialty_id = 'spc-1776715035819';
-UPDATE quote_lines               SET specialty_id = 'spc-08-01' WHERE specialty_id = 'spc-1776715035819';
-UPDATE invoice_lines             SET specialty_id = 'spc-08-01' WHERE specialty_id = 'spc-1776715035819';
-ALTER TABLE quote_lines   ENABLE TRIGGER quote_lines_freeze_iud_trg;
-ALTER TABLE invoice_lines ENABLE TRIGGER invoice_lines_freeze_iud_trg;
-
 DELETE FROM specialties WHERE id = 'spc-1776715035819';
+-- Expect: DELETE 1
 ```
 
-Expected: `DELETE 1`. UPDATEs match Phase 0 Section 6 counts.
+Expected: `DELETE 1`. If 0, the row was already removed — proceed.
 
 ---
 
@@ -139,14 +129,20 @@ Expected NOTICE: `abandoned sibling status=cancelled`
 ⚠ Time-pressured: Carolina event is 2026-05-31. Even if cutover slips,
 this MUST happen before that date.
 
+⚠ Source row drift since memory was written: prod now has **2 quotes
+with 159 total lines** on the source (vs memory's 1 quote / 79 lines).
+The merge script handles N quotes — pre-flight NOTICE will print
+`src quotes to move=2` and the post-flight will show `quote_lines=159`.
+This is expected, not a problem.
+
 ```sql
 -- Paste contents of: docs/data-integrity/10_merge_carolina.sql
 ```
 
-Expected NOTICE chain:
-- `Carolina pre-flight: target days=10, crew_needs=40, src quotes to move=1`
+Expected NOTICE chain (UPDATED for prod's 2-quote shape):
+- `Carolina pre-flight: target days=10, crew_needs=40, src quotes to move=2`
 - `Carolina merge: all references re-pointed cleanly.`
-- `Carolina post-flight: target has quotes=1, quote_lines=79, crew_needs=40, attachments=1. Source still exists=false`
+- `Carolina post-flight: target has quotes=2, quote_lines=159, crew_needs=40, attachments=1. Source still exists=false`
 
 ---
 

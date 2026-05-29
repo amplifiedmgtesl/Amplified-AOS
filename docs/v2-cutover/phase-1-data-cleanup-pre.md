@@ -104,20 +104,26 @@ Why: migration #23's partial unique indices (`invoices_one_active_deposit_per_jo
 `invoices_one_active_wholejob_final_per_job`) fail to create if any job
 has multiple non-superseded/non-void invoices of the same type.
 
-If Phase 0 Section 3a or 3b returned ZERO rows, skip this step.
-
-If rows returned, for each conflict group decide which row to keep
-(paid > sent partial > sent unpaid; recovered-* loses to non-recovered),
-then run for each loser:
+Phase 0 Section 3 surfaced 4 clusters (Loud&Clear jobs `1775073944709`
+and `1777325737896`). The supersede decisions are pre-baked in
+`phase-1-invoice-supersedes.sql`.
 
 ```sql
-UPDATE invoices SET status = 'superseded' WHERE id = '<loser-id>';
+-- Paste contents of: docs/v2-cutover/phase-1-invoice-supersedes.sql
 ```
 
-Document each decision in the cutover log.
+Expected NOTICE:
+```
+Cluster 1 (jobreq-1775073944709): deposits_active=1, finals_active=1
+Cluster 2 (jobreq-1777325737896): deposits_active=1, finals_active=1
+```
 
-After all conflicts resolved, re-run Phase 0 Section 3a + 3b. Both must
-return zero rows.
+If the post-flight RAISE EXCEPTION fires, the transaction rolls back —
+re-read the audit output, decide which row to keep instead, adjust the
+script's UPDATE IDs, retry.
+
+After completion, re-run Phase 0 Section 3a + 3b. Both must return zero
+rows.
 
 ---
 
