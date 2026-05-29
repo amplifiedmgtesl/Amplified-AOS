@@ -28,21 +28,55 @@ clean afterward.
   subtotal` (deleting the stray lines doesn't change any displayed
   value). Bypasses the invoice_lines freeze trigger inside the
   transaction. Idempotent.
+- **`06_audit_duplicate_jobs.sql`** — read-only. Section A lists every
+  FK + legacy-text reference count for the four known duplicate
+  job_request clusters (KY Event, Revival Night, Bruno Mars, Carolina).
+  Section B sweeps for free-text orphans naming the same client +
+  date window without an id pointer. Run AFTER Phase 2 migrations
+  apply.
+- **`07_merge_ky_event.sql`** — corrective. Deletes 2 empty KY Event
+  siblings (memory #2). Pre-flight asserts zero external refs. Cascade
+  deletes child rows. Idempotent.
+- **`08_merge_revival_night.sql`** — corrective. Deletes 1 empty
+  Revival Night sibling (memory #2). Same shape as #07.
+- **`09_retire_bruno_mars.sql`** — corrective. Soft-retires (status =
+  'cancelled') the abandoned Bruno Mars sibling (memory #32b). Past
+  event so hard-delete deferred to the future hard-delete cleanup
+  pass; retire keeps the row available for any free-text-orphan
+  resolution that surfaces post-V2.
+- **`10_merge_carolina.sql`** — corrective. TRUE merge for Carolina
+  Country Music Fest (memory #32a). Copies source's shifts onto
+  target, re-points quote_lines.shift_id, re-points the quote +
+  every other id-anchored reference, then deletes source. Freeze
+  triggers disabled inside the transaction. ⚠ TIME-PRESSURED:
+  event is 2026-05-31.
 
 ## Prod cutover playbook (run in order)
 
 1. `01_audit_drafts.sql` — size the problem on prod.
 2. `02_fix_drafts.sql` — fix drafts + backfill legacy paid invoices.
 3. Re-run `01` — every count should be 0.
-4. `03_audit_frozen.sql` — share output with Connor. Decide per-row:
-   * Leave alone — original PDF stands.
-   * Revise — creates a new revision and supersedes the original.
-5. `04_audit_deposits.sql` — share Checks 2, 2b, 3 with Connor for
-   per-row decision (Check 1 results auto-cleaned by step 6).
+4. `03_audit_frozen.sql` — review output. Default action per row is
+   "leave alone" (original PDF stands as historical record). Save
+   the output to a worksheet for Connor's later review; only
+   actively revise rows where the math is clearly broken AND he's
+   reachable for the call.
+5. `04_audit_deposits.sql` — same disposition for Checks 2, 2b, 3.
+   Check 1 results auto-cleaned by step 6.
 6. `05_fix_deposit_stray_lines.sql` — auto-cleans Check 1 stray
    lines where `lines_sum == subtotal` (safe, displayed values
    unchanged).
 7. Re-run `04` Check 1 — should return 0 rows.
+8. `06_audit_duplicate_jobs.sql` — review per-row reference counts
+   for the four duplicate clusters. Confirms each merge is safe to
+   run.
+9. `07_merge_ky_event.sql` — delete 2 empty KY Event siblings.
+10. `08_merge_revival_night.sql` — delete 1 empty Revival Night
+    sibling.
+11. `09_retire_bruno_mars.sql` — retire abandoned Bruno Mars sibling.
+12. `10_merge_carolina.sql` — merge Carolina Country Music Fest
+    (⚠ event is 2026-05-31).
+13. Re-run `06` — every source-row reference count should be 0.
 
 ## Why these live in `docs/`, not `supabase/migrations/`
 
