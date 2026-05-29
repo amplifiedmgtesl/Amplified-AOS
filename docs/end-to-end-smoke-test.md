@@ -6,7 +6,7 @@ before the prod cutover. Run as one cohesive dry-run job ("Smoke Test Co
 
 Tester: ____________________________  Date: ____________
 
-Build commit: ____________________________ (top of git log)
+Build commit: ____________________________ (top of `git log`)
 
 ---
 
@@ -18,11 +18,16 @@ Build commit: ____________________________ (top of git log)
 - [ ] **Add a client contact** (role = billing) — needed for later
       invoice addressing.
 - [ ] Maintenance → Rate Cards → **New Rate Card** for this client.
-      - [ ] Set `effective_date` to today or earlier.
-      - [ ] Change at least one specialty's hourly/OT/DT rates so they
-            differ from the master default (proves the rate-card values
-            flow through, not the placeholder).
-      - [ ] Save.
+  - [ ] Set `effective_date` to today or earlier.
+  - [ ] Change at least one specialty's **bill** hourly/OT/DT so they
+        differ from the master default (proves the rate-card BILL
+        values flow through, not a placeholder).
+  - [ ] On the SAME rows, set **pay** Hourly / OT / DT to non-zero
+        values (e.g. base $25, OT $37.50, DT $50). These get pulled
+        into payroll runs later. Leave at least ONE specialty with
+        pay rates at $0 so we can verify the payroll "needs rates"
+        banner.
+  - [ ] Save.
 
 Notes / issues:
 
@@ -62,10 +67,14 @@ ______________________________________________________________________
 - [ ] **Days tab**: confirm both day rows appear. Tick the 🎄 Holiday
       checkbox on **one** day.
 - [ ] **Crew Needs tab**: add 2–3 (position × specialty) rows with qty
-      + hours on each day.
+      + hours on each day. Include at least ONE row whose specialty has
+      $0 pay rates (set up in Phase 1) so the payroll banner fires
+      later.
 - [ ] **Shifts tab**: add at least two shifts (e.g. `Load In`, `SHOW`).
 - [ ] **Assigned Crew tab**: add a few confirmed assignments from real
-      employees.
+      employees. At least one should be an employee whose
+      `pay_std_rate` is NULL (no override) so the rate-card path gets
+      exercised in payroll.
 - [ ] **Attachments tab**: upload any file, pick **Timesheet** as the
       doc type → confirm no CHECK constraint error and the new option
       appears in the dropdown.
@@ -83,12 +92,12 @@ ______________________________________________________________________
 
 - [ ] From the job → **Save + Create Quote**.
 - [ ] Quote draft editor opens. Verify:
-      - [ ] Lines pre-seeded from crew needs.
-      - [ ] **Rates match the rate card you created** (not the master
-            default placeholder).
-      - [ ] The holiday-flagged day shows the 🎄 badge.
-      - [ ] Toggling holiday on a different day recomputes line totals.
-      - [ ] Holiday multiplier is editable (default 2.0).
+  - [ ] Lines pre-seeded from crew needs.
+  - [ ] **Rates match the rate card you created** (not the master
+        default placeholder).
+  - [ ] The holiday-flagged day shows the 🎄 badge.
+  - [ ] Toggling holiday on a different day recomputes line totals.
+  - [ ] Holiday multiplier is editable (default 2.0).
 - [ ] Adjust qty/hours on one line — total recomputes.
 - [ ] **Issue Quote** → confirm frozen, `quote_no` assigned, lines
       become read-only.
@@ -104,10 +113,9 @@ ______________________________________________________________________
 
 ---
 
-## Phase 4 — Job change + sync to quote (NEW)
+## Phase 4 — Job change + sync to quote
 
-This phase exercises the new "Sync from Job" workflow. Skip if the
-client hasn't requested a change in your test scenario.
+This phase exercises the new "Sync from Job" workflow.
 
 - [ ] From the issued quote → **Revise** → a new draft opens with
       `_REV2` projected number.
@@ -138,7 +146,7 @@ ______________________________________________________________________
 
 ---
 
-## Phase 5 — Deposit invoice
+## Phase 5 — Deposit invoice + Record Payment
 
 - [ ] From the (revised) issued quote → **Generate Deposit**.
 - [ ] Deposit draft editor opens.
@@ -160,9 +168,9 @@ ______________________________________________________________________
 - [ ] Verify the Pricing summary now shows `Paid: −$X` and Balance
       due: `$0.00`.
 
-### Partial payment + Void
+### Partial payment + Void (optional but recommended)
 
-- [ ] (Optional) Skip these if you only want to test the happy path.
+- [ ] Skip these if you only want to test the happy path.
 - [ ] On a fresh invoice (or temporarily Revise this one), click
       Record Payment but set the amount to LESS than balance due
       (e.g. half). Save.
@@ -178,7 +186,7 @@ ______________________________________________________________________
 
 - [ ] On the same issued quote → click **Generate Deposit** again →
       confirm it's blocked (the partial unique index allows only one
-      non-superseded/non-void deposit per job). Useful to know exists.
+      non-superseded/non-void deposit per job).
 
 Notes / issues:
 
@@ -193,10 +201,10 @@ ______________________________________________________________________
 
 - [ ] **Timekeeping** → pick the canonical Job from the dropdown.
 - [ ] Click **Add Crew from Job** → confirm rows seed with:
-      - [ ] One per (assigned employee × day × shift)
-      - [ ] Position + Specialty + Shift IDs all populated
-      - [ ] Times default from each day's start/end
-      - [ ] Holiday rows show 🎄 and the row's pay multiplier
+  - [ ] One per (assigned employee × day × shift)
+  - [ ] Position + Specialty + Shift IDs all populated
+  - [ ] Times default from each day's start/end
+  - [ ] Holiday rows show 🎄 and the row's pay multiplier
 - [ ] Fill in actual times on each row → totals + ST/OT/DT split
       compute.
 - [ ] Verify a holiday row's pay = `totalHours × stdRate × 2`.
@@ -222,29 +230,29 @@ ______________________________________________________________________
 ### Deposit auto-applies on final-draft creation
 
 This is the most important math check in the whole walkthrough. The
-final invoice's `depositApplied` field is filled at draft creation
-from the issued deposit invoice's subtotal — operator does not have
-to apply it manually.
+final invoice's `depositApplied` field is filled at draft creation from
+the issued deposit invoice's subtotal — operator does not have to apply
+it manually.
 
 - [ ] Verify the header / summary panel on the new final draft shows:
-      - [ ] **Subtotal**: matches the quote total (sum of seeded lines)
-      - [ ] **Deposit applied**: −(the issued deposit's amount)
-      - [ ] **Balance due**: subtotal − deposit applied
-- [ ] If the math is off by a cent, flag it (rounding edge cases on
-      odd deposit percentages).
+  - [ ] **Subtotal**: matches the quote total (sum of seeded lines)
+  - [ ] **Deposit applied**: −(the issued deposit's amount)
+  - [ ] **Balance due**: subtotal − deposit applied
+- [ ] If the math is off by a cent, flag it (rounding edge cases on odd
+      deposit percentages).
 
 ### Overwrite from Timesheets
 
 - [ ] Click **Overwrite from Timesheets**.
 - [ ] **Verify the post-action alert** reports:
-      - [ ] `N new lines from M of T approved entries`
-      - [ ] `K manual lines preserved` (0 expected this round)
-      - [ ] No warnings if data is clean
+  - [ ] `N new lines from M of T approved entries`
+  - [ ] `K manual lines preserved` (0 expected this round)
+  - [ ] No warnings if data is clean
 - [ ] **Verify the resulting lines:**
-      - [ ] Rates match the **rate card** (not 35/52/70 pay rates)
-      - [ ] Hours match the timesheets (ST/OT/DT split + crew count)
-      - [ ] Holiday day lines bill at 2× rate
-      - [ ] Subtotal is sane and = sum of line totals
+  - [ ] Rates match the **rate card** (not 35/52/70 pay rates)
+  - [ ] Hours match the timesheets (ST/OT/DT split + crew count)
+  - [ ] Holiday day lines bill at 2× rate
+  - [ ] Subtotal is sane and = sum of line totals
 - [ ] Scroll past line items → **Approved Timesheet Actuals
       (comparison)** panel shows the same hours grouped by position,
       **no pay column**.
@@ -256,6 +264,8 @@ to apply it manually.
 - [ ] Verify the alert reports `1 manual line preserved`.
 - [ ] Verify the manual line is still there, with new timesheet lines
       sorted after it.
+
+### Issue + Pay
 
 - [ ] **Issue Invoice** → frozen, `invoice_no` ends `_INV`.
 - [ ] **Mark Sent** → status flips to `sent`. Balance due unchanged
@@ -298,6 +308,8 @@ ______________________________________________________________________
       again** and land on the new lines cleanly. (This proves the
       auto-release trigger fired on supersede.)
 - [ ] **Issue Revision** → confirm `_REV1` (or higher) suffix.
+- [ ] Re-pay if needed using Record Payment (since the new revised
+      invoice has its own balance).
 
 Notes / issues:
 
@@ -308,15 +320,129 @@ ______________________________________________________________________
 
 ---
 
-## Phase 9 — PDFs
+## Phase 9 — Payroll (Phase 1)
+
+Tests the new paydate runs workflow. Entries from the timesheet job
+above flow into a payroll run, get pay rates resolved, and finalize.
+
+### Pay-rate setup verification
+
+- [ ] Maintenance → Employees → pick one assigned employee → set
+      **Pay Std Rate** to a specific number (e.g. $30). Save. (This
+      employee should land in the run with that override.)
+- [ ] Leave at least one other assigned employee's pay override blank
+      so we verify the rate-card fallback (the rate-card pay columns
+      set up in Phase 1).
+- [ ] Confirm the specialty whose rate-card pay is $0 (from Phase 1)
+      will be on the run — that row should land with $0 pay and trip
+      the "needs rates" banner.
+
+### Create a payroll run
+
+- [ ] Navigate to **Payroll** in the nav → list view loads.
+- [ ] Click **+ New Run** → candidate picker page opens.
+- [ ] Set date filters covering the smoke-test job's work dates.
+      (Leave job + employee filters empty for now.)
+- [ ] Click **Search** → confirm the approved entries from Phase 6
+      appear in the grid. Each row should show employee, job, hours,
+      employment type.
+- [ ] Verify **already-paid entries are excluded** — if you re-search
+      after creating a run later, those entries shouldn't reappear.
+- [ ] Set **Pay date** (today), optionally Period start/end + notes.
+- [ ] Leave all rows checked (default). Click **Create Run**.
+- [ ] Routed to the run detail page; run appears in `draft` status.
+
+### Verify pay-rate resolution
+
+- [ ] Each row should show a **Base $/hr** input.
+- [ ] The employee whose `pay_std_rate` override you set should show
+      that value (e.g. $30) with a source badge / hint indicating
+      `employee` override.
+- [ ] Employees without overrides should show the **rate card** pay
+      value for their (specialty, job).
+- [ ] At least one row should show `$0` → trips the yellow **"needs
+      rates"** banner above the entries table.
+- [ ] OT/DT rates auto-derive as base × 1.5 / base × 2 (e.g. base $30
+      → OT $45, DT $60).
+- [ ] Holiday rows compute `totalHours × base × multiplier` (OT/DT
+      premium does NOT stack on holiday rows).
+
+### Try to finalize while unrated
+
+- [ ] Click **Finalize** → should error (or be disabled): "Cannot
+      finalize — N entries have no base pay rate set."
+
+### Set the missing rate + recalculate
+
+- [ ] Type a base rate into the $0 row's input. OT/DT/Total Pay update
+      live in that row.
+- [ ] (Optional) Click **🔁 Recalculate rates** → confirms every row's
+      OT/DT are normalized at 1.5×/2× of base, totals refreshed.
+- [ ] Verify run-header totals (entry count, employee count, total
+      hours, total pay) match the entry rows.
+
+### Source entry super-freeze
+
+- [ ] Open Timekeeping for the same job in another tab.
+- [ ] Find one of the entries that's now on the payroll run → confirm
+      it shows a "🔒 Billed/Payroll" lock state (the trigger super-
+      freezes the source while it's on a non-voided run).
+- [ ] Try to edit a content field on the locked entry → DB error
+      reported in console (UI input should be disabled).
+
+### Finalize → Reopen → Re-finalize
+
+- [ ] Yellow banner now gone. Click **Finalize** → status flips to
+      `finalized`. Entries become read-only on the run (greyed out).
+- [ ] Click **Reopen** → status drops back to `draft`; entry inputs
+      become editable again.
+- [ ] Click **Finalize** again → back to `finalized`.
+
+### Print
+
+- [ ] Click **Print** (or open `/payroll/[id]/pdf`) → preview opens
+      with one row per entry: employee, work date, position, hours,
+      base rate, OT/DT rates, total pay; run totals at the bottom.
+- [ ] (Optional) `Cmd+P` → save as PDF for archive.
+
+### Void → entries released
+
+- [ ] Click **Void** → enter a reason → confirm.
+- [ ] Status flips to `voided`. The detail page should reflect that.
+- [ ] Open Timekeeping for the same job → confirm the source entries
+      are no longer locked (super-freeze released by the void cascade
+      trigger).
+- [ ] Navigate back to **Payroll → New Run** → run the candidate
+      search again → confirm the previously-voided entries reappear
+      as candidates.
+
+### Out of scope today (Phase 1 only — future payroll project)
+
+- Pay periods + automatic period generation.
+- Export to Gusto / ADP / QB CSV.
+- Per-employee pay stubs.
+- Tax withholding calculations.
+- Direct deposit / ACH file generation.
+
+Notes / issues:
+
+```
+______________________________________________________________________
+______________________________________________________________________
+```
+
+---
+
+## Phase 10 — PDFs
 
 - [ ] Open the PDF view for each issued document. Confirm each renders
       cleanly and shows the right content:
-      - [ ] Initial quote
-      - [ ] Revised quote (_REV2)
-      - [ ] Deposit invoice
-      - [ ] Final invoice
-      - [ ] Revised final invoice
+  - [ ] Initial quote
+  - [ ] Revised quote (_REV2)
+  - [ ] Deposit invoice
+  - [ ] Final invoice
+  - [ ] Revised final invoice
+  - [ ] Payroll run (finalized version)
 - [ ] Letterhead, dates, lines, holiday badges, terms, signature blocks
       all present.
 
@@ -336,6 +462,7 @@ ______________________________________________________________________
 - Online signature flow (separate project)
 - Customer-payment allocation across multiple invoices (Phase C+ work)
 - Communications / calendar integrations
+- Payroll exports + tax (future payroll project)
 
 ---
 
