@@ -268,7 +268,15 @@ export async function getAlreadyBilledTimesheetEntryIds(jobRequestId: string): P
  *  the customer sees a meaningful description without the data shape having
  *  to fake a line item with the amount stuffed into a wrong field.
  */
-export async function createDepositDraftFromQuote(quoteId: string): Promise<InvoiceDraft> {
+/** Default deposit fraction when the caller doesn't specify and the quote
+ *  itself doesn't carry a deposit_pct. Connor's rule: 50% deposit on
+ *  every new event unless the operator overrides at generation time. */
+export const DEFAULT_DEPOSIT_PCT = 50;
+
+export async function createDepositDraftFromQuote(
+  quoteId: string,
+  opts: { amount?: number } = {},
+): Promise<InvoiceDraft> {
   const qRes = await supabase.from("quotes").select("*").eq("id", quoteId).maybeSingle();
   if (qRes.error) throw qRes.error;
   if (!qRes.data) throw new Error(`Quote not found: ${quoteId}`);
@@ -276,7 +284,24 @@ export async function createDepositDraftFromQuote(quoteId: string): Promise<Invo
   if (q.is_draft) throw new Error(`Cannot generate invoice from a draft quote (${quoteId}). Issue it first.`);
   if (!q.job_request_id) throw new Error(`Quote ${quoteId} has no linked job_request.`);
 
-  const depositAmount = Math.round(((q.total ?? 0) * ((q.deposit_pct ?? 0) / 100)) * 100) / 100;
+  // Deposit amount precedence:
+  //   1. Explicit override from the caller (operator typed a value in the
+  //      Generate Deposit modal) — wins, always rounded to cents.
+  //   2. The quote's stored deposit_pct, if non-zero.
+  //   3. Default 50% of quote total.
+  // All paths round to cents.
+  const quoteTotal = Number(q.total ?? 0);
+  let depositAmount: number;
+  if (opts.amount != null) {
+    depositAmount = Math.round(opts.amount * 100) / 100;
+  } else if (q.deposit_pct != null && Number(q.deposit_pct) > 0) {
+    depositAmount = Math.round((quoteTotal * (Number(q.deposit_pct) / 100)) * 100) / 100;
+  } else {
+    depositAmount = Math.round((quoteTotal * (DEFAULT_DEPOSIT_PCT / 100)) * 100) / 100;
+  }
+  if (depositAmount <= 0) {
+    throw new Error("Deposit amount must be greater than zero.");
+  }
 
   const draftId = newInvoiceId();
   const draft: InvoiceDraft = {

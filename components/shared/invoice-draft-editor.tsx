@@ -95,10 +95,9 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         const ids = await loadInvoiceDays(q.id);
         if (!cancelled) setInvoiceDays(ids);
 
-        // Heal stale line totals from before a Holiday flag was toggled.
-        // Same pattern as quote-draft-editor — patch local state + persist
-        // when drift detected so the PDF + detail view see consistent
-        // values without needing to re-edit a line first.
+        // Heal stale line totals (display only — do NOT persist here).
+        // See quote-draft-editor heal pass for the why. PDF view also
+        // recomputes live as belt-and-braces.
         const healMap = new Map<string, boolean>();
         for (const d of ids) healMap.set(d.invoiceDate, d.isHoliday);
         const healedLines = q.lines.map((l) => {
@@ -112,11 +111,10 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
             : l;
         });
         const driftFound = healedLines.some((l, i) => l !== q.lines[i]);
-        if (driftFound) {
-          q.lines = healedLines;
-          q.subtotal = Math.round(healedLines.reduce((s, l) => s + (l.total || 0), 0) * 100) / 100;
-          q.amountDue = +(q.subtotal - (q.depositApplied ?? 0) - (q.creditsApplied ?? 0)).toFixed(2);
-          try { await saveDraft(q); } catch (e) { console.warn("[invoice-draft-editor] heal autosave failed:", e); }
+        if (driftFound && !cancelled) {
+          const newSubtotal = Math.round(healedLines.reduce((s, l) => s + (l.total || 0), 0) * 100) / 100;
+          const newAmountDue = +(newSubtotal - (q.depositApplied ?? 0) - (q.creditsApplied ?? 0)).toFixed(2);
+          setInvoice({ ...q, lines: healedLines, subtotal: newSubtotal, amountDue: newAmountDue });
         }
 
         // Load positions + specialties for cascading dropdowns on line rows.

@@ -144,12 +144,14 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         const qds = await loadQuoteDays(q.id);
         if (!cancelled) setQuoteDays(qds);
 
-        // Heal stale line totals: a draft saved BEFORE a Holiday day flag
-        // was flipped on can carry un-doubled totals on the affected day's
-        // lines. The recompute path catches edits going forward but not
-        // already-saved values. Run a one-time pass on load and patch the
-        // local quote object (autosave watcher will persist on the next
-        // user edit, OR we save explicitly here if drift was found).
+        // Heal stale line totals (display only — do NOT persist here).
+        // A draft saved BEFORE a Holiday flag was flipped can carry
+        // un-doubled totals; the PDF view recomputes live so prints are
+        // already correct. Update React state via setQuote so the editor
+        // also shows the corrected totals immediately. Autosave will
+        // persist whenever the user next edits anything; calling
+        // saveDraft directly from load was racing against the autosave
+        // watcher and breaking edits in some browsers.
         const healMap = new Map<string, boolean>();
         for (const d of qds) healMap.set(d.quoteDate, d.isHoliday);
         const healedLines = q.lines.map((l) => {
@@ -163,13 +165,11 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
             : l;
         });
         const driftFound = healedLines.some((l, i) => l !== q.lines[i]);
-        if (driftFound) {
-          q.lines = healedLines;
-          q.total = Math.round(healedLines.reduce((s, l) => s + (l.total || 0), 0) * 100) / 100;
-          // Persist immediately so subsequent loads + the PDF route both
-          // see consistent stored values (PDF also recomputes live as
-          // belt-and-braces).
-          try { await saveDraft(q); } catch (e) { console.warn("[quote-draft-editor] heal autosave failed:", e); }
+        if (driftFound && !cancelled) {
+          const newTotal = Math.round(healedLines.reduce((s, l) => s + (l.total || 0), 0) * 100) / 100;
+          // Skip the next autosave — heal isn't a user edit.
+          skipNextAutosaveRef.current = true;
+          setQuote({ ...q, lines: healedLines, total: newTotal });
         }
 
         // Build the day list. If no day rows, synthesize a single day from the job.

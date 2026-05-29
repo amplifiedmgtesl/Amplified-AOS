@@ -176,9 +176,33 @@ export default function QuoteDetail({ id }: { id: string }) {
 
   async function onGenerateDeposit() {
     if (!quote) return;
-    if (!confirm(`Generate a deposit invoice from this quote?`)) return;
+    // Default proposal: 50% of quote total (Connor's rule), but if the
+    // quote itself carries a non-zero deposit_pct, honor that as the
+    // starting suggestion. Round to cents either way.
+    const baseTotal = Number(quote.total ?? 0);
+    const seedPct = (quote.depositPct != null && Number(quote.depositPct) > 0)
+      ? Number(quote.depositPct) : 50;
+    const seedAmount = Math.round((baseTotal * (seedPct / 100)) * 100) / 100;
+    const input = prompt(
+      `Generate deposit invoice.\n\n` +
+      `Quote total: $${baseTotal.toFixed(2)}\n` +
+      `Default deposit: ${seedPct}% = $${seedAmount.toFixed(2)}\n\n` +
+      `Override the deposit amount (dollars and cents) or accept the default:`,
+      seedAmount.toFixed(2),
+    );
+    if (input === null) return;                  // cancelled
+    const trimmed = input.trim();
+    if (!trimmed) return;
+    const amt = Math.round(parseFloat(trimmed) * 100) / 100;
+    if (!isFinite(amt) || amt <= 0) {
+      alert(`Invalid deposit amount: "${input}".`);
+      return;
+    }
+    if (amt > baseTotal + 0.005) {
+      if (!confirm(`Deposit ($${amt.toFixed(2)}) is greater than the quote total ($${baseTotal.toFixed(2)}). Continue anyway?`)) return;
+    }
     try {
-      const draft = await createDepositDraftFromQuote(quote.id);
+      const draft = await createDepositDraftFromQuote(quote.id, { amount: amt });
       router.push(`/invoices/${draft.id}/edit`);
     } catch (err: any) {
       alert(`Generate Deposit failed: ${err.message || err}`);
