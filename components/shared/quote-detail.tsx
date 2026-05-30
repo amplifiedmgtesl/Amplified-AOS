@@ -62,7 +62,7 @@ export default function QuoteDetail({ id }: { id: string }) {
         }
         if (q.isDraft) {
           // Wrong route — redirect to editor.
-          router.replace(`/quotes/${id}/edit`);
+          router.replace(`/quotes/${encodeURIComponent(id)}/edit`);
           return;
         }
         setQuote(q);
@@ -132,7 +132,7 @@ export default function QuoteDetail({ id }: { id: string }) {
     }
     try {
       const newDraft = await createDraftFromRevision(quote.id);
-      router.push(`/quotes/${newDraft.id}/edit`);
+      router.push(`/quotes/${encodeURIComponent(newDraft.id)}/edit`);
     } catch (err: any) {
       alert(`Revise failed: ${err.message || err}`);
     }
@@ -203,7 +203,7 @@ export default function QuoteDetail({ id }: { id: string }) {
     }
     try {
       const draft = await createDepositDraftFromQuote(quote.id, { amount: amt });
-      router.push(`/invoices/${draft.id}/edit`);
+      router.push(`/invoices/${encodeURIComponent(draft.id)}/edit`);
     } catch (err: any) {
       alert(`Generate Deposit failed: ${err.message || err}`);
     }
@@ -214,7 +214,7 @@ export default function QuoteDetail({ id }: { id: string }) {
     if (!confirm(`Generate a final invoice covering the full job from this quote?`)) return;
     try {
       const draft = await createFinalDraftFromQuote(quote.id);
-      router.push(`/invoices/${draft.id}/edit`);
+      router.push(`/invoices/${encodeURIComponent(draft.id)}/edit`);
     } catch (err: any) {
       alert(`Generate Final failed: ${err.message || err}`);
     }
@@ -282,13 +282,13 @@ export default function QuoteDetail({ id }: { id: string }) {
           {quote.parentQuoteId ? (
             <>
               <div className="muted" style={{ marginTop: 8 }}>Revises</div>
-              <div><Link className="badge" href={`/quotes/${quote.parentQuoteId}`}>Previous revision</Link></div>
+              <div><Link className="badge" href={`/quotes/${encodeURIComponent(quote.parentQuoteId)}`}>Previous revision</Link></div>
             </>
           ) : null}
           {supersededBy ? (
             <>
               <div className="muted" style={{ marginTop: 8 }}>Superseded by</div>
-              <div><Link className="badge" href={`/quotes/${supersededBy.id}`}>{supersededBy.quoteNo || "Newer revision →"}</Link></div>
+              <div><Link className="badge" href={`/quotes/${encodeURIComponent(supersededBy.id)}`}>{supersededBy.quoteNo || "Newer revision →"}</Link></div>
             </>
           ) : null}
           {job?.id ? (
@@ -365,7 +365,7 @@ export default function QuoteDetail({ id }: { id: string }) {
 
       {/* Action bar */}
       <div className="action-row" style={{ marginTop: 16 }}>
-        <button onClick={() => window.open(`/quotes/${quote.id}/pdf`, "_blank")}>Print / PDF</button>
+        <button onClick={() => window.open(`/quotes/${encodeURIComponent(quote.id)}/pdf`, "_blank")}>Print / PDF</button>
         {!isSuperseded && !isSigned ? (
           <button className="secondary" onClick={() => setSignOpen(true)}>Mark Signed</button>
         ) : null}
@@ -383,7 +383,7 @@ export default function QuoteDetail({ id }: { id: string }) {
         {/* Invoice generation — only on issued/signed quotes with a job link */}
         {quote.jobRequestId && !isSuperseded ? (
           hasActiveDeposit ? (
-            <button className="secondary" onClick={() => router.push(`/invoices/${activeDepositId}`)}>
+            <button className="secondary" onClick={() => router.push(`/invoices/${encodeURIComponent(activeDepositId)}`)}>
               View Deposit Invoice
             </button>
           ) : (
@@ -394,7 +394,7 @@ export default function QuoteDetail({ id }: { id: string }) {
         ) : null}
         {quote.jobRequestId && !isSuperseded ? (
           hasActiveFinal ? (
-            <button className="secondary" onClick={() => router.push(`/invoices/${activeFinalId}`)}>
+            <button className="secondary" onClick={() => router.push(`/invoices/${encodeURIComponent(activeFinalId)}`)}>
               View Final Invoice
             </button>
           ) : (

@@ -75,7 +75,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
       .then(async (q) => {
         if (cancelled) return;
         if (!q) { setError(`Invoice not found: ${id}`); setLoading(false); return; }
-        if (!q.isDraft) { router.replace(`/invoices/${id}`); return; }
+        if (!q.isDraft) { router.replace(`/invoices/${encodeURIComponent(id)}`); return; }
         // Backfill sourceQuoteCode at load time if missing — earlier drafts
         // were saved before invoiceToDraftRow persisted this column, so the
         // row has source_quote_id set but source_quote_code NULL. Look up
@@ -414,7 +414,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     try {
       await saveDraft(invoice);
       await issueDraft(invoice.id);
-      router.push(`/invoices/${invoice.id}`);
+      router.push(`/invoices/${encodeURIComponent(invoice.id)}`);
     } catch (err: any) {
       alert(`Issue failed: ${err.message || err}`);
     }
@@ -536,7 +536,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         <div className="action-row" style={{ alignItems: "baseline", marginBottom: 8 }}>
           <h3 className="section-title" style={{ margin: 0, flex: 1 }}>Event details</h3>
           {job?.id ? <Link className="badge" href={`/job-requests?id=${job.id}`}>Edit on Job →</Link> : null}
-          {invoice.sourceQuoteId ? <Link className="badge" href={`/quotes/${invoice.sourceQuoteId}`}>View Source Quote →</Link> : null}
+          {invoice.sourceQuoteId ? <Link className="badge" href={`/quotes/${encodeURIComponent(invoice.sourceQuoteId)}`}>View Source Quote →</Link> : null}
         </div>
         {job ? (
           <div className="grid2">
@@ -1104,7 +1104,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           {saving === "saving" ? "Saving…" : "Save Draft"}
         </button>
         <button onClick={onIssue}>Issue Invoice</button>
-        <button className="secondary" onClick={() => window.open(`/invoices/${invoice.id}/pdf`, "_blank")}>Preview PDF</button>
+        <button className="secondary" onClick={() => window.open(`/invoices/${encodeURIComponent(invoice.id)}/pdf`, "_blank")}>Preview PDF</button>
         <button className="secondary" onClick={onDelete}>Delete</button>
       </div>
     </div>

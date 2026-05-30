@@ -75,7 +75,7 @@ export default function InvoiceDetail({ id }: { id: string }) {
       .then(async (q) => {
         if (cancelled) return;
         if (!q) { setError(`Invoice not found: ${id}`); setLoading(false); return; }
-        if (q.isDraft) { router.replace(`/invoices/${id}/edit`); return; }
+        if (q.isDraft) { router.replace(`/invoices/${encodeURIComponent(id)}/edit`); return; }
         setInvoice(q);
 
         if (q.jobRequestId) {
@@ -188,7 +188,7 @@ export default function InvoiceDetail({ id }: { id: string }) {
     if (invoice.status === "paid" && !confirm("This invoice has been paid. Revising creates a new revision and supersedes this one. Continue?")) return;
     try {
       const newDraft = await reviseInvoice(invoice.id);
-      router.push(`/invoices/${newDraft.id}/edit`);
+      router.push(`/invoices/${encodeURIComponent(newDraft.id)}/edit`);
     } catch (err: any) {
       alert(`Revise failed: ${err.message || err}`);
     }
@@ -295,7 +295,7 @@ export default function InvoiceDetail({ id }: { id: string }) {
             <>
               <div className="muted" style={{ marginTop: 8 }}>Source quote</div>
               <div>
-                <Link className="badge" href={`/quotes/${invoice.sourceQuoteId}`}>
+                <Link className="badge" href={`/quotes/${encodeURIComponent(invoice.sourceQuoteId)}`}>
                   {invoice.sourceQuoteCode || invoice.sourceQuoteId.slice(0, 12)}
                 </Link>
               </div>

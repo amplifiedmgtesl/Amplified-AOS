@@ -392,7 +392,7 @@ export default function JobRequests() {
     upsertJobRequest(row);
     try {
       const draft = await createDraftFromJob(row.id);
-      window.location.href = `/quotes/${draft.id}/edit`;
+      window.location.href = `/quotes/${encodeURIComponent(draft.id)}/edit`;
     } catch (err: any) {
       setMsg(`Failed to create draft: ${err.message || err}`);
     }
@@ -829,12 +829,12 @@ export default function JobRequests() {
             {editingId && !isCrewLeader && (
               <>
                 {openDraftId ? (
-                  <button onClick={() => { window.location.href = `/quotes/${openDraftId}/edit`; }}>
+                  <button onClick={() => { window.location.href = `/quotes/${encodeURIComponent(openDraftId)}/edit`; }}>
                     Continue Draft
                   </button>
                 ) : null}
                 {latestIssuedId ? (
-                  <button onClick={() => { window.location.href = `/quotes/${latestIssuedId}`; }}>
+                  <button onClick={() => { window.location.href = `/quotes/${encodeURIComponent(latestIssuedId)}`; }}>
                     View Quote
                   </button>
                 ) : null}

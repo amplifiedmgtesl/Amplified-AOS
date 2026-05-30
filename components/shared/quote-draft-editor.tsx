@@ -106,7 +106,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         const q = await loadQuote(id);
         if (cancelled) return;
         if (!q) { setError(`Quote not found: ${id}`); setLoading(false); return; }
-        if (!q.isDraft) { router.replace(`/quotes/${id}`); return; }
+        if (!q.isDraft) { router.replace(`/quotes/${encodeURIComponent(id)}`); return; }
         setQuote(q);
 
         // Load related data in parallel
@@ -514,7 +514,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
     try {
       await saveDraft(quote);
       await issueDraft(quote.id);
-      router.push(`/quotes/${quote.id}`);
+      router.push(`/quotes/${encodeURIComponent(quote.id)}`);
     } catch (err: any) {
       alert(`Issue failed: ${err.message || err}`);
     }
@@ -690,7 +690,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
           {projectedQuoteNo ? <code>{projectedQuoteNo}</code> : "Draft Quote"}
           <span className="badge" style={{ marginLeft: 12 }}>Draft</span>
           {quote.parentQuoteId ? (
-            <span className="muted" style={{ marginLeft: 8 }}>Revision of <Link href={`/quotes/${quote.parentQuoteId}`}>parent</Link></span>
+            <span className="muted" style={{ marginLeft: 8 }}>Revision of <Link href={`/quotes/${encodeURIComponent(quote.parentQuoteId)}`}>parent</Link></span>
           ) : null}
         </h2>
         <span className="muted">
@@ -1081,7 +1081,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
           {saving === "saving" ? "Saving…" : "Save Draft"}
         </button>
         <button onClick={onIssue}>Issue Quote</button>
-        <button className="secondary" onClick={() => window.open(`/quotes/${quote.id}/pdf`, "_blank")}>
+        <button className="secondary" onClick={() => window.open(`/quotes/${encodeURIComponent(quote.id)}/pdf`, "_blank")}>
           Preview PDF
         </button>
         <button className="secondary" onClick={onDelete}>Delete</button>

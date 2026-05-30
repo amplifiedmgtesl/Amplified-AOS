@@ -148,7 +148,7 @@ export default function QuotesList() {
             {visible.length === 0 ? (
               <tr><td colSpan={7} className="muted">No quotes match.</td></tr>
             ) : visible.map((q) => {
-              const href = q.isDraft ? `/quotes/${q.id}/edit` : `/quotes/${q.id}`;
+              const href = q.isDraft ? `/quotes/${encodeURIComponent(q.id)}/edit` : `/quotes/${encodeURIComponent(q.id)}`;
               const labelQuoteNo =
                 q.quoteNo ||
                 projections[q.id] ||

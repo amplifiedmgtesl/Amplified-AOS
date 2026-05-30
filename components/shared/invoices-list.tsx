@@ -154,7 +154,7 @@ export default function InvoicesList() {
             {visible.length === 0 ? (
               <tr><td colSpan={9} className="muted">No invoices match.</td></tr>
             ) : visible.map((q) => {
-              const href = q.isDraft ? `/invoices/${q.id}/edit` : `/invoices/${q.id}`;
+              const href = q.isDraft ? `/invoices/${encodeURIComponent(q.id)}/edit` : `/invoices/${encodeURIComponent(q.id)}`;
               const projected = projectedInvoiceNo(q, q.jobRequestId ? jobNoMap.get(q.jobRequestId) : undefined);
               // Frozen rows show invoice_no. Drafts show the projected #
               // (so the operator can tell six drafts apart) and only fall
