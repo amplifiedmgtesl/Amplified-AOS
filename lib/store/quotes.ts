@@ -396,7 +396,8 @@ async function buildLinesFromJob(jobRequestId: string): Promise<{
     const cnRes = await supabase
       .from("job_request_crew_needs")
       .select("*")
-      .in("job_request_day_id", dayIds);
+      .in("job_request_day_id", dayIds)
+      .order("sort_order", { ascending: true });
     if (cnRes.error) throw cnRes.error;
     crewNeeds = cnRes.data ?? [];
   }
@@ -457,10 +458,27 @@ async function buildLinesFromJob(jobRequestId: string): Promise<{
     terms = globalTerms.data?.value || "";
   }
 
+  // Canonical (position, specialty) ordering: first-appearance across all days.
+  // Ensures every day in the quote lists positions in the same sequence, even
+  // when the job's per-day sort_order drifted (e.g. after duplicate-day).
+  const canonicalKeyOrder = new Map<string, number>();
+  for (const need of crewNeeds) {
+    const key = `${need.position_id ?? ""}|${need.specialty_id ?? ""}`;
+    if (!canonicalKeyOrder.has(key)) {
+      canonicalKeyOrder.set(key, canonicalKeyOrder.size);
+    }
+  }
+
   const lines: QuoteLine[] = [];
   if (crewNeeds.length > 0) {
     for (const day of effectiveDays) {
-      const needs = crewNeeds.filter((n: any) => n.job_request_day_id === day.id);
+      const needs = crewNeeds
+        .filter((n: any) => n.job_request_day_id === day.id)
+        .sort((a: any, b: any) => {
+          const ka = `${a.position_id ?? ""}|${a.specialty_id ?? ""}`;
+          const kb = `${b.position_id ?? ""}|${b.specialty_id ?? ""}`;
+          return (canonicalKeyOrder.get(ka) ?? 999) - (canonicalKeyOrder.get(kb) ?? 999);
+        });
       for (const need of needs) {
         const rate = need.specialty_id
           ? rateCard.rows.find((rr: any) => rr.specialty_id === need.specialty_id)
