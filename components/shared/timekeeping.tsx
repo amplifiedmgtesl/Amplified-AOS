@@ -650,6 +650,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
               <optgroup label="Jobs">
                 {jobRequests
                   .slice()
+                  .filter((j) => j.status !== "cancelled")
                   .sort((a, b) => (b.requestDate || "").localeCompare(a.requestDate || ""))
                   .map((j) => (
                     <option key={j.id} value={`job:${j.id}`}>
