@@ -87,6 +87,8 @@ $$;
 -- ─── 2. Disable freeze triggers for the duration of the transaction ──
 ALTER TABLE quotes        DISABLE TRIGGER quotes_freeze_trg;
 ALTER TABLE quote_lines   DISABLE TRIGGER quote_lines_freeze_iud_trg;
+ALTER TABLE invoices      DISABLE TRIGGER invoices_freeze_trg;
+ALTER TABLE invoice_lines DISABLE TRIGGER invoice_lines_freeze_iud_trg;
 
 -- ─── 3. Copy source's shifts onto target (with new ids) ──────────────
 -- Case-insensitive uniqueness per job means we don't collide unless
@@ -122,18 +124,34 @@ UPDATE quote_lines ql
  WHERE ql.shift_id = ss.id
    AND ss.job_request_id = 'jobreq-1778348194976';
 
--- Verify no quote_line still references a source-side shift
+-- Same remap for invoice_lines.shift_id
+UPDATE invoice_lines il
+   SET shift_id = ts.id
+  FROM job_request_shifts ss
+  JOIN job_request_shifts ts
+    ON lower(trim(ts.label)) = lower(trim(ss.label))
+   AND ts.job_request_id = 'jobreq-1779670159567'
+ WHERE il.shift_id = ss.id
+   AND ss.job_request_id = 'jobreq-1778348194976';
+
+-- Verify no line on either table still references a source-side shift
 DO $$
 DECLARE
-  stuck int;
+  stuck_q int;
+  stuck_i int;
 BEGIN
-  SELECT count(*) INTO stuck
+  SELECT count(*) INTO stuck_q
     FROM quote_lines ql
     JOIN job_request_shifts s ON s.id = ql.shift_id
    WHERE s.job_request_id = 'jobreq-1778348194976';
 
-  IF stuck > 0 THEN
-    RAISE EXCEPTION 'Carolina merge: % quote_line(s) still reference source-side shifts — aborting.', stuck;
+  SELECT count(*) INTO stuck_i
+    FROM invoice_lines il
+    JOIN job_request_shifts s ON s.id = il.shift_id
+   WHERE s.job_request_id = 'jobreq-1778348194976';
+
+  IF stuck_q > 0 OR stuck_i > 0 THEN
+    RAISE EXCEPTION 'Carolina merge: % quote_line(s) + % invoice_line(s) still reference source-side shifts — aborting.', stuck_q, stuck_i;
   END IF;
 END;
 $$;
@@ -199,6 +217,8 @@ DELETE FROM job_requests WHERE id = 'jobreq-1778348194976';
 -- ─── 10. Re-enable freeze triggers ───────────────────────────────────
 ALTER TABLE quotes        ENABLE TRIGGER quotes_freeze_trg;
 ALTER TABLE quote_lines   ENABLE TRIGGER quote_lines_freeze_iud_trg;
+ALTER TABLE invoices      ENABLE TRIGGER invoices_freeze_trg;
+ALTER TABLE invoice_lines ENABLE TRIGGER invoice_lines_freeze_iud_trg;
 
 -- ─── 11. Post-flight report ──────────────────────────────────────────
 DO $$
