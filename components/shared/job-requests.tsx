@@ -819,7 +819,7 @@ export default function JobRequests() {
             <button onClick={save}>Save</button>
             {/* New-quote entry point. The button label/action adapts to existing
                 quote state for this job:
-                  - Open draft exists  → "Continue Draft" (route to editor)
+                  - Open draft exists  → "Continue Draft Quote" (route to editor)
                   - Issued quote exists → "View Quote" (route to detail; user
                                           revises from there if needed)
                   - Otherwise           → "Create Quote" (fresh draft) */}
@@ -830,7 +830,7 @@ export default function JobRequests() {
               <>
                 {openDraftId ? (
                   <button onClick={() => { window.location.href = `/quotes/${encodeURIComponent(openDraftId)}/edit`; }}>
-                    Continue Draft
+                    Continue Draft Quote
                   </button>
                 ) : null}
                 {latestIssuedId ? (
