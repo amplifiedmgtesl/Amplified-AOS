@@ -202,26 +202,6 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   // Per-day collapse state on the editing view. Print mode forces all expanded
   // (via @media print) and hides the day-separator header rows.
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
-  // When true, the next print includes the rate/pay columns + a payroll
-  // summary at the bottom. Admin only — gated by !hidePayAlways. Set briefly
-  // around window.print() then reset.
-  const [printPayroll, setPrintPayroll] = useState(false);
-
-  function printWithPayroll(title: (string | undefined)[]) {
-    setPrintPayroll(true);
-    // Wait one paint so the conditional render takes effect, then print, then
-    // reset. Reset on the afterprint event when the dialog closes.
-    setTimeout(() => {
-      const reset = () => {
-        setPrintPayroll(false);
-        window.removeEventListener("afterprint", reset);
-      };
-      window.addEventListener("afterprint", reset);
-      printWithTitle(title);
-      // Safety reset in case afterprint never fires (rare).
-      setTimeout(reset, 5000);
-    }, 50);
-  }
   // Convenience alias for the in-memory rows of the active timesheet.
   const allRows = useMemo(() => timesheet?.rows ?? [], [timesheet]);
 
@@ -693,7 +673,6 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                 </optgroup>
               )}
             </select>
-            {jobSheetId && <span className="record-id" title="Job sheet id (timesheet id = timesheet-<jobSheetId>)">{jobSheetId}</span>}
           </div>
           {!hideBillAlways && (
             <div className="list-card">
@@ -746,20 +725,6 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
               headerClient,
               dayFilter !== "all" ? dayFilter : undefined,
             ])}>Download / Print PDF</button>
-            {!hidePayAlways && (
-              <button
-                className="secondary"
-                onClick={() => printWithPayroll([
-                  "Timesheet (Payroll)",
-                  currentSheet?.title,
-                  currentSheet?.client,
-                  dayFilter !== "all" ? dayFilter : undefined,
-                ])}
-                title="Same timesheet layout, but the printed copy includes per-line hours/rates/pay and a payroll summary at the bottom."
-              >
-                Print with Payroll
-              </button>
-            )}
           </div>
         </div>
         <div className="action-row" style={{ marginTop: 12 }}>
@@ -864,13 +829,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
           <div className="muted">Select a job to begin timekeeping.</div>
         ) : (
           <>
-            {/* Field-signature view (the original print path). Hidden when the
-                user invokes "Print with Payroll" — that path shows the compact
-                payroll table further down instead. */}
-            <div
-              style={{ overflowX: "auto" }}
-              className={printPayroll ? "hide-print" : undefined}
-            >
+            <div style={{ overflowX: "auto" }}>
               {(() => {
                 const showBill = !hideBillAlways && !timesheet.hideBillColumns;
                 // Row-1 layout: Position | Name | Start | End | (phantom for
@@ -1274,171 +1233,6 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                 );
               })()}
             </div>
-
-            {/* ─── Payroll print view ──────────────────────────────────────
-                Renders only when "Print with Payroll" is invoked. Two parts:
-                  1. A compact one-row-per-entry detail table with all the
-                     hours/rates/pay info.
-                  2. A per-employee summary with grand total.
-                Both use show-print so they're invisible on screen.
-            */}
-            {printPayroll && !hidePayAlways && (() => {
-              const showPay = !hidePayAlways && !timesheet.hidePayColumns;
-              const filteredRows = (dayFilter === "all"
-                ? allRows
-                : allRows.filter((r) => (r.workDate || "no-date") === dayFilter)
-              ).slice().sort((a, b) => {
-                const da = a.workDate || "";
-                const db = b.workDate || "";
-                if (da !== db) return da.localeCompare(db);
-                const an = `${a.lastName || ""} ${a.firstName || ""}`;
-                const bn = `${b.lastName || ""} ${b.firstName || ""}`;
-                return an.localeCompare(bn);
-              });
-
-              // Aggregate by employee for the summary table.
-              type EmpAgg = { name: string; position: string; stdHours: number; otHours: number; dtHours: number; totalHours: number; totalPay: number; entries: number };
-              const byEmp = new Map<string, EmpAgg>();
-              for (const r of filteredRows) {
-                const key = r.employeeKey || `${r.firstName || ""} ${r.lastName || ""}`.trim() || "(unassigned)";
-                const name = r.employeeKey
-                  ? (employees.find((e) => e.employeeKey === r.employeeKey)?.fullName ?? `${r.firstName} ${r.lastName}`.trim())
-                  : `${r.firstName} ${r.lastName}`.trim();
-                const agg = byEmp.get(key) ?? { name: name || "(no name)", position: r.position || "", stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, totalPay: 0, entries: 0 };
-                agg.stdHours += r.stdHours || 0;
-                agg.otHours += r.otHours || 0;
-                agg.dtHours += r.dtHours || 0;
-                agg.totalHours += r.totalHours || 0;
-                agg.totalPay += r.totalPay || 0;
-                agg.entries += 1;
-                byEmp.set(key, agg);
-              }
-              const empRows = Array.from(byEmp.values()).sort((a, b) => a.name.localeCompare(b.name));
-              const grand = empRows.reduce((acc, r) => ({
-                stdHours: acc.stdHours + r.stdHours,
-                otHours: acc.otHours + r.otHours,
-                dtHours: acc.dtHours + r.dtHours,
-                totalHours: acc.totalHours + r.totalHours,
-                totalPay: acc.totalPay + r.totalPay,
-              }), { stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, totalPay: 0 });
-
-              const fmtDay = (s: string) => {
-                if (!s) return "";
-                const d = new Date(s + "T00:00:00");
-                return `${d.toLocaleDateString(undefined, { weekday: "short" })} ${s}`;
-              };
-              const empName = (r: typeof filteredRows[number]) => r.employeeKey
-                ? (employees.find((e) => e.employeeKey === r.employeeKey)?.fullName ?? `${r.firstName} ${r.lastName}`.trim())
-                : `${r.firstName} ${r.lastName}`.trim();
-
-              return (
-                <div className="show-print" style={{ marginTop: 8 }}>
-                  {/* Detail: one row per entry */}
-                  <h3 style={{ fontSize: 12, margin: "0 0 6px 0" }}>
-                    Payroll Detail {dayFilter !== "all" ? `— ${dayFilter}` : "— All Days"}
-                  </h3>
-                  <table style={{ width: "100%", fontSize: 9.5, borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ background: "#f3e6cf" }}>
-                        <th style={{ textAlign: "left", padding: "3px 5px" }}>Date</th>
-                        <th style={{ textAlign: "left", padding: "3px 5px" }}>Employee</th>
-                        <th style={{ textAlign: "left", padding: "3px 5px" }}>Position</th>
-                        <th style={{ textAlign: "left", padding: "3px 5px" }}>In 1</th>
-                        <th style={{ textAlign: "left", padding: "3px 5px" }}>Out 1</th>
-                        <th style={{ textAlign: "right", padding: "3px 5px" }}>M1</th>
-                        <th style={{ textAlign: "left", padding: "3px 5px" }}>In 2</th>
-                        <th style={{ textAlign: "left", padding: "3px 5px" }}>Out 2</th>
-                        <th style={{ textAlign: "right", padding: "3px 5px" }}>M2</th>
-                        <th style={{ textAlign: "right", padding: "3px 5px" }}>STD</th>
-                        <th style={{ textAlign: "right", padding: "3px 5px" }}>OT</th>
-                        <th style={{ textAlign: "right", padding: "3px 5px" }}>DT</th>
-                        <th style={{ textAlign: "right", padding: "3px 5px" }}>Total</th>
-                        {showPay ? <>
-                          <th style={{ textAlign: "right", padding: "3px 5px" }}>$/STD</th>
-                          <th style={{ textAlign: "right", padding: "3px 5px" }}>$/OT</th>
-                          <th style={{ textAlign: "right", padding: "3px 5px" }}>$/DT</th>
-                          <th style={{ textAlign: "right", padding: "3px 5px" }}>Pay</th>
-                        </> : null}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredRows.length === 0 ? (
-                        <tr><td colSpan={showPay ? 17 : 13} style={{ textAlign: "center", color: "#888", padding: 6 }}>No entries.</td></tr>
-                      ) : filteredRows.map((r) => (
-                        <tr key={r.id} style={{ borderBottom: "1px solid #ead7b8" }}>
-                          <td style={{ padding: "3px 5px" }}>{fmtDay(r.workDate || "")}</td>
-                          <td style={{ padding: "3px 5px" }}>{empName(r)}</td>
-                          <td style={{ padding: "3px 5px" }}>{r.position}</td>
-                          <td style={{ padding: "3px 5px" }}>{r.timeIn1 || ""}</td>
-                          <td style={{ padding: "3px 5px" }}>{r.timeOut1 || ""}</td>
-                          <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.mealBreak1Minutes ?? r.lunchMinutes ?? 0}</td>
-                          <td style={{ padding: "3px 5px" }}>{r.timeIn2 || ""}</td>
-                          <td style={{ padding: "3px 5px" }}>{r.timeOut2 || ""}</td>
-                          <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.mealBreak2Minutes ?? 0}</td>
-                          <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.stdHours.toFixed(2)}</td>
-                          <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.otHours.toFixed(2)}</td>
-                          <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.dtHours.toFixed(2)}</td>
-                          <td style={{ padding: "3px 5px", textAlign: "right" }}>{r.totalHours.toFixed(2)}</td>
-                          {showPay ? <>
-                            <td style={{ padding: "3px 5px", textAlign: "right" }}>${r.stdRate.toFixed(2)}</td>
-                            <td style={{ padding: "3px 5px", textAlign: "right" }}>${r.otRate.toFixed(2)}</td>
-                            <td style={{ padding: "3px 5px", textAlign: "right" }}>${r.dtRate.toFixed(2)}</td>
-                            <td style={{ padding: "3px 5px", textAlign: "right", fontWeight: 600 }}>${r.totalPay.toFixed(2)}</td>
-                          </> : null}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  {/* Per-employee summary */}
-                  {empRows.length > 0 ? (
-                    <div style={{ marginTop: 16, pageBreakInside: "avoid" }}>
-                      <h3 style={{ fontSize: 12, margin: "0 0 6px 0" }}>
-                        Payroll Summary by Employee
-                      </h3>
-                      <table style={{ width: "100%", fontSize: 10, borderCollapse: "collapse" }}>
-                        <thead>
-                          <tr style={{ background: "#f3e6cf" }}>
-                            <th style={{ textAlign: "left", padding: "3px 6px" }}>Employee</th>
-                            <th style={{ textAlign: "left", padding: "3px 6px" }}>Position</th>
-                            <th style={{ textAlign: "right", padding: "3px 6px" }}>Entries</th>
-                            <th style={{ textAlign: "right", padding: "3px 6px" }}>STD</th>
-                            <th style={{ textAlign: "right", padding: "3px 6px" }}>OT</th>
-                            <th style={{ textAlign: "right", padding: "3px 6px" }}>DT</th>
-                            <th style={{ textAlign: "right", padding: "3px 6px" }}>Total Hrs</th>
-                            {showPay ? <th style={{ textAlign: "right", padding: "3px 6px" }}>Total Pay</th> : null}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {empRows.map((r) => (
-                            <tr key={r.name} style={{ borderBottom: "1px solid #ead7b8" }}>
-                              <td style={{ padding: "3px 6px" }}>{r.name}</td>
-                              <td style={{ padding: "3px 6px" }}>{r.position}</td>
-                              <td style={{ textAlign: "right", padding: "3px 6px" }}>{r.entries}</td>
-                              <td style={{ textAlign: "right", padding: "3px 6px" }}>{r.stdHours.toFixed(2)}</td>
-                              <td style={{ textAlign: "right", padding: "3px 6px" }}>{r.otHours.toFixed(2)}</td>
-                              <td style={{ textAlign: "right", padding: "3px 6px" }}>{r.dtHours.toFixed(2)}</td>
-                              <td style={{ textAlign: "right", padding: "3px 6px" }}>{r.totalHours.toFixed(2)}</td>
-                              {showPay ? <td style={{ textAlign: "right", padding: "3px 6px" }}>${r.totalPay.toFixed(2)}</td> : null}
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr style={{ borderTop: "2px solid #181410", fontWeight: 700 }}>
-                            <th colSpan={3} style={{ textAlign: "left", padding: "4px 6px" }}>Grand Total</th>
-                            <th style={{ textAlign: "right", padding: "4px 6px" }}>{grand.stdHours.toFixed(2)}</th>
-                            <th style={{ textAlign: "right", padding: "4px 6px" }}>{grand.otHours.toFixed(2)}</th>
-                            <th style={{ textAlign: "right", padding: "4px 6px" }}>{grand.dtHours.toFixed(2)}</th>
-                            <th style={{ textAlign: "right", padding: "4px 6px" }}>{grand.totalHours.toFixed(2)}</th>
-                            {showPay ? <th style={{ textAlign: "right", padding: "4px 6px" }}>${grand.totalPay.toFixed(2)}</th> : null}
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })()}
 
             <div className="hide-print" style={{ marginTop: 16 }}>
               <h3 className="section-title">Labor Summary for Quotes</h3>
