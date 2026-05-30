@@ -204,6 +204,12 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
   // Convenience alias for the in-memory rows of the active timesheet.
   const allRows = useMemo(() => timesheet?.rows ?? [], [timesheet]);
+  // Precomputed id → index map. Avoids O(n²) indexOf in the row map below.
+  const rowIndexById = useMemo(() => {
+    const m = new Map<string, number>();
+    allRows.forEach((r, i) => m.set(r.id, i));
+    return m;
+  }, [allRows]);
 
   useEffect(() => {
     if (pickerKind === "none") { setTimesheet(null); return; }
@@ -720,12 +726,22 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                 </select>
               </div>
             )}
-            <button onClick={() => printWithTitle([
-              "Timesheet",
-              headerTitle,
-              headerClient,
-              dayFilter !== "all" ? dayFilter : undefined,
-            ])}>Download / Print PDF</button>
+            <button onClick={() => {
+              // Expand all days first so collapsed-day rows are in the DOM
+              // (we conditionally skip rendering them when collapsed for perf).
+              const prevCollapsed = new Set(collapsedDays);
+              setCollapsedDays(new Set());
+              // Let React render the rows, then print, then restore.
+              setTimeout(() => {
+                printWithTitle([
+                  "Timesheet",
+                  headerTitle,
+                  headerClient,
+                  dayFilter !== "all" ? dayFilter : undefined,
+                ]);
+                setTimeout(() => setCollapsedDays(prevCollapsed), 500);
+              }, 50);
+            }}>Download / Print PDF</button>
           </div>
         </div>
         <div className="action-row" style={{ marginTop: 12 }}>
@@ -961,8 +977,8 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                         </td>
                       </tr>
                     </tbody>
-                    {dayRows.map((row, dayIdx) => {
-                    const idx = allRows.indexOf(row);
+                    {!isCollapsed && dayRows.map((row, dayIdx) => {
+                    const idx = rowIndexById.get(row.id) ?? 0;
                     const band = `line-band-${idx % 4}`;
                     const unlinked = !row.employeeKey;
                     // Freeze guard: while status='approved' the DB rejects content
