@@ -13,7 +13,6 @@ import { supabase } from "../supabase/client";
 import type {
   CalendarEvent,
   QuoteDraft,
-  QuoteDraftWorkspace,
   InvoiceDraft,
   JobRequest,
   JobSheet,
@@ -24,7 +23,7 @@ import type {
   Specialty,
   Client,
 } from "./types";
-import { DEFAULT_RATE_ROWS, DEFAULT_TERMS, type RateCardProfile, type RateRow } from "../rates/defaults";
+import { DEFAULT_RATE_ROWS, type RateCardProfile, type RateRow } from "../rates/defaults";
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 
@@ -34,7 +33,6 @@ interface Cache {
   deletedEventIds: string[];
   eventProfiles: Record<string, { notes: string; attachmentNames: string[] }>;
   quotes: QuoteDraft[];
-  quoteDraftWorkspaces: QuoteDraftWorkspace[];
   invoiceDrafts: InvoiceDraft[];
   jobRequests: JobRequest[];
   jobSheets: JobSheet[];
@@ -57,7 +55,6 @@ const _cache: Cache = {
   deletedEventIds: [],
   eventProfiles: {},
   quotes: [],
-  quoteDraftWorkspaces: [],
   invoiceDrafts: [],
   jobRequests: [],
   jobSheets: [],
@@ -66,7 +63,7 @@ const _cache: Cache = {
   deletedEmployeeKeys: [],
   jobCostingDrafts: [],
   rateRows: DEFAULT_RATE_ROWS,
-  terms: DEFAULT_TERMS,
+  terms: "",
   clientName: "",
   rateCardProfiles: [],
   positions: [],
@@ -121,7 +118,6 @@ async function _loadAll() {
   const [
     eventsRes,
     quotesRes,
-    workspacesRes,
     invoicesRes,
     quoteLinesRes,
     invoiceLinesRes,
@@ -141,14 +137,13 @@ async function _loadAll() {
   ] = await Promise.all([
     supabase.from("calendar_events").select("*"),
     supabase.from("quotes").select("*"),
-    supabase.from("quote_draft_workspaces").select("*"),
     supabase.from("invoices").select("*"),
     supabase.from("quote_lines").select("*").order("sort_order"),
     supabase.from("invoice_lines").select("*").order("sort_order"),
     supabase.from("job_requests").select("*"),
     supabase.from("job_sheets").select("*"),
     supabase.from("job_sheet_workers").select("*").order("sort_order"),
-    supabase.from("timesheets").select("id, job_sheet_id, title, hide_pay_columns"),
+    supabase.from("timesheets").select("id, job_sheet_id, job_id, title, hide_pay_columns"),
     supabase.from("timesheet_entries").select("*").not("timesheet_id", "is", null),
     fetchAllEmployees(),
     supabase.from("job_costing_drafts").select("*"),
@@ -180,7 +175,6 @@ async function _loadAll() {
   }
   _cache.quotes = (quotesRes.data ?? []).map((r) => rowToQuote(r, quoteLinesByQuoteId.get(r.id) ?? []));
 
-  _cache.quoteDraftWorkspaces = (workspacesRes.data ?? []).map(rowToWorkspace);
 
   const invoiceLinesByInvoiceId = new Map<string, any[]>();
   for (const l of (invoiceLinesRes.data ?? [])) {
@@ -335,61 +329,13 @@ export function saveEventProfile(eventId: string, data: { notes: string; attachm
 
 export function getQuotes() { return _cache.quotes; }
 
-export function setQuotes(rows: QuoteDraft[]) {
-  _cache.quotes = rows;
-  for (const r of rows) {
-    sync("quotes", quoteToRow(r));
-    syncQuoteLines(r.id, r.lines);
-  }
-}
-
-export function upsertQuote(row: QuoteDraft) {
-  // Hot-fix (2026-04-29): collision guard. Refuse to overwrite an existing
-  // quote row whose content belongs to a different client. This is the safety
-  // net against the slug-overwrite bug class — even if a stale `quoteId` ever
-  // slips past the upstream fixes in quote-builder.tsx, a save that would
-  // clobber another client's quote data is blocked here at the DB-write
-  // boundary. Same-client edits (rename, reschedule, typo fix) are allowed.
-  const existing = _cache.quotes.find((r) => r.id === row.id);
-  if (existing) {
-    const existingClientKey = (existing.clientId || existing.client || "").trim().toLowerCase();
-    const incomingClientKey = (row.clientId || row.client || "").trim().toLowerCase();
-    const clientChanged = existingClientKey && incomingClientKey && existingClientKey !== incomingClientKey;
-    if (clientChanged) {
-      const msg = `Quote ID collision: row "${row.id}" already belongs to a different client ("${existing.client}"). Refusing to overwrite with data for "${row.client}". This usually means a stale quote draft is carrying an old slug — reload the page and try again.`;
-      console.error(msg, { existing, attempted: row });
-      if (typeof window !== "undefined") alert(msg);
-      throw new Error(msg);
-    }
-  }
-  _cache.quotes = [..._cache.quotes.filter((r) => r.id !== row.id), row];
-  sync("quotes", quoteToRow(row));
-  syncQuoteLines(row.id, row.lines);
-  // Write reverse link back to job request
-  if (row.linkedJobRequestId) {
-    supabase.from("job_requests").update({ linked_quote_id: row.id }).eq("id", row.linkedJobRequestId).then(() => {});
-    _cache.jobRequests = _cache.jobRequests.map((r) =>
-      r.id === row.linkedJobRequestId ? { ...r, linkedQuoteId: row.id } : r
-    );
-  }
-}
-
-// ─── Quote Draft Workspaces ───────────────────────────────────────────────────
-
-export function getQuoteDraftWorkspaces() { return _cache.quoteDraftWorkspaces; }
-
-export function setQuoteDraftWorkspaces(rows: QuoteDraftWorkspace[]) {
-  _cache.quoteDraftWorkspaces = rows;
-  for (const r of rows) sync("quote_draft_workspaces", workspaceToRow(r));
-}
-
-export function upsertQuoteDraftWorkspace(row: QuoteDraftWorkspace) {
-  const next = [row, ..._cache.quoteDraftWorkspaces.filter((r) => r.id !== row.id)].sort(
-    (a, b) => b.updatedAt.localeCompare(a.updatedAt)
-  );
-  _cache.quoteDraftWorkspaces = next;
-  sync("quote_draft_workspaces", workspaceToRow(row));
-}
+// ─── Quote write paths retired ────────────────────────────────────────────────
+// upsertQuote, setQuotes, the quote_draft_workspaces helpers, and the
+// rowToWorkspace/workspaceToRow conversions all moved out as part of the
+// quote rewrite (2026-05-05 cleanup). All quote writes go through
+// lib/store/quotes.ts now (async, direct to Supabase, freeze-trigger backed).
+// _cache.quotes is still hydrated by initStore for legacy invoice-builder
+// reads via getQuotes() / loadQuotes(); that goes away with Phase C.
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
@@ -498,7 +444,15 @@ export function upsertJobRequest(row: JobRequest) {
 export async function deleteJobRequest(id: string): Promise<string | null> {
   const row = _cache.jobRequests.find((r) => r.id === id);
   if (!row) return null;
-  if (row.linkedQuoteId) return "Cannot delete — a quote has been built from this job request.";
+  // Block delete if any non-superseded quote (draft or frozen) references this job.
+  // Replaces the old job_requests.linked_quote_id check now that the column is dropped.
+  const { count, error: countErr } = await supabase
+    .from("quotes")
+    .select("id", { count: "exact", head: true })
+    .eq("job_request_id", id)
+    .or("status.is.null,status.neq.superseded");
+  if (countErr) return countErr.message;
+  if ((count ?? 0) > 0) return "Cannot delete — a quote has been built from this job request.";
   const { error } = await supabase.from("job_requests").delete().eq("id", id);
   if (error) return error.message;
   _cache.jobRequests = _cache.jobRequests.filter((r) => r.id !== id);
@@ -595,6 +549,8 @@ export interface StaffEntryReviewRow {
   employeeKey: string | null;
   userId: string | null;
   jobSheetId: string | null;
+  jobId: string | null;          // Phase 1: canonical job_requests link
+  invoiceLineId: string | null;  // Phase C: super-frozen when set (no status changes)
   timesheetId: string | null;
   jobClient: string;
   jobEventName: string;
@@ -609,10 +565,17 @@ export interface StaffEntryReviewRow {
   otHours: number;
   dtHours: number;
   totalHours: number;
-  totalPay: number;
+  /** Billing total for the entry (hours × bill rates). NOT pay. Renamed
+   *  from `totalPay` to match the rate-column rename in migration
+   *  20260528b — pay rates live on payroll_run_entries, not here. */
+  billTotal: number;
   status: string | null;
   notes: string;
   updatedAt: string;
+  /** Set when the entry is currently included in a (non-voided) payroll run.
+   *  Surfaces a lock badge in the review UI; further status changes are
+   *  blocked on the run side until the run is voided. */
+  payrollRunId: string | null;
 }
 
 export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]> {
@@ -620,13 +583,26 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
     .from("timesheet_entries")
     .select(`
       id, work_date, position, first_name, last_name, email, employee_key, user_id,
-      job_sheet_id, timesheet_id, time_in1, time_out1, time_in2, time_out2,
+      job_sheet_id, job_id, invoice_line_id, timesheet_id, time_in1, time_out1, time_in2, time_out2,
       meal_break_1_minutes, meal_break_2_minutes,
-      std_hours, ot_hours, dt_hours, total_hours, total_pay,
+      std_hours, ot_hours, dt_hours, total_hours, bill_total,
       status, notes, updated_at
     `)
     .order("updated_at", { ascending: false });
   if (error) { console.error("[db] getAllStaffReviewEntries:", error); return []; }
+
+  // Lookup: which entries are currently in a payroll run? Used to badge
+  // them as locked in the review UI.
+  const entryIds = (data ?? []).map((r: any) => r.id);
+  const payrollRunByEntry = new Map<string, string>();
+  if (entryIds.length > 0) {
+    const { data: pre, error: preErr } = await supabase
+      .from("payroll_run_entries")
+      .select("timesheet_entry_id, payroll_run_id")
+      .in("timesheet_entry_id", entryIds);
+    if (preErr) { console.error("[db] getAllStaffReviewEntries payroll lookup:", preErr); }
+    for (const r of pre ?? []) payrollRunByEntry.set((r as any).timesheet_entry_id, (r as any).payroll_run_id);
+  }
 
   const jobIds = Array.from(new Set((data ?? []).map((r: any) => r.job_sheet_id).filter(Boolean)));
   const jobMap = new Map<string, { client: string; eventName: string; date: string }>();
@@ -651,6 +627,8 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
     employeeKey: r.employee_key ?? null,
     userId: r.user_id ?? null,
     jobSheetId: r.job_sheet_id ?? null,
+    jobId: r.job_id ?? null,
+    invoiceLineId: r.invoice_line_id ?? null,
     timesheetId: r.timesheet_id ?? null,
     jobClient: r.job_sheet_id ? jobMap.get(r.job_sheet_id)?.client ?? "" : "",
     jobEventName: r.job_sheet_id ? jobMap.get(r.job_sheet_id)?.eventName ?? "" : "",
@@ -665,10 +643,11 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
     otHours: Number(r.ot_hours ?? 0),
     dtHours: Number(r.dt_hours ?? 0),
     totalHours: Number(r.total_hours ?? 0),
-    totalPay: Number(r.total_pay ?? 0),
+    billTotal: Number(r.bill_total ?? 0),
     status: r.status ?? null,
     notes: r.notes ?? "",
     updatedAt: r.updated_at ?? "",
+    payrollRunId: payrollRunByEntry.get(r.id) ?? null,
   }));
 }
 
@@ -678,6 +657,18 @@ export async function setEntryApproved(entryId: string): Promise<void> {
     .update({ status: "approved", updated_at: new Date().toISOString() })
     .eq("id", entryId);
   if (error) console.error("[db] setEntryApproved:", error);
+}
+
+// Phase 1 follow-up: flip an approved entry back to 'submitted' so it
+// becomes editable again. Used by the bulk "Unlock for edit" action on
+// the timekeeping grid. The freeze trigger (20260525d) permits this
+// transition unless the entry is invoice-bound — caller pre-filters.
+export async function setEntrySubmitted(entryId: string): Promise<void> {
+  const { error } = await supabase
+    .from("timesheet_entries")
+    .update({ status: "submitted", updated_at: new Date().toISOString() })
+    .eq("id", entryId);
+  if (error) console.error("[db] setEntrySubmitted:", error);
 }
 
 export async function getApprovedEntriesForJob(jobSheetId: string): Promise<import("./types").TimeEntry[]> {
@@ -710,6 +701,82 @@ export async function ensureTimesheetForJob(jobSheetId: string, jobTitle?: strin
   return id;
 }
 
+// Phase 1: canonical job_id-anchored helpers. Prefer these over the
+// jobSheetId-named twins for any new code path.
+
+export async function getPendingStaffEntriesByJobId(jobId: string): Promise<import("./types").TimeEntry[]> {
+  const { data, error } = await supabase
+    .from("timesheet_entries")
+    .select("*")
+    .eq("job_id", jobId)
+    .is("timesheet_id", null)
+    .eq("status", "submitted")
+    .order("updated_at");
+  if (error) { console.error("[db] getPendingStaffEntriesByJobId:", error); return []; }
+  return (data ?? []).map(rowToTimeEntry);
+}
+
+export async function getApprovedEntriesForJobByJobId(jobId: string): Promise<import("./types").TimeEntry[]> {
+  const { data, error } = await supabase
+    .from("timesheet_entries")
+    .select("*")
+    .eq("job_id", jobId)
+    .eq("status", "approved");
+  if (error) { console.error("[db] getApprovedEntriesForJobByJobId:", error); return []; }
+  return (data ?? []).map(rowToTimeEntry);
+}
+
+export async function getEntryCountsForJobByJobId(jobId: string): Promise<{ approved: number; pending: number }> {
+  const [approved, pending] = await Promise.all([
+    supabase.from("timesheet_entries").select("id", { count: "exact", head: true }).eq("job_id", jobId).eq("status", "approved"),
+    supabase.from("timesheet_entries").select("id", { count: "exact", head: true }).eq("job_id", jobId).or("status.eq.submitted,status.is.null"),
+  ]);
+  if (approved.error) console.error("[db] getEntryCountsForJobByJobId (approved):", approved.error);
+  if (pending.error)  console.error("[db] getEntryCountsForJobByJobId (pending):", pending.error);
+  return { approved: approved.count ?? 0, pending: pending.count ?? 0 };
+}
+
+/**
+ * Create-or-fetch a timesheet for a job_request.
+ *
+ * Lookup order:
+ *   1. Existing timesheet with this job_id (handles backfilled rows that
+ *      still carry their legacy `timesheet-jobsheet-…` id).
+ *   2. Otherwise insert a new row with a job_id-derived id.
+ *
+ * The legacy `ensureTimesheetForJob(jobSheetId, …)` is kept for back-compat
+ * by callers that haven't moved to the jobId-anchored API yet.
+ */
+export async function ensureTimesheetForJobRequest(
+  jobId: string,
+  opts: { jobTitle?: string; jobSheetId?: string | null } = {},
+): Promise<string> {
+  // 1. Reuse an existing timesheet already linked to this job.
+  const existing = await supabase
+    .from("timesheets")
+    .select("id")
+    .eq("job_id", jobId)
+    .limit(1)
+    .maybeSingle();
+  if (existing.error) { console.error("[db] ensureTimesheetForJobRequest lookup:", existing.error); }
+  if (existing.data?.id) return existing.data.id;
+
+  // 2. None yet — create one. Stable id derived from job_id.
+  const id = `timesheet-job-${jobId}`;
+  const payload: Record<string, unknown> = {
+    id,
+    job_id: jobId,
+    title: opts.jobTitle || "Timekeeping Sheet",
+    hide_pay_columns: false,
+  };
+  if (opts.jobSheetId) payload.job_sheet_id = opts.jobSheetId;
+  const { error } = await supabase
+    .from("timesheets")
+    .upsert(payload, { onConflict: "id" });
+  if (error) { console.error("[db] ensureTimesheetForJobRequest:", error); throw error; }
+  return id;
+}
+
 export async function pullApprovedTimesheetSummary(jobSheetId: string): Promise<Array<{
   position: string;
   workers: number;
@@ -721,7 +788,7 @@ export async function pullApprovedTimesheetSummary(jobSheetId: string): Promise<
 }>> {
   const { data, error } = await supabase
     .from("timesheet_entries")
-    .select("position, employee_key, std_hours, ot_hours, dt_hours, total_hours, total_pay")
+    .select("position, employee_key, std_hours, ot_hours, dt_hours, total_hours, bill_total")
     .eq("job_sheet_id", jobSheetId)
     .eq("status", "approved");
   if (error) { console.error("[db] pullApprovedTimesheetSummary:", error); return []; }
@@ -753,7 +820,11 @@ export async function pullApprovedTimesheetSummary(jobSheetId: string): Promise<
     entry.otHours    += Number(row.ot_hours    ?? 0);
     entry.dtHours    += Number(row.dt_hours    ?? 0);
     entry.totalHours += Number(row.total_hours ?? 0);
-    entry.totalPay   += Number(row.total_pay   ?? 0);
+    // Field renamed bill_total in migration 20260528b. Output key stays
+    // `totalPay` for now — that name lives on InvoiceDraft.timesheetSummary
+    // and renaming it cascades through every invoice display. Functionally
+    // it has always been a billing number, not pay.
+    entry.totalPay   += Number(row.bill_total  ?? 0);
   }
 
   return Array.from(map.entries()).map(([position, v]) => ({
@@ -771,7 +842,15 @@ function syncTimesheet(t: Timesheet) {
   // Upsert header (no rows column)
   supabase
     .from("timesheets")
-    .upsert({ id: t.id, job_sheet_id: t.jobSheetId, title: t.title, hide_pay_columns: t.hidePayColumns })
+    .upsert({
+      id: t.id,
+      job_sheet_id: t.jobSheetId,
+      job_id: t.jobId ?? null,
+      title: t.title,
+      // DB column kept as hide_pay_columns to avoid an extra migration;
+      // the TS field is hideBillColumns since these are bill rates.
+      hide_pay_columns: t.hideBillColumns,
+    })
     .then(({ error }) => { if (error) console.error("[db] syncTimesheet header error:", error); });
 
   // Sync only AOS-managed entries (user_id IS NULL).
@@ -781,7 +860,9 @@ function syncTimesheet(t: Timesheet) {
   const aosManagedRows = t.rows.filter((r) => !r.userId);
 
   if (aosManagedRows.length > 0) {
-    const entryRows = aosManagedRows.map((r, idx) => timesheetEntryToRow(r, t.id, t.jobSheetId, idx));
+    const entryRows = aosManagedRows.map(
+      (r, idx) => timesheetEntryToRow(r, t.id, t.jobSheetId, t.jobId ?? null, idx)
+    );
     supabase
       .from("timesheet_entries")
       .upsert(entryRows, { onConflict: "id" })
@@ -898,6 +979,10 @@ function syncRateCardProfileRows(profile: RateCardProfile) {
           day:       row.day,
           ot_rate:   row.otRate,
           dt_rate:   row.dtRate,
+          // Pay rates — admin-only, never rendered to client. Default 0.
+          pay_hourly:  row.payHourly  ?? 0,
+          pay_ot_rate: row.payOtRate ?? 0,
+          pay_dt_rate: row.payDtRate ?? 0,
           dt_after:  row.dtAfter,
           travel:    row.travel,
           show:      row.show,
@@ -950,10 +1035,10 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     endDate: r.end_date ?? "",
     startTime: r.start_time ?? "",
     endTime: r.end_time ?? "",
-    expectedHoursPerDay: r.expected_hours_per_day ?? undefined,
     total: r.total ?? 0,
     deposit: r.deposit ?? 0,
-    status: r.status ?? "draft",
+    depositPct: r.deposit_pct ?? undefined,
+    status: r.status ?? null,
     notes: r.notes ?? "",
     lines: lineRows.map(rowToQuoteLine),
     terms: r.terms ?? "",
@@ -962,17 +1047,25 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     timesheetSummary: r.timesheet_summary ?? undefined,
     signatureName: r.signature_name ?? undefined,
     signedAt: r.signed_at ?? undefined,
+    signedBy: r.signed_by ?? undefined,
     rateCardProfileId: r.rate_card_profile_id ?? undefined,
-  };
-}
-
-function rowToWorkspace(r: any): QuoteDraftWorkspace {
-  return {
-    id: r.id,
-    clientId: r.client_id ?? undefined,
-    name: r.name ?? "",
-    updatedAt: r.updated_at ?? "",
-    data: r.data ?? {},
+    holidayMultiplier: r.holiday_multiplier != null ? Number(r.holiday_multiplier) : 2.0,
+    preparedByName: r.prepared_by_name ?? undefined,
+    preparedByTitle: r.prepared_by_title ?? undefined,
+    // New fields from quote rewrite Phase A:
+    isDraft: r.is_draft ?? true,
+    jobRequestId: r.job_request_id ?? undefined,
+    parentQuoteId: r.parent_quote_id ?? undefined,
+    quoteNo: r.quote_no ?? undefined,
+    revisionNo: r.revision_no ?? 1,
+    issuedAt: r.issued_at ?? undefined,
+    issuedBy: r.issued_by ?? undefined,
+    supersededAt: r.superseded_at ?? undefined,
+    supersededBy: r.superseded_by ?? undefined,
+    createdAt: r.created_at ?? undefined,
+    updatedAt: r.updated_at ?? undefined,
+    createdBy: r.created_by ?? undefined,
+    updatedBy: r.updated_by ?? undefined,
   };
 }
 
@@ -996,11 +1089,38 @@ function rowToInvoice(r: any, lineRows: any[] = []): InvoiceDraft {
     amountDue: r.amount_due ?? 0,
     terms: r.terms ?? "",
     notes: r.notes ?? "",
-    status: r.status ?? "",
+    status: r.status ?? null,
     paidAmount: r.paid_amount ?? 0,
     rateCardProfileId: r.rate_card_profile_id ?? undefined,
+    holidayMultiplier: r.holiday_multiplier != null ? Number(r.holiday_multiplier) : 2.0,
     linkedJobSheetId: r.linked_job_sheet_id ?? undefined,
     timesheetSummary: r.timesheet_summary ?? undefined,
+    // Phase C rewrite columns
+    isDraft: r.is_draft ?? true,
+    invoiceType: r.invoice_type ?? undefined,
+    jobRequestId: r.job_request_id ?? undefined,
+    sourceQuoteId: r.source_quote_id ?? undefined,
+    sourceQuoteCode: r.source_quote_code ?? undefined,
+    parentInvoiceId: r.parent_invoice_id ?? undefined,
+    coveredDates: r.covered_dates ?? undefined,
+    revisionNo: r.revision_no ?? 1,
+    depositApplied: r.deposit_applied ?? 0,
+    creditsApplied: r.credits_applied ?? 0,
+    issuedAt: r.issued_at ?? undefined,
+    issuedBy: r.issued_by ?? undefined,
+    sentAt: r.sent_at ?? undefined,
+    sentBy: r.sent_by ?? undefined,
+    paidAt: r.paid_at ?? undefined,
+    paidBy: r.paid_by ?? undefined,
+    supersededAt: r.superseded_at ?? undefined,
+    supersededBy: r.superseded_by ?? undefined,
+    voidedAt: r.voided_at ?? undefined,
+    voidedBy: r.voided_by ?? undefined,
+    voidReason: r.void_reason ?? undefined,
+    createdAt: r.created_at ?? undefined,
+    updatedAt: r.updated_at ?? undefined,
+    createdBy: r.created_by ?? undefined,
+    updatedBy: r.updated_by ?? undefined,
   };
 }
 
@@ -1028,7 +1148,9 @@ function rowToJobRequest(r: any): JobRequest {
     notes: r.notes ?? "",
     attachmentNames: r.attachment_names ?? [],
     packetNotes: r.packet_notes ?? "",
-    linkedQuoteId: r.linked_quote_id ?? undefined,
+    jobNo: r.job_no ?? undefined,
+    eventAbbr: r.event_abbr ?? undefined,
+    rateCardProfileId: r.rate_card_profile_id ?? undefined,
   };
 }
 
@@ -1087,8 +1209,9 @@ function rowToTimesheet(r: any, entries: any[]): Timesheet {
   return {
     id: r.id,
     jobSheetId: r.job_sheet_id ?? "",
+    jobId: r.job_id ?? null,
     title: r.title ?? "",
-    hidePayColumns: r.hide_pay_columns ?? false,
+    hideBillColumns: r.hide_pay_columns ?? false,
     rows: entries
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
       .map(rowToTimeEntry),
@@ -1116,23 +1239,46 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     otHours: Number(r.ot_hours ?? 0),
     dtHours: Number(r.dt_hours ?? 0),
     totalHours: Number(r.total_hours ?? 0),
-    stdRate: Number(r.std_rate) || 35,
-    otRate: Number(r.ot_rate) || 52,
-    dtRate: Number(r.dt_rate) || 70,
-    totalPay: Number(r.total_pay ?? 0),
+    // Billing rates — renamed from std_rate/ot_rate/dt_rate/total_pay in
+    // migration 20260528b. NOT pay rates. The 35/52/70 default mirrors
+    // the legacy placeholder used by blankTimeEntry — operator overrides
+    // per row as needed.
+    billStdRate: Number(r.bill_std_rate) || 35,
+    billOtRate: Number(r.bill_ot_rate) || 52,
+    billDtRate: Number(r.bill_dt_rate) || 70,
+    billTotal: Number(r.bill_total ?? 0),
     employeeKey: r.employee_key ?? null,
     userId: r.user_id ?? null,
     status: r.status ?? null,
     sortOrder: r.sort_order ?? 0,
     createdAt: r.created_at ?? undefined,
+    jobId: r.job_id ?? null,
+    invoiceLineId: r.invoice_line_id ?? null,
+    shiftId: r.shift_id ?? null,
+    positionId: r.position_id ?? null,
+    specialtyId: r.specialty_id ?? null,
+    isHoliday: !!r.is_holiday,
+    holidayMultiplier: r.holiday_multiplier == null ? null : Number(r.holiday_multiplier),
   };
 }
 
-function timesheetEntryToRow(e: import("./types").TimeEntry, timesheetId: string, jobSheetId: string, sortOrder: number) {
+function timesheetEntryToRow(
+  e: import("./types").TimeEntry,
+  timesheetId: string,
+  jobSheetId: string,
+  jobId: string | null,
+  sortOrder: number,
+) {
   return {
     id: e.id,
     timesheet_id: timesheetId,
     job_sheet_id: jobSheetId,
+    job_id: jobId,
+    shift_id: e.shiftId ?? null,
+    position_id: e.positionId ?? null,
+    specialty_id: e.specialtyId ?? null,
+    is_holiday: !!e.isHoliday,
+    holiday_multiplier: e.holidayMultiplier ?? null,
     employee_key: e.employeeKey ?? null,
     user_id: e.userId ?? null,
     position: e.position,
@@ -1154,10 +1300,10 @@ function timesheetEntryToRow(e: import("./types").TimeEntry, timesheetId: string
     ot_hours: e.otHours,
     dt_hours: e.dtHours,
     total_hours: e.totalHours,
-    std_rate: e.stdRate,
-    ot_rate: e.otRate,
-    dt_rate: e.dtRate,
-    total_pay: e.totalPay,
+    bill_std_rate: e.billStdRate,
+    bill_ot_rate:  e.billOtRate,
+    bill_dt_rate:  e.billDtRate,
+    bill_total:    e.billTotal,
     sort_order: sortOrder,
     status: e.status ?? null,
     updated_at: new Date().toISOString(),
@@ -1187,8 +1333,12 @@ function rowToEmployee(r: any): EmployeeRecord {
     address: r.address ?? undefined,  // street address; legacy full address lives in r.address_donotuse (not mapped)
     notes: r.notes ?? undefined,
     profilePicture: r.profile_picture ?? undefined,
-    documents: r.documents ?? undefined,
     source: r.source ?? undefined,
+    hireDate: r.hire_date ?? undefined,
+    // Pay-rate override (admin-only, never client-facing). NULL = use rate card.
+    payStdRate: r.pay_std_rate == null ? null : Number(r.pay_std_rate),
+    payOtRate:  r.pay_ot_rate  == null ? null : Number(r.pay_ot_rate),
+    payDtRate:  r.pay_dt_rate  == null ? null : Number(r.pay_dt_rate),
   };
 }
 
@@ -1241,6 +1391,10 @@ function rowToRateRow(pr: any): RateRow {
     day:      pr.day      ?? 0,
     otRate:   pr.ot_rate  ?? 0,
     dtRate:   pr.dt_rate  ?? 0,
+    // Pay rates (admin-only, never client-facing). Default 0 means "not set".
+    payHourly: Number(pr.pay_hourly  ?? 0),
+    payOtRate: Number(pr.pay_ot_rate ?? 0),
+    payDtRate: Number(pr.pay_dt_rate ?? 0),
     dtAfter:  (pr.dt_after ?? "10") as import("../rates/defaults").TriggerOption,
     travel:   pr.travel   ?? 0,
     show:     pr.show     ?? true,
@@ -1259,6 +1413,7 @@ function rowToRateCardProfile(r: any, profileRows: any[]): RateCardProfile {
     effectiveDate: r.effective_date ?? undefined,
     rows,
     terms: r.terms ?? "",
+    holidayMultiplier: r.holiday_multiplier != null ? Number(r.holiday_multiplier) : 2.0,
     createdAt: r.created_at ?? new Date().toISOString(),
     updatedAt: r.updated_at ?? new Date().toISOString(),
   };
@@ -1299,8 +1454,10 @@ function rowToQuoteLine(r: any): import("./types").QuoteLine {
   return {
     serviceKey:   r.service_key  ?? "",
     qty:          r.qty          ?? 0,
+    crewCount:    r.crew_count   ?? r.qty ?? 1,
     hours:        r.hours        ?? 0,
-    holidayHours: r.holiday_hours ?? 0,
+    otHours:      r.ot_hours     ?? 0,
+    dtHours:      r.dt_hours     ?? 0,
     travel:       r.travel       ?? 0,
     baseHourly:   r.base_hourly  ?? 0,
     baseDay:      r.base_day     ?? 0,
@@ -1312,7 +1469,7 @@ function rowToQuoteLine(r: any): import("./types").QuoteLine {
     specialtyId:  r.specialty_id ?? undefined,
     department:   r.department   ?? undefined,
     specialty:    r.specialty    ?? undefined,
-    shiftLabel:   r.shift_label  ?? undefined,
+    shiftId:      r.shift_id     ?? undefined,
     quoteDate:    r.quote_date   ?? undefined,
     endDate:      r.end_date     ?? undefined,
     startTime:    r.start_time   ?? undefined,
@@ -1325,35 +1482,6 @@ function rowToInvoiceLine(r: any): import("./types").QuoteLine {
   return rowToQuoteLine(r);
 }
 
-function quoteLineToRow(quoteId: string, l: import("./types").QuoteLine, index: number) {
-  return {
-    id:            `${quoteId}_${index}`,
-    quote_id:      quoteId,
-    sort_order:    index,
-    service_key:   l.serviceKey,
-    qty:           l.qty,
-    hours:         l.hours,
-    holiday_hours: l.holidayHours,
-    travel:        l.travel,
-    base_hourly:   l.baseHourly,
-    base_day:      l.baseDay,
-    ot_rate:       l.otRate,
-    dt_rate:       l.dtRate,
-    rule:          l.rule,
-    total:         l.total,
-    position_id:   l.positionId  ?? null,
-    specialty_id:  l.specialtyId ?? null,
-    department:    l.department  ?? null,
-    specialty:     l.specialty   ?? null,
-    shift_label:   l.shiftLabel  ?? null,
-    quote_date:    l.quoteDate   ?? null,
-    end_date:      l.endDate     ?? null,
-    start_time:    l.startTime   ?? null,
-    end_time:      l.endTime     ?? null,
-    rate_mode:     l.rateMode    ?? null,
-  };
-}
-
 function invoiceLineToRow(invoiceId: string, l: import("./types").QuoteLine, index: number) {
   return {
     id:            `${invoiceId}_${index}`,
@@ -1362,7 +1490,6 @@ function invoiceLineToRow(invoiceId: string, l: import("./types").QuoteLine, ind
     service_key:   l.serviceKey,
     qty:           l.qty,
     hours:         l.hours,
-    holiday_hours: l.holidayHours,
     travel:        l.travel,
     base_hourly:   l.baseHourly,
     base_day:      l.baseDay,
@@ -1374,30 +1501,13 @@ function invoiceLineToRow(invoiceId: string, l: import("./types").QuoteLine, ind
     specialty_id:  l.specialtyId ?? null,
     department:    l.department  ?? null,
     specialty:     l.specialty   ?? null,
-    shift_label:   l.shiftLabel  ?? null,
+    shift_id:      l.shiftId     ?? null,
     quote_date:    l.quoteDate   ?? null,
     end_date:      l.endDate     ?? null,
     start_time:    l.startTime   ?? null,
     end_time:      l.endTime     ?? null,
     rate_mode:     l.rateMode    ?? null,
   };
-}
-
-function syncQuoteLines(quoteId: string, lines: import("./types").QuoteLine[]) {
-  supabase
-    .from("quote_lines")
-    .delete()
-    .eq("quote_id", quoteId)
-    .then(({ error }) => {
-      if (error) { console.error("[db] delete quote_lines error:", error); return; }
-      if (lines.length === 0) return;
-      supabase
-        .from("quote_lines")
-        .insert(lines.map((l, i) => quoteLineToRow(quoteId, l, i)))
-        .then(({ error: e2 }) => {
-          if (e2) console.error("[db] insert quote_lines error:", e2);
-        });
-    });
 }
 
 function syncInvoiceLines(invoiceId: string, lines: import("./types").QuoteLine[]) {
@@ -1435,43 +1545,6 @@ function syncInvoiceLines(invoiceId: string, lines: import("./types").QuoteLine[
           }
         });
     });
-}
-
-function quoteToRow(q: QuoteDraft) {
-  return {
-    id: q.id,
-    client_id: q.clientId ?? null,
-    client: q.client,
-    event_name: q.eventName,
-    venue: q.venue,
-    city_state: q.cityState,
-    start_date: q.startDate,
-    end_date: q.endDate,
-    start_time: q.startTime,
-    end_time: q.endTime,
-    expected_hours_per_day: q.expectedHoursPerDay ?? null,
-    total: q.total,
-    deposit: q.deposit,
-    status: q.status,
-    notes: q.notes,
-    terms: q.terms,
-    linked_job_request_id: q.linkedJobRequestId ?? null,
-    linked_job_sheet_id: q.linkedJobSheetId ?? null,
-    timesheet_summary: q.timesheetSummary ?? null,
-    signature_name: q.signatureName ?? null,
-    signed_at: q.signedAt ?? null,
-    rate_card_profile_id: q.rateCardProfileId ?? null,
-  };
-}
-
-function workspaceToRow(w: QuoteDraftWorkspace) {
-  return {
-    id: w.id,
-    client_id: w.clientId ?? null,
-    name: w.name,
-    updated_at: w.updatedAt,
-    data: w.data,
-  };
 }
 
 function invoiceToRow(inv: InvoiceDraft) {
@@ -1525,7 +1598,9 @@ function jobRequestToRow(j: JobRequest) {
     notes: j.notes,
     attachment_names: j.attachmentNames,
     packet_notes: j.packetNotes,
-    linked_quote_id: j.linkedQuoteId ?? null,
+    job_no: j.jobNo ?? null,
+    event_abbr: j.eventAbbr ?? null,
+    rate_card_profile_id: j.rateCardProfileId ?? null,
   };
 }
 
@@ -1575,8 +1650,18 @@ function employeeToRow(e: EmployeeRecord, isDeleted: boolean) {
     address: e.address ?? null,
     notes: e.notes ?? null,
     profile_picture: e.profilePicture ?? null,
-    documents: e.documents ?? [],
     source: e.source ?? null,
+    hire_date: e.hireDate ?? null,
+    // Pay-rate override columns. Sent as null when undefined so writes
+    // from screens that don't touch payroll don't clobber overrides set
+    // elsewhere — wait, they would clobber. Use ?? null on intentional
+    // fields only. employeeToRow gets called on every save, so the
+    // override must be round-tripped through the form. EmployeeRecord
+    // carries it (rowToEmployee reads it), so screens that don't show
+    // the field still pass the existing value through unchanged.
+    pay_std_rate: e.payStdRate ?? null,
+    pay_ot_rate:  e.payOtRate  ?? null,
+    pay_dt_rate:  e.payDtRate  ?? null,
     is_deleted: isDeleted,
   };
 }
@@ -1627,6 +1712,7 @@ function rateCardProfileToRow(p: RateCardProfile) {
     effective_date: p.effectiveDate ?? null,
     rows: p.rows,
     terms: p.terms,
+    holiday_multiplier: p.holidayMultiplier ?? 2.0,
     created_at: p.createdAt,
     updated_at: p.updatedAt,
   };
@@ -1810,7 +1896,6 @@ export async function mergeClients(sourceId: string, targetId: string): Promise<
   await supabase.from("job_requests").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("rate_card_profiles").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("quotes").update({ client_id: target.id }).eq("client_id", source.id);
-  await supabase.from("quote_draft_workspaces").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("calendar_events").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("invoices").update({ client_id: target.id }).eq("client_id", source.id);
   for (const t of ["quotes", "invoices"] as const) {

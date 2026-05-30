@@ -5,21 +5,31 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 
+// Order roughly follows the lifecycle: see what's happening (Dashboard,
+// Calendar) → who you're working with (Clients) → the work itself (Jobs) →
+// pricing (Quotes, Invoices, Rate Card) → execution (Job Sheets, Timekeeping)
+// → review/finance (Timesheet Review, Job Costing) → roster + admin.
+// "/job-requests" route is kept as-is for now (rename to /jobs is part of
+// Phase B in the system rewrite); only the label says "Jobs".
 const nav = [
   ["/dashboard", "🏠", "Dashboard"],
   ["/master-calendar", "🗓️", "Calendar"],
   ["/clients", "🏢", "Clients"],
-  ["/quote-builder", "🧾", "Quote Builder"],
+  ["/job-requests", "📨", "Jobs"],
+  ["/quotes", "🧾", "Quotes"],
   ["/invoices", "💵", "Invoices"],
   ["/rate-card", "📋", "Rate Card"],
-  ["/job-sheets", "📑", "Job Sheets"],
   ["/timekeeping", "⏱️", "Timekeeping"],
   ["/timekeeping/review", "✅", "Timesheet Review"],
+  ["/payroll", "💰", "Payroll"],
   ["/job-costing", "📈", "Job Costing"],
   ["/employee-directory", "👥", "Employees"],
-  ["/job-requests", "📨", "Job Requests"],
   // ["/call-sheets", "📞", "Call Sheets"],  // Hidden — duplicate of Job Sheets. Code kept under app/call-sheets/ but excluded from nav + analysis.
   ["/maintenance", "⚙️", "Maintenance"],
+  // Legacy entries — kept in the nav for now since data still flows through
+  // them, but parked at the bottom to signal they're on the way out.
+  ["/job-sheets", "📑", "Job Sheets (legacy)"],
+  ["/invoice-builder", "📄", "Invoice Builder (legacy)"],
 ] as const;
 
 const STORAGE_KEY = "aos.sidebar.collapsed";
@@ -36,6 +46,10 @@ export function AppShell({
 }) {
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState<boolean>(true);
+  // Admin debug toggle: when on, .record-id chips on rows reveal record
+  // GUIDs. Default off — zero clutter for normal use. Persisted to
+  // localStorage so the choice survives a reload. Body class drives the
+  // CSS rule in globals.css (`body.show-ids .record-id { display: ...; }`).
   const [showIds, setShowIds] = useState<boolean>(false);
 
   // Role guard. Crew leaders must never see the admin shell — its nav
@@ -67,7 +81,7 @@ export function AppShell({
     return () => { cancelled = true; };
   }, []);
 
-  // Load persisted preference (skipped during SSR to avoid hydration mismatch)
+  // Load persisted preferences (skipped during SSR to avoid hydration mismatch)
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -142,6 +156,9 @@ export function AppShell({
         ))}
 
         <div style={{ marginTop: "auto", paddingTop: 24 }}>
+          {/* Admin debug toggle — reveal record IDs across all screens.
+              Useful for referencing specific rows during data cleanup
+              conversations. Off by default. */}
           <button
             onClick={toggleShowIds}
             title={collapsed ? (showIds ? "Hide record IDs" : "Show record IDs") : undefined}

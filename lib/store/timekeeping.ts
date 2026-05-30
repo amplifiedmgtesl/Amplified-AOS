@@ -2,10 +2,8 @@
 import type { TimeEntry, Timesheet } from "./types";
 import { durationMinutes } from "../time-utils";
 
-export const POSITIONS = [
-  "Stagehand","Rigger","Rigger 1","Audio Technician","Lighting Technician","Video Technician",
-  "Fork Op","Camera Op","Operations","Lead","Other"
-];
+// Note: legacy hardcoded POSITIONS list removed 2026-05-04. Position names
+// now come from the positions table via positionNames() in app-store.ts.
 
 export function timeOptions() {
   const out: string[] = [""];
@@ -72,7 +70,19 @@ export function computeTimeEntry(entry: TimeEntry): TimeEntry {
   const stdHours = Math.min(8, totalHours);
   const otHours = totalHours > 8 ? Math.min(4, totalHours - 8) : 0;
   const dtHours = totalHours > 12 ? totalHours - 12 : 0;
-  const totalPay = +(stdHours * entry.stdRate + otHours * entry.otRate + dtHours * entry.dtRate).toFixed(2);
+
+  // Phase 4: on a holiday row, bill = totalHours × billStdRate × multiplier.
+  // OT/DT premium does NOT stack on top — matches the atomic-day, flat-2×
+  // rule in the quote/invoice calc engine (migration #28). On non-holiday
+  // rows, the existing ST/OT/DT split applies.
+  //
+  // (Note: these are BILLING totals — what AES bills the client. Pay
+  // totals live separately on payroll_run_entries. Renamed in 20260528b.)
+  const mult = entry.isHoliday ? (entry.holidayMultiplier ?? 2.0) : 1;
+  const billTotal = entry.isHoliday
+    ? +(totalHours * entry.billStdRate * mult).toFixed(2)
+    : +(stdHours * entry.billStdRate + otHours * entry.billOtRate + dtHours * entry.billDtRate).toFixed(2);
+
   return {
     ...entry,
     endDate,
@@ -80,7 +90,7 @@ export function computeTimeEntry(entry: TimeEntry): TimeEntry {
     otHours: +otHours.toFixed(2),
     dtHours: +dtHours.toFixed(2),
     totalHours: +totalHours.toFixed(2),
-    totalPay
+    billTotal,
   };
 }
 
@@ -118,10 +128,17 @@ function inferPairDatesLocal(
   return { in1Date, out1Date, in2Date, out2Date };
 }
 
+// Default position for a freshly-seeded row. Operator picks via the
+// cascading dropdown — this just keeps the row FK-clean from the start
+// (position_id is the source of truth post-Phase 3; "Stagehand" is the
+// canonical default position for event labor in this system).
+const DEFAULT_POSITION_ID = "pos-01";
+
 export function blankTimeEntry(id: string): TimeEntry {
   return computeTimeEntry({
     id,
     position: "Stagehand",
+    positionId: DEFAULT_POSITION_ID,
     firstName: "",
     lastName: "",
     phone: "",
@@ -137,30 +154,62 @@ export function blankTimeEntry(id: string): TimeEntry {
     otHours: 0,
     dtHours: 0,
     totalHours: 0,
-    stdRate: 35,
-    otRate: 52,
-    dtRate: 70,
-    totalPay: 0,
+    billStdRate: 35,
+    billOtRate: 52,
+    billDtRate: 70,
+    billTotal: 0,
     status: "submitted",
+    isHoliday: false,
+    holidayMultiplier: null,
   });
 }
+/**
+ * Aggregate timesheet entries for downstream consumers (Labor Summary panels,
+ * invoice "Pull labor actuals" flow).
+ *
+ * Phase 3 (2026-05-26): group by canonical (positionId, specialtyId) when
+ * present, falling back to the legacy text `position` for rows that haven't
+ * been normalized yet. Output preserves the legacy `position` string for
+ * display + back-compat with callers that haven't migrated to IDs yet.
+ */
 export function summarizeTimesheet(
   timesheet: Timesheet | null,
   filter?: (row: TimeEntry) => boolean,
 ) {
   if (!timesheet) return [];
-  const map = new Map<string, { position:string; workers:number; stdHours:number; otHours:number; dtHours:number; totalHours:number; totalPay:number }>();
+  type Agg = {
+    position: string;
+    positionId: string | null;
+    specialtyId: string | null;
+    workers: number;
+    stdHours: number; otHours: number; dtHours: number;
+    totalHours: number; billTotal: number;
+  };
+  const map = new Map<string, Agg>();
   const rows = filter ? timesheet.rows.filter(filter) : timesheet.rows;
   rows.forEach((r) => {
-    const key = r.position || "Unassigned";
-    if (!map.has(key)) map.set(key, { position:key, workers:0, stdHours:0, otHours:0, dtHours:0, totalHours:0, totalPay:0 });
+    // Prefer (positionId, specialtyId) as the canonical key. Fall back to
+    // the legacy text so unnormalized rows still appear in their own bucket.
+    const key = r.positionId
+      ? `${r.positionId}|${r.specialtyId || ""}`
+      : `text:${r.position || "Unassigned"}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        position: r.position || "Unassigned",
+        positionId: r.positionId ?? null,
+        specialtyId: r.specialtyId ?? null,
+        workers: 0,
+        stdHours: 0, otHours: 0, dtHours: 0,
+        totalHours: 0, billTotal: 0,
+      });
+    }
     const agg = map.get(key)!;
     agg.workers += 1;
     agg.stdHours += r.stdHours;
     agg.otHours += r.otHours;
     agg.dtHours += r.dtHours;
     agg.totalHours += r.totalHours;
-    agg.totalPay += r.totalPay;
+    agg.billTotal += r.billTotal;
   });
   return Array.from(map.values()).map((r)=>({
     ...r,
@@ -168,6 +217,6 @@ export function summarizeTimesheet(
     otHours:+r.otHours.toFixed(2),
     dtHours:+r.dtHours.toFixed(2),
     totalHours:+r.totalHours.toFixed(2),
-    totalPay:+r.totalPay.toFixed(2),
+    billTotal:+r.billTotal.toFixed(2),
   }));
 }

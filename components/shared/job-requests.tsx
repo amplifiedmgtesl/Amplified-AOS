@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { setQuoteSeed, upsertJobRequest, deleteJobRequest, setActiveQuote } from "@/lib/store/app-store";
+import { upsertJobRequest, deleteJobRequest, setActiveQuote } from "@/lib/store/app-store";
+import { createDraftFromJob, pickRateCardForJob } from "@/lib/store/quotes";
 import { googleCalendarLink } from "@/lib/store/calendar";
 import { loadJobRequests } from "@/lib/store/app-store";
 import { timeOptions } from "@/lib/store/timekeeping";
@@ -9,7 +10,13 @@ import { supabase } from "@/lib/supabase/client";
 import { US_STATES, JOB_REQUEST_STATUSES } from "@/lib/constants";
 import { JobRequestAttachmentsSection } from "./job-request-attachments-section";
 import { JobRequestDaysSection } from "./job-request-days-section";
+import { loadJobRequestDays } from "@/lib/storage/job-request-days";
+import { JobRequestCrewSection } from "./job-request-crew-section";
+import { JobRequestShiftsSection } from "./job-request-shifts-section";
+import { JobPrintSheet } from "./job-print-sheet";
 import { useUserRole } from "@/lib/auth/use-user-role";
+import { computeJobNo, defaultEventAbbr, sanitizeEventAbbr } from "@/lib/jobs/job-no";
+import { printWithTitle } from "@/lib/print-with-title";
 import type { JobRequest, Client } from "@/lib/store/types";
 
 const TIMES = timeOptions();
@@ -22,6 +29,7 @@ const BLANK: JobRequest = {
   receivedDate: today(), requestDate: "", endDate: "",
   startTime: "", endTime: "", expectedHours: 10, addToCalendar: true,
   status: "lead", notes: "", attachmentNames: [], packetNotes: "",
+  jobNo: undefined, eventAbbr: undefined,
 };
 
 type StatusFilter = "active" | "all" | "lead" | "quoted" | "booked" | "completed" | "lost";
@@ -39,14 +47,68 @@ function daysSince(iso?: string): number | null {
 }
 
 type Mode = "none" | "new" | "edit";
-type SectionTab = "daily" | "crew" | "attachments";
+type SectionTab = "daily" | "crew" | "shifts" | "attachments";
 
 export default function JobRequests() {
   const [refreshKey, setRefreshKey] = useState(0);
   const rows = useMemo(() => loadJobRequests(), [refreshKey]);
   const [mode, setMode] = useState<Mode>("none");
   const [form, setForm] = useState<JobRequest>({ ...BLANK });
+
+  // Possible-duplicate detection: same client + same start date as an
+  // existing job. Soft warning only — legitimate cases exist (e.g. a venue
+  // running two stages on the same day gets two job_requests by design).
+  // Excludes the row currently being edited.
+  const possibleDuplicates = useMemo(() => {
+    if (!form.clientId || !form.requestDate) return [];
+    const editingId = form.id || "";
+    return rows.filter((r) =>
+      r.id !== editingId &&
+      r.clientId === form.clientId &&
+      r.requestDate === form.requestDate,
+    );
+  }, [rows, form.clientId, form.requestDate, form.id]);
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  // Track the date extent of this job's day rows (min/max event_date) so
+  // we can warn when the header date range no longer covers them. Loaded
+  // lazily when editing — new jobs have no day rows yet.
+  const [dayExtent, setDayExtent] = useState<{ min: string; max: string } | null>(null);
+  useEffect(() => {
+    if (!editingId) { setDayExtent(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const days = await loadJobRequestDays(editingId);
+        if (cancelled) return;
+        const dates = days.map((d) => d.eventDate).filter(Boolean).sort();
+        setDayExtent(dates.length > 0
+          ? { min: dates[0], max: dates[dates.length - 1] }
+          : null);
+      } catch (err) {
+        console.error("[job-requests] loadJobRequestDays for header warning:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editingId, refreshKey]);
+
+  // Header-vs-days mismatch: form's date range no longer covers the actual
+  // day rows. Soft warning — header doesn't auto-add/remove days. Operator
+  // fixes by going to the Days tab and removing/adding day rows manually.
+  const headerDaysMismatch = useMemo(() => {
+    if (!dayExtent) return null;
+    const headerStart = form.requestDate;
+    const headerEnd = form.endDate || form.requestDate;
+    const issues: string[] = [];
+    if (headerStart && dayExtent.min < headerStart) {
+      issues.push(`Day rows exist on ${dayExtent.min} — earlier than the header start (${headerStart}).`);
+    }
+    if (headerEnd && dayExtent.max > headerEnd) {
+      issues.push(`Day rows exist on ${dayExtent.max} — later than the header end (${headerEnd}).`);
+    }
+    return issues.length > 0 ? issues : null;
+  }, [dayExtent, form.requestDate, form.endDate]);
+
   const [msg, setMsg] = useState("");
   const [clients, setClients] = useState<Client[]>([]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -58,12 +120,134 @@ export default function JobRequests() {
   const isCrewLeader = role === "crew_leader";
   const timesheetHref = isCrewLeader ? "/lead/timekeeping" : "/timekeeping";
 
+  // Quote state for the currently-edited job. Drives the Create/Continue/View
+  // button logic — see the action row below.
+  const [openDraftId, setOpenDraftId] = useState<string | null>(null);
+  const [latestIssuedId, setLatestIssuedId] = useState<string | null>(null);
+
+  // Display + override the applicable rate card right on the job header so the
+  // admin sees what rates a quote off this job will use, and can pin a
+  // specific card if the auto-resolved one isn't right.
+  const [applicableRateCardLabel, setApplicableRateCardLabel] = useState<string>("");
+  const [allRateCardProfiles, setAllRateCardProfiles] = useState<Array<{ id: string; name: string; client_name: string | null; effective_date: string | null }>>([]);
+
+  useEffect(() => {
+    supabase
+      .from("rate_card_profiles")
+      .select("id, name, client_name, effective_date")
+      .order("client_name", { ascending: true, nullsFirst: false })
+      .order("name")
+      .then(({ data }) => setAllRateCardProfiles(data ?? []));
+  }, []);
+
+  useEffect(() => {
+    if (!editingId) { setOpenDraftId(null); setLatestIssuedId(null); return; }
+    let cancelled = false;
+    supabase
+      .from("quotes")
+      .select("id, is_draft, status, parent_quote_id, updated_at")
+      .eq("job_request_id", editingId)
+      .order("updated_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error("[job-requests] quote state load failed:", error); return; }
+        const rows = data ?? [];
+        const draft = rows.find((r: any) => r.is_draft);
+        const issuedNonSuperseded = rows.find((r: any) => !r.is_draft && r.status !== "superseded");
+        setOpenDraftId(draft?.id ?? null);
+        setLatestIssuedId(issuedNonSuperseded?.id ?? null);
+      });
+    return () => { cancelled = true; };
+  }, [editingId, refreshKey]);
+
+  // Resolve the applicable rate card for the form's current client + start
+  // date. Re-runs as the user changes either field so the displayed label
+  // tracks live.
+  useEffect(() => {
+    if (!form.clientId || !form.requestDate) { setApplicableRateCardLabel(""); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const card = await pickRateCardForJob(form.clientId, form.requestDate);
+        if (cancelled) return;
+        if (!card) { setApplicableRateCardLabel("(no rate card)"); return; }
+        const profileRes = await supabase
+          .from("rate_card_profiles")
+          .select("name, client_name, effective_date")
+          .eq("id", card.id)
+          .maybeSingle();
+        if (cancelled) return;
+        const p = profileRes.data;
+        if (!p) { setApplicableRateCardLabel(card.id); return; }
+        const parts: string[] = [];
+        if (p.client_name) parts.push(p.client_name);
+        parts.push(p.name);
+        const label = parts.join(" — ");
+        setApplicableRateCardLabel(p.effective_date ? `${label} (eff ${p.effective_date})` : label);
+      } catch (err) {
+        console.error("[job-requests] rate card lookup failed:", err);
+        setApplicableRateCardLabel("");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [form.clientId, form.requestDate]);
+
   useEffect(() => {
     supabase.from("clients").select("id, name, code, is_active").order("name")
       .then(({ data }) => setClients((data ?? []).map((r: any) => ({
         id: r.id, name: r.name, code: r.code ?? undefined, isActive: !!r.is_active,
       }))));
   }, []);
+
+  // Deep-link:
+  //   /job-requests?id=<jobreq-id>            → auto-open that record
+  //   /job-requests?new=1&clientId=<client>   → blank form prefilled with that client
+  // Lets the Client Maintenance "Jobs" tab (and other places) link directly
+  // to a job, or jump into a new-job draft already scoped to the client.
+  // Runs once after both rows AND clients are loaded, then strips the params.
+  const [deepLinkHandled, setDeepLinkHandled] = useState(false);
+  useEffect(() => {
+    if (deepLinkHandled || typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const wantNew = params.get("new") === "1";
+    const wantClientId = params.get("clientId");
+    const wantId = params.get("id");
+
+    // New-job path: needs clients loaded so we can resolve the client name.
+    if (wantNew) {
+      if (clients.length === 0) return; // wait for clients to load
+      const c = wantClientId ? clientById.get(wantClientId) : undefined;
+      setMode("new");
+      setEditingId(null);
+      setForm({
+        ...BLANK,
+        clientId: c?.id ?? "",
+        client: c?.name ?? "",
+      });
+      setMsg("");
+      window.history.replaceState({}, "", window.location.pathname);
+      setDeepLinkHandled(true);
+      return;
+    }
+
+    if (!wantId) { setDeepLinkHandled(true); return; }
+    const target = rows.find((r) => r.id === wantId);
+    if (target) {
+      setMode("edit");
+      setEditingId(target.id);
+      setForm({ ...target });
+      setMsg("");
+      // Clean the URL so a refresh / future save doesn't bounce back here.
+      window.history.replaceState({}, "", window.location.pathname);
+      setDeepLinkHandled(true);
+    } else if (rows.length > 0) {
+      // Rows have loaded but the requested id isn't there — give up rather
+      // than waiting forever for a row that doesn't exist.
+      window.history.replaceState({}, "", window.location.pathname);
+      setDeepLinkHandled(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows.length, clients.length, deepLinkHandled]);
 
   const clientById = useMemo(() => {
     const map = new Map<string, Client>();
@@ -136,7 +320,7 @@ export default function JobRequests() {
     if (ceCount > 0) msgs.push(`${ceCount} calendar event${ceCount !== 1 ? "s" : ""}`);
     if (jcCount > 0) msgs.push(`${jcCount} job costing draft${jcCount !== 1 ? "s" : ""}`);
     if (msgs.length > 0) {
-      setDeleteMsg(`Cannot delete "${form.eventName || "(no event name)"}" — ${msgs.join(" and ")} reference this job request. Remove or unlink them first.`);
+      setDeleteMsg(`Cannot delete "${form.eventName || "(no event name)"}" — ${msgs.join(" and ")} reference this job. Remove or unlink them first.`);
       return;
     }
     setConfirmDeleteId(editingId);
@@ -152,11 +336,32 @@ export default function JobRequests() {
     setRefreshKey((x) => x + 1);
   }
 
+  /** Build a confirm-dialog message listing possible duplicates, returns
+   *  true when the user wants to proceed anyway. Returns true immediately
+   *  when there are no candidates so non-duplicate saves never prompt. */
+  function confirmIfDuplicates(): boolean {
+    if (possibleDuplicates.length === 0) return true;
+    const lines = possibleDuplicates.map((d) => {
+      const code = clientById.get(d.clientId)?.code ?? "";
+      return `  • ${d.eventName || "(no event name)"} — ${code} · ${d.requestDate}${d.endDate && d.endDate !== d.requestDate ? `–${d.endDate}` : ""}${d.status ? ` · ${d.status}` : ""}`;
+    });
+    return confirm(
+      `Possible duplicate${possibleDuplicates.length === 1 ? "" : "s"} — this client already has a job starting ${form.requestDate}:\n\n${lines.join("\n")}\n\nSave anyway? (Legitimate cases include multiple stages at the same venue on the same day.)`
+    );
+  }
+
   function save() {
     if (!form.clientId) { setMsg("Please select a client before saving."); return; }
     if (!form.eventName.trim()) { setMsg("Please enter an event name before saving."); return; }
     if (!form.requestDate) { setMsg("Please pick an event start date before saving."); return; }
-    const row = normalized({ ...form, id: form.id || `jobreq-${Date.now()}` });
+    if (form.endDate && form.endDate < form.requestDate) { setMsg("End date can't be before the start date."); return; }
+    if (!confirmIfDuplicates()) return;
+    const row = normalized({
+      ...form,
+      id: form.id || `jobreq-${Date.now()}`,
+      eventAbbr: effectiveEventAbbr || undefined,
+      jobNo: liveJobNo || undefined,
+    });
     upsertJobRequest(row);
     setMsg("Saved.");
     setMode("edit");
@@ -170,25 +375,27 @@ export default function JobRequests() {
     setMsg("Opened Google Calendar template — click Save in Google to add the event.");
   }
 
-  function saveAndBuildQuote() {
+  /** Save the job request, then route through lib/store/quotes.ts to create
+   *  a draft row tied to job_request_id and open the new editor. */
+  async function saveAndCreateQuoteNew() {
     if (!form.clientId) { setMsg("Please select a client before saving."); return; }
     if (!form.eventName.trim()) { setMsg("Please enter an event name before saving."); return; }
     if (!form.requestDate) { setMsg("Please pick an event start date before saving."); return; }
-    const row = normalized({ ...form, id: form.id || `jobreq-${Date.now()}` });
-    upsertJobRequest(row);
-    setQuoteSeed({
-      linkedJobRequestId: row.id,
-      client: row.client,
-      eventName: row.eventName,
-      venue: row.venue,
-      cityState: row.cityState,
-      startDate: row.requestDate,
-      endDate: row.endDate || row.requestDate,
-      startTime: row.startTime,
-      endTime: row.endTime,
-      expectedHoursPerDay: row.expectedHours || 10,
+    if (form.endDate && form.endDate < form.requestDate) { setMsg("End date can't be before the start date."); return; }
+    if (!confirmIfDuplicates()) return;
+    const row = normalized({
+      ...form,
+      id: form.id || `jobreq-${Date.now()}`,
+      eventAbbr: effectiveEventAbbr || undefined,
+      jobNo: liveJobNo || undefined,
     });
-    window.location.href = "/quote-builder";
+    upsertJobRequest(row);
+    try {
+      const draft = await createDraftFromJob(row.id);
+      window.location.href = `/quotes/${draft.id}/edit`;
+    } catch (err: any) {
+      setMsg(`Failed to create draft: ${err.message || err}`);
+    }
   }
 
   function openGoogleCal(row: JobRequest) {
@@ -232,12 +439,29 @@ export default function JobRequests() {
   // Editing a quoted/booked/lost request would silently mutate downstream
   // artifacts (the quote built off it, the booked job's terms, etc.).
   const isLocked = mode === "edit" && form.status !== "lead";
+  // Crew assignments stay editable through Booked — that's when scheduling
+  // actually happens. Only lock once the job is closed out (Completed/Lost).
+  const isCrewLocked = mode === "edit" && (form.status === "completed" || form.status === "lost");
+
+  // The effective event abbreviation: user override wins; otherwise auto-
+  // derive from the event_name (uppercase, alphanumeric only, ≤8 chars).
+  const effectiveEventAbbr = form.eventAbbr || defaultEventAbbr(form.eventName);
+
+  // Live-computed job_no based on current form state. Displayed at the top of
+  // the editor as a readonly label and persisted on save. Recomputes
+  // automatically as any source field changes.
+  const liveJobNo = useMemo(() => computeJobNo({
+    startDate: form.requestDate,
+    endDate: form.endDate,
+    clientCode: form.clientId ? clientById.get(form.clientId)?.code : undefined,
+    eventAbbr: effectiveEventAbbr,
+  }), [form.requestDate, form.endDate, form.clientId, effectiveEventAbbr, clientById]);
   const statusLabel = JOB_REQUEST_STATUSES.find((s) => s.value === form.status)?.label ?? form.status;
 
   return (
     <div style={{ display: "flex", gap: 20, alignItems: "flex-start", height: "100%" }}>
       {/* ── Left: list ── */}
-      <div style={{ width: 300, flexShrink: 0 }}>
+      <div className="hide-print" style={{ width: 300, flexShrink: 0 }}>
         <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center" }}>
           <input
             value={search}
@@ -245,7 +469,7 @@ export default function JobRequests() {
             placeholder="Search event / client / venue…"
             style={{ flex: 1 }}
           />
-          <button onClick={startNew} title="New job request" style={{ whiteSpace: "nowrap" }}>+ New</button>
+          <button onClick={startNew} title="New job" style={{ whiteSpace: "nowrap" }}>+ New</button>
         </div>
         <div style={{ marginBottom: 12 }}>
           <select
@@ -265,7 +489,7 @@ export default function JobRequests() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: "calc(100vh - 220px)", overflowY: "auto" }}>
           {visibleRows.length === 0 ? (
-            <div className="muted" style={{ fontSize: 13, padding: "8px 4px" }}>No matching job requests.</div>
+            <div className="muted" style={{ fontSize: 13, padding: "8px 4px" }}>No matching jobs.</div>
           ) : (
             visibleRows.map((r) => {
               const c = clientById.get(r.clientId);
@@ -287,22 +511,30 @@ export default function JobRequests() {
                     fontSize: 13,
                   }}
                 >
-                  <div style={{ fontWeight: 600, display: "flex", gap: 6, alignItems: "baseline" }}>
-                    <span style={{ fontFamily: "monospace" }}>
-                      {code ? `[${code}]` : (c?.name ?? r.client ?? "?").slice(0, 18)}
-                    </span>
+                  <div style={{
+                    fontFamily: "monospace", fontSize: 12, fontWeight: 700,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    letterSpacing: 0.3,
+                  }} title={r.jobNo || ""}>
+                    {r.jobNo || <span style={{ fontStyle: "italic", opacity: 0.6, fontWeight: 400 }}>(no job #)</span>}
+                  </div>
+                  <div style={{
+                    display: "flex", gap: 6, alignItems: "baseline", marginTop: 3,
+                    fontSize: 12,
+                  }}>
+                    <span style={{ opacity: 0.85 }}>{code ? `[${code}]` : (c?.name ?? r.client ?? "?").slice(0, 18)}</span>
                     <span style={{ opacity: 0.6 }}>·</span>
-                    <span>{r.requestDate || "no date"}</span>
+                    <span style={{ opacity: 0.85 }}>{r.requestDate || "no date"}</span>
                     <span style={{
                       marginLeft: "auto", fontSize: 10, textTransform: "uppercase", opacity: 0.7,
                       fontWeight: 500, letterSpacing: 0.4,
                     }}>{r.status}</span>
                   </div>
                   <div style={{
-                    fontSize: 12, opacity: 0.85, marginTop: 2,
+                    fontSize: 11, opacity: 0.75, marginTop: 2,
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                   }} title={r.eventName}>
-                    {r.eventName || <span style={{ fontStyle: "italic", opacity: 0.7 }}>(no event name)</span>}
+                    {r.eventName || <span style={{ fontStyle: "italic", opacity: 0.5 }}>(no event name)</span>}
                   </div>
                   {overdue && (
                     <div style={{
@@ -321,7 +553,7 @@ export default function JobRequests() {
 
         <div style={{ marginTop: 12, borderTop: "1px solid var(--border, #e5e7eb)", paddingTop: 8 }}>
           <div className="muted" style={{ fontSize: 11 }}>
-            {visibleRows.length} of {rows.length} job request{rows.length !== 1 ? "s" : ""}
+            {visibleRows.length} of {rows.length} job{rows.length !== 1 ? "s" : ""}
           </div>
         </div>
       </div>
@@ -330,15 +562,37 @@ export default function JobRequests() {
       <div style={{ flex: 1, minWidth: 0 }}>
         {mode === "none" ? (
           <div className="card" style={{ textAlign: "center", padding: "60px 24px", color: "#888" }}>
-            <div style={{ fontSize: 16, marginBottom: 8 }}>No job request selected.</div>
+            <div style={{ fontSize: 16, marginBottom: 8 }}>No job selected.</div>
             <div style={{ fontSize: 13, marginBottom: 20 }}>
               Pick one from the list on the left to view or edit it, or start a new one.
             </div>
-            <button onClick={startNew}>+ New Job Request</button>
+            <button onClick={startNew}>+ New Job</button>
           </div>
         ) : (
-        <div className="card">
-          <h2 className="section-title">{mode === "edit" ? "Edit Job Request" : "New Job Request"}{editingId && <span className="record-id" title="Job request id">{editingId}</span>}</h2>
+        <div className="card hide-print">
+          <h2 className="section-title">{mode === "edit" ? "Edit Job" : "New Job"}</h2>
+
+          <div style={{
+            background: "var(--cream, #fbf6ee)",
+            border: "1px solid var(--line, #d7c6aa)",
+            borderRadius: 10,
+            padding: "8px 14px",
+            marginBottom: 12,
+            display: "flex",
+            alignItems: "baseline",
+            gap: 12,
+            flexWrap: "wrap",
+          }}>
+            <small style={{ opacity: 0.7 }}>Job #</small>
+            <strong style={{ fontFamily: "monospace", fontSize: 15, letterSpacing: 0.4 }}>
+              {liveJobNo ?? <span style={{ opacity: 0.5, fontWeight: 400, fontStyle: "italic" }}>
+                will be assigned once Client + Event Name + Start Date are set
+              </span>}
+            </strong>
+            {isLocked && liveJobNo && (
+              <span className="badge" style={{ fontSize: 10, background: "#eef5ff", color: "#1e3a8a" }}>locked</span>
+            )}
+          </div>
 
           {deleteMsg && (
             <div style={{ background: "#fff3f3", border: "1px solid #e0a0a0", borderRadius: 8, padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#a00", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -362,8 +616,9 @@ export default function JobRequests() {
               background: "#eef5ff", border: "1px solid #b6cdf0", borderRadius: 8,
               padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#1e3a8a",
             }}>
-              🔒 This job request is <strong>{statusLabel}</strong>. Only the Status field can be changed —
-              switch back to <strong>Lead</strong> to edit other fields.
+              🔒 This job is <strong>{statusLabel}</strong>. Status and the <strong>Assigned Crew</strong> tab
+              stay editable{form.status === "booked" ? " (booked jobs still need crew scheduling)" : ""};
+              everything else is locked. Switch back to <strong>Lead</strong> to edit other fields.
             </div>
           )}
 
@@ -380,6 +635,17 @@ export default function JobRequests() {
               </select>
             </div>
             <div><small>Event Name</small><input disabled={isLocked} value={form.eventName} onChange={(e)=>setForm({ ...form, eventName:e.target.value })} /></div>
+            <div>
+              <small>Event Abbr <span style={{ opacity: 0.6 }}>(8 chars, used in Job #)</span></small>
+              <input
+                disabled={isLocked}
+                value={form.eventAbbr ?? ""}
+                onChange={(e) => setForm({ ...form, eventAbbr: sanitizeEventAbbr(e.target.value) })}
+                placeholder={defaultEventAbbr(form.eventName) || "auto"}
+                maxLength={8}
+                style={{ fontFamily: "monospace", textTransform: "uppercase" }}
+              />
+            </div>
             <div><small>Venue</small><input disabled={isLocked} value={form.venue} onChange={(e)=>setForm({ ...form, venue:e.target.value })} /></div>
             <div><small>Street Address</small><input disabled={isLocked} value={form.venueAddress} onChange={(e)=>setForm({ ...form, venueAddress:e.target.value })} placeholder="e.g. 123 Main St" /></div>
             <div><small>Suite / Unit</small><input disabled={isLocked} value={form.venueAddress2 ?? ""} onChange={(e)=>setForm({ ...form, venueAddress2:e.target.value })} placeholder="optional" /></div>
@@ -408,7 +674,15 @@ export default function JobRequests() {
             </div>
             <div><small>Request Date</small><input type="date" disabled={isLocked} value={form.receivedDate} onChange={(e)=>setForm({ ...form, receivedDate:e.target.value })} /></div>
             <div><small>Event Start Date</small><input type="date" disabled={isLocked} value={form.requestDate} onChange={(e)=>setForm({ ...form, requestDate:e.target.value })} /></div>
-            <div><small>Event End Date</small><input type="date" disabled={isLocked} value={form.endDate || ""} onChange={(e)=>setForm({ ...form, endDate:e.target.value })} /></div>
+            <div>
+              <small>Event End Date</small>
+              <input type="date" disabled={isLocked} min={form.requestDate || undefined} value={form.endDate || ""} onChange={(e)=>setForm({ ...form, endDate:e.target.value })} />
+              {form.endDate && form.requestDate && form.endDate < form.requestDate && (
+                <div style={{ fontSize: 11, color: "#c2410c", marginTop: 2 }}>
+                  ⚠ End date is before start date.
+                </div>
+              )}
+            </div>
             <div><small>Start Time</small>
               <select disabled={isLocked} value={form.startTime} onChange={(e)=>setForm({ ...form, startTime:e.target.value })}>
                 {TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}
@@ -452,18 +726,122 @@ export default function JobRequests() {
 
           <div style={{ marginTop: 12 }}><small>Notes</small><textarea disabled={isLocked} value={form.notes} onChange={(e)=>setForm({ ...form, notes:e.target.value })} /></div>
 
+          {/* Rate card pick (optional override). Filtered to cards for the
+              selected client plus the master default. Quotes off this job
+              honor the pin; if left as Auto, pickRateCardForJob runs. */}
+          <div style={{ marginTop: 12, fontSize: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <small style={{ opacity: 0.7 }}>Rate card</small>
+            <select
+              disabled={isLocked}
+              value={form.rateCardProfileId ?? ""}
+              onChange={(e) => setForm({ ...form, rateCardProfileId: e.target.value || undefined })}
+              title="Pin a rate card to this job (overrides auto-resolution by date). Quote create uses this."
+              style={{ fontSize: 12, maxWidth: 360 }}
+            >
+              <option value="">
+                Auto{applicableRateCardLabel ? ` — ${applicableRateCardLabel}` : ""}
+              </option>
+              {allRateCardProfiles
+                .filter((p) =>
+                  // Only show this client's cards + the master default.
+                  (form.clientId && p.client_name && clientById.get(form.clientId)?.name === p.client_name)
+                  || p.id === "ratecard-master-default"
+                )
+                .map((p) => {
+                  const label = p.id === "ratecard-master-default"
+                    ? p.name
+                    : [p.client_name, p.name].filter(Boolean).join(" — ");
+                  return (
+                    <option key={p.id} value={p.id}>
+                      {label}{p.effective_date ? ` (eff ${p.effective_date})` : ""}
+                    </option>
+                  );
+                })}
+            </select>
+          </div>
+
+          {headerDaysMismatch ? (
+            <div style={{
+              marginTop: 12,
+              padding: "8px 12px",
+              background: "#fdf3d8",
+              border: "1px solid #d8a800",
+              borderRadius: 4,
+              fontSize: 13,
+            }}>
+              <strong>⚠ Header dates don't match day rows:</strong>
+              <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                {headerDaysMismatch.map((msg, i) => <li key={i}>{msg}</li>)}
+              </ul>
+              <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
+                Header date changes don't auto-add or remove day rows. Go to the Days tab to add or delete days manually (deleting a day cascades to its crew needs).
+              </div>
+            </div>
+          ) : null}
+
+          {possibleDuplicates.length > 0 ? (
+            <div style={{
+              marginTop: 12,
+              padding: "8px 12px",
+              background: "#fdf3d8",
+              border: "1px solid #d8a800",
+              borderRadius: 4,
+              fontSize: 13,
+            }}>
+              <strong>⚠ Possible duplicate:</strong> this client already has a job starting {form.requestDate}.
+              <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                {possibleDuplicates.map((d) => {
+                  const code = clientById.get(d.clientId)?.code ?? "";
+                  return (
+                    <li key={d.id}>
+                      {d.eventName || "(no event name)"} — {code} · {d.requestDate}
+                      {d.endDate && d.endDate !== d.requestDate ? `–${d.endDate}` : ""}
+                      {d.status ? ` · ${d.status}` : ""}
+                      {d.jobNo ? <> · <code>{d.jobNo}</code></> : null}
+                      {" "}
+                      <button
+                        type="button"
+                        className="link"
+                        style={{ marginLeft: 6, padding: 0, background: "none", border: "none", color: "#0366d6", cursor: "pointer", textDecoration: "underline" }}
+                        onClick={() => { setEditingId(d.id); setForm(d); setMode("edit"); }}
+                      >open</button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
+                Legitimate cases (e.g. multiple stages at the same venue on the same day) can still save — you'll be asked to confirm.
+              </div>
+            </div>
+          ) : null}
+
           <div className="action-row" style={{ marginTop: 12 }}>
             <button onClick={save}>Save</button>
+            {/* New-quote entry point. The button label/action adapts to existing
+                quote state for this job:
+                  - Open draft exists  → "Continue Draft" (route to editor)
+                  - Issued quote exists → "View Quote" (route to detail; user
+                                          revises from there if needed)
+                  - Otherwise           → "Create Quote" (fresh draft) */}
             {!editingId && !isCrewLeader && (
-              <button className="secondary" onClick={saveAndBuildQuote}>Save + Build Quote</button>
+              <button onClick={saveAndCreateQuoteNew}>Save + Create Quote</button>
             )}
-            {editingId && form.linkedQuoteId && !isCrewLeader && (
-              <button className="secondary" onClick={() => { setActiveQuote(form.linkedQuoteId!); window.location.href = "/quote-builder"; }}>
-                View Quote
-              </button>
-            )}
-            {editingId && !form.linkedQuoteId && !isLocked && !isCrewLeader && (
-              <button className="secondary" onClick={saveAndBuildQuote}>Build Quote</button>
+            {editingId && !isCrewLeader && (
+              <>
+                {openDraftId ? (
+                  <button onClick={() => { window.location.href = `/quotes/${openDraftId}/edit`; }}>
+                    Continue Draft
+                  </button>
+                ) : null}
+                {latestIssuedId ? (
+                  <button onClick={() => { window.location.href = `/quotes/${latestIssuedId}`; }}>
+                    View Quote
+                  </button>
+                ) : null}
+                {!openDraftId && !latestIssuedId && !isLocked ? (
+                  <button onClick={saveAndCreateQuoteNew}>Create Quote</button>
+                ) : null}
+              </>
             )}
             {editingId && (
               <button
@@ -472,6 +850,15 @@ export default function JobRequests() {
                 title="Open the timesheet for this job"
               >
                 Timesheet
+              </button>
+            )}
+            {editingId && (
+              <button
+                className="secondary"
+                onClick={() => printWithTitle(["Job", form.jobNo || form.eventName, form.client])}
+                title="Print a one-page summary of this job"
+              >
+                Print PDF
               </button>
             )}
             {editingId && form.addToCalendar && (
@@ -513,6 +900,7 @@ export default function JobRequests() {
               {([
                 { id: "daily" as const,       label: "Daily Requirements" },
                 { id: "crew" as const,        label: "Assigned Crew" },
+                { id: "shifts" as const,      label: "Shifts" },
                 { id: "attachments" as const, label: "Attachments" },
               ]).map((t) => {
                 const active = sectionTab === t.id;
@@ -541,35 +929,41 @@ export default function JobRequests() {
 
             {sectionTab === "daily" && (
               editingId
-                ? <JobRequestDaysSection jobRequestId={editingId} disabled={isLocked} hideHeader />
+                ? <JobRequestDaysSection jobRequestId={editingId} disabled={isLocked} hideHeader jobStartDate={form.requestDate} />
                 : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
-                    Save the job request first to start adding days and crew requirements.
+                    Save the job first to start adding days and crew requirements.
                   </div>
             )}
 
             {sectionTab === "crew" && (
-              <div style={{ padding: "8px 0" }}>
-                <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
-                  Assigned crew will live here once it migrates over from the Job Sheet screen.
-                </div>
-                <div style={{ fontSize: 12, color: "#888", lineHeight: 1.5 }}>
-                  This is where you&apos;ll pick the actual people to fulfill the daily requirements
-                  on the previous tab. Today this lives on <strong>Job Sheets</strong>; that screen will
-                  be retired in a future update.
-                </div>
-              </div>
+              editingId
+                ? <JobRequestCrewSection jobRequestId={editingId} disabled={isCrewLocked} hideHeader />
+                : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
+                    Save the job first to start assigning crew.
+                  </div>
+            )}
+
+            {sectionTab === "shifts" && (
+              editingId
+                ? <JobRequestShiftsSection jobRequestId={editingId} hideHeader />
+                : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
+                    Save the job first to start adding shifts.
+                  </div>
             )}
 
             {sectionTab === "attachments" && (
               editingId
                 ? <JobRequestAttachmentsSection jobRequestId={editingId} hideHeader />
                 : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
-                    Save the job request first to start adding attachments.
+                    Save the job first to start adding attachments.
                   </div>
             )}
           </div>
         </div>
         )}
+
+        {/* Print-only summary; rendered hidden on screen, fully laid out in print. */}
+        {editingId && <JobPrintSheet form={form} />}
       </div>
     </div>
   );

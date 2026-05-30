@@ -3,7 +3,22 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { loadInvoiceDrafts, loadQuotes, loadJobSheets, loadTimesheets } from "@/lib/store/app-store";
+import { supabase } from "@/lib/supabase/client";
 import type { InvoiceDraft, JobSheet, QuoteDraft, Timesheet } from "@/lib/store/types";
+
+// Per-job aggregate of crew_needs vs assignments across upcoming days.
+type UnderstaffedJob = {
+  jobRequestId: string;
+  jobNo: string | null;
+  eventName: string;
+  status: string;
+  needCount: number;        // sum of quantity across all upcoming-day crew_needs
+  assignedCount: number;    // total assignments (any status) on those days
+  confirmedCount: number;   // assignments where confirmed=true
+  deficit: number;          // max(0, needCount - confirmedCount)
+  nextDay: string;          // earliest upcoming day on this job
+  positionGaps: { positionName: string; need: number; confirmed: number }[];
+};
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -124,9 +139,135 @@ export default function Dashboard() {
   const upcoming30 = jobSheets
     .filter((j) => j.date >= today && j.date <= in30)
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-  const understaffed = jobSheets
+  // Legacy understaffed (kept as a fallback signal until all jobs migrate
+   // to the new model — used only when no per-day data is available).
+  const legacyUnderstaffed = jobSheets
     .filter((j) => j.date >= today && j.date <= in14 && (j.workers || []).some((w) => !w.confirmed))
     .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+
+  // ─── Understaffed (new model) ──────────────────────────────────────────────
+  // Walks job_request_days in the next 14 days, sums crew_needs.quantity per
+  // (day, position) as the target, and assignments-with-confirmed=true as
+  // the actual. Jobs with positive deficit show in the widget.
+  const [understaffed, setUnderstaffed] = useState<UnderstaffedJob[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // 1. Upcoming days (next 14) on jobs that aren't already finished.
+      const { data: dayRows, error: dayErr } = await supabase
+        .from("job_request_days")
+        .select("id, job_request_id, event_date, job_requests!inner(id, job_no, event_name, status)")
+        .gte("event_date", today)
+        .lte("event_date", in14);
+      if (cancelled || dayErr || !dayRows) { if (!cancelled) setUnderstaffed([]); return; }
+
+      // PostgREST returns the joined parent as a single object for FK
+      // relationships, but the auto-typed result is an array. Cast and
+      // pull the first element defensively.
+      const liveDays = (dayRows as any[]).map((d) => ({
+        ...d,
+        job_request: Array.isArray(d.job_requests) ? d.job_requests[0] : d.job_requests,
+      })).filter((d) => {
+        const s = d.job_request?.status;
+        return s !== "completed" && s !== "lost";
+      });
+      if (liveDays.length === 0) { if (!cancelled) setUnderstaffed([]); return; }
+      const dayIds = liveDays.map((d) => d.id);
+
+      // 2. Crew_needs for those days (the targets) and their position names.
+      const [needRes, asgRes, posRes] = await Promise.all([
+        supabase.from("job_request_crew_needs")
+          .select("job_request_day_id, position_id, quantity").in("job_request_day_id", dayIds),
+        supabase.from("job_request_assignments")
+          .select("job_request_day_id, position_id, confirmed").in("job_request_day_id", dayIds),
+        supabase.from("positions").select("id, name").eq("is_active", true),
+      ]);
+      if (cancelled) return;
+      const positionsByid = new Map<string, string>();
+      for (const p of (posRes.data ?? []) as any[]) positionsByid.set(p.id, p.name);
+
+      // 3. Roll up per (job, position): need vs confirmed assignments.
+      // jobs[jobRequestId] = { meta, perPosition }
+      type Bucket = { need: number; confirmed: number; assigned: number };
+      const jobs = new Map<string, {
+        meta: { jobNo: string | null; eventName: string; status: string };
+        perPosition: Map<string, Bucket>;   // key: positionId or "(none)"
+        nextDay: string;
+      }>();
+      const dayToJob = new Map<string, string>();
+      for (const d of liveDays) {
+        const jrId = d.job_request_id;
+        dayToJob.set(d.id, jrId);
+        if (!jobs.has(jrId)) {
+          jobs.set(jrId, {
+            meta: {
+              jobNo: d.job_request?.job_no ?? null,
+              eventName: d.job_request?.event_name ?? "(no event name)",
+              status: d.job_request?.status ?? "",
+            },
+            perPosition: new Map(),
+            nextDay: d.event_date,
+          });
+        } else {
+          const cur = jobs.get(jrId)!;
+          if (d.event_date < cur.nextDay) cur.nextDay = d.event_date;
+        }
+      }
+      for (const n of (needRes.data ?? []) as any[]) {
+        const jrId = dayToJob.get(n.job_request_day_id); if (!jrId) continue;
+        const job = jobs.get(jrId)!;
+        const k = n.position_id || "(none)";
+        const b = job.perPosition.get(k) ?? { need: 0, confirmed: 0, assigned: 0 };
+        b.need += Number(n.quantity || 0);
+        job.perPosition.set(k, b);
+      }
+      for (const a of (asgRes.data ?? []) as any[]) {
+        const jrId = dayToJob.get(a.job_request_day_id); if (!jrId) continue;
+        const job = jobs.get(jrId)!;
+        const k = a.position_id || "(none)";
+        const b = job.perPosition.get(k) ?? { need: 0, confirmed: 0, assigned: 0 };
+        b.assigned += 1;
+        if (a.confirmed) b.confirmed += 1;
+        job.perPosition.set(k, b);
+      }
+
+      // 4. Project to UnderstaffedJob list, keep only ones with deficit.
+      const out: UnderstaffedJob[] = [];
+      for (const [jrId, j] of jobs.entries()) {
+        let need = 0, assigned = 0, confirmed = 0;
+        const positionGaps: { positionName: string; need: number; confirmed: number }[] = [];
+        for (const [posId, b] of j.perPosition.entries()) {
+          need += b.need; assigned += b.assigned; confirmed += b.confirmed;
+          if (b.need > b.confirmed) {
+            positionGaps.push({
+              positionName: positionsByid.get(posId) || "(unspecified)",
+              need: b.need,
+              confirmed: b.confirmed,
+            });
+          }
+        }
+        const deficit = Math.max(0, need - confirmed);
+        if (deficit > 0) {
+          out.push({
+            jobRequestId: jrId,
+            jobNo: j.meta.jobNo,
+            eventName: j.meta.eventName,
+            status: j.meta.status,
+            needCount: need,
+            assignedCount: assigned,
+            confirmedCount: confirmed,
+            deficit,
+            nextDay: j.nextDay,
+            positionGaps: positionGaps.sort((a, b) => (b.need - b.confirmed) - (a.need - a.confirmed)),
+          });
+        }
+      }
+      out.sort((a, b) => a.nextDay.localeCompare(b.nextDay));
+      if (!cancelled) setUnderstaffed(out);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today, in14, tick]);
 
   // ─── Timesheets awaiting approval ──────────────────────────────────────────
   const pendingRows: Array<{ ts: Timesheet; row: Timesheet["rows"][number] }> = [];
@@ -366,24 +507,68 @@ export default function Dashboard() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
               <h3 className="section-title" style={{ margin: 0 }}>
                 Understaffed (14 days)
-                <Info text={"Upcoming job sheets in the next 14 days where at least one assigned worker has confirmed = false. Does not yet account for the quoted crew-size target — see the follow-up todo for that."} />
+                <Info text={"Upcoming jobs in the next 14 days where the confirmed crew assignments fall short of the daily requirements. Sums per position across all upcoming days; falls back to 'unconfirmed workers on a job sheet' for legacy jobs that don't yet have day-level requirements."} />
               </h3>
-              <Link href="/job-sheets" style={{ fontSize: 13, color: "var(--gold-dark)", fontWeight: 600 }}>Job sheets →</Link>
+              <Link href="/job-requests" style={{ fontSize: 13, color: "var(--gold-dark)", fontWeight: 600 }}>Jobs →</Link>
             </div>
-            {understaffed.length === 0 ? (
-              <div className="muted">All upcoming crews confirmed.</div>
+            {understaffed === null ? (
+              <div className="muted">Loading…</div>
+            ) : understaffed.length === 0 && legacyUnderstaffed.length === 0 ? (
+              <div className="muted">All upcoming crews fully assigned and confirmed.</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {understaffed.slice(0, 6).map((j) => {
+                {understaffed.slice(0, 6).map((j) => (
+                  <Link
+                    key={j.jobRequestId}
+                    href={`/job-requests?id=${encodeURIComponent(j.jobRequestId)}`}
+                    className="list-card"
+                    style={{
+                      borderLeftColor: "#dc7e3a",
+                      textDecoration: "none",
+                      color: "inherit",
+                      display: "block",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                      <div>
+                        <div style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: "var(--accent, #2563eb)" }}>
+                          {j.jobNo ?? "(no job #)"}
+                        </div>
+                        <div style={{ fontWeight: 700, marginTop: 2 }}>{j.eventName}</div>
+                      </div>
+                      <span style={{
+                        background: "#fef3e8", color: "#9a3412",
+                        borderRadius: 999, padding: "2px 10px", fontSize: 11, fontWeight: 700,
+                      }}>
+                        −{j.deficit}
+                      </span>
+                    </div>
+                    <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                      next: {j.nextDay} · {j.confirmedCount}/{j.needCount} confirmed{j.assignedCount > j.confirmedCount ? ` (${j.assignedCount - j.confirmedCount} pending)` : ""}
+                    </div>
+                    {j.positionGaps.length > 0 && (
+                      <div style={{ fontSize: 11, color: "#9a3412", marginTop: 4 }}>
+                        {j.positionGaps.slice(0, 3).map((g) =>
+                          `${g.need - g.confirmed} more ${g.positionName}`
+                        ).join(", ")}
+                      </div>
+                    )}
+                  </Link>
+                ))}
+                {/* Legacy fallback when there's no new-model data at all */}
+                {understaffed.length === 0 && legacyUnderstaffed.slice(0, 6).map((j) => {
                   const unconfirmed = (j.workers || []).filter((w) => !w.confirmed).length;
                   return (
                     <div key={j.id} className="list-card" style={{ borderLeftColor: "#dc7e3a" }}>
                       <div style={{ fontWeight: 700 }}>{j.client || "-"}</div>
                       <div className="muted" style={{ fontSize: 12 }}>{j.eventName || "-"}</div>
-                      <div style={{ fontSize: 12, marginTop: 4 }}>{j.date} · {unconfirmed} of {(j.workers || []).length} unconfirmed</div>
+                      <div style={{ fontSize: 12, marginTop: 4 }}>{j.date} · {unconfirmed} of {(j.workers || []).length} unconfirmed (legacy job sheet)</div>
                     </div>
                   );
                 })}
+                {understaffed.length > 6 && (
+                  <div className="muted" style={{ fontSize: 12 }}>…and {understaffed.length - 6} more</div>
+                )}
               </div>
             )}
           </div>

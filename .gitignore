@@ -2,6 +2,17 @@ node_modules/
 .next/
 .claude/worktrees/
 
+# TypeScript incremental build cache — regenerated on every build.
+tsconfig.tsbuildinfo
+
+# Local-only Claude Code session settings.
+.claude/settings.local.json
+
+# macOS Finder cruft (and the AppleDouble shadow files it drops on
+# network shares / USB / non-HFS volumes).
+.DS_Store
+._*
+
 # Quote/invoice recovery workspace — contains signed client PDFs, extracted data, and recovery scripts.
 # Never commit any of this. Recovery scripts can be reconstructed from project_todo if needed.
 recovery/

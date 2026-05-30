@@ -15,7 +15,6 @@ import { blankTimeEntry, computeTimeEntry } from "./timekeeping";
 import type {
   CalendarEvent,
   QuoteDraft,
-  QuoteDraftWorkspace,
   InvoiceDraft,
   JobRequest,
   JobSheet,
@@ -24,9 +23,6 @@ import type {
   JobCostingDraft,
   JobSheetWorker,
 } from "./types";
-
-// Re-export QuoteDraftWorkspace so existing imports from this file still work.
-export type { QuoteDraftWorkspace };
 
 // ─── Calendar Events ──────────────────────────────────────────────────────────
 
@@ -45,29 +41,14 @@ export function saveEventProfile(
 
 // ─── Quotes ───────────────────────────────────────────────────────────────────
 
+// loadQuotes (sync, cache-backed) is kept for legacy invoice-builder reads.
+// New code paths use lib/store/quotes.ts (async, direct to Supabase).
+// Goes away when Phase C ships.
 export function loadQuotes(): QuoteDraft[] { return db.getQuotes(); }
-export function saveQuotes(rows: QuoteDraft[]) { db.setQuotes(rows); }
-export function upsertQuote(row: QuoteDraft) { db.upsertQuote(row); }
 
 // Active quote — UI state, stays in localStorage
 export function setActiveQuote(id: string) { saveJSON("aes_active_quote_v1", id); }
 export function getActiveQuote(): string | null { return loadJSON<string | null>("aes_active_quote_v1", null); }
-
-// Quote seed — transient pre-fill data, stays in localStorage
-export function setQuoteSeed(seed: Partial<QuoteDraft> | null) { saveJSON("aes_quote_seed_v2", seed); }
-export function getQuoteSeed(): Partial<QuoteDraft> | null {
-  return loadJSON<Partial<QuoteDraft> | null>("aes_quote_seed_v2", null);
-}
-
-// ─── Quote Draft Workspaces ───────────────────────────────────────────────────
-
-export function loadQuoteDraftWorkspaces(): QuoteDraftWorkspace[] { return db.getQuoteDraftWorkspaces(); }
-export function saveQuoteDraftWorkspaces(rows: QuoteDraftWorkspace[]) { db.setQuoteDraftWorkspaces(rows); }
-export function upsertQuoteDraftWorkspace(row: QuoteDraftWorkspace) { db.upsertQuoteDraftWorkspace(row); }
-export function setActiveQuoteDraft(id: string) { saveJSON("aes_active_quote_draft_v1", id); }
-export function getActiveQuoteDraft(): string | null {
-  return loadJSON<string | null>("aes_active_quote_draft_v1", null);
-}
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
@@ -113,10 +94,38 @@ export async function getEntryCountsForJob(jobSheetId: string) { return db.getEn
 export async function approveStaffEntry(entryId: string, timesheetId: string) { return db.approveStaffEntry(entryId, timesheetId); }
 export async function rejectStaffEntry(entryId: string) { return db.rejectStaffEntry(entryId); }
 export async function setEntryApproved(entryId: string) { return db.setEntryApproved(entryId); }
+export async function setEntrySubmitted(entryId: string) { return db.setEntrySubmitted(entryId); }
 export async function pullApprovedTimesheetSummary(jobSheetId: string) { return db.pullApprovedTimesheetSummary(jobSheetId); }
 
 export function getTimesheetByJobSheetId(jobSheetId: string): Timesheet | null {
   return db.getTimesheets().find((t) => t.jobSheetId === jobSheetId) || null;
+}
+
+// ─── Phase 1: job_id-anchored API (prefer these over the *ByJobSheetId twins)
+export function getTimesheetByJobId(jobId: string): Timesheet | null {
+  return db.getTimesheets().find((t) => t.jobId === jobId) || null;
+}
+export async function getPendingStaffEntriesByJobId(jobId: string) {
+  return db.getPendingStaffEntriesByJobId(jobId);
+}
+export async function getApprovedEntriesForJobByJobId(jobId: string) {
+  return db.getApprovedEntriesForJobByJobId(jobId);
+}
+export async function getEntryCountsForJobByJobId(jobId: string) {
+  return db.getEntryCountsForJobByJobId(jobId);
+}
+export async function ensureTimesheetForJobRequest(
+  jobId: string,
+  opts: { jobTitle?: string; jobSheetId?: string | null } = {},
+) {
+  return db.ensureTimesheetForJobRequest(jobId, opts);
+}
+
+// Tracks the user's last-picked job on the timekeeping screen (replaces
+// getActiveJobSheet for the new flow).
+export function setActiveJob(jobId: string) { saveJSON("aes_active_job_v1", jobId); }
+export function getActiveJob(): string | null {
+  return loadJSON<string | null>("aes_active_job_v1", null);
 }
 
 export function addWorkerToTimesheet(jobSheetId: string, worker: JobSheetWorker) {
@@ -125,7 +134,7 @@ export function addWorkerToTimesheet(jobSheetId: string, worker: JobSheetWorker)
     id: `timesheet-${jobSheetId}`,
     jobSheetId,
     title: "Timekeeping Sheet",
-    hidePayColumns: false,
+    hideBillColumns: false,
     rows: [],
   };
   const exists = base.rows.some(

@@ -72,9 +72,11 @@ function parseLineMeta(line: QuoteLine): LineMeta {
   const date = line.quoteDate || parts[0] || "";
   const department = line.department || parts[1] || "";
   const position = parts[2] || line.serviceKey || "";
-  // Shift is only present in 6-part service_keys. If discrete column is empty
-  // AND it's a 5-part key, don't pull parts[3] (that's specialty).
-  const shiftLabel = line.shiftLabel || (has6 ? (parts[4] || "Shift 1") : "Shift 1");
+  // Shift used to be free-text on the line; dropped in 20260512a (now a FK
+  // to job_request_shifts). The legacy invoice-builder doesn't have access
+  // to a job-scoped shift list, so we surface the historical service_key
+  // remnant for display only — it isn't persisted back to any column.
+  const shiftLabel = has6 ? (parts[4] || "") : "";
   // rateMode is parts[5] in 6-part, parts[4] in 5-part.
   const rateModeRaw = (line.rateMode || (has6 ? parts[5] : parts[4]) || "hourly").toLowerCase();
   const rateMode = (rateModeRaw === "day" ? "day" : "hourly") as RateMode;
@@ -109,29 +111,34 @@ function recalcLineFromMeta(line: QuoteLine, meta: LineMeta): QuoteLine {
     quoteDate: meta.date || line.quoteDate || "",
     department: meta.department ?? line.department,
     rateMode: meta.rateMode || line.rateMode,
-    shiftLabel: meta.shiftLabel ?? line.shiftLabel,
+    // shiftLabel removed — shifts are now FKs (shift_id). Legacy
+    // invoice-builder doesn't surface a shift picker.
     startTime: meta.startTime ?? line.startTime,
     endTime: meta.endTime ?? line.endTime,
   };
 
-  const qty = Number(line.qty || 0);
-  const hours = Number(line.hours || 0);
-  const holidayHours = Number(line.holidayHours || 0);
-  const travel = Number(line.travel || 0);
+  // Updated 2026-05-25: per-line holiday_hours dropped. Holiday is now a
+  // day-level fact (invoice_days.is_holiday). The legacy invoice-builder
+  // is on its way out and doesn't have day-flag awareness — leave its
+  // formula as non-holiday math. Anyone using the new flow should be on
+  // invoice-draft-editor instead.
+  const crewCount = Number(line.crewCount ?? line.qty ?? 1);
+  const hours     = Number(line.hours     || 0);
+  const otHours   = Number(line.otHours   || 0);
+  const dtHours   = Number(line.dtHours   || 0);
+  const travel    = Number(line.travel    || 0);
   const baseHourly = Number(line.baseHourly || 0);
-  const baseDay = Number(line.baseDay || 0);
-  const otRate = Number(line.otRate || 0);
-  const dtRate = Number(line.dtRate || 0);
-  const otTrigger = parseOtTrigger(line.rule || "");
+  const baseDay    = Number(line.baseDay    || 0);
+  const otRate     = Number(line.otRate     || 0);
+  const dtRate     = Number(line.dtRate     || 0);
 
-  let total = 0;
-  if (meta.rateMode === "hourly") {
-    total = (qty * hours * baseHourly) + (holidayHours * dtRate) + travel;
-  } else {
-    const split = computeDayHourSplit(hours, otTrigger);
-    const perWorker = baseDay + (split.ot * otRate) + (split.dt * dtRate);
-    total = (qty * perWorker) + (holidayHours * dtRate) + travel;
-  }
+  const base = meta.rateMode === "hourly"
+    ? hours * baseHourly
+    : crewCount * baseDay;
+  const total = base
+    + otHours * otRate
+    + dtHours * dtRate
+    + travel;
 
   return {
     ...line,
@@ -328,8 +335,10 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
     const line: QuoteLine = {
       serviceKey: buildServiceKey(meta),
       qty: 1,
+      crewCount: 1,
       hours: 0,
-      holidayHours: 0,
+      otHours: 0,
+      dtHours: 0,
       travel: 0,
       baseHourly: 0,
       baseDay: 0,
@@ -339,7 +348,6 @@ function syncTermsFromLinkedRateCard(profileId?: string) {
       total: 0,
       department: "",
       specialty: "",
-      shiftLabel: "",
       quoteDate: defaultDate,
       endDate: defaultDate,
       startTime: "",

@@ -1,1 +1,1 @@
-import { AppShell } from "@/components/layout/app-shell"; import JobRequests from "@/components/shared/job-requests"; export default function Page(){ return <AppShell title="Job Requests" subtitle="Notes, map links, and packet tracking are built in here."><JobRequests /></AppShell>; }
+import { AppShell } from "@/components/layout/app-shell"; import JobRequests from "@/components/shared/job-requests"; export default function Page(){ return <AppShell title="Jobs" subtitle="The master record for every event — from lead through completed."><JobRequests /></AppShell>; }

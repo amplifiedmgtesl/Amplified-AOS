@@ -3,7 +3,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { combinedCalendarEvents, googleCalendarLink, parseHour } from "@/lib/store/calendar";
-import { deleteEventById, loadEventProfiles, loadJobSheets, saveEventProfile, setActiveJobSheet, setQuoteSeed, upsertJobSheet, upsertManualEvent } from "@/lib/store/app-store";
+import { deleteEventById, loadEventProfiles, loadJobSheets, saveEventProfile, setActiveJobSheet, upsertJobSheet, upsertManualEvent } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
 import type { CalendarEvent, JobSheet } from "@/lib/store/types";
 
@@ -170,7 +170,7 @@ export default function MasterCalendar() {
 
   const dayEvents = useMemo(() => events.filter((e) => (e.startDate || "") === selectedDate), [events, selectedDate]);
 
-  function addEvent(buildQuote: boolean) {
+  function addEvent() {
     const row: CalendarEvent = {
       id: `manual-${Date.now()}`,
       source: "manual_calendar",
@@ -190,14 +190,6 @@ export default function MasterCalendar() {
       status: "potential",
     };
     upsertManualEvent(row);
-    if (buildQuote) {
-      setQuoteSeed({
-        client: row.client, eventName: row.eventName, venue: row.venue, cityState: row.cityState,
-        startDate: row.startDate, endDate: row.endDate, startTime: row.startTime, endTime: row.endTime,
-      });
-      window.location.href = "/quote-builder";
-      return;
-    }
     setRefreshKey((x) => x + 1);
   }
 
@@ -252,6 +244,10 @@ export default function MasterCalendar() {
   }
 
   function handleDelete(eventId: string) {
+    // Soft delete (sets is_deleted=true), but still confirm — the event
+    // disappears from every view and any linked_job_request_id pointer
+    // stops resolving in the calendar UI.
+    if (!confirm("Delete this calendar event? It will be hidden from all views (soft delete — recoverable via SQL).")) return;
     deleteEventById(eventId);
     if (selectedEventId === eventId) setSelectedEventId("");
     if (hoveredEventId === eventId) setHoveredEventId("");

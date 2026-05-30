@@ -37,6 +37,7 @@ export default function RateCardEditor() {
   const [clientName, setClientName] = useState("");
   const [profileName, setProfileName] = useState("Standard");
   const [effectiveDate, setEffectiveDate] = useState("");
+  const [holidayMultiplier, setHolidayMultiplier] = useState<number>(2.0);
   const [mode, setMode] = useState<"none" | "new" | "edit">("none");
   const [rows, setRows] = useState<RateRow[]>(DEFAULT_RATE_ROWS);
   const [terms, setTerms] = useState("");
@@ -58,6 +59,7 @@ export default function RateCardEditor() {
       setClientId(activeProfile.clientId ?? "");
       setProfileName(activeProfile.name ?? "Standard");
       setEffectiveDate(activeProfile.effectiveDate ?? "");
+      setHolidayMultiplier(activeProfile.holidayMultiplier ?? 2.0);
       setMode("edit");
     }
     // Load directly from DB — cache may not be ready at mount time
@@ -85,6 +87,30 @@ export default function RateCardEditor() {
   useEffect(() => { saveRateRows(rows); }, [rows]);
   useEffect(() => { saveTerms(terms); }, [terms]);
   useEffect(() => { saveClientName(clientName); }, [clientName]);
+
+  // Deep-link: /rate-card?new=1&clientId=<client> opens a fresh rate card
+  // prefilled with that client. Lets the Client Maintenance "Rate Cards"
+  // tab jump straight into a new card scoped to the current client.
+  // Runs once after clients have loaded so we can resolve the client name.
+  const [deepLinkHandled, setDeepLinkHandled] = useState(false);
+  useEffect(() => {
+    if (deepLinkHandled || typeof window === "undefined") return;
+    if (clients.length === 0) return; // wait for clients to load
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") !== "1") { setDeepLinkHandled(true); return; }
+    const wantClientId = params.get("clientId") ?? "";
+    const c = wantClientId ? clients.find((x) => x.id === wantClientId) : undefined;
+
+    // Use the existing startNewRateCard pathway, then overwrite client.
+    startNewRateCard();
+    if (c) {
+      setClientId(c.id);
+      setClientName(c.name);
+    }
+    window.history.replaceState({}, "", window.location.pathname);
+    setDeepLinkHandled(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clients.length, deepLinkHandled]);
 
   const visibleRows = useMemo(() => rows.filter((r) => r.show), [rows]);
 
@@ -120,6 +146,8 @@ export default function RateCardEditor() {
       position: posName,
       specialty: first?.name ?? "",
       hourly: 35, day: 350, otRate: 52.5, dtRate: 70,
+      // Pay rates default to 0 — admin enters them explicitly.
+      payHourly: 0, payOtRate: 0, payDtRate: 0,
       dtAfter: "10", travel: 0, show: true,
     }]);
   }
@@ -189,7 +217,7 @@ export default function RateCardEditor() {
           clientName: clientName || blankProfileName(),
           name: targetName,
           effectiveDate: effectiveDate || undefined,
-          rows, terms, createdAt: now, updatedAt: now,
+          rows, terms, holidayMultiplier, createdAt: now, updatedAt: now,
         });
         setActiveRateCardProfileId(id);
         setMode("edit");
@@ -208,6 +236,7 @@ export default function RateCardEditor() {
       effectiveDate: effectiveDate || undefined,
       rows,
       terms,
+      holidayMultiplier,
       createdAt: now,
       updatedAt: now,
     });
@@ -224,10 +253,20 @@ export default function RateCardEditor() {
     setClientName("");
     setProfileName("Standard");
     setEffectiveDate("");
-    setRows(DEFAULT_RATE_ROWS);
+    // Seed from the Master Default profile if it exists; fall back to the
+    // hardcoded constant so brand-new dev databases or partial migrations
+    // still produce a usable starter card. Holiday multiplier also seeds
+    // from the master default so operator's company-wide setting propagates.
+    const masterDefault = profiles.find((p) => p.id === "ratecard-master-default");
+    setRows(masterDefault?.rows && masterDefault.rows.length > 0 ? masterDefault.rows : DEFAULT_RATE_ROWS);
+    setHolidayMultiplier(masterDefault?.holidayMultiplier ?? 2.0);
     setTerms("");
     setMode("new");
-    setStatusMsg("New rate card. Pick a client, set the rows, click Save Rate Card.");
+    setStatusMsg(
+      masterDefault?.rows && masterDefault.rows.length > 0
+        ? "New rate card seeded from Master Default. Pick a client, adjust rows, click Save Rate Card."
+        : "New rate card. Pick a client, set the rows, click Save Rate Card."
+    );
   }
 
   function saveAsCopy() {
@@ -243,7 +282,7 @@ export default function RateCardEditor() {
       clientName: clientName || blankProfileName(),
       name: `${profileName || "Standard"} Copy`,
       effectiveDate: effectiveDate || undefined,
-      rows, terms, createdAt: now, updatedAt: now,
+      rows, terms, holidayMultiplier, createdAt: now, updatedAt: now,
     });
     loadProfileIntoCurrent(id);
     setProfileName(`${profileName || "Standard"} Copy`);
@@ -275,6 +314,7 @@ export default function RateCardEditor() {
     setClientId(profile?.clientId ?? "");
     setProfileName(profile?.name ?? "Standard");
     setEffectiveDate(profile?.effectiveDate ?? "");
+    setHolidayMultiplier(profile?.holidayMultiplier ?? 2.0);
     setMode("edit");
     refreshProfiles();
     setStatusMsg("Rate card loaded.");
@@ -302,11 +342,14 @@ export default function RateCardEditor() {
               style={{ width: "100%" }}
             >
               <option value="">— Select a saved rate card —</option>
-              {profiles.map((p) => {
-                const label = p.clientName + (p.name && p.name !== p.clientName ? ` — ${p.name}` : "");
-                const dateLabel = p.effectiveDate ? ` (effective ${p.effectiveDate})` : "";
-                return <option key={p.id} value={p.id}>{label}{dateLabel}</option>;
-              })}
+              {profiles
+                // The Master Default profile is edited via Maintenance, not picked here.
+                .filter((p) => p.id !== "ratecard-master-default")
+                .map((p) => {
+                  const label = p.clientName + (p.name && p.name !== p.clientName ? ` — ${p.name}` : "");
+                  const dateLabel = p.effectiveDate ? ` (effective ${p.effectiveDate})` : "";
+                  return <option key={p.id} value={p.id}>{label}{dateLabel}</option>;
+                })}
             </select>
           </div>
           <button onClick={startNewRateCard} title="Start a new rate card from defaults">
@@ -341,7 +384,19 @@ export default function RateCardEditor() {
               title="Date this rate card becomes effective. Leave blank for an undated card."
             />
           </div>
-          <div></div>
+          <div>
+            <small>Holiday Multiplier</small>
+            <input
+              type="number"
+              min={1.0}
+              step={0.1}
+              disabled={mode === "none"}
+              value={holidayMultiplier}
+              onChange={(e) => setHolidayMultiplier(Number(e.target.value) || 2.0)}
+              title="Multiplier applied to all billable hours on days flagged as holiday. Typical values: 2.0 (most), 2.5 (some IATSE locals), 3.0 (rare)."
+              style={{ width: 80 }}
+            />
+          </div>
           <div className="action-row" style={{ alignItems: "end" }}>
             <button onClick={saveCurrentProfile} disabled={mode === "none"}>Save Rate Card</button>
             <button
@@ -381,7 +436,18 @@ export default function RateCardEditor() {
           <table>
             <thead>
               <tr>
-                <th>Show</th><th>Position</th><th>Specialty</th><th>Hourly</th><th>Day</th><th>OT Rate</th><th>DT Rate</th><th>OT Trigger</th><th>Travel</th><th></th>
+                <th>Show</th><th>Position</th><th>Specialty</th>
+                <th colSpan={4} style={{ textAlign: "center", borderBottom: "1px solid #d7c6aa" }} title="Bill rates: what AES bills the client">Bill</th>
+                <th colSpan={3} style={{ textAlign: "center", borderBottom: "1px solid #d7c6aa", background: "#fff4d6", color: "#181410" }} title="Pay rates: what AES pays the worker. ADMIN-ONLY — never appears on client-facing documents.">Pay</th>
+                <th>OT Trigger</th><th>Travel</th><th></th>
+              </tr>
+              <tr>
+                <th></th><th></th><th></th>
+                <th>Hourly</th><th>Day</th><th>OT</th><th>DT</th>
+                <th style={{ background: "#fff4d6", color: "#181410" }}>Hourly</th>
+                <th style={{ background: "#fff4d6", color: "#181410" }}>OT</th>
+                <th style={{ background: "#fff4d6", color: "#181410" }}>DT</th>
+                <th></th><th></th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -427,6 +493,32 @@ export default function RateCardEditor() {
                     <td><input type="number" disabled={mode === "none"} value={row.day} onChange={(e) => updateRow(index, { day: Number(e.target.value || 0) })} /></td>
                     <td><input type="number" disabled={mode === "none"} value={row.otRate} onChange={(e) => updateRow(index, { otRate: Number(e.target.value || 0) })} /></td>
                     <td><input type="number" disabled={mode === "none"} value={row.dtRate} onChange={(e) => updateRow(index, { dtRate: Number(e.target.value || 0) })} /></td>
+                    {/* ── Pay rates (admin-only, never client-facing) ──
+                        Typing payHourly auto-cascades payOt = h × 1.5 and
+                        payDt = h × 2 (per Connor's rule); operator can still
+                        override per-column afterwards. */}
+                    <td style={{ background: "#fffaeb" }}>
+                      <input type="number" disabled={mode === "none"} value={row.payHourly}
+                        title="Pay rate (what AES pays the worker). NEVER printed on client docs."
+                        onChange={(e) => {
+                          const h = Number(e.target.value || 0);
+                          updateRow(index, {
+                            payHourly: h,
+                            payOtRate: Number((h * 1.5).toFixed(2)),
+                            payDtRate: Number((h * 2).toFixed(2)),
+                          });
+                        }} />
+                    </td>
+                    <td style={{ background: "#fffaeb" }}>
+                      <input type="number" disabled={mode === "none"} value={row.payOtRate}
+                        title="Pay OT rate. Defaults to payHourly × 1.5; override per-row if needed."
+                        onChange={(e) => updateRow(index, { payOtRate: Number(e.target.value || 0) })} />
+                    </td>
+                    <td style={{ background: "#fffaeb" }}>
+                      <input type="number" disabled={mode === "none"} value={row.payDtRate}
+                        title="Pay DT rate. Defaults to payHourly × 2; override per-row if needed."
+                        onChange={(e) => updateRow(index, { payDtRate: Number(e.target.value || 0) })} />
+                    </td>
                     <td>
                       <select disabled={mode === "none"} value={row.dtAfter} onChange={(e) => updateRow(index, { dtAfter: e.target.value as TriggerOption })}>
                         <option value="none">No OT (flat)</option>

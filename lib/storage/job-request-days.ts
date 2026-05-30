@@ -25,6 +25,7 @@ function rowToDay(r: any): JobRequestDay {
     expectedHours: r.expected_hours ?? undefined,
     notes: r.notes ?? undefined,
     sortOrder: r.sort_order ?? 0,
+    isHoliday: !!r.is_holiday,
   };
 }
 
@@ -34,7 +35,9 @@ function rowToCrewNeed(r: any): JobRequestCrewNeed {
     jobRequestDayId: r.job_request_day_id,
     positionId: r.position_id ?? undefined,
     specialtyId: r.specialty_id ?? undefined,
+    shiftId: r.shift_id ?? undefined,
     quantity: r.quantity ?? 1,
+    hours: r.hours ?? undefined,
     notes: r.notes ?? undefined,
     sortOrder: r.sort_order ?? 0,
   };
@@ -51,6 +54,7 @@ function dayToRow(d: JobRequestDay): Record<string, unknown> {
     expected_hours: d.expectedHours ?? null,
     notes: d.notes || null,
     sort_order: d.sortOrder ?? 0,
+    is_holiday: !!d.isHoliday,
   };
 }
 
@@ -60,7 +64,9 @@ function crewNeedToRow(c: JobRequestCrewNeed): Record<string, unknown> {
     job_request_day_id: c.jobRequestDayId,
     position_id: c.positionId || null,
     specialty_id: c.specialtyId || null,
+    shift_id: c.shiftId || null,
     quantity: c.quantity ?? 1,
+    hours: c.hours ?? null,
     notes: c.notes || null,
     sort_order: c.sortOrder ?? 0,
   };

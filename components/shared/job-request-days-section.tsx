@@ -10,10 +10,13 @@ import {
   upsertJobRequestCrewNeed,
   deleteJobRequestCrewNeed,
 } from "@/lib/storage/job-request-days";
+import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { timeOptions } from "@/lib/store/timekeeping";
+import { pickRateCardForJob } from "@/lib/store/quotes";
 import type {
   JobRequestDay,
   JobRequestCrewNeed,
+  JobRequestShift,
   Position,
   Specialty,
 } from "@/lib/store/types";
@@ -44,16 +47,32 @@ export function JobRequestDaysSection({
   disabled = false,
   onChange,
   hideHeader = false,
+  jobStartDate,
 }: {
   jobRequestId: string;
   disabled?: boolean;
   onChange?: () => void;
   hideHeader?: boolean;
+  /**
+   * The parent job's start date (request_date), used as the default
+   * for the FIRST day added. Subsequent days default to "day-after-last".
+   * Picker stays unrestricted so users can add setup/prep days before
+   * the event date or buffer days after.
+   */
+  jobStartDate?: string;
 }) {
   const [days, setDays] = useState<JobRequestDay[]>([]);
   const [crewByDayId, setCrewByDayId] = useState<Record<string, JobRequestCrewNeed[]>>({});
+  const [shifts, setShifts] = useState<JobRequestShift[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  /** Set of specialty_id values covered by the applicable rate card.
+   *  rate_card_profile_rows is keyed on specialty_id alone (no position_id),
+   *  and each specialty belongs to exactly one position, so specialty_id is
+   *  the natural matching key. Crew needs whose specialty isn't in here
+   *  surface a "no rate card row" warning. */
+  const [rateCardSpecialtyIds, setRateCardSpecialtyIds] = useState<Set<string>>(new Set());
+  const [rateCardName, setRateCardName] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -73,13 +92,78 @@ export function JobRequestDaysSection({
     });
   }, []);
 
+  // Load the applicable rate card for this job and build a set of available
+  // (position_id, specialty_id) pairs so the requirements UI can warn about
+  // needs that won't have rates when a quote is generated. Honors the job's
+  // pinned rate_card_profile_id override; falls back to auto-resolution.
+  useEffect(() => {
+    if (!jobRequestId) { setRateCardSpecialtyIds(new Set()); setRateCardName(""); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const jobRes = await supabase
+          .from("job_requests")
+          .select("client_id, request_date, rate_card_profile_id")
+          .eq("id", jobRequestId)
+          .maybeSingle();
+        if (cancelled || !jobRes.data) return;
+        let cardId: string | null = null;
+        let cardRows: any[] = [];
+        if (jobRes.data.rate_card_profile_id) {
+          // Pinned override
+          const [profileRes, rowsRes] = await Promise.all([
+            supabase.from("rate_card_profiles").select("*").eq("id", jobRes.data.rate_card_profile_id).maybeSingle(),
+            supabase.from("rate_card_profile_rows").select("*").eq("profile_id", jobRes.data.rate_card_profile_id).order("sort_order"),
+          ]);
+          if (cancelled) return;
+          if (profileRes.data) {
+            cardId = profileRes.data.id;
+            cardRows = rowsRes.data ?? [];
+          }
+        }
+        if (!cardId) {
+          const card = await pickRateCardForJob(
+            jobRes.data.client_id,
+            jobRes.data.request_date || jobStartDate || todayISO(),
+          );
+          if (cancelled || !card) return;
+          cardId = card.id;
+          cardRows = card.rows;
+        }
+        const profileRes = await supabase
+          .from("rate_card_profiles")
+          .select("name, client_name")
+          .eq("id", cardId)
+          .maybeSingle();
+        if (cancelled) return;
+        const specialtyIds = new Set<string>();
+        for (const r of cardRows) {
+          if (r.specialty_id) specialtyIds.add(r.specialty_id);
+        }
+        setRateCardSpecialtyIds(specialtyIds);
+        setRateCardName(profileRes.data
+          ? (profileRes.data.client_name
+              ? `${profileRes.data.client_name} — ${profileRes.data.name}`
+              : profileRes.data.name)
+          : cardId);
+      } catch (err) {
+        console.error("[job-request-days-section] rate card lookup failed:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [jobRequestId, jobStartDate]);
+
   async function reload() {
-    if (!jobRequestId) { setDays([]); setCrewByDayId({}); setLoading(false); return; }
+    if (!jobRequestId) { setDays([]); setCrewByDayId({}); setShifts([]); setLoading(false); return; }
     setLoading(true);
     try {
-      const ds = await loadJobRequestDays(jobRequestId);
+      const [ds, allCrew, shiftList] = await Promise.all([
+        loadJobRequestDays(jobRequestId),
+        loadCrewNeedsForRequest(jobRequestId),
+        loadShifts(jobRequestId),
+      ]);
       setDays(ds);
-      const allCrew = await loadCrewNeedsForRequest(jobRequestId);
+      setShifts(shiftList);
       const grouped: Record<string, JobRequestCrewNeed[]> = {};
       for (const d of ds) grouped[d.id] = [];
       for (const c of allCrew) {
@@ -115,8 +199,12 @@ export function JobRequestDaysSection({
 
   // ─── Day actions ───────────────────────────────────────────────────────────
   async function addDay() {
-    const lastDate = days.length > 0 ? days[days.length - 1].eventDate : todayISO();
-    const proposed = days.length === 0 ? todayISO() : nextDayISO(lastDate);
+    // First day defaults to the parent job's start date if known (so a fresh
+    // multi-day job lands on the right day immediately). Subsequent days roll
+    // forward by one. The picker itself stays unrestricted — users can
+    // back-date for setup days or move forward for buffer/cleanup days.
+    const lastDate = days.length > 0 ? days[days.length - 1].eventDate : (jobStartDate || todayISO());
+    const proposed = days.length === 0 ? (jobStartDate || todayISO()) : nextDayISO(lastDate);
     if (days.some((d) => d.eventDate === proposed)) {
       flash(`A day with date ${proposed} already exists.`, false);
       return;
@@ -127,6 +215,7 @@ export function JobRequestDaysSection({
       eventDate: proposed,
       sortOrder: days.length,
       expectedHours: 10,
+      isHoliday: false,
     };
     try {
       const persisted = await upsertJobRequestDay(newDay);
@@ -157,6 +246,7 @@ export function JobRequestDaysSection({
   }
   function daySummary(d: JobRequestDay, crewCount: number): string {
     const bits: string[] = [];
+    if (d.isHoliday) bits.push("🎄 Holiday (2×)");
     if (d.callTime) bits.push(`call ${d.callTime}`);
     if (d.startTime || d.endTime) bits.push(`${d.startTime || "?"}–${d.endTime || "?"}`);
     if (d.expectedHours) bits.push(`${d.expectedHours}h`);
@@ -218,10 +308,15 @@ export function JobRequestDaysSection({
   // ─── Crew need actions ─────────────────────────────────────────────────────
   async function addCrewNeed(dayId: string) {
     const existing = crewByDayId[dayId] ?? [];
+    // Default hours from the day's expected_hours so the user always sees a
+    // concrete number on screen. They can override per row.
+    const day = days.find((d) => d.id === dayId);
+    const defaultHours = day?.expectedHours ?? 10;
     const need: JobRequestCrewNeed = {
       id: newCrewNeedId(),
       jobRequestDayId: dayId,
       quantity: 1,
+      hours: defaultHours,
       sortOrder: existing.length,
     };
     try {
@@ -311,19 +406,20 @@ export function JobRequestDaysSection({
                   onClick={() => toggleExpanded(d.id)}
                   style={{
                     width: "100%", display: "flex", alignItems: "center", gap: 10,
-                    background: isExpanded ? "var(--surface2, #f7f4ee)" : "transparent",
+                    background: isExpanded ? "var(--accent, #2563eb)" : "#f7f4ee",
+                    color: isExpanded ? "#fff" : "#1a1a1a",
                     border: "none", borderRadius: isExpanded ? "8px 8px 0 0" : 8,
-                    padding: "8px 12px", cursor: "pointer", textAlign: "left",
+                    padding: "10px 14px", cursor: "pointer", textAlign: "left",
                     borderBottom: isExpanded ? "1px solid var(--border, #e5e7eb)" : "none",
                   }}
                 >
-                  <span style={{ fontSize: 12, opacity: 0.6, width: 12 }}>{isExpanded ? "▾" : "▸"}</span>
-                  <strong style={{ fontSize: 13, minWidth: 140 }}>{dayLabel(d)}</strong>
-                  <span className="muted" style={{ fontSize: 12, flex: 1 }}>{daySummary(d, crew.length)}</span>
+                  <span style={{ fontSize: 12, opacity: 0.85, width: 12 }}>{isExpanded ? "▾" : "▸"}</span>
+                  <strong style={{ fontSize: 14, minWidth: 140 }}>{dayLabel(d)}</strong>
+                  <span style={{ fontSize: 12, flex: 1, opacity: 0.85 }}>{daySummary(d, crew.length)}</span>
                 </button>
                 {isExpanded && (
                 <div style={{ padding: 10 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "130px 110px 110px 110px 90px 1fr 80px", gap: 8, alignItems: "end" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "130px 110px 110px 110px 90px 1fr 110px 80px", gap: 8, alignItems: "end" }}>
                   <div>
                     <small>Date</small>
                     <input
@@ -369,6 +465,20 @@ export function JobRequestDaysSection({
                       placeholder="e.g. Load-in day"
                     />
                   </div>
+                  <div style={{ alignSelf: "end", paddingBottom: 6 }}>
+                    <label
+                      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, cursor: disabled ? "not-allowed" : "pointer" }}
+                      title="Flag this day as a holiday — all work hours bill at 2× the regular rate when this quote/invoice is generated."
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={disabled}
+                        checked={!!d.isHoliday}
+                        onChange={(e) => patchDay(d, { isHoliday: e.target.checked })}
+                      />
+                      🎄 Holiday
+                    </label>
+                  </div>
                   <div className="action-row" style={{ alignItems: "end", gap: 4 }}>
                     {prev && (
                       <button
@@ -411,16 +521,26 @@ export function JobRequestDaysSection({
                         <tr>
                           <th style={{ textAlign: "left" }}>Position</th>
                           <th style={{ textAlign: "left" }}>Specialty</th>
-                          <th style={{ textAlign: "left", width: 70 }}>Qty</th>
+                          {shifts.length >= 2 && <th style={{ textAlign: "left", width: 120 }}>Shift</th>}
+                          <th style={{ textAlign: "left", width: 60 }}>Qty</th>
+                          <th style={{ textAlign: "left", width: 70 }}>Hours</th>
+                          <th style={{ textAlign: "right", width: 80 }}>Total Hrs</th>
                           <th style={{ textAlign: "left" }}>Notes</th>
+                          <th style={{ width: 24, textAlign: "center" }} title="Rate card">⚠</th>
                           <th style={{ width: 30 }}></th>
                         </tr>
                       </thead>
                       <tbody>
                         {crew.map((c) => {
                           const spcOptions = c.positionId ? (specialtiesByPosition.get(c.positionId) ?? []) : [];
+                          // Match on specialty_id alone — rate_card_profile_rows
+                          // is keyed on specialty (which implies position 1:1).
+                          const hasRate = !!c.specialtyId && rateCardSpecialtyIds.has(c.specialtyId);
+                          // Only warn when specialty is fully picked. Position-only
+                          // rows are incomplete data entry, not a rate card mismatch.
+                          const showWarning = !!c.specialtyId && rateCardSpecialtyIds.size > 0 && !hasRate;
                           return (
-                            <tr key={c.id}>
+                            <tr key={c.id} style={showWarning ? { background: "#fff8e1" } : undefined}>
                               <td>
                                 <select
                                   disabled={disabled}
@@ -444,6 +564,19 @@ export function JobRequestDaysSection({
                                   {spcOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                                 </select>
                               </td>
+                              {shifts.length >= 2 && (
+                                <td>
+                                  <select
+                                    disabled={disabled}
+                                    value={c.shiftId ?? ""}
+                                    onChange={(e) => patchCrewNeed(d.id, c, { shiftId: e.target.value || undefined })}
+                                    title="Optional. Leave blank for general/unspecified."
+                                  >
+                                    <option value="">— Any —</option>
+                                    {shifts.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                                  </select>
+                                </td>
+                              )}
                               <td>
                                 <input
                                   type="number"
@@ -455,11 +588,33 @@ export function JobRequestDaysSection({
                               </td>
                               <td>
                                 <input
+                                  type="number"
+                                  min={0}
+                                  step={0.5}
+                                  disabled={disabled}
+                                  value={c.hours ?? d.expectedHours ?? 0}
+                                  onChange={(e) => patchCrewNeed(d.id, c, { hours: Number(e.target.value || 0) })}
+                                  title="Hours per crew member for this position on this day. Defaults from the day's expected hours."
+                                />
+                              </td>
+                              <td style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                                {((c.quantity || 0) * (c.hours ?? d.expectedHours ?? 0)).toFixed(1)}
+                              </td>
+                              <td>
+                                <input
                                   disabled={disabled}
                                   value={c.notes ?? ""}
                                   onChange={(e) => patchCrewNeed(d.id, c, { notes: e.target.value })}
                                   placeholder="optional"
                                 />
+                              </td>
+                              <td style={{ textAlign: "center" }}>
+                                {showWarning ? (
+                                  <span
+                                    title={`Not in rate card "${rateCardName}". A quote line for this position will have $0 rates until you add it to the rate card or change the rate card on the quote.`}
+                                    style={{ color: "#a86200", fontSize: 14, cursor: "help" }}
+                                  >⚠</span>
+                                ) : null}
                               </td>
                               <td>
                                 <button

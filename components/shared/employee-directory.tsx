@@ -2,31 +2,33 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { IMPORTED_EMPLOYEES } from "@/lib/data/employees";
-import { addWorkerToTimesheet, deleteEmployee, getActiveEmployee, getActiveJobSheet, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, loadTimesheets, setActiveEmployee, upsertEmployee, upsertJobSheet } from "@/lib/store/app-store";
-import { uploadProfilePicture, uploadEmployeeDocument, deleteEmployeeAsset } from "@/lib/storage/employee-assets";
+import { deleteEmployee, getActiveEmployee, loadDeletedEmployeeKeys, loadEmployees, loadJobSheets, loadTimesheets, setActiveEmployee, upsertEmployee } from "@/lib/store/app-store";
+import { useUserRole } from "@/lib/auth/use-user-role";
+import { uploadProfilePicture, deleteEmployeeAsset } from "@/lib/storage/employee-assets";
+import {
+  loadDocuments as loadEmployeeDocs,
+  uploadDocument as uploadEmployeeDoc,
+  removeDocument as removeEmployeeDoc,
+  type EmployeeDocument as EmployeeDocRow,
+} from "@/lib/storage/employee-documents";
 import { US_STATES } from "@/lib/constants";
-import type { EmployeeDocument, EmployeeRecord } from "@/lib/store/types";
+import type { EmployeeRecord } from "@/lib/store/types";
 
 type Employee = EmployeeRecord;
 
-// Returns employees from Supabase cache. Falls back to including the hardcoded
-// import list until the one-time migration to Supabase has been completed.
-function mergedEmployees() {
+// Employees come from the Supabase cache. The legacy IMPORTED_EMPLOYEES
+// constant fallback (47K-line hardcoded array) was removed 2026-05-04 —
+// the one-time migration is done; the DB is the source of truth.
+function activeEmployees() {
   const deleted = new Set(loadDeletedEmployeeKeys());
-  const fromDb = loadEmployees().filter((e) => !deleted.has(e.employeeKey));
-  // If Supabase already has records, use only those (migration done).
-  if (fromDb.length > 0) return fromDb;
-  // Pre-migration fallback: blend hardcoded list with any local additions.
-  const imported = (IMPORTED_EMPLOYEES as unknown as EmployeeRecord[])
-    .map((e) => ({ ...e, type: "contractor" as const, source: "imported" }))
-    .filter((e) => !deleted.has(e.employeeKey));
-  const map = new Map<string, EmployeeRecord>();
-  imported.forEach((e) => map.set(e.employeeKey, e));
-  return Array.from(map.values());
+  return loadEmployees().filter((e) => !deleted.has(e.employeeKey));
 }
 
-export default function EmployeeDirectory() {
+export default function EmployeeDirectory({ hideBill: hideBillProp = false }: { hideBill?: boolean } = {}) {
+  // Belt + suspenders: even if this component somehow renders inside an
+  // admin shell, force-hide pay if the viewer is a crew_leader.
+  const viewerRole = useUserRole();
+  const hideBill = hideBillProp || viewerRole === "crew_leader";
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("");
   const [cityFilter, setCityFilter] = useState("");
@@ -34,15 +36,23 @@ export default function EmployeeDirectory() {
   const [typeFilter, setTypeFilter] = useState("");
   const [sortAZ, setSortAZ] = useState<"A-Z"|"Z-A">("A-Z");
   const [refreshKey, setRefreshKey] = useState(0);
-  const [role, setRole] = useState("Crew");
   const [csvText, setCsvText] = useState("");
   const [historyModal, setHistoryModal] = useState<"jobs" | "timesheets" | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const activeSheetId = getActiveJobSheet();
-  const activeSheet = loadJobSheets().find((s) => s.id === activeSheetId) || null;
-  const employees = useMemo(() => mergedEmployees(), [refreshKey]);
+  const [employeeDocs, setEmployeeDocs] = useState<EmployeeDocRow[]>([]);
+  const employees = useMemo(() => activeEmployees(), [refreshKey]);
   const activeEmployeeKey = getActiveEmployee() || employees[0]?.employeeKey || "";
   const activeEmployee = employees.find((e) => e.employeeKey === activeEmployeeKey) || null;
+
+  // Load this employee's documents when the selection changes.
+  useEffect(() => {
+    if (!activeEmployee) { setEmployeeDocs([]); return; }
+    let cancelled = false;
+    loadEmployeeDocs(activeEmployee.employeeKey)
+      .then((docs) => { if (!cancelled) setEmployeeDocs(docs); })
+      .catch((err) => { console.error("[employee-directory] doc load failed:", err); if (!cancelled) setEmployeeDocs([]); });
+    return () => { cancelled = true; };
+  }, [activeEmployee?.employeeKey, refreshKey]);
 
   useEffect(() => {
     if (!getActiveEmployee() && employees[0]) setActiveEmployee(employees[0].employeeKey);
@@ -81,54 +91,12 @@ export default function EmployeeDirectory() {
     return rows;
   }, [query, stateFilter, cityFilter, statusFilter, typeFilter, sortAZ, employees]);
 
-  function addToCurrentJob(employee: Employee) {
-    if (!activeSheet) return;
-    const exists = activeSheet.workers.some((w) => w.employeeKey === employee.employeeKey);
-    if (exists) return;
-    upsertJobSheet({
-      ...activeSheet,
-      workers: [
-        ...activeSheet.workers,
-        {
-          employeeKey: employee.employeeKey,
-          fullName: employee.fullName,
-          firstName: employee.firstName || employee.fullName.split(" ")[0] || "",
-          lastName: employee.lastName || employee.fullName.split(" ").slice(1).join(" "),
-          stateCode: employee.stateCode || "",
-          phone: employee.phone || "",
-          email: employee.email || "",
-          role,
-          confirmed: false
-        }
-      ]
-    });
-    setRefreshKey((x) => x + 1);
-  }
-
-
-function addToCurrentTimesheet(employee: Employee) {
-  if (!activeSheet) return;
-  const worker = {
-    employeeKey: employee.employeeKey,
-    fullName: employee.fullName,
-    firstName: employee.firstName || employee.fullName.split(" ")[0] || "",
-    lastName: employee.lastName || employee.fullName.split(" ").slice(1).join(" "),
-    stateCode: employee.stateCode || "",
-    phone: employee.phone || "",
-    email: employee.email || "",
-    role,
-    confirmed: false
-  };
-  addWorkerToTimesheet(activeSheet.id, worker);
-  setRefreshKey((x) => x + 1);
-}
-
   function startNewEmployee() {
     const key = `emp-${Date.now()}`;
     const blank: EmployeeRecord = {
       employeeKey: key, fullName: "", firstName: "", lastName: "", phone: "", email: "",
       stateCode: "", state: "", city: "", address: "", employmentType: "", status: "",
-      type: "contractor", notes: "", documents: [], source: "local",
+      type: "contractor", notes: "", source: "local",
     };
     upsertEmployee(blank);
     setActiveEmployee(key);
@@ -169,7 +137,7 @@ function addToCurrentTimesheet(employee: Employee) {
         address: get("address"), employmentType: get("employment type"),
         status: get("status"),
         type: get("type") === "staff" ? "staff" : "contractor",
-        source: "local", documents: []
+        source: "local"
       });
     });
     setCsvText("");
@@ -191,14 +159,12 @@ function addToCurrentTimesheet(employee: Employee) {
 
   async function updateActiveDocuments(files: FileList | null) {
     if (!activeEmployee || !files?.length) return;
-    const docs: EmployeeDocument[] = [...(activeEmployee.documents || [])];
     try {
+      const added: EmployeeDocRow[] = [];
       for (const file of Array.from(files)) {
-        const publicUrl = await uploadEmployeeDocument(activeEmployee.employeeKey, file);
-        docs.push({ id: `doc-${Date.now()}-${file.name}`, name: file.name, dataUrl: publicUrl });
+        added.push(await uploadEmployeeDoc(activeEmployee.employeeKey, file));
       }
-      upsertEmployee({ ...activeEmployee, documents: docs, source: "local" });
-      setRefreshKey((x) => x + 1);
+      setEmployeeDocs((cur) => [...added, ...cur]);
     } catch (err) {
       console.error("[employee-directory] document upload failed:", err);
       alert("Failed to upload one or more documents. Check console for details.");
@@ -225,19 +191,16 @@ function addToCurrentTimesheet(employee: Employee) {
 
   async function removeActiveDocument(docId: string) {
     if (!activeEmployee) return;
-    const doc = (activeEmployee.documents || []).find((d) => d.id === docId);
+    const doc = employeeDocs.find((d) => d.id === docId);
     if (!doc) return;
-    if (!confirm(`Delete "${doc.name}"?`)) return;
-    if (doc.dataUrl) {
-      try {
-        await deleteEmployeeAsset(doc.dataUrl);
-      } catch (err) {
-        console.error("[employee-directory] failed to remove document from storage:", err);
-      }
+    if (!confirm(`Delete "${doc.fileName}"?`)) return;
+    try {
+      await removeEmployeeDoc(doc);
+      setEmployeeDocs((cur) => cur.filter((d) => d.id !== docId));
+    } catch (err) {
+      console.error("[employee-directory] failed to remove document:", err);
+      alert("Failed to delete document. Check console for details.");
     }
-    const nextDocs = (activeEmployee.documents || []).filter((d) => d.id !== docId);
-    upsertEmployee({ ...activeEmployee, documents: nextDocs, source: "local" });
-    setRefreshKey((x) => x + 1);
   }
 
   return (
@@ -258,8 +221,6 @@ function addToCurrentTimesheet(employee: Employee) {
           <div><small>Status</small><select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)}><option value="">All status</option>{statuses.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>Employment Type</small><select value={typeFilter} onChange={(e)=>setTypeFilter(e.target.value)}><option value="">All types</option>{types.map((s)=><option key={s} value={s}>{s}</option>)}<option value="__blank__">— Not set —</option></select></div>
           <div><small>Name Sort</small><select value={sortAZ} onChange={(e)=>setSortAZ(e.target.value as "A-Z"|"Z-A")}><option value="A-Z">A-Z</option><option value="Z-A">Z-A</option></select></div>
-          <div><small>Role to assign</small><input value={role} onChange={(e)=>setRole(e.target.value)} /></div>
-          <div className="list-card"><strong>Current Job Sheet</strong><div className="muted">{activeSheet ? activeSheet.title : "No active job sheet selected"}</div></div>
         </div>
       </div>
 
@@ -316,8 +277,72 @@ function addToCurrentTimesheet(employee: Employee) {
                   {employmentTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
+              <div>
+                <small title="Date this person was added to the roster — drives HR's onboarding backlog. Auto-stamped when added on-the-fly from Timekeeping; editable here for backfill or corrections.">
+                  Hire Date
+                </small>
+                <input
+                  type="date"
+                  value={activeEmployee.hireDate || ""}
+                  onChange={(e) => updateActiveField("hireDate", e.target.value)}
+                />
+              </div>
             </div>
           </div>
+
+          {/* ─── Pay Rate Override (admin-only) ──────────────────────────
+              These values override the rate-card default for this employee
+              when payroll resolves the pay rate. NULL = "use rate card";
+              any set value WINS regardless of rate card. ADMIN-ONLY — never
+              shown to crew leaders (hideBill strips the section). */}
+          {!hideBill && (
+            <div style={{ marginTop: 16 }}>
+              <h3 className="section-title">Pay Rate Override</h3>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+                Optional. Leave blank to use the rate card for this employee's
+                specialty. Any value entered overrides the rate card — per
+                column (set just std to keep OT/DT from rate card, etc.).
+              </div>
+              <div className="grid grid3" style={{ gap: 12 }}>
+                <div>
+                  <small>Std $/hr</small>
+                  <input
+                    type="number" step="0.01" min="0"
+                    placeholder="(rate card)"
+                    value={activeEmployee.payStdRate ?? ""}
+                    onChange={(e) => updateActiveField(
+                      "payStdRate",
+                      e.target.value === "" ? null : Number(e.target.value),
+                    )}
+                  />
+                </div>
+                <div>
+                  <small>OT $/hr</small>
+                  <input
+                    type="number" step="0.01" min="0"
+                    placeholder="(rate card)"
+                    value={activeEmployee.payOtRate ?? ""}
+                    onChange={(e) => updateActiveField(
+                      "payOtRate",
+                      e.target.value === "" ? null : Number(e.target.value),
+                    )}
+                  />
+                </div>
+                <div>
+                  <small>DT $/hr</small>
+                  <input
+                    type="number" step="0.01" min="0"
+                    placeholder="(rate card)"
+                    value={activeEmployee.payDtRate ?? ""}
+                    onChange={(e) => updateActiveField(
+                      "payDtRate",
+                      e.target.value === "" ? null : Number(e.target.value),
+                    )}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           <div style={{ marginTop: 16 }}>
             <h3 className="section-title">Notes</h3>
@@ -328,15 +353,15 @@ function addToCurrentTimesheet(employee: Employee) {
             <h3 className="section-title">Certificates / ID / Files</h3>
             <div className="hide-print"><input type="file" multiple onChange={(e)=>updateActiveDocuments(e.target.files)} /></div>
             <div style={{ marginTop: 10 }}>
-              {(activeEmployee.documents || []).length === 0 ? (
+              {employeeDocs.length === 0 ? (
                 <div className="muted">No files uploaded yet.</div>
               ) : (
                 <div className="grid">
-                  {(activeEmployee.documents || []).map((doc) => (
+                  {employeeDocs.map((doc) => (
                     <div key={doc.id} className="list-card">
-                      <strong>{doc.name}</strong>
+                      <strong>{doc.fileName}</strong>
                       <div className="action-row" style={{ marginTop: 8, gap: 8 }}>
-                        {doc.dataUrl ? <a className="badge" href={doc.dataUrl} target="_blank" rel="noreferrer">View File</a> : null}
+                        {doc.url ? <a className="badge" href={doc.url} target="_blank" rel="noreferrer">View File</a> : null}
                         <button type="button" className="secondary" onClick={() => removeActiveDocument(doc.id)} style={{ fontSize: 12, padding: "4px 10px" }}>Delete</button>
                       </div>
                     </div>
@@ -374,7 +399,9 @@ function addToCurrentTimesheet(employee: Employee) {
               .map((ts) => ({ ts, entries: ts.rows.filter((r) => r.employeeKey === activeEmployee.employeeKey) }))
               .filter((x) => x.entries.length > 0);
             const totalHours = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalHours, 0), 0);
-            const totalPay = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalPay, 0), 0);
+            // billTotal renamed from totalPay in 20260528b — these are billing
+            // numbers, not pay. Pay totals live on payroll_run_entries.
+            const totalPay = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.billTotal, 0), 0);
             return (
               <div style={{ marginTop: 16 }}>
                 <div className="action-row" style={{ marginBottom: 8 }}>
@@ -388,10 +415,12 @@ function addToCurrentTimesheet(employee: Employee) {
                 {tsWithEntries.length === 0
                   ? <div className="muted">No timesheet entries found for this employee.</div>
                   : (
-                    <div className="grid3">
+                    <div className={hideBill ? "grid2" : "grid3"}>
                       <div className="metric-card"><div className="metric-label">Timesheets</div><div className="metric-value">{tsWithEntries.length}</div></div>
                       <div className="metric-card"><div className="metric-label">Total Hours</div><div className="metric-value">{totalHours.toFixed(1)}</div></div>
-                      <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
+                      {!hideBill && (
+                        <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
+                      )}
                     </div>
                   )
                 }
@@ -433,8 +462,6 @@ function addToCurrentTimesheet(employee: Employee) {
                     <td>
                       <div className="action-row">
                         <button className="secondary" onClick={() => { setActiveEmployee(e.employeeKey); setRefreshKey((x)=>x+1); }}>Open Profile</button>
-                        <button className="secondary" onClick={() => addToCurrentJob(e)} disabled={!activeSheet}>Add to Current Job Sheet</button>
-                        <button className="secondary" onClick={() => addToCurrentTimesheet(e)} disabled={!activeSheet}>Add to Current Timekeeping</button>
                         <button className="secondary" onClick={() => { deleteEmployee(e.employeeKey); setRefreshKey((x)=>x+1); }}>Delete</button>
                       </div>
                     </td>
@@ -497,16 +524,19 @@ function addToCurrentTimesheet(employee: Employee) {
                 .filter((x) => x.entries.length > 0)
                 .sort((a, b) => b.ts.id.localeCompare(a.ts.id));
               const totalHours = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalHours, 0), 0);
-              const totalPay   = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.totalPay, 0), 0);
+              // Billing totals (renamed in 20260528b). Labels updated to "Bill".
+              const totalBill  = tsWithEntries.reduce((sum, x) => sum + x.entries.reduce((s, r) => s + r.billTotal, 0), 0);
               return (
                 <>
-                  <div className="grid3" style={{ marginBottom: 16 }}>
+                  <div className={hideBill ? "grid2" : "grid3"} style={{ marginBottom: 16 }}>
                     <div className="metric-card"><div className="metric-label">Timesheets</div><div className="metric-value">{tsWithEntries.length}</div></div>
                     <div className="metric-card"><div className="metric-label">Total Hours</div><div className="metric-value">{totalHours.toFixed(1)}</div></div>
-                    <div className="metric-card"><div className="metric-label">Total Pay</div><div className="metric-value">${totalPay.toFixed(2)}</div></div>
+                    {!hideBill && (
+                      <div className="metric-card"><div className="metric-label">Total Bill</div><div className="metric-value">${totalBill.toFixed(2)}</div></div>
+                    )}
                   </div>
                   <table>
-                    <thead><tr><th>Timesheet</th><th>Position</th><th>Std Hrs</th><th>OT Hrs</th><th>DT Hrs</th><th>Total Hrs</th><th>Total Pay</th></tr></thead>
+                    <thead><tr><th>Timesheet</th><th>Position</th><th>Std Hrs</th><th>OT Hrs</th><th>DT Hrs</th><th>Total Hrs</th>{!hideBill && <th>Total Bill</th>}</tr></thead>
                     <tbody>
                       {tsWithEntries.map(({ ts, entries }) =>
                         entries.map((r) => (
@@ -517,7 +547,7 @@ function addToCurrentTimesheet(employee: Employee) {
                             <td>{r.otHours.toFixed(1)}</td>
                             <td>{r.dtHours.toFixed(1)}</td>
                             <td>{r.totalHours.toFixed(1)}</td>
-                            <td>${r.totalPay.toFixed(2)}</td>
+                            {!hideBill && <td>${r.billTotal.toFixed(2)}</td>}
                           </tr>
                         ))
                       )}

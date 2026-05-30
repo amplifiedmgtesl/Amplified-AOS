@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { upsertClient, mergeClients } from "@/lib/store/app-store";
 import type { Client } from "@/lib/store/types";
@@ -69,13 +69,13 @@ export default function ClientMaintenance() {
     if (!selectedId) { setTabData(null); return; }
     Promise.all([
       supabase.from("job_requests")
-        .select("id, received_date, request_date, end_date, venue, status, linked_quote_id")
-        .eq("client_id", selectedId).order("received_date", { ascending: false }),
+        // NOTE: linked_quote_id was dropped in migration 20260505b. Status pill
+        // below derives "Quoted vs Pending" from job_requests.status instead.
+        .select("id, job_no, event_name, received_date, request_date, end_date, venue, status")
+        .eq("client_id", selectedId).order("request_date", { ascending: false, nullsFirst: false }),
       supabase.from("quotes")
-        .select("id, event_name, start_date, end_date, status, total")
+        .select("id, event_name, start_date, end_date, status, total, job_request_id, quote_no, is_draft")
         .eq("client_id", selectedId).order("start_date", { ascending: false }),
-      supabase.from("quote_draft_workspaces").select("id", { count: "exact", head: true })
-        .eq("client_id", selectedId),
       supabase.from("rate_card_profiles")
         .select("id, name, updated_at")
         .eq("client_id", selectedId).order("name"),
@@ -84,13 +84,15 @@ export default function ClientMaintenance() {
         .eq("client_id", selectedId).eq("is_deleted", false)
         .order("start_date", { ascending: false }),
       supabase.from("invoices")
-        .select("id, invoice_no, issue_date, event_name, subtotal, amount_due, paid_amount, status")
+        .select("id, invoice_no, issue_date, event_name, subtotal, amount_due, paid_amount, status, job_request_id, invoice_type, is_draft")
         .eq("client_id", selectedId).order("issue_date", { ascending: false }),
-    ]).then(([jrRes, quotesRes, draftRes, rcRes, calRes, invRes]) => {
+    ]).then(([jrRes, quotesRes, rcRes, calRes, invRes]) => {
+      // quote_draft_workspaces was dropped in migration 20260505b — drafts now
+      // live as is_draft=true rows in quotes; counted from quotesRes below.
       setTabData({
         jobRequests: jrRes.data ?? [],
         quotes: quotesRes.data ?? [],
-        quoteDraftCount: draftRes.count ?? 0,
+        quoteDraftCount: (quotesRes.data ?? []).filter((q: any) => q.is_draft).length,
         rateCards: rcRes.data ?? [],
         calendarEvents: calRes.data ?? [],
         invoices: invRes.data ?? [],
@@ -220,6 +222,103 @@ export default function ClientMaintenance() {
   }
 
   const selectedClient = form;
+
+  // Group quotes/invoices/calendar by job_request so each tab can render
+  // a per-job section instead of a flat list. Jobs list comes from
+  // tabData.jobRequests (already sorted by request_date desc), so groups
+  // come out in most-recent-first order naturally. Items whose job link
+  // is missing OR points to a job that doesn't belong to this client land
+  // in `orphans` (rendered as "Other / Unlinked" at the bottom).
+  function groupByJob<T>(
+    items: T[],
+    getJobId: (it: T) => string | null | undefined,
+  ): {
+    groups: Array<{ job: any; items: T[] }>;
+    orphans: T[];
+  } {
+    if (!tabData) return { groups: [], orphans: items };
+    const jobsById = new Map(tabData.jobRequests.map((j: any) => [j.id, j]));
+    const itemsByJob = new Map<string, T[]>();
+    const orphans: T[] = [];
+    for (const it of items) {
+      const jid = getJobId(it);
+      if (jid && jobsById.has(jid)) {
+        const arr = itemsByJob.get(jid) ?? [];
+        arr.push(it);
+        itemsByJob.set(jid, arr);
+      } else {
+        orphans.push(it);
+      }
+    }
+    const groups = tabData.jobRequests
+      .filter((j: any) => itemsByJob.has(j.id))
+      .map((j: any) => ({ job: j, items: itemsByJob.get(j.id)! }));
+    return { groups, orphans };
+  }
+
+  /** Render a section-header row that spans every column of the
+   *  enclosing table. Click jumps to the job request screen. */
+  function jobHeaderRow(job: any, count: number, colSpan: number) {
+    return (
+      <tr
+        key={`hdr-${job.id}`}
+        onClick={() => { window.location.href = `/job-requests?id=${encodeURIComponent(job.id)}`; }}
+        style={{
+          background: "var(--surface2, #f7f4ee)",
+          cursor: "pointer",
+          borderTop: "2px solid var(--border, #d7c6aa)",
+          borderBottom: "1px solid var(--border, #e5e7eb)",
+        }}
+        title="Open this job"
+        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#efe7d3"; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--surface2, #f7f4ee)"; }}
+      >
+        <td colSpan={colSpan} style={{ padding: "6px 8px", fontSize: 12 }}>
+          <span style={{ fontFamily: "monospace", fontWeight: 600, color: "var(--accent, #2563eb)" }}>
+            {job.job_no ?? "(no job #)"}
+          </span>
+          <span style={{ margin: "0 8px", color: "#999" }}>·</span>
+          <strong>{job.event_name ?? "(untitled)"}</strong>
+          {job.request_date && (
+            <>
+              <span style={{ margin: "0 8px", color: "#999" }}>·</span>
+              <span style={{ color: "#666" }}>
+                {job.request_date}{job.end_date && job.end_date !== job.request_date ? ` – ${job.end_date}` : ""}
+              </span>
+            </>
+          )}
+          <span style={{ float: "right", color: "#888", fontWeight: 500 }}>
+            {count} item{count === 1 ? "" : "s"}
+          </span>
+        </td>
+      </tr>
+    );
+  }
+
+  /** Section header for orphan (unlinked) items. */
+  function orphanHeaderRow(count: number, colSpan: number) {
+    return (
+      <tr
+        key="hdr-orphans"
+        style={{
+          background: "#fff3e6",
+          borderTop: "2px solid var(--border, #d7c6aa)",
+          borderBottom: "1px solid var(--border, #e5e7eb)",
+        }}
+        title="Items not linked to any job request"
+      >
+        <td colSpan={colSpan} style={{ padding: "6px 8px", fontSize: 12, color: "#8a4d00" }}>
+          <strong>⚠ Other / Unlinked</strong>
+          <span style={{ color: "#888", marginLeft: 8, fontWeight: 400 }}>
+            (no job_request_id — pre-rewrite legacy or test data)
+          </span>
+          <span style={{ float: "right", color: "#888", fontWeight: 500 }}>
+            {count} item{count === 1 ? "" : "s"}
+          </span>
+        </td>
+      </tr>
+    );
+  }
 
   return (
     <div style={{ display: "flex", gap: 20, alignItems: "flex-start", height: "100%" }}>
@@ -538,7 +637,7 @@ export default function ClientMaintenance() {
             {/* Tab bar */}
             <div style={{ display: "flex", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
               {(["contacts", "job_requests", "quotes", "rate_cards", "calendar_events", "invoices"] as const).map((tab) => {
-                const labels: Record<string, string> = { contacts: "Contacts", job_requests: "Job Requests", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Calendar Events", invoices: "Invoices" };
+                const labels: Record<string, string> = { contacts: "Contacts", job_requests: "Jobs", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Manual Calendar Entries", invoices: "Invoices" };
                 const counts: Record<string, number> = { contacts: contactsCount, job_requests: tabData.jobRequests.length, quotes: tabData.quotes.length, rate_cards: tabData.rateCards.length, calendar_events: tabData.calendarEvents.length, invoices: tabData.invoices.length };
                 const active = activeTab === tab;
                 return (
@@ -568,68 +667,135 @@ export default function ClientMaintenance() {
                 <ClientContactsTab clientId={selectedId} onCountChange={setContactsCount} />
               )}
               {activeTab === "job_requests" && (
-                tabData.jobRequests.length === 0
-                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No job requests.</div>
+                <>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => { if (selectedId) window.location.href = `/job-requests?new=1&clientId=${encodeURIComponent(selectedId)}`; }}
+                      style={{ fontSize: 12, padding: "4px 10px" }}
+                      title="Start a new job for this client"
+                    >+ New Job</button>
+                  </div>
+                  {tabData.jobRequests.length === 0
+                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No job requests yet.</div>
                   : <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                       <thead>
                         <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Received</th>
-                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Event Date</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Job #</th>
+                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Event</th>
                           <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Venue</th>
                           <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Status</th>
                         </tr>
                       </thead>
                       <tbody>
                         {tabData.jobRequests.map((r) => (
-                          <tr key={r.id} style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{r.received_date ?? "—"}</td>
-                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{r.request_date ?? "—"}{r.end_date && r.end_date !== r.request_date ? ` – ${r.end_date}` : ""}</td>
+                          <tr
+                            key={r.id}
+                            onClick={() => { window.location.href = `/job-requests?id=${encodeURIComponent(r.id)}`; }}
+                            style={{
+                              borderBottom: "1px solid var(--border, #e5e7eb)",
+                              cursor: "pointer",
+                            }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--surface2, #f7f4ee)"; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = ""; }}
+                            title="Open this job"
+                          >
+                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap", fontFamily: "monospace", fontWeight: 600, color: "var(--accent, #2563eb)" }}>
+                              {r.job_no ?? <span style={{ color: "#888", fontWeight: 400, fontStyle: "italic" }}>—</span>}
+                            </td>
+                            <td style={{ padding: "5px 8px 5px 0" }} title={r.event_name ?? ""}>{r.event_name ?? "—"}</td>
                             <td style={{ padding: "5px 8px 5px 0" }}>{r.venue ?? "—"}</td>
                             <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>
-                              {r.linked_quote_id
-                                ? <span style={{ background: "#e0f2fe", color: "#0369a1", borderRadius: 4, padding: "2px 6px", fontSize: 11 }}>Quoted</span>
-                                : <span style={{ background: "#fef9c3", color: "#854d0e", borderRadius: 4, padding: "2px 6px", fontSize: 11 }}>Pending</span>}
+                              {(() => {
+                                const s = String(r.status ?? "lead").toLowerCase();
+                                const palette: Record<string, { bg: string; fg: string }> = {
+                                  lead:      { bg: "#fef9c3", fg: "#854d0e" },
+                                  quoted:    { bg: "#e0f2fe", fg: "#0369a1" },
+                                  booked:    { bg: "#dcfce7", fg: "#166534" },
+                                  invoiced:  { bg: "#ede9fe", fg: "#5b21b6" },
+                                  completed: { bg: "#dcfce7", fg: "#166534" },
+                                  cancelled: { bg: "#f3f4f6", fg: "#555" },
+                                };
+                                const c = palette[s] ?? { bg: "#f3f4f6", fg: "#555" };
+                                return (
+                                  <span style={{ background: c.bg, color: c.fg, borderRadius: 4, padding: "2px 6px", fontSize: 11, textTransform: "capitalize" }}>
+                                    {s}
+                                  </span>
+                                );
+                              })()}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                  }
+                </>
               )}
 
-              {activeTab === "quotes" && (
-                tabData.quotes.length === 0
-                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No quotes.</div>
-                  : <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
-                      <thead>
-                        <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Event</th>
-                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Date</th>
-                          <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Status</th>
-                          <th style={{ textAlign: "right", padding: "4px 0 6px 0", fontWeight: 600 }}>Total</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tabData.quotes.map((q) => (
-                          <tr key={q.id} style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-                            <td style={{ padding: "5px 8px 5px 0" }}>{q.event_name ?? "—"}</td>
-                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{q.start_date ?? "—"}{q.end_date && q.end_date !== q.start_date ? ` – ${q.end_date}` : ""}</td>
-                            <td style={{ padding: "5px 8px 5px 0" }}>
-                              <span style={{
-                                background: q.status === "booked" ? "#dcfce7" : q.status === "quoted" ? "#e0f2fe" : "#f3f4f6",
-                                color: q.status === "booked" ? "#166534" : q.status === "quoted" ? "#0369a1" : "#555",
-                                borderRadius: 4, padding: "2px 6px", fontSize: 11,
-                              }}>{q.status ?? "—"}</span>
-                            </td>
-                            <td style={{ padding: "5px 0", textAlign: "right", whiteSpace: "nowrap" }}>{q.total != null ? `$${Number(q.total).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-              )}
+              {activeTab === "quotes" && (() => {
+                if (tabData.quotes.length === 0) {
+                  return <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No quotes.</div>;
+                }
+                const { groups, orphans } = groupByJob(tabData.quotes, (q: any) => q.job_request_id);
+                const QUOTE_COLS = 5;
+                const renderQuoteRow = (q: any) => (
+                  <tr key={q.id} style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+                    <td style={{ padding: "5px 8px 5px 0", fontFamily: "monospace", fontSize: 11, color: "#555" }}>
+                      {q.quote_no ?? (q.is_draft ? <em style={{ color: "#888" }}>(draft)</em> : "—")}
+                    </td>
+                    <td style={{ padding: "5px 8px 5px 0" }}>{q.event_name ?? "—"}</td>
+                    <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{q.start_date ?? "—"}{q.end_date && q.end_date !== q.start_date ? ` – ${q.end_date}` : ""}</td>
+                    <td style={{ padding: "5px 8px 5px 0" }}>
+                      <span style={{
+                        background: q.is_draft ? "#fef3c7" : q.status === "signed" ? "#dcfce7" : q.status === "issued" ? "#e0f2fe" : q.status === "superseded" ? "#f3f4f6" : "#f3f4f6",
+                        color:      q.is_draft ? "#92400e" : q.status === "signed" ? "#166534" : q.status === "issued" ? "#0369a1" : "#555",
+                        borderRadius: 4, padding: "2px 6px", fontSize: 11,
+                      }}>{q.is_draft ? "draft" : (q.status ?? "—")}</span>
+                    </td>
+                    <td style={{ padding: "5px 0", textAlign: "right", whiteSpace: "nowrap" }}>{q.total != null ? `$${Number(q.total).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "—"}</td>
+                  </tr>
+                );
+                return (
+                  <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+                        <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Quote #</th>
+                        <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Event</th>
+                        <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Date</th>
+                        <th style={{ textAlign: "left", padding: "4px 8px 6px 0", fontWeight: 600 }}>Status</th>
+                        <th style={{ textAlign: "right", padding: "4px 0 6px 0", fontWeight: 600 }}>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {groups.map(({ job, items }) => (
+                        <React.Fragment key={job.id}>
+                          {jobHeaderRow(job, items.length, QUOTE_COLS)}
+                          {items.map(renderQuoteRow)}
+                        </React.Fragment>
+                      ))}
+                      {orphans.length > 0 && (
+                        <React.Fragment key="orphans">
+                          {orphanHeaderRow(orphans.length, QUOTE_COLS)}
+                          {orphans.map(renderQuoteRow)}
+                        </React.Fragment>
+                      )}
+                    </tbody>
+                  </table>
+                );
+              })()}
 
               {activeTab === "rate_cards" && (
-                tabData.rateCards.length === 0
-                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No rate cards.</div>
+                <>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => { if (selectedId) window.location.href = `/rate-card?new=1&clientId=${encodeURIComponent(selectedId)}`; }}
+                      style={{ fontSize: 12, padding: "4px 10px" }}
+                      title="Start a new rate card for this client"
+                    >+ New Rate Card</button>
+                  </div>
+                  {tabData.rateCards.length === 0
+                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No rate cards yet.</div>
                   : <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                       <thead>
                         <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
@@ -646,11 +812,17 @@ export default function ClientMaintenance() {
                         ))}
                       </tbody>
                     </table>
+                  }
+                </>
               )}
 
               {activeTab === "calendar_events" && (
-                tabData.calendarEvents.length === 0
-                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No calendar events.</div>
+                <>
+                  <div style={{ color: "#888", fontSize: 11, padding: "0 0 8px 0", fontStyle: "italic" }}>
+                    Only entries created directly on the master calendar appear here. Job-derived calendar events show on the Master Calendar via the &quot;Show in app calendar&quot; flag on each job — see the Jobs tab for those.
+                  </div>
+                  {tabData.calendarEvents.length === 0
+                  ? <div style={{ color: "#888", fontSize: 13, textAlign: "center", padding: "20px 0" }}>No manual calendar entries.</div>
                   : <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
                       <thead>
                         <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
@@ -671,6 +843,8 @@ export default function ClientMaintenance() {
                         ))}
                       </tbody>
                     </table>
+                  }
+                </>
               )}
 
               {activeTab === "invoices" && (() => {
@@ -698,36 +872,58 @@ export default function ClientMaintenance() {
                       {statBox("YTD Billed", fmt(ytdBilled))}
                       {statBox("Outstanding", fmt(outstanding))}
                     </div>
-                    <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
-                      <thead>
-                        <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-                          <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Invoice #</th>
-                          <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Issue Date</th>
-                          <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Event</th>
-                          <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Status</th>
-                          <th style={{ textAlign: "right", padding: "4px 0 6px 0",    fontWeight: 600 }}>Amount Due</th>
-                          <th style={{ textAlign: "right", padding: "4px 0 6px 0",    fontWeight: 600 }}>Paid</th>
+                    {(() => {
+                      const { groups, orphans } = groupByJob(tabData.invoices, (r: any) => r.job_request_id);
+                      const INV_COLS = 7;
+                      const renderInvoiceRow = (r: any) => (
+                        <tr key={r.id} style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+                          <td style={{ padding: "5px 8px 5px 0", fontFamily: "monospace", fontSize: 11 }}>
+                            {r.invoice_no ?? (r.is_draft ? <em style={{ color: "#888" }}>(draft)</em> : "—")}
+                          </td>
+                          <td style={{ padding: "5px 8px 5px 0", fontSize: 10, color: "#666", textTransform: "uppercase" }}>{r.invoice_type ?? "—"}</td>
+                          <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{r.issue_date ?? "—"}</td>
+                          <td style={{ padding: "5px 8px 5px 0" }}>{r.event_name ?? "—"}</td>
+                          <td style={{ padding: "5px 8px 5px 0" }}>
+                            <span style={{
+                              background: r.is_draft ? "#fef3c7" : r.status === "paid" ? "#dcfce7" : r.status === "sent" ? "#e0f2fe" : r.status === "partial" ? "#fef3c7" : "#f3f4f6",
+                              color:      r.is_draft ? "#92400e" : r.status === "paid" ? "#166534" : r.status === "sent" ? "#0369a1" : r.status === "partial" ? "#92400e" : "#555",
+                              borderRadius: 4, padding: "2px 6px", fontSize: 11,
+                            }}>{r.is_draft ? "draft" : (r.status ?? "—")}</span>
+                          </td>
+                          <td style={{ padding: "5px 0", textAlign: "right", whiteSpace: "nowrap" }}>{r.amount_due != null ? `$${Number(r.amount_due).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "—"}</td>
+                          <td style={{ padding: "5px 0", textAlign: "right", whiteSpace: "nowrap" }}>{r.paid_amount != null ? `$${Number(r.paid_amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "—"}</td>
                         </tr>
-                      </thead>
-                      <tbody>
-                        {tabData.invoices.map((r) => (
-                          <tr key={r.id} style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-                            <td style={{ padding: "5px 8px 5px 0" }}>{r.invoice_no ?? "—"}</td>
-                            <td style={{ padding: "5px 8px 5px 0", whiteSpace: "nowrap" }}>{r.issue_date ?? "—"}</td>
-                            <td style={{ padding: "5px 8px 5px 0" }}>{r.event_name ?? "—"}</td>
-                            <td style={{ padding: "5px 8px 5px 0" }}>
-                              <span style={{
-                                background: r.status === "paid" ? "#dcfce7" : r.status === "sent" ? "#e0f2fe" : r.status === "partial" ? "#fef3c7" : "#f3f4f6",
-                                color: r.status === "paid" ? "#166534" : r.status === "sent" ? "#0369a1" : r.status === "partial" ? "#92400e" : "#555",
-                                borderRadius: 4, padding: "2px 6px", fontSize: 11,
-                              }}>{r.status ?? "—"}</span>
-                            </td>
-                            <td style={{ padding: "5px 0", textAlign: "right", whiteSpace: "nowrap" }}>{r.amount_due != null ? `$${Number(r.amount_due).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "—"}</td>
-                            <td style={{ padding: "5px 0", textAlign: "right", whiteSpace: "nowrap" }}>{r.paid_amount != null ? `$${Number(r.paid_amount).toLocaleString("en-US", { minimumFractionDigits: 2 })}` : "—"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                      );
+                      return (
+                        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+                          <thead>
+                            <tr style={{ color: "#888", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+                              <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Invoice #</th>
+                              <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Type</th>
+                              <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Issue Date</th>
+                              <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Event</th>
+                              <th style={{ textAlign: "left",  padding: "4px 8px 6px 0", fontWeight: 600 }}>Status</th>
+                              <th style={{ textAlign: "right", padding: "4px 0 6px 0",   fontWeight: 600 }}>Amount Due</th>
+                              <th style={{ textAlign: "right", padding: "4px 0 6px 0",   fontWeight: 600 }}>Paid</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {groups.map(({ job, items }) => (
+                              <React.Fragment key={job.id}>
+                                {jobHeaderRow(job, items.length, INV_COLS)}
+                                {items.map(renderInvoiceRow)}
+                              </React.Fragment>
+                            ))}
+                            {orphans.length > 0 && (
+                              <React.Fragment key="orphans">
+                                {orphanHeaderRow(orphans.length, INV_COLS)}
+                                {orphans.map(renderInvoiceRow)}
+                              </React.Fragment>
+                            )}
+                          </tbody>
+                        </table>
+                      );
+                    })()}
                   </>
                 );
               })()}
