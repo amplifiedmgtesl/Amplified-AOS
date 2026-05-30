@@ -1,7 +1,7 @@
 
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { printWithTitle } from "@/lib/print-with-title";
 import {
   getActiveJob, setActiveJob,
@@ -201,7 +201,20 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   useEffect(() => { setSelectedIds(new Set()); }, [timesheet?.id]);
   // Per-day collapse state on the editing view. Print mode forces all expanded
   // (via @media print) and hides the day-separator header rows.
-  const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
+  // Tracks collapse state PLUS the timesheet id it was computed for. When the
+  // timesheet changes (via picker), the next render detects the mismatch and
+  // synchronously resets collapse state BEFORE any row components mount. This
+  // is React's documented "reset state on prop change" pattern. A useEffect /
+  // useLayoutEffect would let the first render mount all 99+ rows before
+  // hiding them, costing 15-20s on big multi-day timesheets.
+  const [collapsedState, setCollapsedState] = useState<{ tsId: string | null; days: Set<string> }>({ tsId: null, days: new Set() });
+  const collapsedDays = collapsedState.days;
+  function setCollapsedDays(updater: Set<string> | ((prev: Set<string>) => Set<string>)) {
+    setCollapsedState((s) => ({
+      tsId: s.tsId,
+      days: typeof updater === "function" ? updater(s.days) : updater,
+    }));
+  }
   // Convenience alias for the in-memory rows of the active timesheet.
   const allRows = useMemo(() => timesheet?.rows ?? [], [timesheet]);
   // Precomputed id → index map. Avoids O(n²) indexOf in the row map below.
@@ -272,14 +285,15 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
     });
   }, [allRows]);
 
-  // Default-collapse all days if multi-day; expand the only day if single-day.
-  useEffect(() => {
-    if (dayGroups.length > 1) {
-      setCollapsedDays(new Set(dayGroups.map(([d]) => d)));
-    } else {
-      setCollapsedDays(new Set());
-    }
-  }, [timesheet?.id, dayGroups.length]);
+  // Sync collapse state when timesheet changes — fires during render BEFORE
+  // any row components mount. React bails on the current render and re-renders
+  // with the new state. See collapsedState declaration for the why.
+  if (timesheet?.id !== collapsedState.tsId) {
+    setCollapsedState({
+      tsId: timesheet?.id ?? null,
+      days: dayGroups.length > 1 ? new Set(dayGroups.map(([d]) => d)) : new Set(),
+    });
+  }
 
   function toggleDay(day: string) {
     setCollapsedDays((prev) => {
