@@ -70,6 +70,7 @@ function rowToQuote(r: any, lineRows: any[] = []): QuoteDraft {
     jobRequestId: r.job_request_id ?? undefined,
     parentQuoteId: r.parent_quote_id ?? undefined,
     quoteNo: r.quote_no ?? undefined,
+    legacyQuoteNo: r.legacy_quote_no ?? undefined,
     revisionNo: r.revision_no ?? 1,
     issuedAt: r.issued_at ?? undefined,
     issuedBy: r.issued_by ?? undefined,

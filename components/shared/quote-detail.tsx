@@ -254,6 +254,11 @@ export default function QuoteDetail({ id }: { id: string }) {
           <span className="badge" style={{ marginLeft: 12 }}>{statusLabel}</span>
           {/* Revision indicator already encoded in the quote_no suffix
               (e.g. _EST_REV1). No redundant badge needed. */}
+          {quote.legacyQuoteNo && quote.legacyQuoteNo !== quote.quoteNo ? (
+            <div className="muted" style={{ fontSize: 12, fontWeight: 400, marginTop: 4 }}>
+              Legacy reference: <code>{quote.legacyQuoteNo}</code>
+            </div>
+          ) : null}
         </h2>
         <Link href="/quotes" className="badge">← All Quotes</Link>
       </div>

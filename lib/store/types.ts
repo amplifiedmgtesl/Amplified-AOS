@@ -217,6 +217,8 @@ export type QuoteDraft = {
   parentQuoteId?: string;
   /** AES_YYMMDDDD_CLI_EVENT_EST[_REVN] — populated at issue time, frozen forever. */
   quoteNo?: string;
+  /** Original slug-style id preserved during V2 cutover backfill, for customer-reference lookups. */
+  legacyQuoteNo?: string;
   revisionNo: number;
   issuedAt?: string;
   issuedBy?: string;
@@ -233,6 +235,8 @@ export type InvoiceDraft = {
   id: string;
   quoteId: string;
   invoiceNo: string;
+  /** Original INV-YYYY-MMDD-NNN format preserved during V2 cutover backfill, for customer-reference lookups. */
+  legacyInvoiceNo?: string;
   issueDate: string;
   dueDate: string;
   poNo: string;

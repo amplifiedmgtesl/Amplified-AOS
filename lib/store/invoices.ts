@@ -36,6 +36,7 @@ function rowToInvoice(r: any, lineRows: any[] = []): InvoiceDraft {
     id: r.id,
     quoteId: r.quote_id ?? "",
     invoiceNo: r.invoice_no ?? "",
+    legacyInvoiceNo: r.legacy_invoice_no ?? undefined,
     issueDate: r.issue_date ?? "",
     dueDate: r.due_date ?? "",
     poNo: r.po_no ?? "",

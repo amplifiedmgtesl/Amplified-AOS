@@ -267,6 +267,11 @@ export default function InvoiceDetail({ id }: { id: string }) {
           {invoice.invoiceNo || `Invoice ${invoice.id.slice(0, 12)}`}
           <span className="badge" style={{ marginLeft: 12 }}>{statusLabel}</span>
           {invoice.invoiceType ? <span className="muted" style={{ marginLeft: 8 }}>{invoice.invoiceType}</span> : null}
+          {invoice.legacyInvoiceNo && invoice.legacyInvoiceNo !== invoice.invoiceNo ? (
+            <div className="muted" style={{ fontSize: 12, fontWeight: 400, marginTop: 4 }}>
+              Legacy reference: <code>{invoice.legacyInvoiceNo}</code>
+            </div>
+          ) : null}
         </h2>
         <Link href="/invoices" className="badge">← All Invoices</Link>
       </div>
