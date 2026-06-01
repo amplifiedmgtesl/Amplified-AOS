@@ -173,12 +173,20 @@ export default function PayrollPdfView({ id }: { id: string }) {
               ) : null}
               <tr><td>Status</td><td>{statusLabel(run.status)}</td></tr>
               <tr><td>Run ID</td><td style={{ fontFamily: "monospace", fontSize: "0.9em" }}>{run.id}</td></tr>
-              {run.notes ? <tr><td>Notes</td><td>{run.notes}</td></tr> : null}
               {run.finalizedAt ? <tr><td>Finalized</td><td>{new Date(run.finalizedAt).toLocaleString()}</td></tr> : null}
             </tbody>
           </table>
         </div>
       </header>
+
+      {/* Notes callout — full-width, visually distinct so multi-line notes
+          aren't squished into a meta-table cell. Only renders when set. */}
+      {run.notes ? (
+        <div className="notes-block">
+          <div className="notes-label">Notes</div>
+          <div className="notes-body">{run.notes}</div>
+        </div>
+      ) : null}
 
       {/* Top-level totals */}
       <div className="totals-strip">
@@ -309,6 +317,22 @@ export default function PayrollPdfView({ id }: { id: string }) {
         .meta-table { margin-left: auto; font-size: 10pt; }
         .meta-table td { padding: 1px 6px; }
         .meta-table td:first-child { color: #555; text-align: right; }
+        .notes-block {
+          margin: 0 0 12px;
+          padding: 8px 12px;
+          background: #faf7f0;
+          border-left: 3px solid #c9b27a;
+          font-size: 10.5pt;
+        }
+        .notes-label {
+          font-size: 9pt;
+          font-weight: 600;
+          color: #7a5a1a;
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+          margin-bottom: 2px;
+        }
+        .notes-body { white-space: pre-wrap; }
         .totals-strip {
           display: flex;
           gap: 24px;
