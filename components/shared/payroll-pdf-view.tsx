@@ -7,13 +7,12 @@
  *
  * Two sections:
  *   1. Payroll Detail — one row per timesheet entry (date / employee /
- *      position / job_no / in-out / meals / hours / rates / pay).
+ *      position / specialty / job_no / hours / rates / pay).
  *   2. Payroll Summary by Employee with Grand Total.
  *
- * Time-in/out + meal-break fields aren't on the payroll_run_entries
- * snapshot — they're fetched live from timesheet_entries (which are
- * frozen once approved, so the values are stable for the life of an
- * active run).
+ * Time-in/out + meal-break details intentionally NOT shown — payroll
+ * cares about hours worked and rates paid, not shift timing. Operators
+ * can review those on the timesheet screen.
  */
 
 "use client";
@@ -22,8 +21,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   getPayrollRun,
   getPayrollRunEntries,
-  getPayrollRunPrintExtras,
-  type PayrollRunPrintExtras,
 } from "@/lib/store/payroll";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "@/lib/store/types";
 import { loadJobRequests } from "@/lib/store/app-store";
@@ -47,7 +44,6 @@ function statusLabel(s: PayrollRunStatus): string {
 export default function PayrollPdfView({ id }: { id: string }) {
   const [run, setRun] = useState<PayrollRun | null>(null);
   const [entries, setEntries] = useState<PayrollRunEntry[]>([]);
-  const [extras, setExtras] = useState<Map<string, PayrollRunPrintExtras>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,16 +52,14 @@ export default function PayrollPdfView({ id }: { id: string }) {
     setLoading(true);
     (async () => {
       try {
-        const [r, es, ex] = await Promise.all([
+        const [r, es] = await Promise.all([
           getPayrollRun(id),
           getPayrollRunEntries(id),
-          getPayrollRunPrintExtras(id),
         ]);
         if (cancelled) return;
         if (!r) { setError(`Payroll run not found: ${id}`); setLoading(false); return; }
         setRun(r);
         setEntries(es);
-        setExtras(ex);
         setLoading(false);
       } catch (e: any) {
         if (cancelled) return;
@@ -86,15 +80,7 @@ export default function PayrollPdfView({ id }: { id: string }) {
   // Sorted detail rows (date → employee).
   const rows = useMemo(() => {
     return entries
-      .map((e) => ({
-        ...e,
-        timeIn1:  extras.get(e.timesheetEntryId)?.timeIn1  ?? "",
-        timeOut1: extras.get(e.timesheetEntryId)?.timeOut1 ?? "",
-        timeIn2:  extras.get(e.timesheetEntryId)?.timeIn2  ?? "",
-        timeOut2: extras.get(e.timesheetEntryId)?.timeOut2 ?? "",
-        mealBreak1Minutes: extras.get(e.timesheetEntryId)?.mealBreak1Minutes ?? 0,
-        mealBreak2Minutes: extras.get(e.timesheetEntryId)?.mealBreak2Minutes ?? 0,
-      }))
+      .slice()
       .sort((a, b) => {
         const da = a.workDate || ""; const db = b.workDate || "";
         if (da !== db) return da.localeCompare(db);
@@ -102,7 +88,7 @@ export default function PayrollPdfView({ id }: { id: string }) {
         const bn = `${b.lastName ?? ""} ${b.firstName ?? ""}`;
         return an.localeCompare(bn);
       });
-  }, [entries, extras]);
+  }, [entries]);
 
   // Per-employee aggregate + grand total.
   const empRows = useMemo(() => {
@@ -192,12 +178,6 @@ export default function PayrollPdfView({ id }: { id: string }) {
             <th>Position</th>
             <th>Specialty</th>
             <th>Job</th>
-            <th>In 1</th>
-            <th>Out 1</th>
-            <th className="r">M1</th>
-            <th>In 2</th>
-            <th>Out 2</th>
-            <th className="r">M2</th>
             <th className="r">STD</th>
             <th className="r">OT</th>
             <th className="r">DT</th>
@@ -210,7 +190,7 @@ export default function PayrollPdfView({ id }: { id: string }) {
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={19} style={{ textAlign: "center", color: "#888", padding: 8 }}>No entries.</td></tr>
+            <tr><td colSpan={13} style={{ textAlign: "center", color: "#888", padding: 8 }}>No entries.</td></tr>
           ) : rows.map((r) => (
             <tr key={r.id}>
               <td>{fmtDay(r.workDate || "")}{r.isHoliday && " 🎄"}</td>
@@ -218,12 +198,6 @@ export default function PayrollPdfView({ id }: { id: string }) {
               <td>{r.position || ""}</td>
               <td>{r.specialty || ""}</td>
               <td style={{ fontFamily: "monospace" }}>{r.jobId ? (jobNoById.get(r.jobId) ?? "") : ""}</td>
-              <td>{r.timeIn1}</td>
-              <td>{r.timeOut1}</td>
-              <td className="r">{r.mealBreak1Minutes || ""}</td>
-              <td>{r.timeIn2}</td>
-              <td>{r.timeOut2}</td>
-              <td className="r">{r.mealBreak2Minutes || ""}</td>
               <td className="r">{r.payStdHours.toFixed(2)}</td>
               <td className="r">{r.payOtHours.toFixed(2)}</td>
               <td className="r">{r.payDtHours.toFixed(2)}</td>
