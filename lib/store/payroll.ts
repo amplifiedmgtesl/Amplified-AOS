@@ -644,18 +644,27 @@ export function applyDailyPayrollRules(input: {
   let payDt  = dt;
   const reasons: string[] = [];
 
-  // Rule 1: 5-hour minimum per day. Bump pay_std up to satisfy floor.
+  // Rule 1: 5-hour minimum per day. Bump up to satisfy floor.
+  // The minimum can only fire when billed < 5, which means the day never
+  // crossed an OT/DT threshold — so the bump always lands in pay_std.
   const afterMinTotal = Math.max(billedTotal, PAYROLL_DAILY_MINIMUM_HOURS);
   if (afterMinTotal > billedTotal) {
     payStd += (afterMinTotal - billedTotal);
     reasons.push(`5hr min applied (+${(afterMinTotal - billedTotal).toFixed(2)})`);
   }
 
-  // Rule 2: round UP to next whole hour. Extra absorbed by pay_std.
+  // Rule 2: round UP to next whole hour. Extra extends whichever bucket
+  // the day's hours ended in (DT > OT > std priority). Connor's rule:
+  // the rounded-up extra represents continuation of the last-active
+  // bucket, not phantom std time. Avoids paying $40-std for a half-hour
+  // that was actually a $80-DT half-hour.
   const beforeCeilTotal = payStd + payOt + payDt;
   const ceilTotal = Math.ceil(beforeCeilTotal - 1e-9);
   if (ceilTotal > beforeCeilTotal) {
-    payStd += (ceilTotal - beforeCeilTotal);
+    const extra = ceilTotal - beforeCeilTotal;
+    if      (payDt > 1e-9) payDt += extra;
+    else if (payOt > 1e-9) payOt += extra;
+    else                   payStd += extra;
     reasons.push(`rounded ${beforeCeilTotal.toFixed(2)}→${ceilTotal}`);
   }
 
@@ -849,11 +858,18 @@ export function applyDailyRulesToCandidates(
         for (const r of list) {
           const rowBilled = r.stdHours + r.otHours + r.dtHours;
           const extra = rowBilled > 0 ? share : 0;
+          // Each row's share extends its own last-active bucket (DT > OT > std).
+          let pStd = r.stdHours, pOt = r.otHours, pDt = r.dtHours;
+          if (extra > 1e-9) {
+            if      (r.dtHours > 1e-9) pDt += extra;
+            else if (r.otHours > 1e-9) pOt += extra;
+            else                       pStd += extra;
+          }
           out.set(r.timesheetEntryId, {
-            payStdHours: round2(r.stdHours + extra),
-            payOtHours:  round2(r.otHours),
-            payDtHours:  round2(r.dtHours),
-            payTotalHours: round2(r.stdHours + extra + r.otHours + r.dtHours),
+            payStdHours: round2(pStd),
+            payOtHours:  round2(pOt),
+            payDtHours:  round2(pDt),
+            payTotalHours: round2(pStd + pOt + pDt),
             payAdjustmentReason: rowBilled > 0 ? reason : null,
           });
         }
@@ -868,9 +884,17 @@ export function applyDailyRulesToCandidates(
 
     for (const r of list) {
       const isAbsorber = r.timesheetEntryId === absorberId;
-      const payStd = isAbsorber ? r.stdHours + dayExtra : r.stdHours;
-      const payOt  = r.otHours;
-      const payDt  = r.dtHours;
+      // Bump goes to the absorber row's last-active bucket (DT > OT > std).
+      // Same priority as applyDailyPayrollRules — extra extends the bucket
+      // the row was in at end of shift, not phantom std time.
+      let payStd = r.stdHours;
+      let payOt  = r.otHours;
+      let payDt  = r.dtHours;
+      if (isAbsorber && dayExtra > 1e-9) {
+        if      (r.dtHours > 1e-9) payDt += dayExtra;
+        else if (r.otHours > 1e-9) payOt += dayExtra;
+        else                       payStd += dayExtra;
+      }
       out.set(r.timesheetEntryId, {
         payStdHours: round2(payStd),
         payOtHours:  round2(payOt),
