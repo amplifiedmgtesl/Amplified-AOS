@@ -633,6 +633,12 @@ export function applyDailyPayrollRules(input: {
   const dt  = Math.max(0, input.dtHours  || 0);
   const billedTotal = std + ot + dt;
 
+  // No-show: zero billed hours means the employee didn't work that day.
+  // Neither the daily minimum nor the round-up applies. Pay = 0.
+  if (billedTotal === 0) {
+    return { payStdHours: 0, payOtHours: 0, payDtHours: 0, payTotalHours: 0, reasons: [] };
+  }
+
   let payStd = std;
   let payOt  = ot;
   let payDt  = dt;
@@ -795,37 +801,60 @@ export function applyDailyRulesToCandidates(
 
   for (const list of groups.values()) {
     const billedTotal = list.reduce((acc, r) => acc + r.stdHours + r.otHours + r.dtHours, 0);
+
+    // No-show day: nobody worked. Daily rules don't apply — pay is 0.
+    // The "Remove zero-hour entries" cleanup button still applies, but
+    // even without it the math is correct (no phantom 5hr min).
+    if (billedTotal === 0) {
+      for (const r of list) {
+        out.set(r.timesheetEntryId, {
+          payStdHours: 0, payOtHours: 0, payDtHours: 0,
+          payTotalHours: 0, payAdjustmentReason: null,
+        });
+      }
+      continue;
+    }
+
     const afterMin   = Math.max(billedTotal, PAYROLL_DAILY_MINIMUM_HOURS);
     const ceilTotal  = Math.ceil(afterMin - 1e-9);
     const dayExtra   = ceilTotal - billedTotal;
 
-    // Pick the row that absorbs the day's bump: highest pay rate wins.
-    // Ties / no-rate-info fall back to the first row (deterministic).
-    // When all billed hours are zero, the rule is the same — the
-    // highest-rate row gets the 5hr minimum.
+    // Pick the row that absorbs the day's bump: highest pay rate among
+    // ROWS THAT WORKED (rowBilled > 0). Zero-hour rows can't absorb the
+    // minimum — they didn't work. Ties / no-rate-info fall back to the
+    // first worked row (deterministic).
     let absorberId: string | null = null;
     if (dayExtra > 1e-9) {
       let maxRate = -Infinity;
       for (const r of list) {
+        const rowBilled = r.stdHours + r.otHours + r.dtHours;
+        if (rowBilled <= 0) continue;
         const rate = ratesByRowId?.get(r.timesheetEntryId) ?? 0;
         if (rate > maxRate) { maxRate = rate; absorberId = r.timesheetEntryId; }
       }
-      if (absorberId == null) absorberId = list[0].timesheetEntryId;
-      // If no row has a rate, spread the bump equally so we don't bias
-      // toward whichever row happened to sort first.
-      if (maxRate <= 0 && list.length > 1) {
+      if (absorberId == null) {
+        // Fall back to first row that actually worked
+        for (const r of list) {
+          if (r.stdHours + r.otHours + r.dtHours > 0) { absorberId = r.timesheetEntryId; break; }
+        }
+      }
+      // Multiple worked rows but no rates known → equal split across worked rows
+      const workedRows = list.filter((r) => r.stdHours + r.otHours + r.dtHours > 0);
+      if (maxRate <= 0 && workedRows.length > 1) {
         const reasons: string[] = [];
         if (afterMin > billedTotal) reasons.push("5hr min applied");
         if (ceilTotal > afterMin)   reasons.push("rounded up to whole hour");
         const reason = reasons.length ? reasons.join("; ") + " (split equally — no rates)" : null;
-        const share = dayExtra / list.length;
+        const share = dayExtra / workedRows.length;
         for (const r of list) {
+          const rowBilled = r.stdHours + r.otHours + r.dtHours;
+          const extra = rowBilled > 0 ? share : 0;
           out.set(r.timesheetEntryId, {
-            payStdHours: round2(r.stdHours + share),
+            payStdHours: round2(r.stdHours + extra),
             payOtHours:  round2(r.otHours),
             payDtHours:  round2(r.dtHours),
-            payTotalHours: round2(r.stdHours + share + r.otHours + r.dtHours),
-            payAdjustmentReason: reason,
+            payTotalHours: round2(r.stdHours + extra + r.otHours + r.dtHours),
+            payAdjustmentReason: rowBilled > 0 ? reason : null,
           });
         }
         continue;
