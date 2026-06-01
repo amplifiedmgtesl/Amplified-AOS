@@ -1044,6 +1044,101 @@ export async function updatePayrollRunEntryBaseRate(
   if (error) throw error;
 }
 
+/** Re-apply the daily payroll rules (5hr minimum + round-up to next whole
+ *  hour) to every entry on a DRAFT run. Groups by (employee_key, work_date)
+ *  the same way snapshot does — so daily totals get the floor + ceiling
+ *  applied, then allocated back to individual rows proportionally.
+ *
+ *  Use case: an existing run was seeded via SQL bypass (e.g. Bruno's data
+ *  fix), or the operator added entries before Connor's rules were live.
+ *  This button lets them bring the run into compliance without removing
+ *  and re-adding every row.
+ *
+ *  total_pay recomputes from the resolved rates × the new pay_* buckets.
+ *  Clears ot_calculated_at since weekly totals just changed.
+ *
+ *  Returns the count of rows updated. */
+export async function recomputeDailyRulesForRun(runId: string): Promise<number> {
+  const { data: runRow, error: runErr } = await supabase
+    .from("payroll_runs").select("status").eq("id", runId).single();
+  if (runErr) throw runErr;
+  if ((runRow as any).status !== "draft") {
+    throw new Error(`Cannot recompute — run is ${(runRow as any).status}. Reopen it first.`);
+  }
+
+  const { data, error } = await supabase
+    .from("payroll_run_entries")
+    .select(`
+      id, timesheet_entry_id, employee_key, work_date,
+      std_hours, ot_hours, dt_hours,
+      std_rate, is_holiday, holiday_multiplier, pay_adjustment_reason
+    `)
+    .eq("payroll_run_id", runId);
+  if (error) throw error;
+  if (!data || data.length === 0) return 0;
+
+  // Reuse applyDailyRulesToCandidates by adapting the shape.
+  const candidateShape = (data as any[]).map((r) => ({
+    timesheetEntryId: r.id,  // use run-entry id as the lookup key
+    employeeKey: r.employee_key ?? null,
+    workDate: r.work_date ?? null,
+    stdHours: Number(r.std_hours ?? 0),
+    otHours:  Number(r.ot_hours  ?? 0),
+    dtHours:  Number(r.dt_hours  ?? 0),
+  }));
+  const dailyAdjustments = applyDailyRulesToCandidates(candidateShape);
+
+  let updated = 0;
+  for (const r of (data as any[])) {
+    const pay = dailyAdjustments.get(r.id);
+    if (!pay) continue;
+    const calc = recomputePayFromBase({
+      baseRate: Number(r.std_rate ?? 0),
+      payStdHours: pay.payStdHours,
+      payOtHours:  pay.payOtHours,
+      payDtHours:  pay.payDtHours,
+      payTotalHours: pay.payTotalHours,
+      isHoliday: !!r.is_holiday,
+      holidayMultiplier: r.holiday_multiplier,
+    });
+
+    // Merge the new reason with any pre-existing reason (e.g. weekly OT
+    // spill from a prior finalize that was reopened — though in practice
+    // a reopen would clear OT calc state).
+    const newReason = pay.payAdjustmentReason;
+    const existingReason = r.pay_adjustment_reason as string | null;
+    const mergedReason =
+      newReason && existingReason && !existingReason.includes(newReason)
+        ? `${existingReason}; ${newReason}`
+        : (newReason ?? existingReason);
+
+    const { error: updErr } = await supabase
+      .from("payroll_run_entries")
+      .update({
+        pay_std_hours: pay.payStdHours,
+        pay_ot_hours:  pay.payOtHours,
+        pay_dt_hours:  pay.payDtHours,
+        pay_total_hours: pay.payTotalHours,
+        pay_adjustment_reason: mergedReason,
+        std_rate: calc.stdRate,
+        ot_rate:  calc.otRate,
+        dt_rate:  calc.dtRate,
+        total_pay: calc.totalPay,
+      })
+      .eq("id", r.id);
+    if (updErr) throw updErr;
+    updated += 1;
+  }
+
+  // Hours just moved — any prior OT calc is stale.
+  await supabase
+    .from("payroll_runs")
+    .update({ ot_calculated_at: null, ot_calculated_by: null })
+    .eq("id", runId);
+
+  return updated;
+}
+
 /** Re-normalize every entry on a draft run: OT = std × 1.5, DT = std × 2,
  *  total_pay recomputed accordingly. Useful after pulling in entries that
  *  were typed with legacy non-multiplier-consistent rates (35/52/70 etc.).

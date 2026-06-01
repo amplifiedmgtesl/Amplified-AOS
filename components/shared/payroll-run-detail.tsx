@@ -10,6 +10,7 @@ import {
   voidPayrollRun,
   removeEntryFromRun,
   removeZeroHourEntriesFromRun,
+  recomputeDailyRulesForRun,
   updatePayrollRunMeta,
   updatePayrollRunEntryBaseRate,
   normalizePayrollRunRates,
@@ -479,6 +480,26 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
     } finally { setBusy(null); }
   }
 
+  async function handleRecomputeDailyRules() {
+    if (!isDraft) return;
+    if (!confirm(
+      `Re-apply Connor's daily payroll rules to every entry?\n\n` +
+      `• ${PAYROLL_DAILY_MINIMUM_HOURS}-hour daily minimum per (employee, work date)\n` +
+      `• Round up to next whole hour\n` +
+      `• Extras land in pay_std (OT/DT classifications preserved)\n\n` +
+      `Use this when entries were added before the rules were live or via a data fix. ` +
+      `Total pay recomputes from the existing rates. The weekly OT calc resets.`
+    )) return;
+    setBusy("recompute-daily");
+    try {
+      const n = await recomputeDailyRulesForRun(runId);
+      await load();
+      alert(`Re-applied daily rules to ${n} entr${n === 1 ? "y" : "ies"}.`);
+    } catch (e: any) {
+      alert(`Recompute failed: ${e?.message ?? "unknown error"}`);
+    } finally { setBusy(null); }
+  }
+
   async function handlePreviewOT() {
     if (!isDraft) return;
     setBusy("preview-ot");
@@ -593,6 +614,14 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
           </button>
           {isDraft && (
             <>
+              <button
+                className="secondary"
+                onClick={handleRecomputeDailyRules}
+                disabled={!!busy || entries.length === 0}
+                title={`Re-apply the ${PAYROLL_DAILY_MINIMUM_HOURS}-hour daily minimum and whole-hour round-up to every entry. Use after data fixes or when entries were added before the rules were live.`}
+              >
+                {busy === "recompute-daily" ? "Applying…" : "📐 Apply daily rules"}
+              </button>
               <button
                 className="secondary"
                 onClick={handlePreviewOT}
