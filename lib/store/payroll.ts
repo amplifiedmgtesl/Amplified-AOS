@@ -356,6 +356,20 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
   // (5hr daily minimum + round up to whole hour). The weekly 40hr spill
   // is NOT applied here — it runs at finalize time so we can see hours
   // from other finalized runs in the same week.
+  //
+  // Resolve pay rates FIRST so applyDailyRulesToCandidates can route
+  // daily bumps to the highest-rate row in each (employee, date) group
+  // (Connor's rule, 2026-05-31).
+  const resolutions = await Promise.all(input.entries.map((e) => resolvePayRateForEntry({
+    employeeKey: e.employeeKey,
+    specialtyId: e.specialtyId,
+    jobId: e.jobId,
+    workDate: e.workDate,
+  })));
+  const ratesByRowId = new Map<string, number>();
+  for (let i = 0; i < input.entries.length; i++) {
+    ratesByRowId.set(input.entries[i].timesheetEntryId, resolutions[i].stdRate);
+  }
   const dailyAdjustments = applyDailyRulesToCandidates(input.entries.map(e => ({
     timesheetEntryId: e.timesheetEntryId,
     employeeKey: e.employeeKey,
@@ -363,14 +377,9 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
     stdHours: e.stdHours,
     otHours: e.otHours,
     dtHours: e.dtHours,
-  })));
-  const rows = await Promise.all(input.entries.map(async (e) => {
-    const resolved = await resolvePayRateForEntry({
-      employeeKey: e.employeeKey,
-      specialtyId: e.specialtyId,
-      jobId: e.jobId,
-      workDate: e.workDate,
-    });
+  })), ratesByRowId);
+  const rows = input.entries.map((e, i) => {
+    const resolved = resolutions[i];
     const pay = dailyAdjustments.get(e.timesheetEntryId) ?? {
       payStdHours: e.stdHours, payOtHours: e.otHours, payDtHours: e.dtHours,
       payTotalHours: e.totalHours, payAdjustmentReason: null,
@@ -413,7 +422,7 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
       holiday_multiplier: e.holidayMultiplier,
       total_pay: calc.totalPay,
     };
-  }));
+  });
 
   const { error: rowsErr } = await supabase.from("payroll_run_entries").insert(rows);
   if (rowsErr) {
@@ -454,11 +463,19 @@ export async function addEntriesToPayrollRun(
     throw new Error(`Cannot add entries — run is ${(runRow as any).status}. Reopen it first.`);
   }
 
-  // Same auto-fill pattern as createPayrollRun: snapshot uses resolved
-  // pay rates (employee override → job rate card → master), then recompute.
-  // Daily rules (5hr min + round up) recombine the newly-added rows with
-  // any rows already on the run for the same (employee, work_date) so the
-  // daily floor isn't double-applied. We re-snapshot all affected days.
+  // Same auto-fill pattern as createPayrollRun: resolve pay rates FIRST,
+  // then apply daily rules (5hr min + round up) with rate context so the
+  // bumps route to the highest-rate row in each (employee, date) group.
+  const resolutions = await Promise.all(entries.map((e) => resolvePayRateForEntry({
+    employeeKey: e.employeeKey,
+    specialtyId: e.specialtyId,
+    jobId: e.jobId,
+    workDate: e.workDate,
+  })));
+  const ratesByRowId = new Map<string, number>();
+  for (let i = 0; i < entries.length; i++) {
+    ratesByRowId.set(entries[i].timesheetEntryId, resolutions[i].stdRate);
+  }
   const dailyAdjustments = applyDailyRulesToCandidates(entries.map(e => ({
     timesheetEntryId: e.timesheetEntryId,
     employeeKey: e.employeeKey,
@@ -466,7 +483,7 @@ export async function addEntriesToPayrollRun(
     stdHours: e.stdHours,
     otHours: e.otHours,
     dtHours: e.dtHours,
-  })));
+  })), ratesByRowId);
 
   // Adding entries to an existing run can cross a daily-group boundary
   // (e.g. another shift for an employee already on the run for that day).
@@ -476,13 +493,8 @@ export async function addEntriesToPayrollRun(
     .update({ ot_calculated_at: null, ot_calculated_by: null })
     .eq("id", runId);
 
-  const rows = await Promise.all(entries.map(async (e) => {
-    const resolved = await resolvePayRateForEntry({
-      employeeKey: e.employeeKey,
-      specialtyId: e.specialtyId,
-      jobId: e.jobId,
-      workDate: e.workDate,
-    });
+  const rows = entries.map((e, i) => {
+    const resolved = resolutions[i];
     const pay = dailyAdjustments.get(e.timesheetEntryId) ?? {
       payStdHours: e.stdHours, payOtHours: e.otHours, payDtHours: e.dtHours,
       payTotalHours: e.totalHours, payAdjustmentReason: null,
@@ -525,7 +537,7 @@ export async function addEntriesToPayrollRun(
     holiday_multiplier: e.holidayMultiplier,
     total_pay: calc.totalPay,
     };
-  }));
+  });
   const { error } = await supabase.from("payroll_run_entries").insert(rows);
   if (error) throw error;
 
@@ -747,21 +759,24 @@ export function applyWeeklySpill(rows: WeekHourRow[]): WeeklySpillResult {
 }
 
 /** Apply per-day rules to a set of candidate rows from the same payroll
- *  candidate list. Groups by (employee_key|null, work_date), sums billed
- *  hours, then runs applyDailyPayrollRules. Returns a map keyed by the
- *  individual candidate's timesheetEntryId so the caller can write each
- *  row's share of the day's pay buckets back. The day's pay buckets are
- *  split across that day's rows proportionally to their billed totals so
- *  every row gets a clean snapshot.
+ *  candidate list. Groups by (employee_key|null, work_date), computes any
+ *  daily bumps (5hr minimum + round-up), and allocates the bumps to the
+ *  HIGHEST-PAYING row in that day's group (Connor's rule, 2026-05-31).
+ *  Other rows keep their billed std/ot/dt unchanged.
+ *
+ *  The optional `ratesByRowId` map lets the caller pre-resolve pay rates
+ *  per row so the highest-rate selection works. Without it, the bump
+ *  goes to the first row in the group (deterministic fallback).
  *
  *  Edge case — zero billed hours on a day (someone keyed all blanks). The
- *  daily rule still bumps to 5 (per Connor's "5hr minimum"). We assign
- *  the whole 5hr to the single row; if there are multiple zero-rows we
- *  spread equally.
+ *  daily rule still bumps to 5 (per Connor's "5hr minimum"). The whole
+ *  5hr goes to the highest-rate row, or split equally if all rates are
+ *  unknown.
  */
 export function applyDailyRulesToCandidates(
   rows: { timesheetEntryId: string; employeeKey: string | null; workDate: string | null;
           stdHours: number; otHours: number; dtHours: number; }[],
+  ratesByRowId?: Map<string, number>,
 ): Map<string, { payStdHours: number; payOtHours: number; payDtHours: number;
                   payTotalHours: number; payAdjustmentReason: string | null; }> {
   type GroupKey = string;
@@ -776,61 +791,63 @@ export function applyDailyRulesToCandidates(
 
   const out = new Map<string, { payStdHours: number; payOtHours: number; payDtHours: number;
                                   payTotalHours: number; payAdjustmentReason: string | null; }>();
+  const round2 = (n: number) => Math.round(n * 100) / 100;
 
   for (const list of groups.values()) {
-    const sum = list.reduce((acc, r) => ({
-      stdHours: acc.stdHours + r.stdHours,
-      otHours:  acc.otHours  + r.otHours,
-      dtHours:  acc.dtHours  + r.dtHours,
-    }), { stdHours: 0, otHours: 0, dtHours: 0 });
+    const billedTotal = list.reduce((acc, r) => acc + r.stdHours + r.otHours + r.dtHours, 0);
+    const afterMin   = Math.max(billedTotal, PAYROLL_DAILY_MINIMUM_HOURS);
+    const ceilTotal  = Math.ceil(afterMin - 1e-9);
+    const dayExtra   = ceilTotal - billedTotal;
 
-    const day = applyDailyPayrollRules(sum);
-    const reason = day.reasons.length > 0 ? day.reasons.join("; ") : null;
-    const billedTotal = sum.stdHours + sum.otHours + sum.dtHours;
-
-    // Allocate the day's pay buckets back to individual rows.
-    // For non-zero days: each row gets its share proportional to its billed total.
-    // For zero days: split equally across rows.
-    for (let i = 0; i < list.length; i++) {
-      const r = list[i];
-      const rowBilled = r.stdHours + r.otHours + r.dtHours;
-      const isLast = i === list.length - 1;
-      let payStd: number, payOt: number, payDt: number;
-
-      if (billedTotal > 0) {
-        const share = rowBilled / billedTotal;
-        payStd = day.payStdHours * share;
-        payOt  = day.payOtHours  * share;
-        payDt  = day.payDtHours  * share;
-      } else {
-        // All rows have zero billed → split the 5hr minimum equally.
-        payStd = day.payStdHours / list.length;
-        payOt  = day.payOtHours  / list.length;
-        payDt  = day.payDtHours  / list.length;
+    // Pick the row that absorbs the day's bump: highest pay rate wins.
+    // Ties / no-rate-info fall back to the first row (deterministic).
+    // When all billed hours are zero, the rule is the same — the
+    // highest-rate row gets the 5hr minimum.
+    let absorberId: string | null = null;
+    if (dayExtra > 1e-9) {
+      let maxRate = -Infinity;
+      for (const r of list) {
+        const rate = ratesByRowId?.get(r.timesheetEntryId) ?? 0;
+        if (rate > maxRate) { maxRate = rate; absorberId = r.timesheetEntryId; }
       }
-
-      // Last row absorbs rounding drift so the sum reconciles exactly.
-      if (isLast) {
-        const priorStd = Array.from(out.values()).reduce((a, v) => {
-          // only consider rows in this same day's group already assigned
-          return a;
-        }, 0);
-        // simpler: just round and let drift be at most a penny per day; reconcile in finalize totals
-        payStd = +(payStd).toFixed(2);
-        payOt  = +(payOt).toFixed(2);
-        payDt  = +(payDt).toFixed(2);
-      } else {
-        payStd = +(payStd).toFixed(2);
-        payOt  = +(payOt).toFixed(2);
-        payDt  = +(payDt).toFixed(2);
+      if (absorberId == null) absorberId = list[0].timesheetEntryId;
+      // If no row has a rate, spread the bump equally so we don't bias
+      // toward whichever row happened to sort first.
+      if (maxRate <= 0 && list.length > 1) {
+        const reasons: string[] = [];
+        if (afterMin > billedTotal) reasons.push("5hr min applied");
+        if (ceilTotal > afterMin)   reasons.push("rounded up to whole hour");
+        const reason = reasons.length ? reasons.join("; ") + " (split equally — no rates)" : null;
+        const share = dayExtra / list.length;
+        for (const r of list) {
+          out.set(r.timesheetEntryId, {
+            payStdHours: round2(r.stdHours + share),
+            payOtHours:  round2(r.otHours),
+            payDtHours:  round2(r.dtHours),
+            payTotalHours: round2(r.stdHours + share + r.otHours + r.dtHours),
+            payAdjustmentReason: reason,
+          });
+        }
+        continue;
       }
+    }
 
+    const reasons: string[] = [];
+    if (afterMin > billedTotal) reasons.push("5hr min applied");
+    if (ceilTotal > afterMin)   reasons.push("rounded up to whole hour");
+    const reason = reasons.length ? reasons.join("; ") : null;
+
+    for (const r of list) {
+      const isAbsorber = r.timesheetEntryId === absorberId;
+      const payStd = isAbsorber ? r.stdHours + dayExtra : r.stdHours;
+      const payOt  = r.otHours;
+      const payDt  = r.dtHours;
       out.set(r.timesheetEntryId, {
-        payStdHours: payStd,
-        payOtHours:  payOt,
-        payDtHours:  payDt,
-        payTotalHours: +(payStd + payOt + payDt).toFixed(2),
-        payAdjustmentReason: reason,
+        payStdHours: round2(payStd),
+        payOtHours:  round2(payOt),
+        payDtHours:  round2(payDt),
+        payTotalHours: round2(payStd + payOt + payDt),
+        payAdjustmentReason: isAbsorber ? reason : null,
       });
     }
   }
@@ -1078,6 +1095,8 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
   if (!data || data.length === 0) return 0;
 
   // Reuse applyDailyRulesToCandidates by adapting the shape.
+  // Pass the row's existing std_rate so the bump routes to the highest-
+  // rate row per (employee, date) group.
   const candidateShape = (data as any[]).map((r) => ({
     timesheetEntryId: r.id,  // use run-entry id as the lookup key
     employeeKey: r.employee_key ?? null,
@@ -1086,7 +1105,11 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
     otHours:  Number(r.ot_hours  ?? 0),
     dtHours:  Number(r.dt_hours  ?? 0),
   }));
-  const dailyAdjustments = applyDailyRulesToCandidates(candidateShape);
+  const ratesByRowId = new Map<string, number>();
+  for (const r of data as any[]) {
+    ratesByRowId.set(r.id, Number(r.std_rate ?? 0));
+  }
+  const dailyAdjustments = applyDailyRulesToCandidates(candidateShape, ratesByRowId);
 
   let updated = 0;
   for (const r of (data as any[])) {
