@@ -92,21 +92,41 @@ export default function PayrollPdfView({ id }: { id: string }) {
 
   // Per-employee aggregate + grand total.
   const empRows = useMemo(() => {
-    type EmpAgg = { name: string; position: string; stdHours: number; otHours: number; dtHours: number; totalHours: number; totalPay: number; entries: number };
+    // Track a set of distinct (position | specialty) strings per employee.
+    // If an employee worked more than one role on the run, show "Multiple"
+    // — listing just the first role is misleading (e.g. Ryan Lane worked
+    // Rigger + Stagehand + Crew Chief on Bruno). Rate is intentionally
+    // omitted from the summary table for the same reason — varies per row.
+    type EmpAgg = {
+      name: string;
+      roles: Set<string>;
+      stdHours: number; otHours: number; dtHours: number;
+      totalHours: number; totalPay: number; entries: number;
+    };
     const m = new Map<string, EmpAgg>();
     for (const r of rows) {
       const name = `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || r.email || "—";
-      const cur = m.get(name) ?? { name, position: r.position ?? "", stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, totalPay: 0, entries: 0 };
+      const cur = m.get(name) ?? {
+        name, roles: new Set<string>(),
+        stdHours: 0, otHours: 0, dtHours: 0,
+        totalHours: 0, totalPay: 0, entries: 0,
+      };
       cur.stdHours += r.payStdHours;
       cur.otHours  += r.payOtHours;
       cur.dtHours  += r.payDtHours;
       cur.totalHours += r.payTotalHours;
       cur.totalPay   += r.totalPay;
       cur.entries += 1;
-      if (!cur.position && r.position) cur.position = r.position;
+      const role = [r.position, r.specialty].filter(Boolean).join(" / ");
+      if (role) cur.roles.add(role);
       m.set(name, cur);
     }
-    return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name));
+    return Array.from(m.values())
+      .map((e) => ({
+        ...e,
+        roleLabel: e.roles.size === 0 ? "" : e.roles.size === 1 ? Array.from(e.roles)[0] : "Multiple",
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [rows]);
 
   const grand = useMemo(() => rows.reduce(
@@ -219,7 +239,7 @@ export default function PayrollPdfView({ id }: { id: string }) {
             <thead>
               <tr>
                 <th>Employee</th>
-                <th>Position</th>
+                <th>Role</th>
                 <th className="r">Entries</th>
                 <th className="r">STD</th>
                 <th className="r">OT</th>
@@ -232,7 +252,7 @@ export default function PayrollPdfView({ id }: { id: string }) {
               {empRows.map((r) => (
                 <tr key={r.name}>
                   <td>{r.name}</td>
-                  <td>{r.position}</td>
+                  <td>{r.roleLabel}</td>
                   <td className="r">{r.entries}</td>
                   <td className="r">{r.stdHours.toFixed(2)}</td>
                   <td className="r">{r.otHours.toFixed(2)}</td>
