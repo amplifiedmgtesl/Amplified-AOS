@@ -92,6 +92,32 @@ export default function JobRequests() {
     return () => { cancelled = true; };
   }, [editingId, refreshKey]);
 
+  // Shift count for the editing job. Used by the "no shifts defined" warning
+  // banner. When zero, timekeeping has no shift picker and payroll's daily
+  // rules fall back to (position) grouping instead of (shift, position) —
+  // which works but is less precise on multi-shift days.
+  const [shiftCount, setShiftCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!editingId) { setShiftCount(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { supabase } = await import("@/lib/supabase/client");
+        const { count, error } = await supabase
+          .from("job_request_shifts")
+          .select("id", { count: "exact", head: true })
+          .eq("job_request_id", editingId)
+          .eq("is_active", true);
+        if (cancelled) return;
+        if (error) { console.error("[job-requests] shift count:", error); return; }
+        setShiftCount(count ?? 0);
+      } catch (err) {
+        console.error("[job-requests] shift count load:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editingId, refreshKey]);
+
   // Header-vs-days mismatch: form's date range no longer covers the actual
   // day rows. Soft warning — header doesn't auto-add/remove days. Operator
   // fixes by going to the Days tab and removing/adding day rows manually.
@@ -759,6 +785,27 @@ export default function JobRequests() {
                 })}
             </select>
           </div>
+
+          {editingId && shiftCount === 0 ? (
+            <div style={{
+              marginTop: 12,
+              padding: "8px 12px",
+              background: "#fdf3d8",
+              border: "1px solid #d8a800",
+              borderRadius: 4,
+              fontSize: 13,
+            }}>
+              <strong>⚠ No shifts defined on this job.</strong>
+              <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
+                Timekeeping won't show a shift picker, and payroll's daily rules
+                (5-hour minimum, round-up) will group by position instead of by
+                shift. That works for simple jobs, but multi-shift days
+                (morning call + load-out, etc.) won't get separate 5-hour
+                minimums. <strong>Set up shifts on the Shifts tab before
+                timekeeping starts.</strong>
+              </div>
+            </div>
+          ) : null}
 
           {headerDaysMismatch ? (
             <div style={{

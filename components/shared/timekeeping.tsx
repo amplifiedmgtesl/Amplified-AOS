@@ -823,6 +823,26 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
             }}>Download / Print PDF</button>
           </div>
         </div>
+        {pickerKind === "job" && !jobHasShifts && timesheet && (
+          <div style={{
+            marginTop: 12,
+            padding: "8px 12px",
+            background: "#fdf3d8",
+            border: "1px solid #d8a800",
+            borderRadius: 4,
+            fontSize: 13,
+          }}>
+            <strong>⚠ No shifts defined on this job.</strong>
+            <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
+              The Shift dropdown is hidden because there's nothing to pick.
+              Payroll's daily rules (5-hour minimum, round-up) will group by
+              position instead of by shift. Multi-shift days
+              (morning call + load-out) won't get separate 5-hour minimums.
+              Open the job request and set up shifts on the <strong>Shifts</strong> tab
+              before approving these timesheets.
+            </div>
+          </div>
+        )}
         <div className="action-row" style={{ marginTop: 12 }}>
           {pickerKind === "job" ? (
             <button
