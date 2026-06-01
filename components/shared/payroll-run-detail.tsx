@@ -25,6 +25,12 @@ import {
 } from "@/lib/store/payroll";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "@/lib/store/types";
 import { loadJobRequests } from "@/lib/store/app-store";
+import { useUserEmail } from "@/lib/auth/use-user-email";
+
+// Owner-only recovery actions (e.g. "Apply daily rules") are gated to
+// this email. Daily rules auto-apply at snapshot time in the normal flow;
+// the button is only needed when entries were seeded via SQL bypass.
+const OWNER_EMAIL = "jobrien@synergypro.com";
 
 function statusBadge(s: PayrollRunStatus) {
   const map: Record<PayrollRunStatus, { bg: string; fg: string; label: string }> = {
@@ -307,6 +313,8 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
   const [entries, setEntries] = useState<PayrollRunEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
+  const userEmail = useUserEmail();
+  const isOwner = userEmail === OWNER_EMAIL;
 
   // Editable header fields (only used while status === 'draft').
   const [payDate, setPayDate] = useState("");
@@ -614,14 +622,16 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
           </button>
           {isDraft && (
             <>
-              <button
-                className="secondary"
-                onClick={handleRecomputeDailyRules}
-                disabled={!!busy || entries.length === 0}
-                title={`Re-apply the ${PAYROLL_DAILY_MINIMUM_HOURS}-hour daily minimum and whole-hour round-up to every entry. Use after data fixes or when entries were added before the rules were live.`}
-              >
-                {busy === "recompute-daily" ? "Applying…" : "📐 Apply daily rules"}
-              </button>
+              {isOwner && (
+                <button
+                  className="secondary"
+                  onClick={handleRecomputeDailyRules}
+                  disabled={!!busy || entries.length === 0}
+                  title={`Owner-only recovery action. Re-apply the ${PAYROLL_DAILY_MINIMUM_HOURS}-hour daily minimum and whole-hour round-up to every entry. Normal flow already applies these at snapshot time — use only after a SQL data fix bypassed the snapshot path.`}
+                >
+                  {busy === "recompute-daily" ? "Applying…" : "📐 Apply daily rules"}
+                </button>
+              )}
               <button
                 className="secondary"
                 onClick={handlePreviewOT}
