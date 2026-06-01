@@ -27,9 +27,10 @@ import { loadJobRequests } from "@/lib/store/app-store";
 import { printWithTitle } from "@/lib/print-with-title";
 
 function fmtDay(s: string) {
-  if (!s) return "";
-  const d = new Date(s + "T00:00:00");
-  return `${d.toLocaleDateString(undefined, { weekday: "short" })} ${s}`;
+  // Just the date — weekday previously prefixed (e.g. "Sat 2026-05-16") but
+  // adds 4-5 chars per row and pushed the detail table to wrap. Date alone
+  // is sufficient for payroll context.
+  return s || "";
 }
 
 function statusLabel(s: PayrollRunStatus): string {
