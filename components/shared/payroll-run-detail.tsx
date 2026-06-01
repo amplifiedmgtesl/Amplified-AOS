@@ -823,11 +823,22 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                             (r.payOtHours > 0 ? ` + ${r.payOtHours.toFixed(2)} × $${r.otRate.toFixed(2)} (OT)` : "") +
                             (r.payDtHours > 0 ? ` + ${r.payDtHours.toFixed(2)} × $${r.dtRate.toFixed(2)} (DT)` : "");
                         const adjusted = r.payAdjustmentReason ? r.payAdjustmentReason : null;
-                        // Per-bucket "billed vs pay" tooltips — only emit when they differ.
-                        const stdTip = Math.abs(r.payStdHours - r.stdHours) >= 0.005 ? `Billed: ${r.stdHours.toFixed(2)}` : undefined;
-                        const otTip  = Math.abs(r.payOtHours  - r.otHours)  >= 0.005 ? `Billed: ${r.otHours.toFixed(2)}`  : undefined;
-                        const dtTip  = Math.abs(r.payDtHours  - r.dtHours)  >= 0.005 ? `Billed: ${r.dtHours.toFixed(2)}`  : undefined;
-                        const totTip = Math.abs(r.payTotalHours - r.totalHours) >= 0.005 ? `Billed total: ${r.totalHours.toFixed(2)}` : undefined;
+                        // Per-bucket tooltip. Always shows:
+                        //   - "Billed: X.XX" if pay differs from billed
+                        //   - The adjustment reason (5hr min, rounded up, weekly OT) if any
+                        // So every adjusted row's cells explain themselves on hover, even
+                        // when the bucket happens to match billed (e.g. Matthew Harris's
+                        // 4hr Forklift row didn't bump but shares the shift's adjustment).
+                        const tipFor = (pay: number, billed: number, label: string) => {
+                          const parts: string[] = [];
+                          if (Math.abs(pay - billed) >= 0.005) parts.push(`${label}: ${billed.toFixed(2)}`);
+                          if (adjusted) parts.push(adjusted);
+                          return parts.length > 0 ? parts.join(" · ") : undefined;
+                        };
+                        const stdTip = tipFor(r.payStdHours, r.stdHours, "Billed");
+                        const otTip  = tipFor(r.payOtHours,  r.otHours,  "Billed");
+                        const dtTip  = tipFor(r.payDtHours,  r.dtHours,  "Billed");
+                        const totTip = tipFor(r.payTotalHours, r.totalHours, "Billed total");
                         return (
                         <tr key={r.id}>
                           <td>
