@@ -392,6 +392,11 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   // Phase 2: shift label lookup for the selected job, so per-row chips can
   // show which shift each entry belongs to. Loaded once per job switch.
   const [shiftLabelById, setShiftLabelById] = useState<Map<string, string>>(new Map());
+  /** True when the current job has at least one shift defined. The approve
+   *  gate uses this to require shift_id on every row — payroll's daily
+   *  rules group by shift, so a missing shift breaks the 5hr-min calc on
+   *  multi-shift days. */
+  const jobHasShifts = shiftLabelById.size > 0;
   // Phase 4: per-date holiday lookup for the selected job. Maps YYYY-MM-DD
   // to {isHoliday: true} for days the planner flagged. Drives auto-seeding
   // of isHoliday on new rows + the day-group "🎄 Holiday" badge.
@@ -518,6 +523,17 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
       );
       return;
     }
+    // Block approval if the job has shifts defined and this row has no
+    // shift_id. Payroll's daily rules group by shift — a missing shift
+    // means an unbumped 5hr-min day or wrong grouping.
+    if (jobHasShifts && !entry.shiftId) {
+      alert(
+        "Shift is required to approve this entry.\n\n" +
+        "Pick the shift (Load In, Steel, Production Load Out, etc.) from the " +
+        "Shift dropdown — payroll groups daily rules by shift."
+      );
+      return;
+    }
     await approveStaffEntry(entry.id, timesheet.id);
     setPendingEntries((prev) => prev.filter((e) => e.id !== entry.id));
     // Also add to in-memory timesheet so it appears in the grid immediately
@@ -554,19 +570,39 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
     if (eligible.length === 0) return;
     // Block approval when specialty_id is missing — but only for positions
     // that actually have specialties defined in the master. Positions with
-    // no specialty choices pass through.
-    const missingSpec = eligible.filter((r) => requiresSpecialty(r.positionId) && !r.specialtyId);
-    const targets = eligible.filter((r) => !(requiresSpecialty(r.positionId) && !r.specialtyId));
-    if (missingSpec.length > 0) {
-      const list = missingSpec.slice(0, 5)
-        .map((r) => `  • ${r.firstName ?? ""} ${r.lastName ?? ""} ${r.workDate ?? ""} (${r.position ?? "?"})`)
-        .join("\n");
-      const more = missingSpec.length > 5 ? `\n  …and ${missingSpec.length - 5} more` : "";
+    // no specialty choices pass through. Also block when shift_id is missing
+    // if the job has shifts defined.
+    const missingSpec  = eligible.filter((r) => requiresSpecialty(r.positionId) && !r.specialtyId);
+    const missingShift = eligible.filter((r) => jobHasShifts && !r.shiftId);
+    const targets      = eligible.filter((r) =>
+      !(requiresSpecialty(r.positionId) && !r.specialtyId)
+      && !(jobHasShifts && !r.shiftId)
+    );
+    if (missingSpec.length > 0 || missingShift.length > 0) {
+      const reasons: string[] = [];
+      if (missingSpec.length > 0) {
+        const list = missingSpec.slice(0, 5)
+          .map((r) => `  • ${r.firstName ?? ""} ${r.lastName ?? ""} ${r.workDate ?? ""} (${r.position ?? "?"})`)
+          .join("\n");
+        const more = missingSpec.length > 5 ? `\n  …and ${missingSpec.length - 5} more` : "";
+        reasons.push(
+          `${missingSpec.length} entr${missingSpec.length === 1 ? "y is" : "ies are"} missing a Specialty:\n${list}${more}`
+        );
+      }
+      if (missingShift.length > 0) {
+        const list = missingShift.slice(0, 5)
+          .map((r) => `  • ${r.firstName ?? ""} ${r.lastName ?? ""} ${r.workDate ?? ""} (${r.position ?? "?"})`)
+          .join("\n");
+        const more = missingShift.length > 5 ? `\n  …and ${missingShift.length - 5} more` : "";
+        reasons.push(
+          `${missingShift.length} entr${missingShift.length === 1 ? "y is" : "ies are"} missing a Shift:\n${list}${more}`
+        );
+      }
       const msg =
-        `${missingSpec.length} entr${missingSpec.length === 1 ? "y is" : "ies are"} missing a Specialty and won't be approved:\n\n${list}${more}\n\n` +
+        `These entries won't be approved:\n\n${reasons.join("\n\n")}\n\n` +
         (targets.length > 0
-          ? `Approve the remaining ${targets.length} entr${targets.length === 1 ? "y" : "ies"} that have specialty set?`
-          : `Set the Specialty on each row first, then approve.`);
+          ? `Approve the remaining ${targets.length} entr${targets.length === 1 ? "y" : "ies"}?`
+          : `Fill in the missing fields first, then approve.`);
       if (targets.length === 0) { alert(msg); return; }
       if (!confirm(msg)) return;
     }
@@ -1034,10 +1070,33 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                     <tbody key={row.id} className={`line-employee ${isCollapsed ? "is-collapsed-day" : ""}`} data-day={row.workDate || "no-date"}>
                     <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}${lockedClass}`} style={isLocked ? { opacity: 0.85 } : undefined}>
                       <td colSpan={r1Spans.emp}>
-                        {row.shiftId && shiftLabelById.has(row.shiftId) && (
-                          <div style={{ fontSize: 10, color: "#1a4a7a", marginBottom: 2 }}>
-                            🕒 {shiftLabelById.get(row.shiftId)}
-                          </div>
+                        {jobHasShifts && (
+                          <select
+                            className="input-tight"
+                            value={row.shiftId || ""}
+                            disabled={isLocked}
+                            onChange={(e) => updateRow(row.id, { shiftId: e.target.value || null })}
+                            title={
+                              !row.shiftId
+                                ? "Shift is required to approve — payroll groups daily rules by shift"
+                                : ""
+                            }
+                            required
+                            style={{
+                              fontSize: 11,
+                              marginBottom: 2,
+                              width: "auto",
+                              maxWidth: 200,
+                              ...(!row.shiftId && !isLocked
+                                ? { background: "#fff4d6", borderColor: "#e0c070" }
+                                : {}),
+                            }}
+                          >
+                            <option value="">🕒 — required —</option>
+                            {Array.from(shiftLabelById.entries()).map(([id, label]) => (
+                              <option key={id} value={id}>🕒 {label}</option>
+                            ))}
+                          </select>
                         )}
                         <span className="record-id" title="Timesheet entry id">{row.id}</span>
                         {isLocked ? (
