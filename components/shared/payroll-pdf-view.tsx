@@ -190,6 +190,7 @@ export default function PayrollPdfView({ id }: { id: string }) {
             <th>Date</th>
             <th>Employee</th>
             <th>Position</th>
+            <th>Specialty</th>
             <th>Job</th>
             <th>In 1</th>
             <th>Out 1</th>
@@ -209,12 +210,13 @@ export default function PayrollPdfView({ id }: { id: string }) {
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={18} style={{ textAlign: "center", color: "#888", padding: 8 }}>No entries.</td></tr>
+            <tr><td colSpan={19} style={{ textAlign: "center", color: "#888", padding: 8 }}>No entries.</td></tr>
           ) : rows.map((r) => (
             <tr key={r.id}>
               <td>{fmtDay(r.workDate || "")}{r.isHoliday && " 🎄"}</td>
               <td>{`${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || r.email || "—"}</td>
               <td>{r.position || ""}</td>
+              <td>{r.specialty || ""}</td>
               <td style={{ fontFamily: "monospace" }}>{r.jobId ? (jobNoById.get(r.jobId) ?? "") : ""}</td>
               <td>{r.timeIn1}</td>
               <td>{r.timeOut1}</td>

@@ -62,6 +62,8 @@ function rowToRunEntry(r: any): PayrollRunEntry {
     email: r.email ?? undefined,
     workDate: r.work_date ?? undefined,
     position: r.position ?? undefined,
+    specialtyId: r.specialty_id ?? undefined,
+    specialty: r.specialty ?? undefined,
     jobId: r.job_id ?? undefined,
     stdHours: Number(r.std_hours ?? 0),
     otHours: Number(r.ot_hours ?? 0),
@@ -109,6 +111,9 @@ export type PayrollCandidateRow = {
   /** Canonical specialty FK on the timesheet entry. Needed by
    *  resolvePayRateForEntry to look up the right rate-card row. */
   specialtyId: string | null;
+  /** Specialty display name (denormalized). Surfaces in the candidate
+   *  picker and gets snapshotted onto payroll_run_entries.specialty. */
+  specialty: string | null;
   jobId: string | null;
   jobClient: string;
   jobEventName: string;
@@ -182,6 +187,18 @@ export async function getPayrollCandidates(filters: PayrollCandidateFilters): Pr
     }
   }
 
+  // Look up specialty names for any candidate row that has specialty_id.
+  const specialtyIds = Array.from(new Set(available.map((r: any) => r.specialty_id).filter(Boolean)));
+  const specialtyNameById = new Map<string, string>();
+  if (specialtyIds.length > 0) {
+    const { data: specs, error: specsErr } = await supabase
+      .from("specialties")
+      .select("id, name")
+      .in("id", specialtyIds);
+    if (specsErr) { console.error("[payroll] getPayrollCandidates specialties:", specsErr); }
+    for (const s of specs ?? []) specialtyNameById.set((s as any).id, (s as any).name);
+  }
+
   // Look up job header info (job_no, client, event_name).
   const jobIds = Array.from(new Set(available.map((r: any) => r.job_id).filter(Boolean)));
   const jobByid = new Map<string, { jobNo: string | null; client: string; eventName: string }>();
@@ -209,6 +226,7 @@ export async function getPayrollCandidates(filters: PayrollCandidateFilters): Pr
       workDate: r.work_date ?? null,
       position: r.position ?? "",
       specialtyId: r.specialty_id ?? null,
+      specialty: r.specialty_id ? (specialtyNameById.get(r.specialty_id) ?? null) : null,
       jobId: r.job_id ?? null,
       jobClient: job?.client ?? "",
       jobEventName: job?.eventName ?? "",
@@ -376,6 +394,8 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
       email: e.email,
       work_date: e.workDate,
       position: e.position,
+      specialty_id: e.specialtyId,
+      specialty: e.specialty,
       job_id: e.jobId,
       std_hours: e.stdHours,
       ot_hours: e.otHours,
@@ -486,6 +506,8 @@ export async function addEntriesToPayrollRun(
     email: e.email,
     work_date: e.workDate,
     position: e.position,
+    specialty_id: e.specialtyId,
+    specialty: e.specialty,
     job_id: e.jobId,
     std_hours: e.stdHours,
     ot_hours: e.otHours,

@@ -398,6 +398,10 @@ export type PayrollRunEntry = {
   email?: string;
   workDate?: string;
   position?: string;
+  /** Specialty snapshot — denormalized name + FK. Lets the payroll grid
+   *  display "Rigger / Climber" without joining, and survives later renames. */
+  specialtyId?: string;
+  specialty?: string;
   jobId?: string;
   /** BILLED hours — snapshot of timesheet std/ot/dt (what the client pays).
    *  Frozen at insert time; never recomputed. */

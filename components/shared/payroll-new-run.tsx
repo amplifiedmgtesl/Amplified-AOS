@@ -271,6 +271,7 @@ export default function PayrollNewRun() {
                             <th>Date</th>
                             <th>Job</th>
                             <th>Position</th>
+                            <th>Specialty</th>
                             <th style={{ textAlign: "right" }}>Std</th>
                             <th style={{ textAlign: "right" }}>OT</th>
                             <th style={{ textAlign: "right" }}>DT</th>
@@ -288,6 +289,9 @@ export default function PayrollNewRun() {
                                 <td>{r.workDate || "—"}{r.isHoliday && <span className="badge" style={{ marginLeft: 6, background: "#ffe9c2", color: "#7a4a1a", fontSize: 11 }}>Holiday</span>}</td>
                                 <td>{jobLabel(r)}</td>
                                 <td>{r.position || "—"}</td>
+                                <td title={!r.specialty ? "Missing — pay rate won't auto-resolve" : undefined}>
+                                  {r.specialty || <span style={{ color: "#c0392b", fontStyle: "italic" }}>— missing —</span>}
+                                </td>
                                 <td style={{ textAlign: "right" }}>{r.stdHours.toFixed(1)}</td>
                                 <td style={{ textAlign: "right" }}>{r.otHours > 0 ? r.otHours.toFixed(1) : "—"}</td>
                                 <td style={{ textAlign: "right" }}>{r.dtHours > 0 ? r.dtHours.toFixed(1) : "—"}</td>

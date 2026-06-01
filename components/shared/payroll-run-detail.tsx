@@ -199,6 +199,7 @@ function AddEntriesPanel({
                           <th>Employee</th>
                           <th>Job</th>
                           <th>Position</th>
+                          <th>Specialty</th>
                           <th style={{ textAlign: "right" }}>Total</th>
                         </tr>
                       </thead>
@@ -227,6 +228,9 @@ function AddEntriesPanel({
                                   : <span className="muted" style={{ fontFamily: "inherit" }}>Office / Remote</span>}
                               </td>
                               <td>{r.position || "—"}</td>
+                              <td title={!r.specialty ? "Missing — pay rate won't auto-resolve" : undefined}>
+                                {r.specialty || <span style={{ color: "#c0392b", fontStyle: "italic" }}>— missing —</span>}
+                              </td>
                               <td style={{ textAlign: "right" }}><strong>{r.totalHours.toFixed(1)}</strong></td>
                             </tr>
                           );
@@ -708,6 +712,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                         <th>Date</th>
                         <th>Job</th>
                         <th>Position</th>
+                        <th>Specialty</th>
                         <th style={{ textAlign: "right" }} title={`Pay hours after Connor's rules: ${PAYROLL_DAILY_MINIMUM_HOURS}hr daily minimum, round up to next whole hour, weekly ${PAYROLL_WEEKLY_OT_THRESHOLD}hr OT spill (applied at finalize). Hover any cell to see the billed value if different.`}>Std</th>
                         <th style={{ textAlign: "right" }}>OT</th>
                         <th style={{ textAlign: "right" }}>DT</th>
@@ -749,6 +754,9 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                               : <span className="muted" style={{ fontFamily: "inherit" }}>Office / Remote</span>}
                           </td>
                           <td>{r.position || "—"}</td>
+                          <td title={!r.specialty ? "No specialty set — pay rate didn't auto-resolve from the rate card. Set the rate manually." : undefined}>
+                            {r.specialty || <span style={{ color: "#c0392b", fontStyle: "italic" }}>— missing —</span>}
+                          </td>
                           <td style={{ textAlign: "right" }} title={stdTip}>{r.payStdHours.toFixed(1)}</td>
                           <td style={{ textAlign: "right" }} title={otTip}>{r.payOtHours > 0 ? r.payOtHours.toFixed(1) : "—"}</td>
                           <td style={{ textAlign: "right" }} title={dtTip}>{r.payDtHours > 0 ? r.payDtHours.toFixed(1) : "—"}</td>
