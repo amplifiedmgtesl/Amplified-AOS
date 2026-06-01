@@ -494,6 +494,17 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
 
   async function handleApprove(entry: import("@/lib/store/types").TimeEntry) {
     if (!timesheet) return;
+    // Block approval if specialty isn't picked — payroll resolves pay rates
+    // by (job, specialty), so an approved row without specialty_id will get
+    // $0 pay rates and require operator override. Cheaper to fix here.
+    if (!entry.specialtyId) {
+      alert(
+        "Specialty is required to approve this entry.\n\n" +
+        "Pick the specific role (e.g. Climber vs Up Rigger) from the Specialty " +
+        "dropdown — payroll uses it to look up the pay rate."
+      );
+      return;
+    }
     await approveStaffEntry(entry.id, timesheet.id);
     setPendingEntries((prev) => prev.filter((e) => e.id !== entry.id));
     // Also add to in-memory timesheet so it appears in the grid immediately
@@ -526,7 +537,27 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   }
   async function handleApproveSelected() {
     if (!timesheet) return;
-    const targets = timesheet.rows.filter((r) => selectedIds.has(r.id) && r.status !== "approved" && r.employeeKey);
+    const eligible = timesheet.rows.filter((r) => selectedIds.has(r.id) && r.status !== "approved" && r.employeeKey);
+    if (eligible.length === 0) return;
+    // Block approval when specialty_id is missing. Same reasoning as
+    // handleApprove — payroll keys off (job, specialty) for pay rate
+    // resolution, so an unapproved-with-no-specialty path is the wrong
+    // moment to lock the row.
+    const missingSpec = eligible.filter((r) => !r.specialtyId);
+    const targets = eligible.filter((r) => !!r.specialtyId);
+    if (missingSpec.length > 0) {
+      const list = missingSpec.slice(0, 5)
+        .map((r) => `  • ${r.firstName ?? ""} ${r.lastName ?? ""} ${r.workDate ?? ""} (${r.position ?? "?"})`)
+        .join("\n");
+      const more = missingSpec.length > 5 ? `\n  …and ${missingSpec.length - 5} more` : "";
+      const msg =
+        `${missingSpec.length} entr${missingSpec.length === 1 ? "y is" : "ies are"} missing a Specialty and won't be approved:\n\n${list}${more}\n\n` +
+        (targets.length > 0
+          ? `Approve the remaining ${targets.length} entr${targets.length === 1 ? "y" : "ies"} that have specialty set?`
+          : `Set the Specialty on each row first, then approve.`);
+      if (targets.length === 0) { alert(msg); return; }
+      if (!confirm(msg)) return;
+    }
     if (targets.length === 0) return;
     setBusyBatch("approve");
     try {
@@ -1087,9 +1118,21 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                           value={row.specialtyId || ""}
                           disabled={isLocked || !row.positionId}
                           onChange={(e) => updateRow(row.id, { specialtyId: e.target.value || null })}
-                          title={!row.positionId ? "Pick a position first" : ""}
+                          title={
+                            !row.positionId
+                              ? "Pick a position first"
+                              : !row.specialtyId
+                                ? "Specialty is required to approve — pick the specific role (payroll uses it to look up pay rate)"
+                                : ""
+                          }
+                          required
+                          style={
+                            row.positionId && !row.specialtyId && !isLocked
+                              ? { background: "#fff4d6", borderColor: "#e0c070" }
+                              : undefined
+                          }
                         >
-                          <option value="">{row.positionId ? "— optional —" : "—"}</option>
+                          <option value="">{row.positionId ? "— required —" : "—"}</option>
                           {specialtiesFor(row.positionId).map((s) => (
                             <option key={s.id} value={s.id}>{s.name}</option>
                           ))}

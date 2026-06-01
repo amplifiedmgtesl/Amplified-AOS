@@ -362,11 +362,16 @@ export type PayrollRun = {
   periodEnd?: string;
   status: PayrollRunStatus;
   notes?: string;
+  /** First day of the pay week — 'sun' (Connor's default) or 'mon'. */
+  payWeekStart: "sun" | "mon";
   // Cached rollups maintained by trigger.
   entryCount: number;
   employeeCount: number;
   totalHours: number;
   totalPay: number;
+  /** Stamped by finalizePayrollRun after weekly OT spill is applied. */
+  otCalculatedAt?: string;
+  otCalculatedBy?: string;
   // Lifecycle audit
   finalizedAt?: string;
   finalizedBy?: string;
@@ -394,10 +399,21 @@ export type PayrollRunEntry = {
   workDate?: string;
   position?: string;
   jobId?: string;
+  /** BILLED hours — snapshot of timesheet std/ot/dt (what the client pays).
+   *  Frozen at insert time; never recomputed. */
   stdHours: number;
   otHours: number;
   dtHours: number;
   totalHours: number;
+  /** PAY hours — Connor's payroll rules applied (5hr min, round up, weekly
+   *  40hr spill). totalPay is computed from these, not from std/ot/dt. */
+  payStdHours: number;
+  payOtHours: number;
+  payDtHours: number;
+  payTotalHours: number;
+  /** Human-readable note about which rules adjusted the pay buckets,
+   *  e.g. "5hr min applied; 6.5→7 rounded; +2hr weekly OT spill". */
+  payAdjustmentReason?: string;
   stdRate: number;
   otRate: number;
   dtRate: number;

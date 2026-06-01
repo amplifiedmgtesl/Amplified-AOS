@@ -111,10 +111,10 @@ export default function PayrollPdfView({ id }: { id: string }) {
     for (const r of rows) {
       const name = `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || r.email || "—";
       const cur = m.get(name) ?? { name, position: r.position ?? "", stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, totalPay: 0, entries: 0 };
-      cur.stdHours += r.stdHours;
-      cur.otHours  += r.otHours;
-      cur.dtHours  += r.dtHours;
-      cur.totalHours += r.totalHours;
+      cur.stdHours += r.payStdHours;
+      cur.otHours  += r.payOtHours;
+      cur.dtHours  += r.payDtHours;
+      cur.totalHours += r.payTotalHours;
       cur.totalPay   += r.totalPay;
       cur.entries += 1;
       if (!cur.position && r.position) cur.position = r.position;
@@ -125,10 +125,10 @@ export default function PayrollPdfView({ id }: { id: string }) {
 
   const grand = useMemo(() => rows.reduce(
     (acc, r) => ({
-      stdHours: acc.stdHours + r.stdHours,
-      otHours:  acc.otHours  + r.otHours,
-      dtHours:  acc.dtHours  + r.dtHours,
-      totalHours: acc.totalHours + r.totalHours,
+      stdHours: acc.stdHours + r.payStdHours,
+      otHours:  acc.otHours  + r.payOtHours,
+      dtHours:  acc.dtHours  + r.payDtHours,
+      totalHours: acc.totalHours + r.payTotalHours,
       totalPay:   acc.totalPay   + r.totalPay,
     }),
     { stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, totalPay: 0 },
@@ -222,10 +222,10 @@ export default function PayrollPdfView({ id }: { id: string }) {
               <td>{r.timeIn2}</td>
               <td>{r.timeOut2}</td>
               <td className="r">{r.mealBreak2Minutes || ""}</td>
-              <td className="r">{r.stdHours.toFixed(2)}</td>
-              <td className="r">{r.otHours.toFixed(2)}</td>
-              <td className="r">{r.dtHours.toFixed(2)}</td>
-              <td className="r">{r.totalHours.toFixed(2)}</td>
+              <td className="r">{r.payStdHours.toFixed(2)}</td>
+              <td className="r">{r.payOtHours.toFixed(2)}</td>
+              <td className="r">{r.payDtHours.toFixed(2)}</td>
+              <td className="r">{r.payTotalHours.toFixed(2)}</td>
               <td className="r">${r.stdRate.toFixed(2)}</td>
               <td className="r">${r.otRate.toFixed(2)}</td>
               <td className="r">${r.dtRate.toFixed(2)}</td>

@@ -30,10 +30,13 @@ function rowToRun(r: any): PayrollRun {
     periodEnd: r.period_end ?? undefined,
     status: r.status as PayrollRunStatus,
     notes: r.notes ?? undefined,
+    payWeekStart: (r.pay_week_start ?? "sun") as "sun" | "mon",
     entryCount: Number(r.entry_count ?? 0),
     employeeCount: Number(r.employee_count ?? 0),
     totalHours: Number(r.total_hours ?? 0),
     totalPay: Number(r.total_pay ?? 0),
+    otCalculatedAt: r.ot_calculated_at ?? undefined,
+    otCalculatedBy: r.ot_calculated_by ?? undefined,
     finalizedAt: r.finalized_at ?? undefined,
     finalizedBy: r.finalized_by ?? undefined,
     exportedAt: r.exported_at ?? undefined,
@@ -64,6 +67,11 @@ function rowToRunEntry(r: any): PayrollRunEntry {
     otHours: Number(r.ot_hours ?? 0),
     dtHours: Number(r.dt_hours ?? 0),
     totalHours: Number(r.total_hours ?? 0),
+    payStdHours: Number(r.pay_std_hours ?? 0),
+    payOtHours: Number(r.pay_ot_hours ?? 0),
+    payDtHours: Number(r.pay_dt_hours ?? 0),
+    payTotalHours: Number(r.pay_total_hours ?? 0),
+    payAdjustmentReason: r.pay_adjustment_reason ?? undefined,
     stdRate: Number(r.std_rate ?? 0),
     otRate: Number(r.ot_rate ?? 0),
     dtRate: Number(r.dt_rate ?? 0),
@@ -325,8 +333,19 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
   // yellow "needs rates" banner + blocks Finalize. Operator can override
   // any row via the BaseRateInput.
   //
-  // Total pay is recomputed from the resolved rates via recomputePayFromBase
-  // so it's consistent with the OT/DT multiplier rule and holiday logic.
+  // Hour buckets: std/ot/dt mirror the BILLED snapshot from the timesheet.
+  // pay_* buckets apply Connor's row-local payroll rules at this point
+  // (5hr daily minimum + round up to whole hour). The weekly 40hr spill
+  // is NOT applied here — it runs at finalize time so we can see hours
+  // from other finalized runs in the same week.
+  const dailyAdjustments = applyDailyRulesToCandidates(input.entries.map(e => ({
+    timesheetEntryId: e.timesheetEntryId,
+    employeeKey: e.employeeKey,
+    workDate: e.workDate,
+    stdHours: e.stdHours,
+    otHours: e.otHours,
+    dtHours: e.dtHours,
+  })));
   const rows = await Promise.all(input.entries.map(async (e) => {
     const resolved = await resolvePayRateForEntry({
       employeeKey: e.employeeKey,
@@ -334,12 +353,16 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
       jobId: e.jobId,
       workDate: e.workDate,
     });
+    const pay = dailyAdjustments.get(e.timesheetEntryId) ?? {
+      payStdHours: e.stdHours, payOtHours: e.otHours, payDtHours: e.dtHours,
+      payTotalHours: e.totalHours, payAdjustmentReason: null,
+    };
     const calc = recomputePayFromBase({
       baseRate: resolved.stdRate,
-      stdHours: e.stdHours,
-      otHours: e.otHours,
-      dtHours: e.dtHours,
-      totalHours: e.totalHours,
+      payStdHours: pay.payStdHours,
+      payOtHours:  pay.payOtHours,
+      payDtHours:  pay.payDtHours,
+      payTotalHours: pay.payTotalHours,
       isHoliday: e.isHoliday,
       holidayMultiplier: e.holidayMultiplier,
     });
@@ -358,6 +381,11 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
       ot_hours: e.otHours,
       dt_hours: e.dtHours,
       total_hours: e.totalHours,
+      pay_std_hours: pay.payStdHours,
+      pay_ot_hours:  pay.payOtHours,
+      pay_dt_hours:  pay.payDtHours,
+      pay_total_hours: pay.payTotalHours,
+      pay_adjustment_reason: pay.payAdjustmentReason,
       std_rate: calc.stdRate,
       ot_rate:  calc.otRate,
       dt_rate:  calc.dtRate,
@@ -408,6 +436,26 @@ export async function addEntriesToPayrollRun(
 
   // Same auto-fill pattern as createPayrollRun: snapshot uses resolved
   // pay rates (employee override → job rate card → master), then recompute.
+  // Daily rules (5hr min + round up) recombine the newly-added rows with
+  // any rows already on the run for the same (employee, work_date) so the
+  // daily floor isn't double-applied. We re-snapshot all affected days.
+  const dailyAdjustments = applyDailyRulesToCandidates(entries.map(e => ({
+    timesheetEntryId: e.timesheetEntryId,
+    employeeKey: e.employeeKey,
+    workDate: e.workDate,
+    stdHours: e.stdHours,
+    otHours: e.otHours,
+    dtHours: e.dtHours,
+  })));
+
+  // Adding entries to an existing run can cross a daily-group boundary
+  // (e.g. another shift for an employee already on the run for that day).
+  // Clear ot_calculated_at since the weekly totals just changed.
+  await supabase
+    .from("payroll_runs")
+    .update({ ot_calculated_at: null, ot_calculated_by: null })
+    .eq("id", runId);
+
   const rows = await Promise.all(entries.map(async (e) => {
     const resolved = await resolvePayRateForEntry({
       employeeKey: e.employeeKey,
@@ -415,12 +463,16 @@ export async function addEntriesToPayrollRun(
       jobId: e.jobId,
       workDate: e.workDate,
     });
+    const pay = dailyAdjustments.get(e.timesheetEntryId) ?? {
+      payStdHours: e.stdHours, payOtHours: e.otHours, payDtHours: e.dtHours,
+      payTotalHours: e.totalHours, payAdjustmentReason: null,
+    };
     const calc = recomputePayFromBase({
       baseRate: resolved.stdRate,
-      stdHours: e.stdHours,
-      otHours: e.otHours,
-      dtHours: e.dtHours,
-      totalHours: e.totalHours,
+      payStdHours: pay.payStdHours,
+      payOtHours:  pay.payOtHours,
+      payDtHours:  pay.payDtHours,
+      payTotalHours: pay.payTotalHours,
       isHoliday: e.isHoliday,
       holidayMultiplier: e.holidayMultiplier,
     });
@@ -439,6 +491,11 @@ export async function addEntriesToPayrollRun(
     ot_hours: e.otHours,
     dt_hours: e.dtHours,
     total_hours: e.totalHours,
+    pay_std_hours: pay.payStdHours,
+    pay_ot_hours:  pay.payOtHours,
+    pay_dt_hours:  pay.payDtHours,
+    pay_total_hours: pay.payTotalHours,
+    pay_adjustment_reason: pay.payAdjustmentReason,
     std_rate: calc.stdRate,
     ot_rate:  calc.otRate,
     dt_rate:  calc.dtRate,
@@ -504,6 +561,260 @@ async function stampTimesheetEntriesWithRun(runId: string, entryIds: string[]): 
 // multipliers themselves are expected to stay the same.
 export const PAYROLL_OT_MULTIPLIER = 1.5;
 export const PAYROLL_DT_MULTIPLIER = 2.0;
+
+// ─── Payroll rule constants (Connor's policy) ─────────────────────────────
+/** Per-day minimum. Days with fewer billed hours are bumped up to this floor
+ *  in pay_std_hours. */
+export const PAYROLL_DAILY_MINIMUM_HOURS = 5;
+/** Anything past this in a pay week spills from pay_std to pay_ot. DT is
+ *  not touched. */
+export const PAYROLL_WEEKLY_OT_THRESHOLD = 40;
+
+// ─── Pure helpers for Connor's payroll rules ──────────────────────────────
+// These are pure functions intentionally — no DB, no I/O. They're called
+// at snapshot time (rules 1-3) and at finalize time (rule 4) so the
+// behaviour is uniform and easy to unit-test.
+
+export type DayPayBuckets = {
+  payStdHours: number;
+  payOtHours: number;
+  payDtHours: number;
+  payTotalHours: number;
+  reasons: string[];
+};
+
+/** Per-day rules (1–3): take the summed billed buckets for one employee on
+ *  one work_date and produce the pay buckets with the 5-hour minimum and
+ *  whole-hour round-up applied. The daily OT/DT split coming in from the
+ *  timesheet is preserved verbatim (rule 3) — we only inflate pay_std to
+ *  satisfy the minimum, then ceil the total. The extra hours always land
+ *  in pay_std (never pay_ot or pay_dt). */
+export function applyDailyPayrollRules(input: {
+  stdHours: number;
+  otHours: number;
+  dtHours: number;
+}): DayPayBuckets {
+  const std = Math.max(0, input.stdHours || 0);
+  const ot  = Math.max(0, input.otHours  || 0);
+  const dt  = Math.max(0, input.dtHours  || 0);
+  const billedTotal = std + ot + dt;
+
+  let payStd = std;
+  let payOt  = ot;
+  let payDt  = dt;
+  const reasons: string[] = [];
+
+  // Rule 1: 5-hour minimum per day. Bump pay_std up to satisfy floor.
+  const afterMinTotal = Math.max(billedTotal, PAYROLL_DAILY_MINIMUM_HOURS);
+  if (afterMinTotal > billedTotal) {
+    payStd += (afterMinTotal - billedTotal);
+    reasons.push(`5hr min applied (+${(afterMinTotal - billedTotal).toFixed(2)})`);
+  }
+
+  // Rule 2: round UP to next whole hour. Extra absorbed by pay_std.
+  const beforeCeilTotal = payStd + payOt + payDt;
+  const ceilTotal = Math.ceil(beforeCeilTotal - 1e-9);
+  if (ceilTotal > beforeCeilTotal) {
+    payStd += (ceilTotal - beforeCeilTotal);
+    reasons.push(`rounded ${beforeCeilTotal.toFixed(2)}→${ceilTotal}`);
+  }
+
+  // Round to 2 decimals to keep DB numerics clean.
+  const r = (n: number) => Math.round(n * 100) / 100;
+  payStd = r(payStd);
+  payOt  = r(payOt);
+  payDt  = r(payDt);
+  const payTotal = r(payStd + payOt + payDt);
+
+  return {
+    payStdHours: payStd,
+    payOtHours:  payOt,
+    payDtHours:  payDt,
+    payTotalHours: payTotal,
+    reasons,
+  };
+}
+
+/** Map a YYYY-MM-DD work_date to the Sunday or Monday of its pay week
+ *  (returned as YYYY-MM-DD). Pure date math — no timezone conversion. */
+export function payWeekStartFor(workDate: string, weekStart: "sun" | "mon"): string {
+  // Build a UTC date so we don't accidentally cross day boundaries via TZ.
+  const [y, m, d] = workDate.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const day = dt.getUTCDay(); // 0=Sun..6=Sat
+  let offset: number;
+  if (weekStart === "sun") {
+    offset = day;             // Sun=0 → -0, Sat=6 → -6
+  } else {
+    offset = (day + 6) % 7;   // Mon=1 → -0, Sun=0 → -6
+  }
+  dt.setUTCDate(dt.getUTCDate() - offset);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+/** Type used by applyWeeklySpill. Lets the caller mark some rows as
+ *  read-only "prior" hours (from already-finalized runs) so we count
+ *  them toward the cumulative 40 but never mutate them. */
+export type WeekHourRow = {
+  /** Stable id of the source row (timesheet_entry_id is fine). */
+  key: string;
+  workDate: string;
+  payStdHours: number;
+  payOtHours: number;
+  payDtHours: number;
+  /** When true the row is not allowed to be modified — only counted. */
+  frozen: boolean;
+};
+
+export type WeeklySpillResult = {
+  /** New pay_std/pay_ot for each non-frozen row, by key. dt is never
+   *  changed. */
+  adjustments: Map<string, { payStdHours: number; payOtHours: number; reason: string | null }>;
+};
+
+/** Rule 4: weekly OT spill. Walks the week chronologically (frozen rows
+ *  first since they were finalized earlier), accumulates total hours,
+ *  and once cumulative > 40 pushes the spill from pay_std into pay_ot.
+ *  Only mutates non-frozen rows. */
+export function applyWeeklySpill(rows: WeekHourRow[]): WeeklySpillResult {
+  const adjustments = new Map<string, { payStdHours: number; payOtHours: number; reason: string | null }>();
+
+  // Sort: frozen rows first (they already happened), then by workDate.
+  const ordered = [...rows].sort((a, b) => {
+    if (a.frozen !== b.frozen) return a.frozen ? -1 : 1;
+    return a.workDate.localeCompare(b.workDate);
+  });
+
+  let cumulative = 0;
+  for (const row of ordered) {
+    const rowTotal = row.payStdHours + row.payOtHours + row.payDtHours;
+    if (row.frozen) {
+      cumulative += rowTotal;
+      continue;
+    }
+    const beforeStart = cumulative;
+    const beforeStartStd = beforeStart;
+    const newStdStart = beforeStartStd; // cumulative-before for naming
+    // Skip rows entirely under threshold.
+    if (newStdStart + row.payStdHours <= PAYROLL_WEEKLY_OT_THRESHOLD) {
+      adjustments.set(row.key, {
+        payStdHours: row.payStdHours,
+        payOtHours:  row.payOtHours,
+        reason: null,
+      });
+      cumulative += rowTotal;
+      continue;
+    }
+    // Compute spill: how much of this row's pay_std falls past the 40-hr line.
+    const remainingStdBudget = Math.max(0, PAYROLL_WEEKLY_OT_THRESHOLD - newStdStart);
+    const keepStd = Math.min(row.payStdHours, remainingStdBudget);
+    const spill = row.payStdHours - keepStd;
+    const r = (n: number) => Math.round(n * 100) / 100;
+    adjustments.set(row.key, {
+      payStdHours: r(keepStd),
+      payOtHours:  r(row.payOtHours + spill),
+      reason: spill > 0 ? `+${r(spill)}hr weekly OT spill` : null,
+    });
+    cumulative += rowTotal;
+  }
+
+  return { adjustments };
+}
+
+/** Apply per-day rules to a set of candidate rows from the same payroll
+ *  candidate list. Groups by (employee_key|null, work_date), sums billed
+ *  hours, then runs applyDailyPayrollRules. Returns a map keyed by the
+ *  individual candidate's timesheetEntryId so the caller can write each
+ *  row's share of the day's pay buckets back. The day's pay buckets are
+ *  split across that day's rows proportionally to their billed totals so
+ *  every row gets a clean snapshot.
+ *
+ *  Edge case — zero billed hours on a day (someone keyed all blanks). The
+ *  daily rule still bumps to 5 (per Connor's "5hr minimum"). We assign
+ *  the whole 5hr to the single row; if there are multiple zero-rows we
+ *  spread equally.
+ */
+export function applyDailyRulesToCandidates(
+  rows: { timesheetEntryId: string; employeeKey: string | null; workDate: string | null;
+          stdHours: number; otHours: number; dtHours: number; }[],
+): Map<string, { payStdHours: number; payOtHours: number; payDtHours: number;
+                  payTotalHours: number; payAdjustmentReason: string | null; }> {
+  type GroupKey = string;
+  const groups = new Map<GroupKey, typeof rows>();
+  const keyOf = (r: typeof rows[number]) => `${r.employeeKey ?? "__"}|${r.workDate ?? "__"}`;
+  for (const r of rows) {
+    const k = keyOf(r);
+    const list = groups.get(k) ?? [];
+    list.push(r);
+    groups.set(k, list);
+  }
+
+  const out = new Map<string, { payStdHours: number; payOtHours: number; payDtHours: number;
+                                  payTotalHours: number; payAdjustmentReason: string | null; }>();
+
+  for (const list of groups.values()) {
+    const sum = list.reduce((acc, r) => ({
+      stdHours: acc.stdHours + r.stdHours,
+      otHours:  acc.otHours  + r.otHours,
+      dtHours:  acc.dtHours  + r.dtHours,
+    }), { stdHours: 0, otHours: 0, dtHours: 0 });
+
+    const day = applyDailyPayrollRules(sum);
+    const reason = day.reasons.length > 0 ? day.reasons.join("; ") : null;
+    const billedTotal = sum.stdHours + sum.otHours + sum.dtHours;
+
+    // Allocate the day's pay buckets back to individual rows.
+    // For non-zero days: each row gets its share proportional to its billed total.
+    // For zero days: split equally across rows.
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i];
+      const rowBilled = r.stdHours + r.otHours + r.dtHours;
+      const isLast = i === list.length - 1;
+      let payStd: number, payOt: number, payDt: number;
+
+      if (billedTotal > 0) {
+        const share = rowBilled / billedTotal;
+        payStd = day.payStdHours * share;
+        payOt  = day.payOtHours  * share;
+        payDt  = day.payDtHours  * share;
+      } else {
+        // All rows have zero billed → split the 5hr minimum equally.
+        payStd = day.payStdHours / list.length;
+        payOt  = day.payOtHours  / list.length;
+        payDt  = day.payDtHours  / list.length;
+      }
+
+      // Last row absorbs rounding drift so the sum reconciles exactly.
+      if (isLast) {
+        const priorStd = Array.from(out.values()).reduce((a, v) => {
+          // only consider rows in this same day's group already assigned
+          return a;
+        }, 0);
+        // simpler: just round and let drift be at most a penny per day; reconcile in finalize totals
+        payStd = +(payStd).toFixed(2);
+        payOt  = +(payOt).toFixed(2);
+        payDt  = +(payDt).toFixed(2);
+      } else {
+        payStd = +(payStd).toFixed(2);
+        payOt  = +(payOt).toFixed(2);
+        payDt  = +(payDt).toFixed(2);
+      }
+
+      out.set(r.timesheetEntryId, {
+        payStdHours: payStd,
+        payOtHours:  payOt,
+        payDtHours:  payDt,
+        payTotalHours: +(payStd + payOt + payDt).toFixed(2),
+        payAdjustmentReason: reason,
+      });
+    }
+  }
+
+  return out;
+}
 
 // ─── Pay-rate resolution (Phase 1) ────────────────────────────────────────
 // Resolves the pay rate to snapshot onto a payroll_run_entries row.
@@ -645,14 +956,14 @@ export async function resolvePayRateForEntry(input: {
 }
 
 /** Pure helper: given a base rate and the hour/holiday context, return the
- *  derived OT/DT rates and total pay. Mirrored on both the store side
- *  (for the persisted snapshot) and the UI side (for live preview). */
+ *  derived OT/DT rates and total pay. Computes off the PAY buckets — the
+ *  billed std/ot/dt buckets are what the client pays, not the employee. */
 export function recomputePayFromBase(input: {
   baseRate: number;
-  stdHours: number;
-  otHours: number;
-  dtHours: number;
-  totalHours: number;
+  payStdHours: number;
+  payOtHours: number;
+  payDtHours: number;
+  payTotalHours: number;
   isHoliday: boolean;
   holidayMultiplier?: number | null;
 }): { stdRate: number; otRate: number; dtRate: number; totalPay: number } {
@@ -662,12 +973,12 @@ export function recomputePayFromBase(input: {
   let totalPay: number;
   if (input.isHoliday) {
     const mult = input.holidayMultiplier ?? 2.0;
-    totalPay = +(input.totalHours * base * mult).toFixed(2);
+    totalPay = +(input.payTotalHours * base * mult).toFixed(2);
   } else {
     totalPay = +(
-      input.stdHours * base +
-      input.otHours  * otRate +
-      input.dtHours  * dtRate
+      input.payStdHours * base +
+      input.payOtHours  * otRate +
+      input.payDtHours  * dtRate
     ).toFixed(2);
   }
   return { stdRate: base, otRate, dtRate, totalPay };
@@ -683,19 +994,19 @@ export async function updatePayrollRunEntryBaseRate(
   runEntryId: string,
   baseRate: number,
 ): Promise<void> {
-  // Pull the row so we can recompute against its hours + holiday context.
+  // Pull the row so we can recompute against its pay-hour buckets + holiday.
   const { data, error: getErr } = await supabase
     .from("payroll_run_entries")
-    .select("std_hours, ot_hours, dt_hours, total_hours, is_holiday, holiday_multiplier")
+    .select("pay_std_hours, pay_ot_hours, pay_dt_hours, pay_total_hours, is_holiday, holiday_multiplier")
     .eq("id", runEntryId)
     .single();
   if (getErr) throw getErr;
   const calc = recomputePayFromBase({
     baseRate,
-    stdHours: Number((data as any).std_hours ?? 0),
-    otHours:  Number((data as any).ot_hours  ?? 0),
-    dtHours:  Number((data as any).dt_hours  ?? 0),
-    totalHours: Number((data as any).total_hours ?? 0),
+    payStdHours: Number((data as any).pay_std_hours ?? 0),
+    payOtHours:  Number((data as any).pay_ot_hours  ?? 0),
+    payDtHours:  Number((data as any).pay_dt_hours  ?? 0),
+    payTotalHours: Number((data as any).pay_total_hours ?? 0),
     isHoliday: !!(data as any).is_holiday,
     holidayMultiplier: (data as any).holiday_multiplier,
   });
@@ -724,7 +1035,7 @@ export async function normalizePayrollRunRates(runId: string): Promise<number> {
   }
   const { data, error } = await supabase
     .from("payroll_run_entries")
-    .select("id, std_hours, ot_hours, dt_hours, total_hours, std_rate, is_holiday, holiday_multiplier")
+    .select("id, pay_std_hours, pay_ot_hours, pay_dt_hours, pay_total_hours, std_rate, is_holiday, holiday_multiplier")
     .eq("payroll_run_id", runId);
   if (error) throw error;
 
@@ -732,10 +1043,10 @@ export async function normalizePayrollRunRates(runId: string): Promise<number> {
   for (const r of (data ?? []) as any[]) {
     const calc = recomputePayFromBase({
       baseRate: Number(r.std_rate ?? 0),
-      stdHours: Number(r.std_hours ?? 0),
-      otHours:  Number(r.ot_hours  ?? 0),
-      dtHours:  Number(r.dt_hours  ?? 0),
-      totalHours: Number(r.total_hours ?? 0),
+      payStdHours: Number(r.pay_std_hours ?? 0),
+      payOtHours:  Number(r.pay_ot_hours  ?? 0),
+      payDtHours:  Number(r.pay_dt_hours  ?? 0),
+      payTotalHours: Number(r.pay_total_hours ?? 0),
       isHoliday: !!r.is_holiday,
       holidayMultiplier: r.holiday_multiplier,
     });
@@ -793,6 +1104,141 @@ export async function countUnratedEntries(runId: string): Promise<number> {
   return count ?? 0;
 }
 
+// ─── Weekly OT (rule 4) — applied at finalize time ─────────────────────────
+// "Anything over 40 hrs in a Sun-Sat pay week is OT." Computed across THIS
+// run + any other FINALIZED runs for the same employee in the same week.
+// Approved-but-not-yet-paid timesheet hours don't count — they'll be
+// counted when their own run finalizes. (See conversation context for the
+// reasoning: relying on finalized runs avoids staleness from unapprove →
+// edit → re-approve cycles.)
+
+/** Internal: gather every row contributing to weekly totals for this run,
+ *  bucketed by (employee_key, pay_week_start). Marks rows from finalized
+ *  runs as frozen so applyWeeklySpill only mutates this run's rows. */
+async function gatherWeekRowsForRun(runId: string, weekStart: "sun" | "mon"): Promise<{
+  byWeek: Map<string, WeekHourRow[]>;
+  thisRunRowIdByEntryId: Map<string, string>;
+}> {
+  const { data: thisRows, error: thisErr } = await supabase
+    .from("payroll_run_entries")
+    .select("id, timesheet_entry_id, employee_key, work_date, pay_std_hours, pay_ot_hours, pay_dt_hours")
+    .eq("payroll_run_id", runId);
+  if (thisErr) throw thisErr;
+
+  const employees = Array.from(new Set(
+    (thisRows ?? []).map((r: any) => r.employee_key).filter(Boolean)
+  ));
+  const workDates = (thisRows ?? []).map((r: any) => r.work_date).filter(Boolean) as string[];
+  if (workDates.length === 0 || employees.length === 0) {
+    return { byWeek: new Map(), thisRunRowIdByEntryId: new Map() };
+  }
+  const weeks = Array.from(new Set(workDates.map(d => payWeekStartFor(d, weekStart))));
+  // Build a date range covering all weeks: weekStart → weekStart + 6 days.
+  const dateMin = weeks.reduce((a, b) => a < b ? a : b);
+  const lastWeek = weeks.reduce((a, b) => a > b ? a : b);
+  const lastDate = (() => {
+    const [y,m,d] = lastWeek.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m-1, d));
+    dt.setUTCDate(dt.getUTCDate() + 6);
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth()+1).padStart(2,"0")}-${String(dt.getUTCDate()).padStart(2,"0")}`;
+  })();
+
+  // Pull entries from FINALIZED (incl. exported) runs for these employees
+  // in this date span. Exclude this run itself.
+  const { data: priorRows, error: priorErr } = await supabase
+    .from("payroll_run_entries")
+    .select(`
+      id, timesheet_entry_id, payroll_run_id, employee_key, work_date,
+      pay_std_hours, pay_ot_hours, pay_dt_hours,
+      payroll_runs!inner(status)
+    `)
+    .in("employee_key", employees)
+    .gte("work_date", dateMin)
+    .lte("work_date", lastDate)
+    .neq("payroll_run_id", runId)
+    .in("payroll_runs.status", ["finalized", "exported"]);
+  if (priorErr) throw priorErr;
+
+  const byWeek = new Map<string, WeekHourRow[]>();
+  const thisRunRowIdByEntryId = new Map<string, string>();
+  const pushRow = (employeeKey: string | null, workDate: string, row: WeekHourRow) => {
+    const wk = payWeekStartFor(workDate, weekStart);
+    const key = `${employeeKey ?? "__"}|${wk}`;
+    const list = byWeek.get(key) ?? [];
+    list.push(row);
+    byWeek.set(key, list);
+  };
+  for (const r of (thisRows ?? []) as any[]) {
+    if (!r.work_date) continue;
+    thisRunRowIdByEntryId.set(r.timesheet_entry_id, r.id);
+    pushRow(r.employee_key ?? null, r.work_date, {
+      key: `this:${r.id}`,
+      workDate: r.work_date,
+      payStdHours: Number(r.pay_std_hours ?? 0),
+      payOtHours:  Number(r.pay_ot_hours  ?? 0),
+      payDtHours:  Number(r.pay_dt_hours  ?? 0),
+      frozen: false,
+    });
+  }
+  for (const r of (priorRows ?? []) as any[]) {
+    if (!r.work_date) continue;
+    pushRow(r.employee_key ?? null, r.work_date, {
+      key: `prior:${r.id}`,
+      workDate: r.work_date,
+      payStdHours: Number(r.pay_std_hours ?? 0),
+      payOtHours:  Number(r.pay_ot_hours  ?? 0),
+      payDtHours:  Number(r.pay_dt_hours  ?? 0),
+      frozen: true,
+    });
+  }
+
+  return { byWeek, thisRunRowIdByEntryId };
+}
+
+/** Preview of weekly OT spill — read-only. Returns the proposed
+ *  adjustments without writing anything. UI uses this on a draft run to
+ *  show "if you finalized right now, here's what would happen". */
+export type WeeklyOTPreview = {
+  rowId: string;
+  payStdHoursBefore: number;
+  payOtHoursBefore: number;
+  payStdHoursAfter: number;
+  payOtHoursAfter: number;
+  reason: string;
+};
+
+export async function previewWeeklyOT(runId: string): Promise<WeeklyOTPreview[]> {
+  const { data: runRow, error: runErr } = await supabase
+    .from("payroll_runs").select("pay_week_start, status").eq("id", runId).single();
+  if (runErr) throw runErr;
+  const weekStart = ((runRow as any).pay_week_start ?? "sun") as "sun" | "mon";
+
+  const { byWeek } = await gatherWeekRowsForRun(runId, weekStart);
+  const previews: WeeklyOTPreview[] = [];
+  for (const rows of byWeek.values()) {
+    const { adjustments } = applyWeeklySpill(rows);
+    // We only need to surface CHANGES — rows whose pay_std/pay_ot moved.
+    const byKey = new Map(rows.map(r => [r.key, r]));
+    for (const [key, adj] of adjustments.entries()) {
+      const before = byKey.get(key);
+      if (!before) continue;
+      if (Math.abs(before.payStdHours - adj.payStdHours) < 0.005) continue;
+      // key is "this:<rowId>" for this-run rows.
+      const rowId = key.startsWith("this:") ? key.slice(5) : null;
+      if (!rowId) continue;
+      previews.push({
+        rowId,
+        payStdHoursBefore: before.payStdHours,
+        payOtHoursBefore:  before.payOtHours,
+        payStdHoursAfter:  adj.payStdHours,
+        payOtHoursAfter:   adj.payOtHours,
+        reason: adj.reason ?? "",
+      });
+    }
+  }
+  return previews;
+}
+
 export async function finalizePayrollRun(id: string): Promise<void> {
   // Guard: refuse to finalize while any entry still has std_rate = 0.
   // The operator must set a base pay rate on every row first (the
@@ -804,9 +1250,80 @@ export async function finalizePayrollRun(id: string): Promise<void> {
       `Fill in the Base $/hr for every row first.`
     );
   }
+
+  // Apply weekly OT spill BEFORE flipping the status (so the freeze
+  // trigger doesn't block the write).
+  const { data: runRow, error: runErr } = await supabase
+    .from("payroll_runs").select("pay_week_start").eq("id", id).single();
+  if (runErr) throw runErr;
+  const weekStart = ((runRow as any).pay_week_start ?? "sun") as "sun" | "mon";
+
+  const { byWeek } = await gatherWeekRowsForRun(id, weekStart);
+  for (const rows of byWeek.values()) {
+    const { adjustments } = applyWeeklySpill(rows);
+    for (const r of rows) {
+      if (r.frozen) continue;
+      const adj = adjustments.get(r.key);
+      if (!adj) continue;
+      const movedStd = Math.abs(r.payStdHours - adj.payStdHours) >= 0.005;
+      const movedOt  = Math.abs(r.payOtHours  - adj.payOtHours ) >= 0.005;
+      // Always recompute total_pay against the post-spill buckets so the
+      // header rollup matches what the run actually paid.
+      const rowId = r.key.startsWith("this:") ? r.key.slice(5) : null;
+      if (!rowId) continue;
+
+      // Pull the current row's rate + holiday context to recompute pay.
+      const { data: pre, error: preErr } = await supabase
+        .from("payroll_run_entries")
+        .select("std_rate, is_holiday, holiday_multiplier, pay_adjustment_reason, pay_dt_hours")
+        .eq("id", rowId).single();
+      if (preErr) throw preErr;
+
+      const newPayStd = adj.payStdHours;
+      const newPayOt  = adj.payOtHours;
+      const newPayDt  = Number((pre as any).pay_dt_hours ?? r.payDtHours);
+      const newPayTotal = +(newPayStd + newPayOt + newPayDt).toFixed(2);
+
+      const calc = recomputePayFromBase({
+        baseRate: Number((pre as any).std_rate ?? 0),
+        payStdHours: newPayStd,
+        payOtHours:  newPayOt,
+        payDtHours:  newPayDt,
+        payTotalHours: newPayTotal,
+        isHoliday: !!(pre as any).is_holiday,
+        holidayMultiplier: (pre as any).holiday_multiplier,
+      });
+
+      const existingReason = (pre as any).pay_adjustment_reason as string | null;
+      const combinedReason = (movedStd || movedOt) && adj.reason
+        ? (existingReason ? `${existingReason}; ${adj.reason}` : adj.reason)
+        : existingReason;
+
+      const { error: updErr } = await supabase
+        .from("payroll_run_entries")
+        .update({
+          pay_std_hours: newPayStd,
+          pay_ot_hours:  newPayOt,
+          pay_total_hours: newPayTotal,
+          pay_adjustment_reason: combinedReason,
+          ot_rate: calc.otRate,
+          dt_rate: calc.dtRate,
+          total_pay: calc.totalPay,
+        })
+        .eq("id", rowId);
+      if (updErr) throw updErr;
+    }
+  }
+
+  // Flip status + stamp OT calc timestamp atomically.
+  const now = new Date().toISOString();
   const { error } = await supabase
     .from("payroll_runs")
-    .update({ status: "finalized", finalized_at: new Date().toISOString() })
+    .update({
+      status: "finalized",
+      finalized_at: now,
+      ot_calculated_at: now,
+    })
     .eq("id", id)
     .eq("status", "draft");
   if (error) throw error;

@@ -14,8 +14,11 @@ import {
   normalizePayrollRunRates,
   getPayrollCandidates,
   addEntriesToPayrollRun,
+  previewWeeklyOT,
   PAYROLL_OT_MULTIPLIER,
   PAYROLL_DT_MULTIPLIER,
+  PAYROLL_DAILY_MINIMUM_HOURS,
+  PAYROLL_WEEKLY_OT_THRESHOLD,
   type PayrollCandidateRow,
 } from "@/lib/store/payroll";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "@/lib/store/types";
@@ -377,11 +380,62 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
   }
 
   async function handleFinalize() {
-    if (!confirm(`Finalize this payroll run? Once finalized, included entries are locked until the run is voided.`)) return;
+    // Run the weekly-OT preview first. If it surfaces any spill, show
+    // exactly what will move before locking the run. Operator can cancel
+    // and re-review (e.g. remove an entry, change a rate, swap pay week
+    // before they commit). Pure read-only — no writes happen until the
+    // second confirm.
     setBusy("finalize");
-    try { await finalizePayrollRun(runId); await load(); }
-    catch (e: any) { alert(`Finalize failed: ${e?.message ?? "unknown error"}`); }
-    finally { setBusy(null); }
+    try {
+      let previews: Awaited<ReturnType<typeof previewWeeklyOT>> = [];
+      try {
+        previews = await previewWeeklyOT(runId);
+      } catch (e: any) {
+        // If the preview itself fails, fall back to the simple confirm —
+        // finalizePayrollRun re-runs the same calc server-side anyway.
+        console.error("[payroll] finalize preview:", e);
+      }
+
+      let msg: string;
+      if (previews.length > 0) {
+        const byEmp = new Map<string, string[]>();
+        for (const p of previews) {
+          const row = entries.find((e) => e.id === p.rowId);
+          if (!row) continue;
+          const name = fullName(row);
+          const list = byEmp.get(name) ?? [];
+          list.push(
+            `  ${row.workDate}: std ${p.payStdHoursBefore.toFixed(2)}→${p.payStdHoursAfter.toFixed(2)}, ` +
+            `ot ${p.payOtHoursBefore.toFixed(2)}→${p.payOtHoursAfter.toFixed(2)}`
+          );
+          byEmp.set(name, list);
+        }
+        const detail = Array.from(byEmp.entries())
+          .map(([name, lines]) => `${name}:\n${lines.join("\n")}`)
+          .join("\n\n");
+        msg =
+          `Finalize this payroll run?\n\n` +
+          `${previews.length} row${previews.length === 1 ? "" : "s"} will shift from std → ot ` +
+          `to satisfy the ${PAYROLL_WEEKLY_OT_THRESHOLD}-hr weekly OT rule:\n\n` +
+          `${detail}\n\n` +
+          `Click OK to apply these adjustments and lock the run, or Cancel to re-review.`;
+      } else {
+        msg =
+          `Finalize this payroll run?\n\n` +
+          `No weekly OT spill applies (nobody crosses ${PAYROLL_WEEKLY_OT_THRESHOLD} hrs in a pay week ` +
+          `across this run + already-finalized runs).\n\n` +
+          `Once finalized, included entries are locked until the run is voided.`;
+      }
+      if (!confirm(msg)) {
+        setBusy(null);
+        return;
+      }
+
+      await finalizePayrollRun(runId);
+      await load();
+    } catch (e: any) {
+      alert(`Finalize failed: ${e?.message ?? "unknown error"}`);
+    } finally { setBusy(null); }
   }
   async function handleReopen() {
     if (!confirm(`Reopen this run as a draft? You'll be able to add/remove entries again.`)) return;
@@ -414,6 +468,45 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
       alert(`Recalculated ${n} entr${n === 1 ? "y" : "ies"}.`);
     } catch (e: any) {
       alert(`Recalculate failed: ${e?.message ?? "unknown error"}`);
+    } finally { setBusy(null); }
+  }
+
+  async function handlePreviewOT() {
+    if (!isDraft) return;
+    setBusy("preview-ot");
+    try {
+      const previews = await previewWeeklyOT(runId);
+      if (previews.length === 0) {
+        alert(
+          `No weekly OT spill — nobody on this run exceeds ${PAYROLL_WEEKLY_OT_THRESHOLD} hrs in a pay week ` +
+          `(counting this run + already-finalized runs).`
+        );
+        return;
+      }
+      // Build a row-by-row summary by employee.
+      const byEmp = new Map<string, { name: string; lines: string[] }>();
+      for (const p of previews) {
+        const row = entries.find((e) => e.id === p.rowId);
+        if (!row) continue;
+        const name = fullName(row);
+        const list = byEmp.get(name) ?? { name, lines: [] };
+        list.lines.push(
+          `  ${row.workDate}: std ${p.payStdHoursBefore.toFixed(2)} → ${p.payStdHoursAfter.toFixed(2)}, ` +
+          `ot ${p.payOtHoursBefore.toFixed(2)} → ${p.payOtHoursAfter.toFixed(2)}`
+        );
+        byEmp.set(name, list);
+      }
+      const msg = Array.from(byEmp.values())
+        .map((g) => `${g.name}:\n${g.lines.join("\n")}`)
+        .join("\n\n");
+      alert(
+        `Weekly OT preview (would apply at finalize):\n\n` +
+        `${previews.length} row${previews.length === 1 ? "" : "s"} would shift std → ot ` +
+        `past ${PAYROLL_WEEKLY_OT_THRESHOLD} hrs/week.\n\n` +
+        msg
+      );
+    } catch (e: any) {
+      alert(`Preview failed: ${e?.message ?? "unknown error"}`);
     } finally { setBusy(null); }
   }
 
@@ -474,6 +567,14 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
           </button>
           {isDraft && (
             <>
+              <button
+                className="secondary"
+                onClick={handlePreviewOT}
+                disabled={!!busy || entries.length === 0}
+                title={`Preview the weekly ${PAYROLL_WEEKLY_OT_THRESHOLD}-hr OT spill that will apply at finalize. Read-only — nothing is written until you finalize.`}
+              >
+                {busy === "preview-ot" ? "Calculating…" : "🕐 Preview weekly OT"}
+              </button>
               <button
                 className="secondary"
                 onClick={handleNormalizeRates}
@@ -541,7 +642,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
         <div className="muted" style={{ marginTop: 12, fontSize: 13 }}>
           <strong>{run.entryCount}</strong> entries ·{" "}
           <strong>{run.employeeCount}</strong> employees ·{" "}
-          <strong>{run.totalHours.toFixed(1)}</strong> hrs ·{" "}
+          <strong>{run.totalHours.toFixed(1)}</strong> pay hrs ·{" "}
           <strong>${run.totalPay.toFixed(2)}</strong> total pay
         </div>
 
@@ -588,7 +689,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
           </div>
         ) : (
           grouped.map((g) => {
-            const hrs = g.rows.reduce((s, r) => s + r.totalHours, 0);
+            const hrs = g.rows.reduce((s, r) => s + r.payTotalHours, 0);
             const pay = g.rows.reduce((s, r) => s + r.totalPay, 0);
             return (
               <div key={g.label} style={{ marginBottom: 14, border: "1px solid #eee", borderRadius: 6 }}>
@@ -596,7 +697,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                   <strong>{g.label}</strong>
                   <div style={{ fontSize: 13 }}>
                     {g.rows.length} entr{g.rows.length === 1 ? "y" : "ies"} ·{" "}
-                    <strong>{hrs.toFixed(1)}</strong> hrs ·{" "}
+                    <strong>{hrs.toFixed(1)}</strong> pay hrs ·{" "}
                     <strong>${pay.toFixed(2)}</strong>
                   </div>
                 </div>
@@ -607,7 +708,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                         <th>Date</th>
                         <th>Job</th>
                         <th>Position</th>
-                        <th style={{ textAlign: "right" }}>Std</th>
+                        <th style={{ textAlign: "right" }} title={`Pay hours after Connor's rules: ${PAYROLL_DAILY_MINIMUM_HOURS}hr daily minimum, round up to next whole hour, weekly ${PAYROLL_WEEKLY_OT_THRESHOLD}hr OT spill (applied at finalize). Hover any cell to see the billed value if different.`}>Std</th>
                         <th style={{ textAlign: "right" }}>OT</th>
                         <th style={{ textAlign: "right" }}>DT</th>
                         <th style={{ textAlign: "right" }}>Total</th>
@@ -625,23 +726,33 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                       {g.rows.map((r) => {
                         const mult = r.holidayMultiplier ?? 2.0;
                         const rateTooltip = r.isHoliday
-                          ? `Holiday — pay = ${r.totalHours.toFixed(2)} hrs × $${r.stdRate.toFixed(2)} × ${mult} (OT/DT premium does not stack)`
-                          : `Pay = ${r.stdHours.toFixed(2)} × $${r.stdRate.toFixed(2)}` +
-                            (r.otHours > 0 ? ` + ${r.otHours.toFixed(2)} × $${r.otRate.toFixed(2)} (OT)` : "") +
-                            (r.dtHours > 0 ? ` + ${r.dtHours.toFixed(2)} × $${r.dtRate.toFixed(2)} (DT)` : "");
+                          ? `Holiday — pay = ${r.payTotalHours.toFixed(2)} hrs × $${r.stdRate.toFixed(2)} × ${mult} (OT/DT premium does not stack)`
+                          : `Pay = ${r.payStdHours.toFixed(2)} × $${r.stdRate.toFixed(2)}` +
+                            (r.payOtHours > 0 ? ` + ${r.payOtHours.toFixed(2)} × $${r.otRate.toFixed(2)} (OT)` : "") +
+                            (r.payDtHours > 0 ? ` + ${r.payDtHours.toFixed(2)} × $${r.dtRate.toFixed(2)} (DT)` : "");
+                        const adjusted = r.payAdjustmentReason ? r.payAdjustmentReason : null;
+                        // Per-bucket "billed vs pay" tooltips — only emit when they differ.
+                        const stdTip = Math.abs(r.payStdHours - r.stdHours) >= 0.005 ? `Billed: ${r.stdHours.toFixed(2)}` : undefined;
+                        const otTip  = Math.abs(r.payOtHours  - r.otHours)  >= 0.005 ? `Billed: ${r.otHours.toFixed(2)}`  : undefined;
+                        const dtTip  = Math.abs(r.payDtHours  - r.dtHours)  >= 0.005 ? `Billed: ${r.dtHours.toFixed(2)}`  : undefined;
+                        const totTip = Math.abs(r.payTotalHours - r.totalHours) >= 0.005 ? `Billed total: ${r.totalHours.toFixed(2)}` : undefined;
                         return (
                         <tr key={r.id}>
-                          <td>{r.workDate || "—"}{r.isHoliday && <span className="badge" style={{ marginLeft: 6, background: "#ffe9c2", color: "#7a4a1a", fontSize: 11 }}>Holiday {mult}×</span>}</td>
+                          <td>
+                            {r.workDate || "—"}
+                            {r.isHoliday && <span className="badge" style={{ marginLeft: 6, background: "#ffe9c2", color: "#7a4a1a", fontSize: 11 }}>Holiday {mult}×</span>}
+                            {adjusted && <span className="badge" title={adjusted} style={{ marginLeft: 6, background: "#eaf2fb", color: "#1a4a7a", fontSize: 11 }}>adj</span>}
+                          </td>
                           <td style={{ fontFamily: "monospace", fontSize: 12 }}>
                             {r.jobId
                               ? (jobInfoById.get(r.jobId)?.jobNo ?? r.jobId)
                               : <span className="muted" style={{ fontFamily: "inherit" }}>Office / Remote</span>}
                           </td>
                           <td>{r.position || "—"}</td>
-                          <td style={{ textAlign: "right" }}>{r.stdHours.toFixed(1)}</td>
-                          <td style={{ textAlign: "right" }}>{r.otHours > 0 ? r.otHours.toFixed(1) : "—"}</td>
-                          <td style={{ textAlign: "right" }}>{r.dtHours > 0 ? r.dtHours.toFixed(1) : "—"}</td>
-                          <td style={{ textAlign: "right" }}><strong>{r.totalHours.toFixed(1)}</strong></td>
+                          <td style={{ textAlign: "right" }} title={stdTip}>{r.payStdHours.toFixed(1)}</td>
+                          <td style={{ textAlign: "right" }} title={otTip}>{r.payOtHours > 0 ? r.payOtHours.toFixed(1) : "—"}</td>
+                          <td style={{ textAlign: "right" }} title={dtTip}>{r.payDtHours > 0 ? r.payDtHours.toFixed(1) : "—"}</td>
+                          <td style={{ textAlign: "right" }} title={totTip}><strong>{r.payTotalHours.toFixed(1)}</strong></td>
                           <td style={{ textAlign: "right" }}>
                             {isDraft ? (
                               <BaseRateInput
