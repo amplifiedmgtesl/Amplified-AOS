@@ -1126,6 +1126,53 @@ export async function countUnratedEntries(runId: string): Promise<number> {
   return count ?? 0;
 }
 
+/** Count entries with zero pay hours. Zero-hour rows are usually no-shows
+ *  or placeholder timesheets that got pulled into the run by mistake. They
+ *  contribute $0 to the total but distort headcount / paystub output, so
+ *  the operator should delete them before finalize. */
+export async function countZeroHourEntries(runId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("payroll_run_entries")
+    .select("id", { count: "exact", head: true })
+    .eq("payroll_run_id", runId)
+    .eq("pay_total_hours", 0);
+  if (error) { console.error("[payroll] countZeroHourEntries:", error); return 0; }
+  return count ?? 0;
+}
+
+/** Bulk-delete every entry on a draft run whose pay_total_hours = 0.
+ *  Also releases the source timesheet_entries.payroll_run_id stamps so
+ *  they're free to be picked into a future run if reopened/corrected. */
+export async function removeZeroHourEntriesFromRun(runId: string): Promise<number> {
+  // Look up which entries we're about to drop, so we can clear the
+  // super-freeze on their source timesheet entries afterwards.
+  const { data: targets, error: lookupErr } = await supabase
+    .from("payroll_run_entries")
+    .select("id, timesheet_entry_id")
+    .eq("payroll_run_id", runId)
+    .eq("pay_total_hours", 0);
+  if (lookupErr) throw lookupErr;
+  if (!targets || targets.length === 0) return 0;
+
+  const ids = (targets as any[]).map((r) => r.id);
+  const sourceIds = (targets as any[]).map((r) => r.timesheet_entry_id);
+
+  const { error: delErr } = await supabase
+    .from("payroll_run_entries")
+    .delete()
+    .in("id", ids);
+  if (delErr) throw delErr;
+
+  if (sourceIds.length > 0) {
+    const { error: clearErr } = await supabase
+      .from("timesheet_entries")
+      .update({ payroll_run_id: null })
+      .in("id", sourceIds);
+    if (clearErr) console.error("[payroll] removeZeroHourEntriesFromRun clear payroll_run_id:", clearErr);
+  }
+  return ids.length;
+}
+
 // ─── Weekly OT (rule 4) — applied at finalize time ─────────────────────────
 // "Anything over 40 hrs in a Sun-Sat pay week is OT." Computed across THIS
 // run + any other FINALIZED runs for the same employee in the same week.
@@ -1270,6 +1317,20 @@ export async function finalizePayrollRun(id: string): Promise<void> {
     throw new Error(
       `Cannot finalize — ${unrated} entr${unrated === 1 ? "y has" : "ies have"} no base pay rate set. ` +
       `Fill in the Base $/hr for every row first.`
+    );
+  }
+
+  // Guard: also refuse to finalize while any entry has zero pay hours.
+  // Zero-hour rows are usually no-shows or placeholder timesheets that
+  // got pulled into the run by mistake — they contribute $0 but distort
+  // headcount and paystub output, so the operator must delete them
+  // explicitly. The UI provides a one-click "remove zero-hour entries"
+  // affordance for cleanup.
+  const zeroHour = await countZeroHourEntries(id);
+  if (zeroHour > 0) {
+    throw new Error(
+      `Cannot finalize — ${zeroHour} entr${zeroHour === 1 ? "y has" : "ies have"} zero pay hours. ` +
+      `Remove zero-hour entries first.`
     );
   }
 

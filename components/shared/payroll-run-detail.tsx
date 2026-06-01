@@ -9,6 +9,7 @@ import {
   reopenPayrollRun,
   voidPayrollRun,
   removeEntryFromRun,
+  removeZeroHourEntriesFromRun,
   updatePayrollRunMeta,
   updatePayrollRunEntryBaseRate,
   normalizePayrollRunRates,
@@ -365,7 +366,10 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
   // entries. Used to surface the "needs rates" banner and disable Finalize.
   // Server-side guard in finalizePayrollRun() covers the race condition.
   const unratedCount = entries.filter((e) => (e.stdRate ?? 0) === 0).length;
-  const finalizeBlocked = unratedCount > 0;
+  // Zero-hour entries — no-shows or placeholder rows that got included by
+  // mistake. Operator must remove them before finalize.
+  const zeroHourCount = entries.filter((e) => (e.payTotalHours ?? 0) === 0).length;
+  const finalizeBlocked = unratedCount > 0 || zeroHourCount > 0;
 
   async function handleSaveMeta() {
     if (!isDraft) return;
@@ -538,6 +542,24 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
     finally { setBusy(null); }
   }
 
+  async function handleRemoveZeroHourEntries() {
+    if (!isDraft) return;
+    if (zeroHourCount === 0) return;
+    if (!confirm(
+      `Remove ${zeroHourCount} zero-hour entr${zeroHourCount === 1 ? "y" : "ies"} from this run?\n\n` +
+      `These are no-shows or placeholder rows that contribute $0 to payroll. ` +
+      `They'll be released back to the candidate pool so they can be re-added later if needed.`
+    )) return;
+    setBusy("remove-zero");
+    try {
+      const n = await removeZeroHourEntriesFromRun(runId);
+      await load();
+      alert(`Removed ${n} zero-hour entr${n === 1 ? "y" : "ies"}.`);
+    } catch (e: any) {
+      alert(`Remove failed: ${e?.message ?? "unknown error"}`);
+    } finally { setBusy(null); }
+  }
+
   // Printable report now lives at /payroll/[id]/pdf (separate route,
   // no AppShell chrome — same flow as /quotes/[id]/pdf and
   // /invoices/[id]/pdf). The button in the header opens that page in a
@@ -593,9 +615,11 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                 title={
                   entries.length === 0
                     ? "No entries on this run"
-                    : finalizeBlocked
+                    : unratedCount > 0
                       ? `${unratedCount} entr${unratedCount === 1 ? "y has" : "ies have"} no base pay rate set. Fill in Base $/hr first.`
-                      : "Lock this run — included entries become read-only on the timesheet side."
+                      : zeroHourCount > 0
+                        ? `${zeroHourCount} entr${zeroHourCount === 1 ? "y has" : "ies have"} zero pay hours. Remove them before finalize.`
+                        : "Lock this run — included entries become read-only on the timesheet side."
                 }
               >
                 {busy === "finalize" ? "Finalizing…" : "Finalize"}
@@ -672,7 +696,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
       )}
 
       {/* Banner: needs pay rates before finalize. Draft-only. */}
-      {isDraft && finalizeBlocked && (
+      {isDraft && unratedCount > 0 && (
         <div className="card" style={{ background: "#fff4d6", borderColor: "#e0c070" }}>
           <strong style={{ color: "#7a5a1a" }}>
             ⚠ {unratedCount} entr{unratedCount === 1 ? "y has" : "ies have"} no base pay rate set.
@@ -680,6 +704,29 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
           <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
             Fill in <strong>Base $/hr</strong> for every row before finalizing. OT and DT will derive
             automatically (OT = base × {PAYROLL_OT_MULTIPLIER}, DT = base × {PAYROLL_DT_MULTIPLIER}).
+          </div>
+        </div>
+      )}
+
+      {/* Banner: zero-hour entries. Draft-only. Offers a one-click cleanup. */}
+      {isDraft && zeroHourCount > 0 && (
+        <div className="card" style={{ background: "#fbeaea", borderColor: "#e0a0a0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <strong style={{ color: "#8a1a1a", flex: 1 }}>
+              ⚠ {zeroHourCount} entr{zeroHourCount === 1 ? "y has" : "ies have"} zero pay hours.
+            </strong>
+            <button
+              className="secondary"
+              onClick={handleRemoveZeroHourEntries}
+              disabled={!!busy}
+              style={{ color: "#a00", borderColor: "#e0a0a0" }}
+            >
+              {busy === "remove-zero" ? "Removing…" : `Remove ${zeroHourCount} zero-hour entr${zeroHourCount === 1 ? "y" : "ies"}`}
+            </button>
+          </div>
+          <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
+            No-show or placeholder rows that contribute $0 to payroll. Remove them before finalize —
+            they'll be released back to the candidate pool.
           </div>
         </div>
       )}
