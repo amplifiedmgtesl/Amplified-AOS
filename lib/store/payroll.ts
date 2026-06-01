@@ -114,6 +114,11 @@ export type PayrollCandidateRow = {
   /** Specialty display name (denormalized). Surfaces in the candidate
    *  picker and gets snapshotted onto payroll_run_entries.specialty. */
   specialty: string | null;
+  /** Shift FK on the timesheet entry (job_request_shifts.id). When two
+   *  candidate rows share a shift_id, daily rules treat them as ONE shift
+   *  (one 5hr min); different shift_ids = different shifts, each gets
+   *  its own minimum. Falls back to `position` text when shift_id is null. */
+  shiftId: string | null;
   jobId: string | null;
   jobClient: string;
   jobEventName: string;
@@ -144,7 +149,7 @@ export async function getPayrollCandidates(filters: PayrollCandidateFilters): Pr
   let q = supabase
     .from("timesheet_entries")
     .select(`
-      id, work_date, position, specialty_id, first_name, last_name, email, employee_key,
+      id, work_date, position, specialty_id, shift_id, first_name, last_name, email, employee_key,
       job_id, job_sheet_id,
       std_hours, ot_hours, dt_hours, total_hours,
       is_holiday, holiday_multiplier, status
@@ -227,6 +232,7 @@ export async function getPayrollCandidates(filters: PayrollCandidateFilters): Pr
       position: r.position ?? "",
       specialtyId: r.specialty_id ?? null,
       specialty: r.specialty_id ? (specialtyNameById.get(r.specialty_id) ?? null) : null,
+      shiftId: r.shift_id ?? null,
       jobId: r.job_id ?? null,
       jobClient: job?.client ?? "",
       jobEventName: job?.eventName ?? "",
@@ -374,6 +380,8 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
     timesheetEntryId: e.timesheetEntryId,
     employeeKey: e.employeeKey,
     workDate: e.workDate,
+    shiftId: e.shiftId,
+    position: e.position,
     stdHours: e.stdHours,
     otHours: e.otHours,
     dtHours: e.dtHours,
@@ -480,6 +488,8 @@ export async function addEntriesToPayrollRun(
     timesheetEntryId: e.timesheetEntryId,
     employeeKey: e.employeeKey,
     workDate: e.workDate,
+    shiftId: e.shiftId,
+    position: e.position,
     stdHours: e.stdHours,
     otHours: e.otHours,
     dtHours: e.dtHours,
@@ -773,30 +783,41 @@ export function applyWeeklySpill(rows: WeekHourRow[]): WeeklySpillResult {
   return { adjustments };
 }
 
-/** Apply per-day rules to a set of candidate rows from the same payroll
- *  candidate list. Groups by (employee_key|null, work_date), computes any
- *  daily bumps (5hr minimum + round-up), and allocates the bumps to the
- *  HIGHEST-PAYING row in that day's group (Connor's rule, 2026-05-31).
- *  Other rows keep their billed std/ot/dt unchanged.
+/** Apply per-shift rules to a set of candidate rows from the same payroll
+ *  candidate list. Groups by (employee_key, work_date, shift_id ?? position):
+ *  - Two rows with the same shift_id → SAME shift (one 5hr min, share buckets)
+ *  - Two rows with different shift_id → DIFFERENT shifts (each gets own 5hr min)
+ *  - shift_id null on both, same position → same shift (fallback heuristic)
+ *  - shift_id null on both, different positions → different shifts
+ *    (Connor's "99.9% rule": different position usually means different
+ *    shift when shift_id wasn't populated)
+ *
+ *  Within each shift group: computes daily bumps (5hr minimum + round-up),
+ *  allocates the bumps to the HIGHEST-PAYING row, and extends the row's
+ *  last-active bucket (DT > OT > std).
  *
  *  The optional `ratesByRowId` map lets the caller pre-resolve pay rates
  *  per row so the highest-rate selection works. Without it, the bump
  *  goes to the first row in the group (deterministic fallback).
  *
- *  Edge case — zero billed hours on a day (someone keyed all blanks). The
+ *  Edge case — zero billed hours on a shift (someone keyed all blanks). The
  *  daily rule still bumps to 5 (per Connor's "5hr minimum"). The whole
  *  5hr goes to the highest-rate row, or split equally if all rates are
  *  unknown.
  */
 export function applyDailyRulesToCandidates(
   rows: { timesheetEntryId: string; employeeKey: string | null; workDate: string | null;
+          shiftId?: string | null; position?: string | null;
           stdHours: number; otHours: number; dtHours: number; }[],
   ratesByRowId?: Map<string, number>,
 ): Map<string, { payStdHours: number; payOtHours: number; payDtHours: number;
                   payTotalHours: number; payAdjustmentReason: string | null; }> {
   type GroupKey = string;
   const groups = new Map<GroupKey, typeof rows>();
-  const keyOf = (r: typeof rows[number]) => `${r.employeeKey ?? "__"}|${r.workDate ?? "__"}`;
+  // Group key: shift_id when set, otherwise position text as fallback.
+  // Two null-shift rows with the same position collapse into one group.
+  const keyOf = (r: typeof rows[number]) =>
+    `${r.employeeKey ?? "__"}|${r.workDate ?? "__"}|${r.shiftId ?? r.position ?? "__"}`;
   for (const r of rows) {
     const k = keyOf(r);
     const list = groups.get(k) ?? [];
@@ -1139,7 +1160,7 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
   const { data, error } = await supabase
     .from("payroll_run_entries")
     .select(`
-      id, timesheet_entry_id, employee_key, work_date,
+      id, timesheet_entry_id, employee_key, work_date, position,
       std_hours, ot_hours, dt_hours,
       std_rate, is_holiday, holiday_multiplier, pay_adjustment_reason
     `)
@@ -1147,13 +1168,28 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
   if (error) throw error;
   if (!data || data.length === 0) return 0;
 
+  // Fetch shift_id for each source timesheet entry — payroll_run_entries
+  // doesn't snapshot shift_id (yet), so we join on demand.
+  const tsIds = (data as any[]).map((r) => r.timesheet_entry_id).filter(Boolean);
+  const shiftByTsId = new Map<string, string | null>();
+  if (tsIds.length > 0) {
+    const { data: tsRows, error: tsErr } = await supabase
+      .from("timesheet_entries")
+      .select("id, shift_id")
+      .in("id", tsIds);
+    if (tsErr) { console.error("[payroll] recomputeDailyRulesForRun shift lookup:", tsErr); }
+    for (const r of tsRows ?? []) shiftByTsId.set((r as any).id, (r as any).shift_id ?? null);
+  }
+
   // Reuse applyDailyRulesToCandidates by adapting the shape.
   // Pass the row's existing std_rate so the bump routes to the highest-
-  // rate row per (employee, date) group.
+  // rate row per (employee, date, shift) group.
   const candidateShape = (data as any[]).map((r) => ({
     timesheetEntryId: r.id,  // use run-entry id as the lookup key
     employeeKey: r.employee_key ?? null,
     workDate: r.work_date ?? null,
+    shiftId: shiftByTsId.get(r.timesheet_entry_id) ?? null,
+    position: r.position ?? null,
     stdHours: Number(r.std_hours ?? 0),
     otHours:  Number(r.ot_hours  ?? 0),
     dtHours:  Number(r.dt_hours  ?? 0),
