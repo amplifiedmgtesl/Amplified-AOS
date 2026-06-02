@@ -35,6 +35,66 @@ const TIMES = timeOptions();
 const RATES = rateOptions();
 // POSITIONS is loaded from the store at render time so it stays live
 
+/**
+ * Lazy time-of-day select. At rest it's a plain text cell ("08:00" or blank);
+ * on click it mounts the full <select> with all 288 5-minute slots. Same
+ * pattern as LazyEmployeePicker — for a 525-row print, the at-rest text
+ * IS the print value and the heavy option list never materializes.
+ *
+ * Saves ~600,000 <option> DOM nodes on a Carolina-sized expanded timesheet.
+ */
+function LazyTimeSelect({
+  value,
+  options,
+  onChange,
+  disabled,
+  ariaLabel,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  const [active, setActive] = useState(false);
+  if (active) {
+    return (
+      <select
+        className="input-tight"
+        autoFocus
+        aria-label={ariaLabel}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => { onChange(e.target.value); setActive(false); }}
+        onBlur={() => setActive(false)}
+        style={{ minWidth: 80 }}
+      >
+        {options.map((t) => <option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}
+      </select>
+    );
+  }
+  return (
+    <div
+      onClick={() => { if (!disabled) setActive(true); }}
+      className="hide-print"
+      style={{
+        cursor: disabled ? "default" : "pointer",
+        padding: "3px 6px",
+        border: "1px solid var(--line, #d7c6aa)",
+        borderRadius: 4,
+        background: "#fff",
+        fontSize: 12,
+        minWidth: 60,
+        textAlign: "center",
+      }}
+      aria-label={ariaLabel}
+      title={disabled ? "" : "Click to set time"}
+    >
+      {value || <span style={{ color: "#bbb" }}>—</span>}
+    </div>
+  );
+}
+
 function splitName(fullName: string) {
   const parts = fullName.trim().split(" ");
   return { firstName: parts[0] || "", lastName: parts.slice(1).join(" ") || "" };
@@ -1653,12 +1713,28 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                     </tr>
                     <tr className={`line-row line-row-end ${band}${lockedClass}`} style={isLocked ? { opacity: 0.85 } : undefined}>
                       <td className="sig-box"></td>
-                      <td><select className="input-tight" disabled={isLocked} value={row.timeIn1} onChange={(e)=>updateRow(row.id, { timeIn1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn1 || ""}</span></td>
-                      <td><select className="input-tight" disabled={isLocked} value={row.timeOut1} onChange={(e)=>updateRow(row.id, { timeOut1:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut1 || ""}</span></td>
+                      <td>
+                        <LazyTimeSelect ariaLabel="Time In 1" value={row.timeIn1} options={TIMES} disabled={isLocked}
+                          onChange={(v) => updateRow(row.id, { timeIn1: v })} />
+                        <span className="print-time">{row.timeIn1 || ""}</span>
+                      </td>
+                      <td>
+                        <LazyTimeSelect ariaLabel="Time Out 1" value={row.timeOut1} options={TIMES} disabled={isLocked}
+                          onChange={(v) => updateRow(row.id, { timeOut1: v })} />
+                        <span className="print-time">{row.timeOut1 || ""}</span>
+                      </td>
                       <td><select className="input-tight" disabled={isLocked} value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak1Minutes ?? row.lunchMinutes ?? 0}</span></td>
                       <td className="sig-box"></td>
-                      <td><select className="input-tight" disabled={isLocked} value={row.timeIn2} onChange={(e)=>updateRow(row.id, { timeIn2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeIn2 || ""}</span></td>
-                      <td><select className="input-tight" disabled={isLocked} value={row.timeOut2} onChange={(e)=>updateRow(row.id, { timeOut2:e.target.value })}>{TIMES.map((t)=><option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}</select><span className="print-time">{row.timeOut2 || ""}</span></td>
+                      <td>
+                        <LazyTimeSelect ariaLabel="Time In 2" value={row.timeIn2} options={TIMES} disabled={isLocked}
+                          onChange={(v) => updateRow(row.id, { timeIn2: v })} />
+                        <span className="print-time">{row.timeIn2 || ""}</span>
+                      </td>
+                      <td>
+                        <LazyTimeSelect ariaLabel="Time Out 2" value={row.timeOut2} options={TIMES} disabled={isLocked}
+                          onChange={(v) => updateRow(row.id, { timeOut2: v })} />
+                        <span className="print-time">{row.timeOut2 || ""}</span>
+                      </td>
                       <td><select className="input-tight" disabled={isLocked} value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak2Minutes ?? 0}</span></td>
                       <td className="hide-print">{row.stdHours.toFixed(2)}</td>
                       <td className="hide-print">{row.otHours.toFixed(2)}</td>
