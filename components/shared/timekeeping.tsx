@@ -498,17 +498,17 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   // reset to 'submitted', invoice binding cleared, and holiday flags
   // recomputed from the target day's holiday status. Matches the pattern on
   // job-request crew assignments (the "Copy ↑" button there).
-  function duplicateFromPreviousDay(targetDay: string, prevDay: string) {
+  function duplicateDay(sourceDay: string, targetDay: string) {
     if (!timesheet) return;
-    const prevRows = timesheet.rows.filter((r) => (r.workDate || "no-date") === prevDay);
-    if (prevRows.length === 0) {
-      alert("Previous day has no entries to copy.");
+    const sourceRows = timesheet.rows.filter((r) => (r.workDate || "no-date") === sourceDay);
+    if (sourceRows.length === 0) {
+      alert(`${sourceDay} has no entries to copy.`);
       return;
     }
-    if (!confirm(`Copy ${prevRows.length} entr${prevRows.length === 1 ? "y" : "ies"} from ${prevDay} to ${targetDay}?`)) return;
+    if (!confirm(`Copy ${sourceRows.length} entr${sourceRows.length === 1 ? "y" : "ies"} from ${sourceDay} to ${targetDay}?`)) return;
     const isHol = targetDay !== "no-date" && holidayDateSet.has(targetDay);
     const stamp = Date.now();
-    const copies = prevRows.map((r, i) => computeTimeEntry({
+    const copies = sourceRows.map((r, i) => computeTimeEntry({
       ...r,
       id: `dup-${stamp}-${i}`,
       workDate: targetDay === "no-date" ? undefined : targetDay,
@@ -519,6 +519,36 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
       invoiceLineId: null,
     }));
     persist({ ...timesheet, rows: [...timesheet.rows, ...copies] });
+    if (collapsedDays.has(targetDay)) {
+      setCollapsedDays((prev) => {
+        const next = new Set(prev);
+        next.delete(targetDay);
+        return next;
+      });
+    }
+  }
+
+  // Spawn a brand-new day by cloning this day's entries onto a date the
+  // operator picks. Defaults the prompt to the day after `sourceDay`.
+  function copyDayToNewDate(sourceDay: string) {
+    if (sourceDay === "no-date") return;
+    const defaultNext = (() => {
+      const d = new Date(sourceDay + "T00:00:00");
+      d.setDate(d.getDate() + 1);
+      return d.toISOString().slice(0, 10);
+    })();
+    const input = prompt(`Copy this day's entries to which date? (YYYY-MM-DD)`, defaultNext);
+    if (!input) return;
+    const target = input.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(target)) {
+      alert("Please enter a date in YYYY-MM-DD format.");
+      return;
+    }
+    if (target === sourceDay) {
+      alert("Target date is the same as the source day.");
+      return;
+    }
+    duplicateDay(sourceDay, target);
   }
 
   function addManualCrew() {
@@ -1101,24 +1131,42 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                               {statusMix.submitted ? `· ${statusMix.submitted} pending ` : ""}
                               {statusMix.rejected ? `· ${statusMix.rejected} rejected ` : ""}
                             </span>
-                            {prevDayKey && prevDayKey !== "no-date" && day !== "no-date" && (
-                              <button
-                                type="button"
-                                className="hide-print"
-                                onClick={(e) => { e.stopPropagation(); duplicateFromPreviousDay(day, prevDayKey); }}
-                                title={`Copy entries from ${prevDayKey} to ${day}`}
-                                style={{
-                                  marginLeft: "auto",
-                                  fontSize: 11,
-                                  padding: "3px 10px",
-                                  background: isCollapsed ? "#fff" : "rgba(255,255,255,0.18)",
-                                  color: isCollapsed ? "#1a1a1a" : "#fff",
-                                  border: isCollapsed ? "1px solid #d7c6aa" : "1px solid rgba(255,255,255,0.4)",
-                                  borderRadius: 6,
-                                  cursor: "pointer",
-                                }}
-                              >Copy ↑ prev day</button>
-                            )}
+                            <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                              {prevDayKey && prevDayKey !== "no-date" && day !== "no-date" && (
+                                <button
+                                  type="button"
+                                  className="hide-print"
+                                  onClick={(e) => { e.stopPropagation(); duplicateDay(prevDayKey, day); }}
+                                  title={`Copy entries from ${prevDayKey} to ${day}`}
+                                  style={{
+                                    fontSize: 11,
+                                    padding: "3px 10px",
+                                    background: isCollapsed ? "#fff" : "rgba(255,255,255,0.18)",
+                                    color: isCollapsed ? "#1a1a1a" : "#fff",
+                                    border: isCollapsed ? "1px solid #d7c6aa" : "1px solid rgba(255,255,255,0.4)",
+                                    borderRadius: 6,
+                                    cursor: "pointer",
+                                  }}
+                                >Copy ↑ prev day</button>
+                              )}
+                              {day !== "no-date" && dayRows.length > 0 && (
+                                <button
+                                  type="button"
+                                  className="hide-print"
+                                  onClick={(e) => { e.stopPropagation(); copyDayToNewDate(day); }}
+                                  title="Copy this day's entries to a new date"
+                                  style={{
+                                    fontSize: 11,
+                                    padding: "3px 10px",
+                                    background: isCollapsed ? "#fff" : "rgba(255,255,255,0.18)",
+                                    color: isCollapsed ? "#1a1a1a" : "#fff",
+                                    border: isCollapsed ? "1px solid #d7c6aa" : "1px solid rgba(255,255,255,0.4)",
+                                    borderRadius: 6,
+                                    cursor: "pointer",
+                                  }}
+                                >Copy → new day…</button>
+                              )}
+                            </span>
                           </div>
                         </td>
                       </tr>
