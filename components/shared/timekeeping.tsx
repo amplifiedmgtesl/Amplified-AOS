@@ -1220,7 +1220,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                     <th colSpan={r1Spans.spc}>Specialty</th>
                     <th colSpan={r1Spans.start}>Start Date</th>
                     <th colSpan={r1Spans.end}>End Date</th>
-                    <th colSpan={phantomSpan} className="hide-print">{jobHasShifts ? "Shift" : ""}</th>
+                    <th colSpan={phantomSpan}>{jobHasShifts ? "Shift" : ""}</th>
                     <th rowSpan={2} className="hide-print" style={{ minWidth: 90 }}>
                       {!hideBillAlways && timesheet.rows.length > 0 && (() => {
                         const allSel = timesheet.rows.every((r) => selectedIds.has(r.id));
@@ -1362,6 +1362,10 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                           </div>
                         ) : (
                           <>
+                            <span className="print-time" style={{ fontSize: 13, fontWeight: 600 }}>
+                              {[row.firstName, row.lastName].filter(Boolean).join(" ") || row.email || "(unnamed)"}
+                            </span>
+                            <div className="hide-print">
                             <LazyEmployeePicker
                               employeeKey={row.employeeKey}
                               displayName={[row.firstName, row.lastName].filter(Boolean).join(" ") || undefined}
@@ -1413,6 +1417,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                               }}
                             />
                             {unlinked ? <div className="unlinked-hint">⚠ Link an employee to enable this row</div> : null}
+                            </div>
                           </>
                         )}
                       </td>
@@ -1526,35 +1531,45 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                           return null;
                         })()}
                       </td>
-                      <td colSpan={phantomSpan} className="hide-print" style={{ verticalAlign: "middle" }}>
+                      {/* Shift cell — note: NOT className="hide-print". The
+                          phantom span is otherwise empty layout filler, but
+                          when shifts are defined we want the picked shift
+                          label to print on the sign-in sheet so the crew
+                          knows which shift they signed in to. */}
+                      <td colSpan={phantomSpan} style={{ verticalAlign: "middle" }}>
                         {jobHasShifts && (
-                          <div style={{ display: "flex", alignItems: "center" }}>
-                            <select
-                              className="input-tight"
-                              value={row.shiftId || ""}
-                              disabled={isLocked}
-                              onChange={(e) => updateRow(row.id, { shiftId: e.target.value || null })}
-                              title={
-                                !row.shiftId
-                                  ? "Shift is required to approve — payroll groups daily rules by shift"
-                                  : ""
-                              }
-                              required
-                              style={{
-                                fontSize: 11,
-                                width: "auto",
-                                maxWidth: 180,
-                                ...(!row.shiftId && !isLocked
-                                  ? { background: "#fff4d6", borderColor: "#e0c070" }
-                                  : {}),
-                              }}
-                            >
-                              <option value="">🕒 — required —</option>
-                              {Array.from(shiftLabelById.entries()).map(([id, label]) => (
-                                <option key={id} value={id}>🕒 {label}</option>
-                              ))}
-                            </select>
-                          </div>
+                          <>
+                            <div className="hide-print" style={{ display: "flex", alignItems: "center" }}>
+                              <select
+                                className="input-tight"
+                                value={row.shiftId || ""}
+                                disabled={isLocked}
+                                onChange={(e) => updateRow(row.id, { shiftId: e.target.value || null })}
+                                title={
+                                  !row.shiftId
+                                    ? "Shift is required to approve — payroll groups daily rules by shift"
+                                    : ""
+                                }
+                                required
+                                style={{
+                                  fontSize: 11,
+                                  width: "auto",
+                                  maxWidth: 180,
+                                  ...(!row.shiftId && !isLocked
+                                    ? { background: "#fff4d6", borderColor: "#e0c070" }
+                                    : {}),
+                                }}
+                              >
+                                <option value="">🕒 — required —</option>
+                                {Array.from(shiftLabelById.entries()).map(([id, label]) => (
+                                  <option key={id} value={id}>🕒 {label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <span className="print-time" style={{ fontWeight: 600 }}>
+                              {row.shiftId ? (shiftLabelById.get(row.shiftId) || "") : ""}
+                            </span>
+                          </>
                         )}
                       </td>
                       <td rowSpan={2} className="hide-print" style={{ verticalAlign: "middle", padding: "6px 8px" }}>
