@@ -1,7 +1,7 @@
 
 "use client";
 
-import { Fragment, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { printWithTitle } from "@/lib/print-with-title";
 import {
   getActiveJob, setActiveJob,
@@ -290,7 +290,16 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   useEffect(() => { setSelectedIds(new Set()); }, [timesheet?.id]);
   // Per-day collapse state on the editing view. Print mode forces all expanded
   // (via @media print) and hides the day-separator header rows.
-  const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set());
+  //
+  // Stored as user OVERRIDES, not the absolute state — keyed by day with an
+  // explicit boolean. The default (`dayGroups.length > 1` → all collapsed) is
+  // applied inline by `isDayCollapsed()` whenever a day isn't in the map.
+  // This avoids the prior bug where a useEffect set the collapse AFTER the
+  // first render, so the first paint always rendered every row in every day —
+  // catastrophic on big jobs like the 525-row Ohio Country Fest.
+  const [collapsedOverrides, setCollapsedOverrides] = useState<Map<string, boolean>>(new Map());
+  // Reset overrides when the active timesheet changes — fresh job, fresh defaults.
+  useEffect(() => { setCollapsedOverrides(new Map()); }, [timesheet?.id]);
   // Convenience alias for the in-memory rows of the active timesheet.
   const allRows = useMemo(() => timesheet?.rows ?? [], [timesheet]);
   // Precomputed id → index map. Avoids O(n²) indexOf in the row map below.
@@ -374,24 +383,34 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
     });
   }, [allRows]);
 
-  // Default-collapse all days if multi-day; expand the only day if single-day.
-  useEffect(() => {
-    if (dayGroups.length > 1) {
-      setCollapsedDays(new Set(dayGroups.map(([d]) => d)));
-    } else {
-      setCollapsedDays(new Set());
-    }
-  }, [timesheet?.id, dayGroups.length]);
-
+  // Effective collapsed state for a given day:
+  //   1. If the user explicitly toggled it → honor that override.
+  //   2. Otherwise apply the default: multi-day → collapsed, single-day → expanded.
+  function isDayCollapsed(day: string): boolean {
+    const explicit = collapsedOverrides.get(day);
+    if (explicit !== undefined) return explicit;
+    return dayGroups.length > 1;
+  }
   function toggleDay(day: string) {
-    setCollapsedDays((prev) => {
-      const next = new Set(prev);
-      if (next.has(day)) next.delete(day); else next.add(day);
+    setCollapsedOverrides((prev) => {
+      const next = new Map(prev);
+      // Read the current effective state and flip it explicitly.
+      const explicit = prev.get(day);
+      const cur = explicit !== undefined ? explicit : dayGroups.length > 1;
+      next.set(day, !cur);
       return next;
     });
   }
-  function expandAll()   { setCollapsedDays(new Set()); }
-  function collapseAll() { setCollapsedDays(new Set(dayGroups.map(([d]) => d))); }
+  function expandAll() {
+    const m = new Map<string, boolean>();
+    for (const [d] of dayGroups) m.set(d, false);
+    setCollapsedOverrides(m);
+  }
+  function collapseAll() {
+    const m = new Map<string, boolean>();
+    for (const [d] of dayGroups) m.set(d, true);
+    setCollapsedOverrides(m);
+  }
 
   useEffect(() => {
     if (pickerKind === "job") {
@@ -615,10 +634,12 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
       invoiceLineId: null,
     }));
     persist({ ...timesheet, rows: [...timesheet.rows, ...copies] });
-    if (collapsedDays.has(targetDay)) {
-      setCollapsedDays((prev) => {
-        const next = new Set(prev);
-        next.delete(targetDay);
+    // Force-expand the target day so the operator sees the freshly-copied
+    // rows immediately.
+    if (isDayCollapsed(targetDay)) {
+      setCollapsedOverrides((prev) => {
+        const next = new Map(prev);
+        next.set(targetDay, false);
         return next;
       });
     }
@@ -1012,8 +1033,10 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
             <button onClick={() => {
               // Expand all days first so collapsed-day rows are in the DOM
               // (we conditionally skip rendering them when collapsed for perf).
-              const prevCollapsed = new Set(collapsedDays);
-              setCollapsedDays(new Set());
+              const prevOverrides = new Map(collapsedOverrides);
+              const expanded = new Map<string, boolean>();
+              for (const [d] of dayGroups) expanded.set(d, false);
+              setCollapsedOverrides(expanded);
               // Let React render the rows, then print, then restore.
               setTimeout(() => {
                 printWithTitle([
@@ -1022,7 +1045,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                   headerClient,
                   dayFilter !== "all" ? dayFilter : undefined,
                 ]);
-                setTimeout(() => setCollapsedDays(prevCollapsed), 500);
+                setTimeout(() => setCollapsedOverrides(prevOverrides), 500);
               }, 50);
             }}>Download / Print PDF</button>
           </div>
@@ -1233,7 +1256,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                   </tr>
                 </thead>
                 {dayGroups.map(([day, dayRows], dayGroupIdx) => {
-                  const isCollapsed = collapsedDays.has(day);
+                  const isCollapsed = isDayCollapsed(day);
                   const prevDayKey = dayGroupIdx > 0 ? dayGroups[dayGroupIdx - 1][0] : null;
                   const dayLabel = day === "no-date"
                     ? "(no date)"
