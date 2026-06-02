@@ -527,8 +527,20 @@ export function LazyEmployeePicker({
       <EmployeePicker
         employeeKey={employeeKey}
         fallbackName={fallbackName}
-        onSelect={onSelect}
-        onCreateInline={onCreateInline}
+        onSelect={(emp) => {
+          // After a pick, drop back to the cheap lazy tile so every cell
+          // on the screen renders consistently — operators were confused
+          // that picked rows kept showing the bigger tile while untouched
+          // rows showed the smaller one.
+          onSelect(emp);
+          setActive(false);
+        }}
+        onCreateInline={async (typedName) => {
+          if (!onCreateInline) throw new Error("onCreateInline not provided");
+          const created = await onCreateInline(typedName);
+          setActive(false);
+          return created;
+        }}
         // Open in search mode when activated by user click — they wanted
         // to change the employee, not see another tile they have to click
         // through. Skip when we're just falling through to load the cache
