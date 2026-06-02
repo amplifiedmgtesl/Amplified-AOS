@@ -18,6 +18,7 @@ import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summar
 import { parseMinutes } from "@/lib/time-utils";
 import type { EmployeeRecord, JobRequest, JobSheet, TimeEntry, Timesheet } from "@/lib/store/types";
 import { EqualizerLoader } from "@/components/shared/equalizer-loader";
+import { EmployeePicker, pushEmployeeIntoCache, type PickerEmployee } from "@/components/shared/employee-picker";
 
 // Phase 1: picker selection encodes which world we're in.
 //   "job:<jobId>"        — canonical, anchored on job_requests
@@ -37,113 +38,6 @@ const RATES = rateOptions();
 function splitName(fullName: string) {
   const parts = fullName.trim().split(" ");
   return { firstName: parts[0] || "", lastName: parts.slice(1).join(" ") || "" };
-}
-
-function EmployeeAutoFill({
-  employeeKey,
-  employees,
-  onSelect,
-  onCreateNew,
-  fallbackName,
-}: {
-  employeeKey?: string | null;
-  employees: EmployeeRecord[];
-  onSelect: (emp: EmployeeRecord) => void;
-  /** Called when the operator clicks "Create employee" on a no-match
-   *  query. Implementation should upsert into the employees table,
-   *  bump the refresh key, and call onSelect with the new record. */
-  onCreateNew?: (typedName: string) => void;
-  fallbackName?: string;
-}) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-
-  const linked = employeeKey ? employees.find((e) => e.employeeKey === employeeKey) : null;
-
-  const results = useMemo(() => {
-    if (!query || query.length < 2) return [];
-    const q = query.toLowerCase();
-    return employees
-      .filter(
-        (e) =>
-          e.fullName.toLowerCase().includes(q) ||
-          (e.email?.toLowerCase() || "").includes(q) ||
-          e.employeeKey.toLowerCase().includes(q)
-      )
-      .slice(0, 8);
-  }, [query, employees]);
-
-  return (
-    <div style={{ position: "relative", minWidth: 170 }}>
-      {linked && !query && (
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2, whiteSpace: "nowrap" }}>
-          {linked.fullName}
-        </div>
-      )}
-      {!linked && fallbackName && !query && (
-        <div style={{ fontSize: 13, fontWeight: 600, color: "#a05a00", marginBottom: 2, whiteSpace: "nowrap" }} title="No employee linked — pick one from the list">
-          {fallbackName} <span style={{ fontWeight: 400, fontStyle: "italic", fontSize: 11, color: "#a05a00" }}>(unlinked)</span>
-        </div>
-      )}
-      <input
-        className="input-tight hide-print"
-        style={{ minWidth: 160 }}
-        placeholder={linked ? "Change employee…" : (fallbackName ? `Link "${fallbackName}"…` : "Search employee…")}
-        value={query}
-        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-      />
-      {open && query.length >= 2 && (results.length > 0 || onCreateNew) && (
-        <div style={{
-          position: "absolute",
-          top: "100%",
-          left: 0,
-          zIndex: 200,
-          background: "#fff",
-          border: "1px solid #d7c6aa",
-          borderRadius: 8,
-          boxShadow: "0 4px 16px rgba(0,0,0,0.13)",
-          minWidth: 270,
-          maxHeight: 240,
-          overflowY: "auto",
-        }}>
-          {results.map((emp) => (
-            <div
-              key={emp.employeeKey}
-              style={{ padding: "8px 12px", cursor: "pointer", borderBottom: "1px solid #f0e9e0" }}
-              onMouseDown={() => { onSelect(emp); setQuery(""); setOpen(false); }}
-            >
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.fullName}</div>
-              <div style={{ fontSize: 11, color: "#888" }}>
-                {emp.employeeKey}{emp.email ? ` · ${emp.email}` : ""}
-              </div>
-            </div>
-          ))}
-          {onCreateNew ? (
-            <div
-              style={{
-                padding: "8px 12px",
-                cursor: "pointer",
-                background: "#fff8e1",
-                borderTop: results.length > 0 ? "1px solid #d7c6aa" : undefined,
-                color: "#7a5a1a",
-                fontSize: 13,
-                fontWeight: 600,
-              }}
-              onMouseDown={() => { onCreateNew(query.trim()); setQuery(""); setOpen(false); }}
-              title="Create a new employee with this name and link this row to it."
-            >
-              + Create employee &ldquo;{query.trim()}&rdquo;
-              <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2, color: "#7a5a1a" }}>
-                Adds to the Employee Directory as a contractor. Edit details later from Maintenance.
-              </div>
-            </div>
-          ) : null}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ─── Dev-only perf logger ────────────────────────────────────────────────────
@@ -241,7 +135,11 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   const sheets = useMemo(() => loadJobSheets(), [refreshKey]);
   const jobRequests = useMemo(() => loadJobRequests(), [refreshKey]);
   const timesheets = useMemo(() => loadTimesheets(), [refreshKey]);
-  const employees = useMemo(() => loadEmployees(), [refreshKey]);
+  // NOTE: the legacy in-memory `employees` array used to be passed to the
+  // per-row autofill. That's been replaced by the EmployeePicker pattern
+  // (module-level cache in employee-picker.tsx), so we no longer need to
+  // memoize the full directory here. `loadEmployees()` is still called
+  // inline by addCrewFromJob() for one-off name lookups.
   const [pendingEntries, setPendingEntries] = useState<import("@/lib/store/types").TimeEntry[]>([]);
 
   // Picker state — encodes both kinds of selection (canonical job vs. legacy job_sheet).
@@ -1404,10 +1302,9 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                           </div>
                         ) : (
                           <>
-                            <EmployeeAutoFill
+                            <EmployeePicker
                               employeeKey={row.employeeKey}
-                              employees={employees}
-                              fallbackName={[row.firstName, row.lastName].filter(Boolean).join(" ")}
+                              fallbackName={[row.firstName, row.lastName].filter(Boolean).join(" ") || undefined}
                               onSelect={(emp) => updateRow(row.id, {
                                 employeeKey: emp.employeeKey,
                                 firstName: emp.firstName || emp.fullName.split(" ")[0] || "",
@@ -1416,7 +1313,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                                 email: emp.email || "",
                                 status: row.status === "approved" ? "approved" : "submitted",
                               })}
-                              onCreateNew={(typedName) => {
+                              onCreateInline={async (typedName) => {
                                 // Add to employee master on the fly so the
                                 // person becomes searchable for future rows
                                 // and the timesheet entry has a real FK to
@@ -1438,14 +1335,20 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                                 };
                                 upsertEmployee(newEmployee);
                                 setRefreshKey((k) => k + 1);
-                                updateRow(row.id, {
+                                // Hand the same record back to EmployeePicker as
+                                // a PickerEmployee — it'll call onSelect with it
+                                // and push it into the module-level cache so
+                                // other pickers on the page see it immediately.
+                                const picked: PickerEmployee = {
                                   employeeKey: newEmployee.employeeKey,
+                                  fullName,
                                   firstName,
                                   lastName,
-                                  phone: "",
                                   email: "",
-                                  status: row.status === "approved" ? "approved" : "submitted",
-                                });
+                                  phone: "",
+                                };
+                                pushEmployeeIntoCache(picked);
+                                return picked;
                               }}
                             />
                             {unlinked ? <div className="unlinked-hint">⚠ Link an employee to enable this row</div> : null}

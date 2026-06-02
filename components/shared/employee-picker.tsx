@@ -21,6 +21,35 @@ export type PickerEmployee = {
 let employeesCache: PickerEmployee[] | null = null;
 let employeesPromise: Promise<PickerEmployee[]> | null = null;
 
+// Subscribers are notified after pushEmployeeIntoCache() mutates the cache,
+// so any mounted picker can re-render with the new employee visible.
+const cacheSubscribers = new Set<() => void>();
+function notifyCacheSubscribers() {
+  for (const fn of cacheSubscribers) fn();
+}
+
+/**
+ * Insert a freshly-created employee into the shared cache so every picker
+ * on the page sees them immediately, without re-fetching the directory.
+ * Call this from any inline-create flow after the DB write completes.
+ *
+ * Idempotent — replaces an existing entry with the same employeeKey if
+ * one's already present.
+ */
+export function pushEmployeeIntoCache(emp: PickerEmployee): void {
+  if (!emp.employeeKey) return;
+  if (employeesCache === null) {
+    // Cache hasn't been hydrated yet — start it with just this one entry,
+    // the regular fetch will replace it on first picker focus.
+    employeesCache = [emp];
+  } else {
+    const idx = employeesCache.findIndex((e) => e.employeeKey === emp.employeeKey);
+    if (idx >= 0) employeesCache[idx] = emp;
+    else employeesCache = [...employeesCache, emp];
+  }
+  notifyCacheSubscribers();
+}
+
 async function loadAllEmployees(): Promise<PickerEmployee[]> {
   if (employeesCache !== null) return employeesCache;
   if (employeesPromise) return employeesPromise;
@@ -80,11 +109,23 @@ async function loadAllEmployees(): Promise<PickerEmployee[]> {
 export function EmployeePicker({
   employeeKey,
   onSelect,
+  onCreateInline,
+  fallbackName,
   disabled = false,
   placeholder = "Search employee…",
 }: {
   employeeKey?: string | null;
   onSelect: (emp: PickerEmployee) => void;
+  /** When provided, the picker shows a "+ Create employee 'X'" button in the
+   *  dropdown when the typed query has no matches. The callback should
+   *  insert the employee into the directory, call pushEmployeeIntoCache(),
+   *  and resolve. The picker then calls onSelect with the new employee
+   *  and closes itself. Used by timekeeping for fast field entry. */
+  onCreateInline?: (typedName: string) => Promise<PickerEmployee>;
+  /** Optional display name to show when no employeeKey is linked yet —
+   *  e.g. a staff-submitted name awaiting link. Renders in amber with
+   *  "(unlinked)" tag like the legacy timekeeping autofill did. */
+  fallbackName?: string;
   disabled?: boolean;
   placeholder?: string;
 }) {
@@ -92,8 +133,40 @@ export function EmployeePicker({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
   const role = useUserRole();
   const addEmployeeHref = role === "crew_leader" ? "/lead/employees" : "/employee-directory";
+
+  // Re-render when another picker on the page adds a new employee to the
+  // shared cache (so the dropdown stays in sync with concurrent inline creates).
+  const [, setCacheTick] = useState(0);
+  useEffect(() => {
+    const fn = () => {
+      if (employeesCache) setEmployees([...employeesCache]);
+      setCacheTick((t) => t + 1);
+    };
+    cacheSubscribers.add(fn);
+    return () => { cacheSubscribers.delete(fn); };
+  }, []);
+
+  async function handleInlineCreate() {
+    if (!onCreateInline || !query.trim() || creating) return;
+    setCreating(true);
+    try {
+      const created = await onCreateInline(query.trim());
+      // Make sure the shared cache contains the new row, in case the
+      // caller forgot to push.
+      pushEmployeeIntoCache(created);
+      onSelect(created);
+      setQuery("");
+      setOpen(false);
+    } catch (err) {
+      console.error("EmployeePicker.onCreateInline failed:", err);
+      alert("Couldn't create employee — see console.");
+    } finally {
+      setCreating(false);
+    }
+  }
 
   const linked = useMemo(
     () => (employeeKey && employees ? employees.find((e) => e.employeeKey === employeeKey) : null),
@@ -173,6 +246,11 @@ export function EmployeePicker({
     }).length;
   }, [employees, query]);
 
+  // Show a "(unlinked)" amber tile when the row has a typed-in name but no
+  // employee_key — typical for legacy rows or staff submissions awaiting link.
+  // Clicking it opens the search so the operator can link the right person.
+  const showFallbackTile = !linked && !!fallbackName && !open;
+
   return (
     <div style={{ position: "relative", minWidth: 200 }}>
       {linked && !open && (
@@ -196,7 +274,27 @@ export function EmployeePicker({
           )}
         </div>
       )}
-      {(!linked || open) && (
+      {showFallbackTile && (
+        <div
+          onClick={() => { if (!disabled) { setOpen(true); void ensureLoaded(); } }}
+          style={{
+            cursor: disabled ? "default" : "pointer",
+            padding: "5px 8px",
+            border: "1px solid #e0c070",
+            borderRadius: 6,
+            background: "#fff7e0",
+            fontSize: 12,
+            color: "#a05a00",
+          }}
+          title="No employee linked yet — click to search"
+        >
+          <div style={{ fontWeight: 600 }}>
+            {fallbackName}{" "}
+            <span style={{ fontWeight: 400, fontStyle: "italic", fontSize: 11 }}>(unlinked)</span>
+          </div>
+        </div>
+      )}
+      {((!linked && !showFallbackTile) || open) && (
         <div style={{ display: "flex", gap: 4, alignItems: "stretch" }}>
           <input
             autoFocus={open}
@@ -260,6 +358,28 @@ export function EmployeePicker({
           {!loading && results.length === 0 && (
             <div style={{ padding: 12, fontSize: 12, color: "#888" }}>
               {query ? `No employees match "${query}".` : "No employees found."}
+              {onCreateInline && query.trim().length >= 2 && (
+                <div
+                  onMouseDown={(e) => { e.preventDefault(); void handleInlineCreate(); }}
+                  style={{
+                    marginTop: 8,
+                    padding: "8px 10px",
+                    background: "var(--accent, #2563eb)",
+                    color: "#fff",
+                    borderRadius: 6,
+                    cursor: creating ? "wait" : "pointer",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    opacity: creating ? 0.7 : 1,
+                  }}
+                  title="Create a new employee with this name and link the row to them."
+                >
+                  {creating ? "Creating…" : `+ Create employee "${query.trim()}"`}
+                  <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2, opacity: 0.9 }}>
+                    Adds them to the Employee Directory as a contractor. Edit details later from Maintenance.
+                  </div>
+                </div>
+              )}
             </div>
           )}
           {!loading && results.map((e) => (
