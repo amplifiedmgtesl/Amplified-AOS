@@ -172,6 +172,36 @@ function tkPerfReset(reason: string) {
   (window as any).__tkPerf = [];
   tkPerf(`▶ reset: ${reason}`);
 }
+// Downloadable trace — triggers a Save As dialog so we get a real OS file.
+// Callable from the console (`window.__tkPerfDownload()`) or from the
+// "📥 perf log" link rendered in the header below.
+function tkPerfDownload(filename?: string) {
+  if (!TK_PERF_ON || typeof window === "undefined") return;
+  const arr: TkPerfEvent[] = (window as any).__tkPerf ?? [];
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const name = filename ?? `tk-perf-${ts}.json`;
+  const body = JSON.stringify({
+    capturedAt: new Date().toISOString(),
+    userAgent: navigator.userAgent,
+    href: location.href,
+    eventCount: arr.length,
+    events: arr,
+  }, null, 2);
+  const blob = new Blob([body], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // eslint-disable-next-line no-console
+  console.log(`[tk-perf] downloaded ${name} (${arr.length} events)`);
+}
+if (TK_PERF_ON && typeof window !== "undefined") {
+  (window as any).__tkPerfDownload = tkPerfDownload;
+}
 
 export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways?: boolean }) {
   const POSITIONS = positionNames();
@@ -885,7 +915,22 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
     <div className="grid" style={{ position: "relative" }}>
       {isBusy && <EqualizerLoader label={busyLabel} />}
       <div className="card hide-print">
-        <h2 className="section-title">Timekeeping Control Center</h2>
+        <h2 className="section-title" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          Timekeeping Control Center
+          {TK_PERF_ON && (
+            <button
+              type="button"
+              onClick={() => tkPerfDownload()}
+              title="Download the dev-only perf trace as JSON (Save As dialog)"
+              style={{
+                fontSize: 11, padding: "2px 8px",
+                background: "#fff7e0", color: "#7a5a1a",
+                border: "1px solid #e0c070", borderRadius: 6, cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >📥 perf log</button>
+          )}
+        </h2>
         <div className="grid4">
           <div>
             <small>Job</small>
