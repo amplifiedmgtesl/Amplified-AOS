@@ -233,6 +233,18 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   })();
   const [picker, setPicker] = useState<PickerValue>(initialPicker);
   const { kind: pickerKind, key: pickerKey } = parsePicker(picker);
+  // True between the user picking a new job and the new timesheet finishing
+  // its first heavy render. Without this, React batches setPicker +
+  // setTimesheet into one render, so the loading overlay never paints between
+  // the click and the (slow) re-render of the new timesheet's 400+ rows.
+  const [isSwitchingJob, setIsSwitchingJob] = useState(false);
+  /** Defer the picker update so the spinner gets a paint frame first. */
+  function changePicker(next: PickerValue) {
+    if (next === picker) return;
+    setIsSwitchingJob(true);
+    // Two RAFs guarantees the overlay paints before the heavy render starts.
+    requestAnimationFrame(() => requestAnimationFrame(() => setPicker(next)));
+  }
 
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
   const [dayFilter, setDayFilter] = useState<string>("all");
@@ -297,6 +309,9 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
       }
     }
     setDayFilter("all");
+    // Allow the overlay to clear once the new timesheet has been swapped in.
+    // Wrapped in RAF so the spinner stays through the heavy render commit.
+    requestAnimationFrame(() => setIsSwitchingJob(false));
   }, [picker, refreshKey]);
 
   // Group rows by workDate (with a "no-date" bucket for blank ones), days
@@ -818,8 +833,8 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   // being fetched (ensureTimesheetForJobRequest can take a beat on cold load)
   // and during any long-running batch action.
   const isLoadingTimesheet = pickerKind !== "none" && timesheet === null;
-  const isBusy = isLoadingTimesheet || addingCrew || busyBatch !== null;
-  const busyLabel = isLoadingTimesheet
+  const isBusy = isLoadingTimesheet || isSwitchingJob || addingCrew || busyBatch !== null;
+  const busyLabel = (isLoadingTimesheet || isSwitchingJob)
     ? "Loading the set list…"
     : addingCrew
       ? "Calling the crew to the stage…"
@@ -839,7 +854,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
         <div className="grid4">
           <div>
             <small>Job</small>
-            <select value={picker} onChange={(e) => setPicker(e.target.value as PickerValue)}>
+            <select value={picker} onChange={(e) => changePicker(e.target.value as PickerValue)}>
               <option value="">Select a job</option>
               <optgroup label="Jobs">
                 {jobRequests
