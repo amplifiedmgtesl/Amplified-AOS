@@ -101,6 +101,10 @@ small,.muted{color:var(--muted)}
   .day-name{display:none}
   .month-cell{min-height:auto}
 }
+/* Marker row used by Timekeeping's print page-break — emitted before each
+   day-separator (except the first). display:none on screen so the editing
+   grid is unaffected. */
+.timesheet-grid tr.print-pagebreak{display:none}
 @media print{
   .sidebar,.topbar,.hide-print,.hide-print *{display:none !important}
   .layout{display:block}
@@ -221,11 +225,21 @@ small,.muted{color:var(--muted)}
   /* Repeating headers across pages with high-contrast text. The default
      gold-on-cream styling printed as ghost text. */
   .timesheet-grid thead{display:table-header-group !important}
-  /* Start each day on its own page. The first day-separator stays in place
-     (page break would create a blank page before the first day).
-     IMPORTANT: page-break-before on <tbody> isn't honored by Chrome — apply
-     it to the inner <tr> instead. */
-  .timesheet-grid tbody.day-separator:not(:first-of-type) > tr{
+  /* Start each day on its own page. Chrome doesn't reliably honor
+     page-break on <tbody> or <tr>, so we use a dedicated empty <tr> with
+     a forced break — the marker is display:none on screen, table-row on
+     print, with a hard break before it. */
+  .timesheet-grid tr.print-pagebreak{
+    display:table-row !important;
+    page-break-before:always !important;
+    break-before:page !important;
+    height:0 !important;
+    line-height:0 !important;
+    visibility:hidden !important;
+  }
+  .timesheet-grid tr.print-pagebreak > td{
+    padding:0 !important;
+    border:none !important;
     page-break-before:always !important;
     break-before:page !important;
   }

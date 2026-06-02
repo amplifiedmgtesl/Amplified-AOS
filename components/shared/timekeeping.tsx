@@ -1347,6 +1347,20 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                     || (dayRows.length > 0 && dayRows.every((r) => !!r.isHoliday));
                   return (
                   <Fragment key={day}>
+                    {/* Print page break — fires before every day except the
+                        first. The marker tr is display:none on screen so the
+                        editing grid is unaffected; on print it has zero
+                        height + a page-break-before. See globals.css for the
+                        rules. Necessary because Chrome doesn't honor
+                        page-break on <tbody> or other table rows reliably,
+                        but does honor it on this specific dedicated row. */}
+                    {dayGroupIdx > 0 && (
+                      <tbody className="print-pagebreak">
+                        <tr className="print-pagebreak">
+                          <td colSpan={totalCols}></td>
+                        </tr>
+                      </tbody>
+                    )}
                     <tbody className="day-separator">
                       <tr onClick={() => toggleDay(day)} style={{ cursor: "pointer" }}>
                         <td colSpan={totalCols} style={{
