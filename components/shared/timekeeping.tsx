@@ -1219,7 +1219,13 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
       {dayFilter !== "all" && (
         <style>{`
           @media print {
-            .timesheet-grid tbody.line-employee[data-day]:not([data-day="${dayFilter}"]) {
+            /* Hide every part of every OTHER day — rows, the day-separator
+               banner, and the print-pagebreak marker. Without this, the
+               markers still fire and produce blank pages of empty
+               separators between the visible day's data. */
+            .timesheet-grid tbody.line-employee[data-day]:not([data-day="${dayFilter}"]),
+            .timesheet-grid tbody.day-separator[data-day]:not([data-day="${dayFilter}"]),
+            .timesheet-grid tbody.print-pagebreak[data-day]:not([data-day="${dayFilter}"]) {
               display: none !important;
             }
           }
@@ -1350,18 +1356,18 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                     {/* Print page break — fires before every day except the
                         first. The marker tr is display:none on screen so the
                         editing grid is unaffected; on print it has zero
-                        height + a page-break-before. See globals.css for the
-                        rules. Necessary because Chrome doesn't honor
-                        page-break on <tbody> or other table rows reliably,
-                        but does honor it on this specific dedicated row. */}
+                        height + a page-break-before. Carries data-day so the
+                        day-filter style block can hide it when the operator
+                        chose a specific day (otherwise we'd page-break
+                        between empty separators of hidden days). */}
                     {dayGroupIdx > 0 && (
-                      <tbody className="print-pagebreak">
+                      <tbody className="print-pagebreak" data-day={day}>
                         <tr className="print-pagebreak">
                           <td colSpan={totalCols}></td>
                         </tr>
                       </tbody>
                     )}
-                    <tbody className="day-separator">
+                    <tbody className="day-separator" data-day={day}>
                       <tr onClick={() => toggleDay(day)} style={{ cursor: "pointer" }}>
                         <td colSpan={totalCols} style={{
                           padding: "10px 14px",
