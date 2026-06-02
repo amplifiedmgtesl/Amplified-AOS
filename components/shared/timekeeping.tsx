@@ -391,20 +391,58 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
     if (explicit !== undefined) return explicit;
     return dayGroups.length > 1;
   }
-  function toggleDay(day: string) {
+  // When the user expands a day with many rows, the actual collapse-toggle
+  // state change triggers a heavy React render (each row tbody mounts its
+  // own selects + autofill). The browser doesn't paint between the click
+  // and that heavy render, so the operator just sees nothing happen for
+  // a second or two. Defer the toggle behind two RAFs so the loading
+  // overlay paints first, exactly the same trick we use on job-switch.
+  const [expandingDayKey, setExpandingDayKey] = useState<string | null>(null);
+  function setDayCollapsed(day: string, collapsed: boolean) {
     setCollapsedOverrides((prev) => {
       const next = new Map(prev);
-      // Read the current effective state and flip it explicitly.
-      const explicit = prev.get(day);
-      const cur = explicit !== undefined ? explicit : dayGroups.length > 1;
-      next.set(day, !cur);
+      next.set(day, collapsed);
       return next;
     });
   }
+  function toggleDay(day: string) {
+    const explicit = collapsedOverrides.get(day);
+    const cur = explicit !== undefined ? explicit : dayGroups.length > 1;
+    if (cur) {
+      // collapsed → expanded: show the spinner, then expand after a paint.
+      setExpandingDayKey(day);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        setDayCollapsed(day, false);
+      }));
+    } else {
+      // expanded → collapsed: cheap, do it immediately.
+      setDayCollapsed(day, true);
+    }
+  }
+  // Clear the expanding flag once the expand commit has happened (one frame
+  // after the override flipped to false). Keeps the spinner up through the
+  // entire heavy render, then hides it.
+  useEffect(() => {
+    if (expandingDayKey === null) return;
+    // "__all__" sentinel = expand all. Done when every day's override is false.
+    const done = expandingDayKey === "__all__"
+      ? dayGroups.length > 0 && dayGroups.every(([d]) => collapsedOverrides.get(d) === false)
+      : !isDayCollapsed(expandingDayKey);
+    if (!done) return;
+    const id = requestAnimationFrame(() => setExpandingDayKey(null));
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandingDayKey, collapsedOverrides, dayGroups]);
+
   function expandAll() {
-    const m = new Map<string, boolean>();
-    for (const [d] of dayGroups) m.set(d, false);
-    setCollapsedOverrides(m);
+    // Defer the same way — expanding all days at once is the heaviest
+    // possible render, so we definitely want the spinner first.
+    setExpandingDayKey("__all__");
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const m = new Map<string, boolean>();
+      for (const [d] of dayGroups) m.set(d, false);
+      setCollapsedOverrides(m);
+    }));
   }
   function collapseAll() {
     const m = new Map<string, boolean>();
@@ -919,10 +957,15 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   // being fetched (ensureTimesheetForJobRequest can take a beat on cold load)
   // and during any long-running batch action.
   const isLoadingTimesheet = pickerKind !== "none" && timesheet === null;
-  const isBusy = isLoadingTimesheet || isSwitchingJob || addingCrew || busyBatch !== null;
+  const isExpanding = expandingDayKey !== null;
+  const isBusy = isLoadingTimesheet || isSwitchingJob || isExpanding || addingCrew || busyBatch !== null;
   const busyLabel = (isLoadingTimesheet || isSwitchingJob)
     ? "Loading the set list…"
-    : addingCrew
+    : isExpanding
+      ? (expandingDayKey === "__all__"
+          ? "Bringing the whole crew on stage…"
+          : "Bringing the crew on stage…")
+      : addingCrew
       ? "Calling the crew to the stage…"
       : busyBatch === "approve"
         ? "Cueing approvals…"
