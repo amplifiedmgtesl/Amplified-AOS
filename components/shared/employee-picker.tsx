@@ -115,6 +115,7 @@ export function EmployeePicker({
   onSelect,
   onCreateInline,
   fallbackName,
+  defaultOpen = false,
   disabled = false,
   placeholder = "Search employee…",
 }: {
@@ -130,12 +131,23 @@ export function EmployeePicker({
    *  e.g. a staff-submitted name awaiting link. Renders in amber with
    *  "(unlinked)" tag like the legacy timekeeping autofill did. */
   fallbackName?: string;
+  /** Start the picker already in search mode (input visible, dropdown
+   *  opening on focus). Used by LazyEmployeePicker so the operator goes
+   *  straight from clicking the lazy tile to typing, skipping the
+   *  intermediate "click the picker's tile too" step. */
+  defaultOpen?: boolean;
   disabled?: boolean;
   placeholder?: string;
 }) {
   const [employees, setEmployees] = useState<PickerEmployee[] | null>(null);
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
+  // If we start open, kick off the cache load right away so the dropdown
+  // has results to show as soon as the operator focuses the input.
+  useEffect(() => {
+    if (defaultOpen) void ensureLoaded();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const role = useUserRole();
@@ -263,19 +275,20 @@ export function EmployeePicker({
           style={{
             cursor: disabled ? "default" : "pointer",
             padding: "5px 8px",
-            border: "1px solid var(--line, #d7c6aa)",
             borderRadius: 6,
+            border: "1px solid var(--line, #d7c6aa)",
             background: "#fff",
             fontSize: 12,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 6,
+            minWidth: 170,
           }}
-          title={disabled ? "" : "Click to change"}
+          title={disabled ? "" : "Click to change employee"}
         >
-          <div style={{ fontWeight: 600 }}>{linked.fullName}</div>
-          {(linked.email || linked.phone) && (
-            <div style={{ fontSize: 11, color: "#666" }}>
-              {linked.email}{linked.email && linked.phone ? " · " : ""}{linked.phone}
-            </div>
-          )}
+          <span style={{ fontWeight: 600 }}>{linked.fullName}</span>
+          <span style={{ opacity: 0.55, fontSize: 13 }} aria-hidden>🔍</span>
         </div>
       )}
       {showFallbackTile && (
@@ -284,18 +297,24 @@ export function EmployeePicker({
           style={{
             cursor: disabled ? "default" : "pointer",
             padding: "5px 8px",
-            border: "1px solid #e0c070",
             borderRadius: 6,
+            border: "1px solid #e0c070",
             background: "#fff7e0",
             fontSize: 12,
             color: "#a05a00",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 6,
+            minWidth: 170,
           }}
           title="No employee linked yet — click to search"
         >
-          <div style={{ fontWeight: 600 }}>
+          <span style={{ fontWeight: 600 }}>
             {fallbackName}{" "}
             <span style={{ fontWeight: 400, fontStyle: "italic", fontSize: 11 }}>(unlinked)</span>
-          </div>
+          </span>
+          <span style={{ opacity: 0.55, fontSize: 13 }} aria-hidden>🔍</span>
         </div>
       )}
       {((!linked && !showFallbackTile) || open) && (
@@ -510,6 +529,12 @@ export function LazyEmployeePicker({
         fallbackName={fallbackName}
         onSelect={onSelect}
         onCreateInline={onCreateInline}
+        // Open in search mode when activated by user click — they wanted
+        // to change the employee, not see another tile they have to click
+        // through. Skip when we're just falling through to load the cache
+        // (employeeKey set, no displayName, cache not yet loaded), so the
+        // operator sees the linked tile first once names arrive.
+        defaultOpen={active}
         disabled={disabled}
         placeholder={placeholder}
       />
