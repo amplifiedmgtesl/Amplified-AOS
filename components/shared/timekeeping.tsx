@@ -1557,40 +1557,72 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                           </div>
                         )}
                       </td>
-                      <td rowSpan={2} className="hide-print" style={{ verticalAlign: "middle" }}>
-                        <div className="action-row" style={{ flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                      <td rowSpan={2} className="hide-print" style={{ verticalAlign: "middle", padding: "6px 8px" }}>
+                        <div style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "stretch",
+                          gap: 6,
+                          minWidth: 110,
+                        }}>
+                          {/* 1. Bulk select checkbox, with a label so it's obvious
+                              what it does (the column header "Status" doesn't make
+                              it clear). */}
                           {!hideBillAlways && (
-                            <input
-                              type="checkbox"
-                              aria-label="Select row"
-                              checked={selectedIds.has(row.id)}
-                              onChange={() => toggleRowSelected(row.id)}
-                              disabled={!!busyBatch}
-                            />
+                            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#666" }}>
+                              <input
+                                type="checkbox"
+                                aria-label="Select row for bulk actions"
+                                checked={selectedIds.has(row.id)}
+                                onChange={() => toggleRowSelected(row.id)}
+                                disabled={!!busyBatch}
+                              />
+                              Select
+                            </label>
                           )}
+                          {/* 2. Status pill — exactly one renders per row. Centered
+                              and full width within the column for a consistent
+                              vertical rhythm. */}
                           {row.employeeKey && row.status === "approved" && (
-                            <span className="badge pill-green" style={{ fontSize: 11 }} title={row.invoiceLineId ? "Approved AND billed onto an invoice line — unlink invoice first to change anything" : "Approved — unlock to edit"}>
+                            <span className="badge pill-green"
+                                  style={{ fontSize: 11, textAlign: "center", padding: "3px 8px" }}
+                                  title={row.invoiceLineId ? "Approved AND billed onto an invoice line — unlink invoice first to change anything" : "Approved — unlock to edit"}>
                               {row.invoiceLineId ? "🔒 Billed" : "🔒 Approved"}
                             </span>
                           )}
                           {row.employeeKey && row.status === "rejected" && (
-                            <span className="badge" style={{ fontSize: 11, background: "#fde8e8", color: "#c0392b" }}>Rejected</span>
+                            <span className="badge"
+                                  style={{ fontSize: 11, background: "#fde8e8", color: "#c0392b", textAlign: "center", padding: "3px 8px" }}>
+                              Rejected
+                            </span>
                           )}
                           {row.employeeKey && row.status === "submitted" && (
-                            <span className="badge" style={{ fontSize: 11, background: "#e8f0fe", color: "#1a56c4" }}>Pending</span>
-                          )}
-                          {/* Phase 4: holiday badge + per-row override toggle. The
-                              checkbox lets the admin flip the snapshot independently
-                              of the day-level flag (e.g. day was retroactively
-                              flagged but this entry was already paid out). */}
-                          {row.isHoliday ? (
-                            <span className="badge" style={{ fontSize: 11, background: "#fff7e0", color: "#7a5a1a" }}
-                                  title={`Pay multiplier ${row.holidayMultiplier ?? 2}× applied`}>
-                              🎄 Holiday {Number(row.holidayMultiplier ?? 2)}×
+                            <span className="badge"
+                                  style={{ fontSize: 11, background: "#e8f0fe", color: "#1a56c4", textAlign: "center", padding: "3px 8px" }}>
+                              Pending
                             </span>
-                          ) : null}
-                          {!hideBillAlways && !isLocked && (
-                            <label style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 4, marginTop: 2, color: "#7a5a1a" }}>
+                          )}
+                          {/* 3. Holiday — single control: when locked, just shows
+                              the badge; when editable, the checkbox + label IS the
+                              badge so there's only one widget either way. */}
+                          {isLocked || hideBillAlways ? (
+                            row.isHoliday && (
+                              <span className="badge"
+                                    style={{ fontSize: 11, background: "#fff7e0", color: "#7a5a1a", textAlign: "center", padding: "3px 8px" }}
+                                    title={`Pay multiplier ${row.holidayMultiplier ?? 2}× applied`}>
+                                🎄 Holiday {Number(row.holidayMultiplier ?? 2)}×
+                              </span>
+                            )
+                          ) : (
+                            <label style={{
+                              display: "flex", alignItems: "center", gap: 6,
+                              fontSize: 11, padding: "3px 8px",
+                              background: row.isHoliday ? "#fff7e0" : "transparent",
+                              color: row.isHoliday ? "#7a5a1a" : "#666",
+                              border: row.isHoliday ? "1px solid #e0c070" : "1px solid transparent",
+                              borderRadius: 999,
+                              cursor: "pointer",
+                            }}>
                               <input
                                 type="checkbox"
                                 checked={!!row.isHoliday}
@@ -1599,19 +1631,21 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                                   holidayMultiplier: e.target.checked ? effectiveHolidayMultiplier : null,
                                 })}
                               />
-                              Holiday
+                              {row.isHoliday
+                                ? `🎄 Holiday ${Number(row.holidayMultiplier ?? 2)}×`
+                                : "Holiday"}
                             </label>
                           )}
-                          {/* Per-row Delete kept as a tiny escape hatch (one-off cleanup
-                              during editing). Bulk Delete is in the batch action bar.
-                              Disabled while approved — the DB freeze trigger would reject
-                              the delete anyway. */}
+                          {/* 4. Per-row Delete (escape hatch — bulk Delete is in
+                              the batch action bar). Pushed to the bottom of the
+                              cell. Disabled while approved — the DB freeze
+                              trigger would reject the delete anyway. */}
                           <button
                             className="secondary"
                             onClick={() => removeRow(row.id)}
                             disabled={isLocked}
                             title={isLocked ? "Unlock this entry first to delete it" : "Remove this row from the timesheet on next save"}
-                            style={{ padding: "2px 8px", fontSize: 11 }}
+                            style={{ padding: "3px 8px", fontSize: 11, marginTop: 2 }}
                           >
                             Delete
                           </button>
