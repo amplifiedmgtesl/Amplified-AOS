@@ -1095,20 +1095,30 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
             <button onClick={() => {
               // Expand all days first so collapsed-day rows are in the DOM
               // (we conditionally skip rendering them when collapsed for perf).
+              // Then wait through two RAFs + a settle delay so React has fully
+              // committed the row mount before window.print() fires — the
+              // previous 50ms timeout was too short on big jobs (Carolina has
+              // 525 rows) and Chrome would error with "Print preview failed".
               const prevOverrides = new Map(collapsedOverrides);
               const expanded = new Map<string, boolean>();
               for (const [d] of dayGroups) expanded.set(d, false);
+              setExpandingDayKey("__all__");  // show overlay during prep
               setCollapsedOverrides(expanded);
-              // Let React render the rows, then print, then restore.
-              setTimeout(() => {
-                printWithTitle([
-                  "Timesheet",
-                  headerTitle,
-                  headerClient,
-                  dayFilter !== "all" ? dayFilter : undefined,
-                ]);
-                setTimeout(() => setCollapsedOverrides(prevOverrides), 500);
-              }, 50);
+              requestAnimationFrame(() => requestAnimationFrame(() => {
+                // 2 RAFs guarantees React has committed; the 400ms settle
+                // gives the browser time to lay out the new DOM nodes before
+                // we hand the document over to the print engine.
+                setTimeout(() => {
+                  setExpandingDayKey(null);
+                  printWithTitle([
+                    "Timesheet",
+                    headerTitle,
+                    headerClient,
+                    dayFilter !== "all" ? dayFilter : undefined,
+                  ]);
+                  setTimeout(() => setCollapsedOverrides(prevOverrides), 1000);
+                }, 400);
+              }));
             }}>Download / Print PDF</button>
           </div>
         </div>
