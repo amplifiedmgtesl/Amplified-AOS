@@ -1262,7 +1262,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                     <th colSpan={r1Spans.spc}>Specialty</th>
                     <th colSpan={r1Spans.start}>Start Date</th>
                     <th colSpan={r1Spans.end}>End Date</th>
-                    <th colSpan={phantomSpan} className="hide-print"></th>
+                    <th colSpan={phantomSpan} className="hide-print">{jobHasShifts ? "Shift" : ""}</th>
                     <th rowSpan={2} className="hide-print" style={{ minWidth: 90 }}>
                       {!hideBillAlways && timesheet.rows.length > 0 && (() => {
                         const allSel = timesheet.rows.every((r) => selectedIds.has(r.id));
@@ -1564,8 +1564,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                       </td>
                       <td colSpan={phantomSpan} className="hide-print" style={{ verticalAlign: "middle" }}>
                         {jobHasShifts && (
-                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <small style={{ color: "#666", whiteSpace: "nowrap" }}>Shift</small>
+                          <div style={{ display: "flex", alignItems: "center" }}>
                             <select
                               className="input-tight"
                               value={row.shiftId || ""}
