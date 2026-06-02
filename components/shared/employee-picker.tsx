@@ -436,6 +436,122 @@ export function EmployeePicker({
   );
 }
 
+/**
+ * Lazy wrapper around EmployeePicker — renders a cheap text-only display
+ * by default and only mounts the full picker (with its hooks, useMemo,
+ * cache subscriber, etc.) when the operator clicks to interact.
+ *
+ * Use this on screens where the cell could be rendered hundreds of times
+ * but only a handful are interacted with — e.g. timekeeping grids with
+ * 75-100 rows in an expanded day. Visual at-rest state is nearly identical
+ * to the regular picker's linked tile; the cost difference is in React's
+ * per-instance bookkeeping.
+ */
+export function LazyEmployeePicker({
+  employeeKey,
+  displayName,
+  fallbackName,
+  onSelect,
+  onCreateInline,
+  disabled = false,
+  placeholder = "Search employee…",
+}: {
+  employeeKey?: string | null;
+  /** The denormalized name to show at rest. Usually `firstName + lastName`
+   *  pulled from the calling row, so we don't need to read the directory. */
+  displayName?: string;
+  fallbackName?: string;
+  onSelect: (emp: PickerEmployee) => void;
+  onCreateInline?: (typedName: string) => Promise<PickerEmployee>;
+  disabled?: boolean;
+  placeholder?: string;
+}) {
+  const [active, setActive] = useState(false);
+
+  if (active) {
+    return (
+      <EmployeePicker
+        employeeKey={employeeKey}
+        fallbackName={fallbackName}
+        onSelect={(emp) => {
+          onSelect(emp);
+          // Stay active after pick — EmployeePicker shows the tile view
+          // for the just-picked employee, and the operator might want to
+          // change again.
+        }}
+        onCreateInline={onCreateInline}
+        disabled={disabled}
+        placeholder={placeholder}
+      />
+    );
+  }
+
+  const cellBase = {
+    cursor: disabled ? "default" : "pointer",
+    padding: "5px 8px",
+    borderRadius: 6,
+    border: "1px solid var(--line, #d7c6aa)",
+    background: "#fff",
+    fontSize: 12,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 6,
+    minWidth: 170,
+  } as const;
+
+  const onClick = () => { if (!disabled) setActive(true); };
+
+  // 1. Linked — show the row's denormalized name + 🔍 button.
+  if (employeeKey && (displayName ?? "").trim()) {
+    return (
+      <div onClick={onClick} style={cellBase} title={disabled ? "" : "Click to change employee"}>
+        <span style={{ fontWeight: 600 }}>{displayName}</span>
+        <span style={{ opacity: 0.55, fontSize: 13 }} aria-hidden>🔍</span>
+      </div>
+    );
+  }
+  // 2. Unlinked legacy — typed-in name with no employee_key. Amber warning.
+  if (!employeeKey && (fallbackName ?? "").trim()) {
+    return (
+      <div
+        onClick={onClick}
+        style={{
+          ...cellBase,
+          background: "#fff7e0",
+          border: "1px solid #e0c070",
+          color: "#a05a00",
+        }}
+        title="No employee linked yet — click to search"
+      >
+        <span style={{ fontWeight: 600 }}>
+          {fallbackName}{" "}
+          <span style={{ fontWeight: 400, fontStyle: "italic", fontSize: 11 }}>(unlinked)</span>
+        </span>
+        <span style={{ opacity: 0.55, fontSize: 13 }} aria-hidden>🔍</span>
+      </div>
+    );
+  }
+  // 3. Empty — no employee and no fallback. Show a pick button.
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        ...cellBase,
+        cursor: disabled ? "default" : "pointer",
+        background: "#fbf6ee",
+        color: "var(--accent, #2563eb)",
+        fontWeight: 600,
+      }}
+    >
+      + Pick employee
+      <span style={{ opacity: 0.55, fontSize: 13 }} aria-hidden>🔍</span>
+    </button>
+  );
+}
+
 // ─── Advanced search modal ─────────────────────────────────────────────────
 // Opens from the 🔍 button. Lets the user filter by independent fields:
 // name, city, state, phone, email — useful when the name alone isn't enough

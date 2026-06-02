@@ -18,7 +18,7 @@ import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summar
 import { parseMinutes } from "@/lib/time-utils";
 import type { EmployeeRecord, JobRequest, JobSheet, TimeEntry, Timesheet } from "@/lib/store/types";
 import { EqualizerLoader } from "@/components/shared/equalizer-loader";
-import { EmployeePicker, pushEmployeeIntoCache, type PickerEmployee } from "@/components/shared/employee-picker";
+import { LazyEmployeePicker, pushEmployeeIntoCache, type PickerEmployee } from "@/components/shared/employee-picker";
 
 // Phase 1: picker selection encodes which world we're in.
 //   "job:<jobId>"        — canonical, anchored on job_requests
@@ -1302,9 +1302,10 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                           </div>
                         ) : (
                           <>
-                            <EmployeePicker
+                            <LazyEmployeePicker
                               employeeKey={row.employeeKey}
-                              fallbackName={[row.firstName, row.lastName].filter(Boolean).join(" ") || undefined}
+                              displayName={[row.firstName, row.lastName].filter(Boolean).join(" ") || undefined}
+                              fallbackName={!row.employeeKey ? ([row.firstName, row.lastName].filter(Boolean).join(" ") || undefined) : undefined}
                               onSelect={(emp) => updateRow(row.id, {
                                 employeeKey: emp.employeeKey,
                                 firstName: emp.firstName || emp.fullName.split(" ")[0] || "",
