@@ -221,6 +221,19 @@ small,.muted{color:var(--muted)}
   /* Repeating headers across pages with high-contrast text. The default
      gold-on-cream styling printed as ghost text. */
   .timesheet-grid thead{display:table-header-group !important}
+  /* Start each day on its own page. The first day-separator stays in place
+     (page break would create a blank page before the first day). The day
+     header itself shouldn't ever be split from its first crew row, so we
+     keep the rows tied to their day. */
+  .timesheet-grid tbody.day-separator:not(:first-of-type){
+    page-break-before:always !important;
+    break-before:page !important;
+  }
+  .timesheet-grid tbody.day-separator,
+  .timesheet-grid tbody.line-employee{
+    page-break-inside:avoid;
+    break-inside:avoid;
+  }
   .timesheet-grid th{
     background:#e0e0e0 !important;
     color:#000 !important;
