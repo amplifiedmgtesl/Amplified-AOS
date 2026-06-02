@@ -146,6 +146,33 @@ function EmployeeAutoFill({
   );
 }
 
+// ─── Dev-only perf logger ────────────────────────────────────────────────────
+// Captures timestamps + arbitrary data through the load lifecycle so we can
+// see exactly where the wall-clock seconds are going. No-op in production.
+// Read the captured trace from the console with `window.__tkPerf`.
+const TK_PERF_ON = typeof process !== "undefined"
+  && process.env.NEXT_PUBLIC_VERCEL_ENV !== "production";
+type TkPerfEvent = { t: number; dt: number; label: string; data?: any };
+function tkPerf(label: string, data?: any) {
+  if (!TK_PERF_ON) return;
+  if (typeof window === "undefined") return;
+  const w = window as any;
+  const now = performance.now();
+  if (!w.__tkPerf) w.__tkPerf = [] as TkPerfEvent[];
+  const arr: TkPerfEvent[] = w.__tkPerf;
+  const last = arr.length ? arr[arr.length - 1].t : now;
+  const evt: TkPerfEvent = { t: now, dt: Math.round(now - last), label, data };
+  arr.push(evt);
+  // Compact console line so it shows up in the live log too.
+  // eslint-disable-next-line no-console
+  console.log(`[tk-perf +${evt.dt}ms] ${label}`, data ?? "");
+}
+function tkPerfReset(reason: string) {
+  if (!TK_PERF_ON || typeof window === "undefined") return;
+  (window as any).__tkPerf = [];
+  tkPerf(`▶ reset: ${reason}`);
+}
+
 export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways?: boolean }) {
   const POSITIONS = positionNames();
   // Phase 3: master tables for cascading Position → Specialty selects.
@@ -209,9 +236,17 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   /** Defer the picker update so the spinner gets a paint frame first. */
   function changePicker(next: PickerValue) {
     if (next === picker) return;
+    tkPerfReset(`changePicker → ${next}`);
     setIsSwitchingJob(true);
+    tkPerf("setIsSwitchingJob(true) called");
     // Two RAFs guarantees the overlay paints before the heavy render starts.
-    requestAnimationFrame(() => requestAnimationFrame(() => setPicker(next)));
+    requestAnimationFrame(() => {
+      tkPerf("RAF #1 fired");
+      requestAnimationFrame(() => {
+        tkPerf("RAF #2 fired → setPicker(next)");
+        setPicker(next);
+      });
+    });
   }
 
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
@@ -236,6 +271,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   }, [allRows]);
 
   useEffect(() => {
+    tkPerf("picker useEffect entered", { pickerKind, pickerKey });
     if (pickerKind === "none") { setTimesheet(null); return; }
 
     if (pickerKind === "job") {
@@ -246,8 +282,13 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
       setActiveJob(jobId);
 
       const linked = getTimesheetByJobId(jobId);
+      tkPerf("getTimesheetByJobId returned", {
+        found: !!linked,
+        rowCount: linked?.rows?.length ?? 0,
+      });
       if (linked) {
         setTimesheet(linked);
+        tkPerf("setTimesheet(linked) called");
       } else {
         // Lazily create a timesheet in the DB so staff approval has somewhere
         // to land. The DB call de-dupes if a row already exists.
@@ -277,9 +318,13 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
       }
     }
     setDayFilter("all");
+    tkPerf("picker useEffect leaving (scheduled isSwitchingJob clear)");
     // Allow the overlay to clear once the new timesheet has been swapped in.
     // Wrapped in RAF so the spinner stays through the heavy render commit.
-    requestAnimationFrame(() => setIsSwitchingJob(false));
+    requestAnimationFrame(() => {
+      tkPerf("RAF → setIsSwitchingJob(false)");
+      setIsSwitchingJob(false);
+    });
   }, [picker, refreshKey]);
 
   // Group rows by workDate (with a "no-date" bucket for blank ones), days
@@ -425,13 +470,16 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
       setJobHolidayMultiplier(null);
       return;
     }
+    tkPerf("job-meta useEffect entered (3 parallel queries)");
     import("@/lib/supabase/client").then(({ supabase }) => {
+      tkPerf("supabase client imported");
       // Shifts
       supabase.from("job_request_shifts").select("id, label").eq("job_request_id", pickerKey)
         .then(({ data, error }) => {
           if (error) { console.error("[timekeeping] load shifts:", error); return; }
           const m = new Map<string, string>();
           for (const r of (data ?? []) as any[]) m.set(r.id, r.label ?? "");
+          tkPerf("shifts query resolved → setShiftLabelById", { count: m.size });
           setShiftLabelById(m);
         });
       // Holiday days
@@ -440,6 +488,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
           if (error) { console.error("[timekeeping] load holiday days:", error); return; }
           const s = new Set<string>();
           for (const r of (data ?? []) as any[]) if (r.event_date) s.add(String(r.event_date));
+          tkPerf("holiday-days query resolved → setHolidayDateSet", { count: s.size });
           setHolidayDateSet(s);
         });
       // Resolve the multiplier via the job's quote (which already snapshot the
@@ -448,6 +497,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
         .then(({ data, error }) => {
           if (error) { console.error("[timekeeping] load multiplier:", error); return; }
           const v = (data?.[0] as any)?.holiday_multiplier;
+          tkPerf("multiplier query resolved → setJobHolidayMultiplier", { value: v });
           setJobHolidayMultiplier(v == null ? null : Number(v));
         });
     });
@@ -796,6 +846,23 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   }, [timesheet]);
 
   // (allRows is declared earlier — used by both day grouping and the table render.)
+
+  if (TK_PERF_ON) {
+    tkPerf("render() — building VDOM", {
+      rowCount: allRows.length,
+      dayGroupCount: dayGroups.length,
+      hasTimesheet: !!timesheet,
+      isSwitchingJob,
+      shiftLabelCount: shiftLabelById.size,
+      holidayDayCount: holidayDateSet.size,
+      multiplier: jobHolidayMultiplier,
+    });
+  }
+  // After commit, log how long the browser took to actually paint after this
+  // render. Combined with the render() event above, the gap = commit + paint.
+  useEffect(() => {
+    tkPerf("post-commit (browser painted)");
+  });
 
   // Show a music-themed overlay while the timesheet for the selected job is
   // being fetched (ensureTimesheetForJobRequest can take a beat on cold load)
