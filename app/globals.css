@@ -222,14 +222,15 @@ small,.muted{color:var(--muted)}
      gold-on-cream styling printed as ghost text. */
   .timesheet-grid thead{display:table-header-group !important}
   /* Start each day on its own page. The first day-separator stays in place
-     (page break would create a blank page before the first day). The day
-     header itself shouldn't ever be split from its first crew row, so we
-     keep the rows tied to their day. */
-  .timesheet-grid tbody.day-separator:not(:first-of-type){
+     (page break would create a blank page before the first day).
+     IMPORTANT: page-break-before on <tbody> isn't honored by Chrome — apply
+     it to the inner <tr> instead. */
+  .timesheet-grid tbody.day-separator:not(:first-of-type) > tr{
     page-break-before:always !important;
     break-before:page !important;
   }
-  .timesheet-grid tbody.day-separator,
+  /* Keep each employee's 2-row block together so the signature/time pair
+     doesn't get split across pages. */
   .timesheet-grid tbody.line-employee{
     page-break-inside:avoid;
     break-inside:avoid;
