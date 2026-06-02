@@ -493,6 +493,34 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
     }
   }
 
+  // Copy every entry from the previous day-group into the given day. New rows
+  // get fresh ids, workDate/endDate retargeted to the current day, status
+  // reset to 'submitted', invoice binding cleared, and holiday flags
+  // recomputed from the target day's holiday status. Matches the pattern on
+  // job-request crew assignments (the "Copy ↑" button there).
+  function duplicateFromPreviousDay(targetDay: string, prevDay: string) {
+    if (!timesheet) return;
+    const prevRows = timesheet.rows.filter((r) => (r.workDate || "no-date") === prevDay);
+    if (prevRows.length === 0) {
+      alert("Previous day has no entries to copy.");
+      return;
+    }
+    if (!confirm(`Copy ${prevRows.length} entr${prevRows.length === 1 ? "y" : "ies"} from ${prevDay} to ${targetDay}?`)) return;
+    const isHol = targetDay !== "no-date" && holidayDateSet.has(targetDay);
+    const stamp = Date.now();
+    const copies = prevRows.map((r, i) => computeTimeEntry({
+      ...r,
+      id: `dup-${stamp}-${i}`,
+      workDate: targetDay === "no-date" ? undefined : targetDay,
+      endDate:  targetDay === "no-date" ? undefined : targetDay,
+      isHoliday: isHol,
+      holidayMultiplier: isHol ? effectiveHolidayMultiplier : null,
+      status: "submitted",
+      invoiceLineId: null,
+    }));
+    persist({ ...timesheet, rows: [...timesheet.rows, ...copies] });
+  }
+
   function addManualCrew() {
     if (!timesheet) return;
     persist({ ...timesheet, rows: [...timesheet.rows, blankTimeEntry(`manual-${Date.now()}`)] });
@@ -1028,8 +1056,9 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                     </> : null}
                   </tr>
                 </thead>
-                {dayGroups.map(([day, dayRows]) => {
+                {dayGroups.map(([day, dayRows], dayGroupIdx) => {
                   const isCollapsed = collapsedDays.has(day);
+                  const prevDayKey = dayGroupIdx > 0 ? dayGroups[dayGroupIdx - 1][0] : null;
                   const dayLabel = day === "no-date"
                     ? "(no date)"
                     : (() => {
@@ -1072,6 +1101,24 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                               {statusMix.submitted ? `· ${statusMix.submitted} pending ` : ""}
                               {statusMix.rejected ? `· ${statusMix.rejected} rejected ` : ""}
                             </span>
+                            {prevDayKey && prevDayKey !== "no-date" && day !== "no-date" && (
+                              <button
+                                type="button"
+                                className="hide-print"
+                                onClick={(e) => { e.stopPropagation(); duplicateFromPreviousDay(day, prevDayKey); }}
+                                title={`Copy entries from ${prevDayKey} to ${day}`}
+                                style={{
+                                  marginLeft: "auto",
+                                  fontSize: 11,
+                                  padding: "3px 10px",
+                                  background: isCollapsed ? "#fff" : "rgba(255,255,255,0.18)",
+                                  color: isCollapsed ? "#1a1a1a" : "#fff",
+                                  border: isCollapsed ? "1px solid #d7c6aa" : "1px solid rgba(255,255,255,0.4)",
+                                  borderRadius: 6,
+                                  cursor: "pointer",
+                                }}
+                              >Copy ↑ prev day</button>
+                            )}
                           </div>
                         </td>
                       </tr>
