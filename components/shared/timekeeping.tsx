@@ -33,6 +33,39 @@ const TIMES = timeOptions();
 const RATES = rateOptions();
 // POSITIONS is loaded from the store at render time so it stays live
 
+// Music-themed loading indicator. Five animated equalizer bars plus a label.
+// Used over the Timekeeping grid while the timesheet is being fetched and
+// over any long-running batch action so the operator gets visual feedback.
+function EqualizerLoader({ label = "Loading the set list…" }: { label?: string }) {
+  const bars = [0, 1, 2, 3, 4];
+  // Per-bar phase offsets so the bars look out of sync (not a marching wave).
+  const delays = ["0s", "-0.7s", "-0.2s", "-0.5s", "-0.9s"];
+  return (
+    <div style={{
+      position: "absolute", inset: 0, zIndex: 50,
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      gap: 14, background: "rgba(255,251,240,0.85)", backdropFilter: "blur(2px)",
+      borderRadius: 8,
+    }}>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 5, height: 40 }}>
+        {bars.map((i) => (
+          <div key={i} style={{
+            width: 6, height: "100%",
+            background: "linear-gradient(180deg, #2563eb 0%, #7a4a00 100%)",
+            borderRadius: 3,
+            animation: `tk-eq 0.9s ease-in-out ${delays[i]} infinite`,
+            transformOrigin: "bottom",
+          }} />
+        ))}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: "#4a4a4a", letterSpacing: 0.2 }}>
+        🎵 {label}
+      </div>
+      <style>{`@keyframes tk-eq { 0%,100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }`}</style>
+    </div>
+  );
+}
+
 function splitName(fullName: string) {
   const parts = fullName.trim().split(" ");
   return { firstName: parts[0] || "", lastName: parts.slice(1).join(" ") || "" };
@@ -781,8 +814,26 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
 
   // (allRows is declared earlier — used by both day grouping and the table render.)
 
+  // Show a music-themed overlay while the timesheet for the selected job is
+  // being fetched (ensureTimesheetForJobRequest can take a beat on cold load)
+  // and during any long-running batch action.
+  const isLoadingTimesheet = pickerKind !== "none" && timesheet === null;
+  const isBusy = isLoadingTimesheet || addingCrew || busyBatch !== null;
+  const busyLabel = isLoadingTimesheet
+    ? "Loading the set list…"
+    : addingCrew
+      ? "Calling the crew to the stage…"
+      : busyBatch === "approve"
+        ? "Cueing approvals…"
+        : busyBatch === "reject"
+          ? "Sending rejections backstage…"
+          : busyBatch === "delete"
+            ? "Striking the set…"
+            : "Working…";
+
   return (
-    <div className="grid">
+    <div className="grid" style={{ position: "relative" }}>
+      {isBusy && <EqualizerLoader label={busyLabel} />}
       <div className="card hide-print">
         <h2 className="section-title">Timekeeping Control Center</h2>
         <div className="grid4">
