@@ -1602,39 +1602,23 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                               Pending
                             </span>
                           )}
-                          {/* 3. Holiday — single control: when locked, just shows
-                              the badge; when editable, the checkbox + label IS the
-                              badge so there's only one widget either way. */}
-                          {isLocked || hideBillAlways ? (
-                            row.isHoliday && (
-                              <span className="badge"
-                                    style={{ fontSize: 11, background: "#fff7e0", color: "#7a5a1a", textAlign: "center", padding: "3px 8px" }}
-                                    title={`Pay multiplier ${row.holidayMultiplier ?? 2}× applied`}>
-                                🎄 Holiday {Number(row.holidayMultiplier ?? 2)}×
-                              </span>
-                            )
-                          ) : (
-                            <label style={{
-                              display: "flex", alignItems: "center", gap: 6,
-                              fontSize: 11, padding: "3px 8px",
-                              background: row.isHoliday ? "#fff7e0" : "transparent",
-                              color: row.isHoliday ? "#7a5a1a" : "#666",
-                              border: row.isHoliday ? "1px solid #e0c070" : "1px solid transparent",
-                              borderRadius: 999,
-                              cursor: "pointer",
-                            }}>
-                              <input
-                                type="checkbox"
-                                checked={!!row.isHoliday}
-                                onChange={(e) => updateRow(row.id, {
-                                  isHoliday: e.target.checked,
-                                  holidayMultiplier: e.target.checked ? effectiveHolidayMultiplier : null,
-                                })}
-                              />
-                              {row.isHoliday
-                                ? `🎄 Holiday ${Number(row.holidayMultiplier ?? 2)}×`
-                                : "Holiday"}
-                            </label>
+                          {/* 3. Holiday — READ-ONLY badge. Driven by the day-level
+                              flag on job_request_days.is_holiday (Connor flips it on
+                              the job's daily requirements). Holiday is a property
+                              of the day, not the individual entry — every crew
+                              member working a holiday is on holiday pay. The
+                              per-row toggle that used to live here was a UX trap:
+                              it implied you could pay Bruno at holiday rate while
+                              Sarah on the same day wasn't, which isn't how it
+                              works. Architectural follow-up: a `timesheet_days`
+                              table (peer of job_request_days) so the holiday flag
+                              lives in ONE place; tracked in project_todo.md. */}
+                          {(row.workDate && holidayDateSet.has(row.workDate)) && (
+                            <span className="badge"
+                                  style={{ fontSize: 11, background: "#fff7e0", color: "#7a5a1a", textAlign: "center", padding: "3px 8px" }}
+                                  title="This day is flagged as a holiday — pay multiplier applied. Change the day flag on the job's daily requirements.">
+                              🎄 Holiday {Number(effectiveHolidayMultiplier)}×
+                            </span>
                           )}
                           {/* 4. Per-row Delete (escape hatch — bulk Delete is in
                               the batch action bar). Pushed to the bottom of the
