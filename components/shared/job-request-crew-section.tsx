@@ -20,7 +20,7 @@ import type {
   Position,
   Specialty,
 } from "@/lib/store/types";
-import { EmployeePicker } from "./employee-picker";
+import { LazyEmployeePicker } from "./employee-picker";
 
 function newAssignmentId(): string {
   return `jra-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -356,7 +356,7 @@ export function JobRequestCrewSection({
                             return (
                               <tr key={a.id}>
                                 <td>
-                                  <EmployeePicker
+                                  <LazyEmployeePicker
                                     employeeKey={a.employeeKey}
                                     disabled={disabled}
                                     onSelect={(emp) => patchAssignment(d.id, a, { employeeKey: emp.employeeKey })}

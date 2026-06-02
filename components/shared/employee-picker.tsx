@@ -82,6 +82,10 @@ async function loadAllEmployees(): Promise<PickerEmployee[]> {
       city: r.city ?? "",
       state: r.state ?? "",
     }));
+    // Wake up any LazyEmployeePicker cells that fell through to the full
+    // picker while the cache was loading, so they can drop back to the
+    // cheap tile now that names are resolvable.
+    notifyCacheSubscribers();
     return employeesCache;
   })();
   try {
@@ -457,8 +461,11 @@ export function LazyEmployeePicker({
   placeholder = "Search employee…",
 }: {
   employeeKey?: string | null;
-  /** The denormalized name to show at rest. Usually `firstName + lastName`
-   *  pulled from the calling row, so we don't need to read the directory. */
+  /** Optional denormalized name to show at rest without hitting the
+   *  module-level employee cache. Pass this when the caller already
+   *  has the name (e.g. timekeeping rows have firstName/lastName
+   *  denormalized on the row). When omitted, the picker reads from
+   *  the cache instead. */
   displayName?: string;
   fallbackName?: string;
   onSelect: (emp: PickerEmployee) => void;
@@ -467,18 +474,41 @@ export function LazyEmployeePicker({
   placeholder?: string;
 }) {
   const [active, setActive] = useState(false);
+  // Re-render this cell when the module-level cache populates so we can
+  // drop down from the full <EmployeePicker> mount to the cheap tile.
+  // Only needed when we don't have an explicit `displayName` (e.g. crew
+  // assignments). Skipped otherwise to keep this cell hook-free for
+  // timekeeping's row count.
+  const [, forceRender] = useState(0);
+  useEffect(() => {
+    if (displayName || !employeeKey) return;
+    const fn = () => forceRender((t) => t + 1);
+    cacheSubscribers.add(fn);
+    return () => { cacheSubscribers.delete(fn); };
+  }, [displayName, employeeKey]);
 
-  if (active) {
+  // Resolve the at-rest display name in priority order:
+  //   1. Explicit `displayName` from the caller (cheapest — no cache touch).
+  //   2. Cache lookup by employeeKey (still cheap, just an array find).
+  //   3. None — fall through to either fallbackName or "+ Pick employee".
+  const cachedName = !displayName && employeeKey && employeesCache
+    ? employeesCache.find((e) => e.employeeKey === employeeKey)?.fullName
+    : null;
+  const resolvedName = (displayName ?? cachedName ?? "").trim();
+
+  // When we have an employeeKey but no name to show (cache hasn't loaded
+  // yet AND no denormalized displayName was passed), fall through to the
+  // full picker so its mount-time ensureLoaded() kicks the cache load.
+  // Subsequent renders elsewhere on the page will hit the cache and
+  // render cheaply.
+  const mustMount = (employeeKey && !resolvedName) || active;
+
+  if (mustMount) {
     return (
       <EmployeePicker
         employeeKey={employeeKey}
         fallbackName={fallbackName}
-        onSelect={(emp) => {
-          onSelect(emp);
-          // Stay active after pick — EmployeePicker shows the tile view
-          // for the just-picked employee, and the operator might want to
-          // change again.
-        }}
+        onSelect={onSelect}
         onCreateInline={onCreateInline}
         disabled={disabled}
         placeholder={placeholder}
@@ -502,11 +532,11 @@ export function LazyEmployeePicker({
 
   const onClick = () => { if (!disabled) setActive(true); };
 
-  // 1. Linked — show the row's denormalized name + 🔍 button.
-  if (employeeKey && (displayName ?? "").trim()) {
+  // 1. Linked + we have a name — show the resolved name in a cheap tile.
+  if (employeeKey && resolvedName) {
     return (
       <div onClick={onClick} style={cellBase} title={disabled ? "" : "Click to change employee"}>
-        <span style={{ fontWeight: 600 }}>{displayName}</span>
+        <span style={{ fontWeight: 600 }}>{resolvedName}</span>
         <span style={{ opacity: 0.55, fontSize: 13 }} aria-hidden>🔍</span>
       </div>
     );
