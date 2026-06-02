@@ -18,7 +18,7 @@ import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summar
 import { parseMinutes } from "@/lib/time-utils";
 import type { EmployeeRecord, JobRequest, JobSheet, TimeEntry, Timesheet } from "@/lib/store/types";
 import { EqualizerLoader } from "@/components/shared/equalizer-loader";
-import { LazyEmployeePicker, pushEmployeeIntoCache, type PickerEmployee } from "@/components/shared/employee-picker";
+import { EmployeePicker, LazyEmployeePicker, pushEmployeeIntoCache, type PickerEmployee } from "@/components/shared/employee-picker";
 
 // Phase 1: picker selection encodes which world we're in.
 //   "job:<jobId>"        — canonical, anchored on job_requests
@@ -400,9 +400,27 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
     persist({ ...timesheet, rows: nextRows });
   }
 
-  function addBlankRow() {
+  // True while the "+ Add Crew Member" modal is open. We use a modal-first
+  // flow so the operator MUST pick an employee before the row exists —
+  // otherwise we end up with blank rows (the Carolina cleanup found 20 of
+  // these on a single job, all needing manual deletion later).
+  const [addCrewModalOpen, setAddCrewModalOpen] = useState(false);
+  function addRowForEmployee(emp: PickerEmployee) {
     if (!timesheet) return;
-    persist({ ...timesheet, rows: [...timesheet.rows, blankTimeEntry(`row-${Date.now()}`)] });
+    const stamp = Date.now();
+    const base = blankTimeEntry(`manual-${stamp}`);
+    persist({
+      ...timesheet,
+      rows: [...timesheet.rows, {
+        ...base,
+        employeeKey: emp.employeeKey,
+        firstName: emp.firstName || emp.fullName.split(" ")[0] || "",
+        lastName:  emp.lastName  || emp.fullName.split(" ").slice(1).join(" ") || "",
+        phone: emp.phone || "",
+        email: emp.email || "",
+        status: "submitted",
+      }],
+    });
   }
 
   // Legacy path — pulls a flat worker list off the linked job_sheet.
@@ -448,11 +466,20 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   // of isHoliday on new rows + the day-group "🎄 Holiday" badge.
   const [holidayDateSet, setHolidayDateSet] = useState<Set<string>>(new Set());
   const [jobHolidayMultiplier, setJobHolidayMultiplier] = useState<number | null>(null);
+  // Live bill rates per specialty for THIS job — resolved by following the
+  // job's most recent quote to its rate_card_profile_id, then loading the
+  // rate-card rows. The timekeeping grid displays these read-only so the
+  // operator sees the rate that will actually be billed when the invoice
+  // pulls labor actuals (see lib/store/invoices.ts:686 — bill rates come
+  // from the rate card keyed by specialty_id, NOT from the timesheet row).
+  type RateCardRate = { hourly: number; otRate: number; dtRate: number };
+  const [rateCardBySpecialty, setRateCardBySpecialty] = useState<Map<string, RateCardRate>>(new Map());
   useEffect(() => {
     if (pickerKind !== "job") {
       setShiftLabelById(new Map());
       setHolidayDateSet(new Set());
       setJobHolidayMultiplier(null);
+      setRateCardBySpecialty(new Map());
       return;
     }
     tkPerf("job-meta useEffect entered (3 parallel queries)");
@@ -476,14 +503,45 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
           tkPerf("holiday-days query resolved → setHolidayDateSet", { count: s.size });
           setHolidayDateSet(s);
         });
-      // Resolve the multiplier via the job's quote (which already snapshot the
-      // rate-card multiplier). Fallback 2.0 if no quote / no value.
-      supabase.from("quotes").select("holiday_multiplier").eq("job_request_id", pickerKey).order("created_at", { ascending: false }).limit(1)
+      // Resolve the multiplier + rate card profile via the job's most recent
+      // quote (the V2 snapshot pattern locks the rate card to the quote, so
+      // this is the source of truth for what will be billed).
+      supabase.from("quotes")
+        .select("holiday_multiplier, rate_card_profile_id")
+        .eq("job_request_id", pickerKey)
+        .order("created_at", { ascending: false })
+        .limit(1)
         .then(({ data, error }) => {
-          if (error) { console.error("[timekeeping] load multiplier:", error); return; }
-          const v = (data?.[0] as any)?.holiday_multiplier;
+          if (error) { console.error("[timekeeping] load quote:", error); return; }
+          const q = data?.[0] as any;
+          const v = q?.holiday_multiplier;
           tkPerf("multiplier query resolved → setJobHolidayMultiplier", { value: v });
           setJobHolidayMultiplier(v == null ? null : Number(v));
+          const rcId = q?.rate_card_profile_id;
+          if (!rcId) {
+            tkPerf("no rate_card_profile_id on quote", {});
+            setRateCardBySpecialty(new Map());
+            return;
+          }
+          // Pull the rate-card rows for this snapshot, build a per-specialty
+          // map for the row render to look up.
+          supabase.from("rate_card_profile_rows")
+            .select("specialty_id, hourly, ot_rate, dt_rate")
+            .eq("profile_id", rcId)
+            .then(({ data: rows, error: rowsErr }) => {
+              if (rowsErr) { console.error("[timekeeping] load rate card rows:", rowsErr); return; }
+              const m = new Map<string, RateCardRate>();
+              for (const r of (rows ?? []) as any[]) {
+                if (!r.specialty_id) continue;
+                m.set(r.specialty_id, {
+                  hourly: Number(r.hourly ?? 0),
+                  otRate: Number(r.ot_rate ?? 0),
+                  dtRate: Number(r.dt_rate ?? 0),
+                });
+              }
+              tkPerf("rate card rows resolved → setRateCardBySpecialty", { count: m.size });
+              setRateCardBySpecialty(m);
+            });
         });
     });
   }, [picker]);
@@ -604,9 +662,12 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
     duplicateDay(sourceDay, target);
   }
 
+  // Opens the picker modal — the row is created in addRowForEmployee()
+  // only after the operator commits a choice. This replaces the legacy
+  // "+ Add Blank Row" path that created rows with no employee linked.
   function addManualCrew() {
     if (!timesheet) return;
-    persist({ ...timesheet, rows: [...timesheet.rows, blankTimeEntry(`manual-${Date.now()}`)] });
+    setAddCrewModalOpen(true);
   }
 
   function removeRow(id: string) {
@@ -1029,8 +1090,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
               Add Crew from Job Sheet
             </button>
           )}
-          <button className="secondary" onClick={addManualCrew} disabled={!timesheet}>Add Manual Crew</button>
-          <button className="secondary" onClick={addBlankRow} disabled={!timesheet}>Add Blank Row</button>
+          <button className="secondary" onClick={addManualCrew} disabled={!timesheet}>+ Add Crew Member</button>
           {timesheet && timesheet.rows.length > 0 && (
             <>
               <span style={{ flex: 1 }} />
@@ -1571,18 +1631,37 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                       <td className="hide-print">{row.otHours.toFixed(2)}</td>
                       <td className="hide-print">{row.dtHours.toFixed(2)}</td>
                       <td className="hide-print">{row.totalHours.toFixed(2)}</td>
-                      {showBill ? (
-                        <>
-                          <td className="hide-print"><select className="input-tight" disabled={isLocked} value={row.billStdRate} onChange={(e)=>updateRow(row.id, { billStdRate:Number(e.target.value) })}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          {/* Phase 4: OT/DT rates are inert on holiday rows
-                              (bill = totalHours × billStdRate × multiplier). Disable
-                              the selects so the operator doesn't think tweaking
-                              them changes anything. */}
-                          <td className="hide-print"><select className="input-tight" disabled={isLocked || !!row.isHoliday} value={row.billOtRate} onChange={(e)=>updateRow(row.id, { billOtRate:Number(e.target.value) })} title={row.isHoliday ? "Inert on holiday rows — bill uses base × multiplier" : ""}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td className="hide-print"><select className="input-tight" disabled={isLocked || !!row.isHoliday} value={row.billDtRate} onChange={(e)=>updateRow(row.id, { billDtRate:Number(e.target.value) })} title={row.isHoliday ? "Inert on holiday rows — bill uses base × multiplier" : ""}>{RATES.map((r)=><option key={r} value={r}>{r}</option>)}</select></td>
-                          <td className="hide-print">${row.billTotal.toFixed(2)}</td>
-                        </>
-                      ) : null}
+                      {showBill ? (() => {
+                        // Bill rates come from the rate-card snapshot on the
+                        // job's quote (see lib/store/invoices.ts:686 — invoice
+                        // generation uses the rate card, NOT the timesheet's
+                        // stored bill rates). We display rate-card values when
+                        // available, falling back to the row's stored values
+                        // for back-compat. Read-only display kills ~1,200
+                        // option DOM nodes per row that used to live in the
+                        // 300-option rate dropdowns.
+                        const rcRow = row.specialtyId ? rateCardBySpecialty.get(row.specialtyId) : undefined;
+                        const stdR = rcRow?.hourly ?? row.billStdRate;
+                        const otR  = rcRow?.otRate ?? row.billOtRate;
+                        const dtR  = rcRow?.dtRate ?? row.billDtRate;
+                        const fromRC = !!rcRow;
+                        const cellStyle = {
+                          fontSize: 11,
+                          color: fromRC ? "#1a1a1a" : "#888",
+                          fontStyle: fromRC ? "normal" : "italic" as const,
+                        };
+                        const title = fromRC
+                          ? "Live rate from this job's rate card (read-only — change on the rate card)"
+                          : "Fallback rate stored on the row — no rate-card match for this specialty";
+                        return (
+                          <>
+                            <td className="hide-print" style={cellStyle} title={title}>{stdR}</td>
+                            <td className="hide-print" style={cellStyle} title={row.isHoliday ? "Inert on holiday rows — bill uses base × multiplier" : title}>{otR}</td>
+                            <td className="hide-print" style={cellStyle} title={row.isHoliday ? "Inert on holiday rows — bill uses base × multiplier" : title}>{dtR}</td>
+                            <td className="hide-print">${row.billTotal.toFixed(2)}</td>
+                          </>
+                        );
+                      })() : null}
                     </tr>
                     </tbody>
                     );
@@ -1697,6 +1776,63 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* "+ Add Crew Member" modal — picker first, row second. */}
+      {addCrewModalOpen && (
+        <div
+          onClick={() => setAddCrewModalOpen(false)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+            zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(480px, 95vw)", background: "#fff", borderRadius: 12,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.3)", padding: 18,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 16 }}>+ Add Crew Member</h3>
+              <button type="button" onClick={() => setAddCrewModalOpen(false)} style={{ background: "transparent", border: "none", fontSize: 18, cursor: "pointer" }} title="Cancel (esc)">✕</button>
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
+              Pick the person who worked. A new timesheet row will be added for them.
+              Searching by name not finding the person? Type their full name then use
+              &ldquo;+ Create employee&rdquo; to add them to the directory inline.
+            </div>
+            <EmployeePicker
+              employeeKey={null}
+              defaultOpen
+              onSelect={(emp) => {
+                addRowForEmployee(emp);
+                setAddCrewModalOpen(false);
+              }}
+              onCreateInline={async (typedName) => {
+                const parts = typedName.trim().split(/\s+/);
+                const firstName = parts[0] ?? "";
+                const lastName  = parts.slice(1).join(" ");
+                const fullName  = [firstName, lastName].filter(Boolean).join(" ") || typedName.trim();
+                const newEmployee: EmployeeRecord = {
+                  employeeKey: `emp-${Date.now()}`,
+                  fullName, firstName, lastName,
+                  type: "contractor",
+                  hireDate: new Date().toISOString().slice(0, 10),
+                };
+                upsertEmployee(newEmployee);
+                setRefreshKey((k) => k + 1);
+                const picked: PickerEmployee = {
+                  employeeKey: newEmployee.employeeKey,
+                  fullName, firstName, lastName, email: "", phone: "",
+                };
+                pushEmployeeIntoCache(picked);
+                return picked;
+              }}
+            />
           </div>
         </div>
       )}
