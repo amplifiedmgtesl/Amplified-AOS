@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { loadInvoiceDrafts, loadQuotes, loadJobSheets, loadTimesheets } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
 import type { InvoiceDraft, JobSheet, QuoteDraft, Timesheet } from "@/lib/store/types";
+import { EqualizerLoader } from "@/components/shared/equalizer-loader";
 
 // Per-job aggregate of crew_needs vs assignments across upcoming days.
 type UnderstaffedJob = {
@@ -279,8 +280,17 @@ export default function Dashboard() {
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
+  // Dashboard cold-load signals: the local stores fill in over ~3s (driven by
+  // the tick polling above), and the understaffed widget runs a multi-table
+  // Supabase query that's typically the last thing to resolve. Show the
+  // overlay until both have a chance to populate so the operator sees motion
+  // instead of an empty page.
+  const isInitialLoad = understaffed === null
+    || (invoices.length === 0 && quotes.length === 0 && jobSheets.length === 0 && timesheets.length === 0);
+
   return (
-    <div className="grid" style={{ gap: 18 }}>
+    <div className="grid" style={{ gap: 18, position: "relative", minHeight: 400 }}>
+      {isInitialLoad && <EqualizerLoader label="Tuning the dashboard…" />}
       {/* Quick actions */}
       <div className="action-row" style={{ flexWrap: "wrap", gap: 8 }}>
         <Link href="/quote-builder"><button type="button">+ New Quote</button></Link>
