@@ -1397,34 +1397,6 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                     <tbody key={row.id} className={`line-employee ${isCollapsed ? "is-collapsed-day" : ""}`} data-day={row.workDate || "no-date"}>
                     <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}${lockedClass}`} style={isLocked ? { opacity: 0.85 } : undefined}>
                       <td colSpan={r1Spans.emp}>
-                        {jobHasShifts && (
-                          <select
-                            className="input-tight"
-                            value={row.shiftId || ""}
-                            disabled={isLocked}
-                            onChange={(e) => updateRow(row.id, { shiftId: e.target.value || null })}
-                            title={
-                              !row.shiftId
-                                ? "Shift is required to approve — payroll groups daily rules by shift"
-                                : ""
-                            }
-                            required
-                            style={{
-                              fontSize: 11,
-                              marginBottom: 2,
-                              width: "auto",
-                              maxWidth: 200,
-                              ...(!row.shiftId && !isLocked
-                                ? { background: "#fff4d6", borderColor: "#e0c070" }
-                                : {}),
-                            }}
-                          >
-                            <option value="">🕒 — required —</option>
-                            {Array.from(shiftLabelById.entries()).map(([id, label]) => (
-                              <option key={id} value={id}>🕒 {label}</option>
-                            ))}
-                          </select>
-                        )}
                         <span className="record-id" title="Timesheet entry id">{row.id}</span>
                         {isLocked ? (
                           <div style={{ fontSize: 13, fontWeight: 600 }}>
@@ -1590,7 +1562,38 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                           return null;
                         })()}
                       </td>
-                      <td colSpan={phantomSpan} className="hide-print"></td>
+                      <td colSpan={phantomSpan} className="hide-print" style={{ verticalAlign: "middle" }}>
+                        {jobHasShifts && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <small style={{ color: "#666", whiteSpace: "nowrap" }}>Shift</small>
+                            <select
+                              className="input-tight"
+                              value={row.shiftId || ""}
+                              disabled={isLocked}
+                              onChange={(e) => updateRow(row.id, { shiftId: e.target.value || null })}
+                              title={
+                                !row.shiftId
+                                  ? "Shift is required to approve — payroll groups daily rules by shift"
+                                  : ""
+                              }
+                              required
+                              style={{
+                                fontSize: 11,
+                                width: "auto",
+                                maxWidth: 180,
+                                ...(!row.shiftId && !isLocked
+                                  ? { background: "#fff4d6", borderColor: "#e0c070" }
+                                  : {}),
+                              }}
+                            >
+                              <option value="">🕒 — required —</option>
+                              {Array.from(shiftLabelById.entries()).map(([id, label]) => (
+                                <option key={id} value={id}>🕒 {label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </td>
                       <td rowSpan={2} className="hide-print" style={{ verticalAlign: "middle" }}>
                         <div className="action-row" style={{ flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
                           {!hideBillAlways && (
