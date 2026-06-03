@@ -281,6 +281,7 @@ create table if not exists employees (
 -- role = 'staff'        → can submit timesheets via the staff portal
 -- role = 'admin'        → full access to Amplified-AOS
 -- role = 'crew_leader'  → access to /lead/job-sheets and /lead/timekeeping (no pay/pricing)
+-- role = 'payroll'      → access to /payroll/* only (no clients, jobs, pricing, employee pay rates)
 -- employee_key links to employees table (required for staff portal users).
 create table if not exists profiles (
   id           uuid    primary key,  -- matches auth.users.id

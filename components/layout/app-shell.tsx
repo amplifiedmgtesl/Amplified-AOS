@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
 // Order roughly follows the lifecycle: see what's happening (Dashboard,
@@ -45,8 +46,10 @@ export function AppShell({
   subtitle?: string;
   children: ReactNode;
 }) {
+  const pathname = usePathname();
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState<boolean>(true);
+  const [userRole, setUserRole] = useState<string | null>(null);
   // Admin debug toggle: when on, .record-id chips on rows reveal record
   // GUIDs. Default off — zero clutter for normal use. Persisted to
   // localStorage so the choice survives a reload. Body class drives the
@@ -76,11 +79,22 @@ export function AppShell({
         return;
       }
 
+      // Payroll-only role: confined to /payroll/*. Bounce them off any
+      // other admin URL so the broader app (clients, jobs, pricing,
+      // pay rates on the employee directory, etc.) is not reachable.
+      if (profile?.role === "payroll") {
+        if (!pathname?.startsWith("/payroll")) {
+          window.location.href = "/payroll";
+          return;
+        }
+      }
+
+      setUserRole(profile?.role ?? null);
       setAuthChecking(false);
     }
     guard();
     return () => { cancelled = true; };
-  }, []);
+  }, [pathname]);
 
   // Load persisted preferences (skipped during SSR to avoid hydration mismatch)
   useEffect(() => {
@@ -123,6 +137,11 @@ export function AppShell({
     );
   }
 
+  const visibleNav = userRole === "payroll"
+    ? nav.filter(([href]) => href === "/payroll")
+    : nav;
+  const brandSub = userRole === "payroll" ? "Payroll" : "Operations Suite";
+
   return (
     <div className={`layout${collapsed ? " layout-collapsed" : ""}`}>
       <aside className="sidebar">
@@ -142,14 +161,14 @@ export function AppShell({
           ) : (
             <>
               <img src="/branding/client-logo.png" alt="Amplified Logo" className="sidebar-logo" />
-              <div className="brand-sub">Operations Suite</div>
+              <div className="brand-sub">{brandSub}</div>
             </>
           )}
         </div>
 
         <div style={{ height: 12 }} />
 
-        {nav.map(([href, icon, label]) => (
+        {visibleNav.map(([href, icon, label]) => (
           <Link key={href} href={href} className="nav-link" title={collapsed ? label : undefined}>
             <span style={{ fontSize: 18, marginRight: collapsed ? 0 : 10 }}>{icon}</span>
             {!collapsed && label}
