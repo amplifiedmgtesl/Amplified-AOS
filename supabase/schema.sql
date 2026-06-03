@@ -273,15 +273,25 @@ create table if not exists employees (
   profile_picture text,
   documents       jsonb   not null default '[]',
   source          text,
-  is_deleted      boolean not null default false
+  is_deleted      boolean not null default false,
+  -- External payroll system identifier — integer assigned by Rippling.
+  -- Used by the payroll-run CSV export to map Amplified employees to
+  -- their Rippling "Emp No". Nullable: most of the ~2700 employee
+  -- records will never need one (they're contacts, not payroll
+  -- subjects). Unique partial index lives below.
+  rippling_employee_id integer
 );
+
+create unique index if not exists employees_rippling_employee_id_uniq
+  on employees (rippling_employee_id)
+  where rippling_employee_id is not null;
 
 -- ─── Profiles ─────────────────────────────────────────────────────────────────
 -- Supabase auth user profiles. Shared by Amplified-AOS and amplified-staff.
 -- role = 'staff'        → can submit timesheets via the staff portal
 -- role = 'admin'        → full access to Amplified-AOS
 -- role = 'crew_leader'  → access to /lead/job-sheets and /lead/timekeeping (no pay/pricing)
--- role = 'payroll'      → access to /payroll/* only (no clients, jobs, pricing, employee pay rates)
+-- role = 'payroll'      → access to /payroll/* and /employee-directory (pay rates + Rippling Emp No editable)
 -- employee_key links to employees table (required for staff portal users).
 create table if not exists profiles (
   id           uuid    primary key,  -- matches auth.users.id

@@ -79,11 +79,15 @@ export function AppShell({
         return;
       }
 
-      // Payroll-only role: confined to /payroll/*. Bounce them off any
-      // other admin URL so the broader app (clients, jobs, pricing,
-      // pay rates on the employee directory, etc.) is not reachable.
+      // Payroll role: confined to /payroll/* and /employee-directory.
+      // Employee directory access is required for the Rippling Emp No
+      // field and for setting pay rates per employee/specialty —
+      // payroll owns both of those, so we let them through. Clients,
+      // jobs, pricing, etc. remain out of reach.
       if (profile?.role === "payroll") {
-        if (!pathname?.startsWith("/payroll")) {
+        const allowed = pathname?.startsWith("/payroll")
+          || pathname?.startsWith("/employee-directory");
+        if (!allowed) {
           window.location.href = "/payroll";
           return;
         }
@@ -138,7 +142,7 @@ export function AppShell({
   }
 
   const visibleNav = userRole === "payroll"
-    ? nav.filter(([href]) => href === "/payroll")
+    ? nav.filter(([href]) => href === "/payroll" || href === "/employee-directory")
     : nav;
   const brandSub = userRole === "payroll" ? "Payroll" : "Operations Suite";
 

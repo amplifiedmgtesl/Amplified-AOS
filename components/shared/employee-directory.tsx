@@ -287,6 +287,22 @@ export default function EmployeeDirectory({ hideBill: hideBillProp = false }: { 
                   onChange={(e) => updateActiveField("hireDate", e.target.value)}
                 />
               </div>
+              <div>
+                <small title="Rippling employee number. Used by the payroll CSV export to match this person to their Rippling pay run row. Leave blank if not in Rippling.">
+                  Rippling Emp No
+                </small>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={activeEmployee.ripplingEmployeeId ?? ""}
+                  onChange={(e) => updateActiveField(
+                    "ripplingEmployeeId",
+                    e.target.value === "" ? null : Number(e.target.value),
+                  )}
+                  placeholder="(none)"
+                />
+              </div>
             </div>
           </div>
 

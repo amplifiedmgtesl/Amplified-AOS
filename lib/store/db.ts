@@ -1339,6 +1339,7 @@ function rowToEmployee(r: any): EmployeeRecord {
     payStdRate: r.pay_std_rate == null ? null : Number(r.pay_std_rate),
     payOtRate:  r.pay_ot_rate  == null ? null : Number(r.pay_ot_rate),
     payDtRate:  r.pay_dt_rate  == null ? null : Number(r.pay_dt_rate),
+    ripplingEmployeeId: r.rippling_employee_id == null ? null : Number(r.rippling_employee_id),
   };
 }
 
@@ -1662,6 +1663,7 @@ function employeeToRow(e: EmployeeRecord, isDeleted: boolean) {
     pay_std_rate: e.payStdRate ?? null,
     pay_ot_rate:  e.payOtRate  ?? null,
     pay_dt_rate:  e.payDtRate  ?? null,
+    rippling_employee_id: e.ripplingEmployeeId ?? null,
     is_deleted: isDeleted,
   };
 }

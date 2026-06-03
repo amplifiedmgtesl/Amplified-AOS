@@ -24,7 +24,8 @@ import {
   type PayrollCandidateRow,
 } from "@/lib/store/payroll";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "@/lib/store/types";
-import { loadJobRequests } from "@/lib/store/app-store";
+import { loadJobRequests, loadEmployees } from "@/lib/store/app-store";
+import { buildRipplingCsv, ripplingCsvFilename } from "@/lib/store/payroll-export";
 import { useUserEmail } from "@/lib/auth/use-user-email";
 
 // IT-only recovery actions (e.g. "Apply daily rules") are gated to this
@@ -353,6 +354,18 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
     return m;
   }, [entries]);
 
+  // Rippling Emp No lookup by employee_key. Surfaced on each employee's
+  // group header so the payroll clerk can spot missing IDs while reviewing
+  // a run — anything still null needs a fix on the employee record before
+  // it'll match cleanly in the Rippling CSV.
+  const ripplingIdByEmpKey = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const emp of loadEmployees()) {
+      m.set(emp.employeeKey, emp.ripplingEmployeeId ?? null);
+    }
+    return m;
+  }, [entries]);
+
   // Group entries by employee.
   const grouped = useMemo(() => {
     const m = new Map<string, { label: string; rows: PayrollRunEntry[] }>();
@@ -572,6 +585,21 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
     finally { setBusy(null); }
   }
 
+  function handleExportRipplingCsv() {
+    if (!run) return;
+    const csv = buildRipplingCsv(run, entries, loadEmployees(), loadJobRequests());
+    const filename = ripplingCsvFilename(run);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   async function handleRemoveZeroHourEntries() {
     if (!isDraft) return;
     if (zeroHourCount === 0) return;
@@ -620,6 +648,16 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
             title={entries.length === 0 ? "No entries to print" : "Open printable payroll report"}
           >
             📄 Print / PDF
+          </button>
+          <button
+            className="secondary"
+            onClick={handleExportRipplingCsv}
+            disabled={!!busy || entries.length === 0}
+            title={entries.length === 0
+              ? "No entries to export"
+              : "Download a Rippling-format CSV of this run. Upload via Rippling → Payroll → Run Payroll → Earnings → Import CSV."}
+          >
+            📥 Rippling CSV
           </button>
           {isDraft && (
             <>
@@ -785,7 +823,32 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
             return (
               <div key={g.label} style={{ marginBottom: 14, border: "1px solid #eee", borderRadius: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#f7f7f9", padding: "8px 12px" }}>
-                  <strong>{g.label}</strong>
+                  <strong>
+                    {g.label}
+                    {(() => {
+                      const empKey = g.rows[0]?.employeeKey;
+                      const ripp = empKey ? ripplingIdByEmpKey.get(empKey) : null;
+                      if (ripp == null) {
+                        return (
+                          <span
+                            style={{ marginLeft: 8, color: "#c0392b", fontWeight: "normal", fontSize: 12, fontStyle: "italic" }}
+                            title="No Rippling Emp No on this employee — set it on the Employee Directory page so the payroll CSV export can match this row to Rippling."
+                          >
+                            no Rippling #
+                          </span>
+                        );
+                      }
+                      return (
+                        <span
+                          className="badge"
+                          style={{ marginLeft: 8, background: "#eaf2fb", color: "#1a4a7a", fontWeight: "normal", fontSize: 11 }}
+                          title="Rippling Emp No — used by the payroll CSV export to match this employee."
+                        >
+                          Rippling #{ripp}
+                        </span>
+                      );
+                    })()}
+                  </strong>
                   <div style={{ fontSize: 13 }}>
                     {g.rows.length} entr{g.rows.length === 1 ? "y" : "ies"} ·{" "}
                     <strong>{hrs.toFixed(1)}</strong> pay hrs ·{" "}

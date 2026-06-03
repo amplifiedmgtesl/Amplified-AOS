@@ -597,6 +597,10 @@ export type EmployeeRecord = {
   payStdRate?: number | null;
   payOtRate?: number | null;
   payDtRate?: number | null;
+  /** Rippling employee number — external payroll system identifier.
+   *  Surfaced on the payroll-run CSV export so Rippling can match each
+   *  row to its employee record. Most employees won't have one. */
+  ripplingEmployeeId?: number | null;
 };
 
 
