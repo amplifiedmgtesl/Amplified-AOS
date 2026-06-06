@@ -51,6 +51,9 @@ export default function QuoteDetail({ id }: { id: string }) {
   const [perDayOpen, setPerDayOpen] = useState(false);
   const [perDayPicked, setPerDayPicked] = useState<Set<string>>(new Set());
   const [perDayCoveredElsewhere, setPerDayCoveredElsewhere] = useState<Set<string>>(new Set());
+  /** Count of active per-day final invoices for this quote's job. Drives
+   *  the mutual-exclusion guard on the whole-job-final button. */
+  const [activePerDayCount, setActivePerDayCount] = useState(0);
 
   /** Orphan-quote linker state. Open when user clicks "Link to Job". */
   const [linkOpen, setLinkOpen] = useState(false);
@@ -113,14 +116,19 @@ export default function QuoteDetail({ id }: { id: string }) {
           setActiveFinalId(fin?.id ?? null);
           // Collect dates already covered by an ACTIVE per-day final so
           // the picker can grey them out and prevent double-billing.
+          // Also count how many per-day finals exist so we can hide the
+          // whole-job button (mutual exclusion mirrors the DB trigger).
           const covered = new Set<string>();
+          let perDayN = 0;
           for (const inv of invoices) {
             if (inv.invoiceType !== "final") continue;
             if (inv.status === "superseded" || inv.status === "void") continue;
             if (!inv.coveredDates || inv.coveredDates.length === 0) continue;
+            perDayN++;
             for (const d of inv.coveredDates) covered.add(d);
           }
           setPerDayCoveredElsewhere(covered);
+          setActivePerDayCount(perDayN);
         }
         setLoading(false);
       })
@@ -472,7 +480,11 @@ export default function QuoteDetail({ id }: { id: string }) {
             </button>
           )
         ) : null}
-        {quote.jobRequestId && !isSuperseded ? (
+        {/* Whole-job final — mutually exclusive with per-day finals.
+            Hidden when any per-day final is already active; the DB
+            trigger invoices_coverage_no_overlap_trg would refuse to
+            issue one anyway. */}
+        {quote.jobRequestId && !isSuperseded && activePerDayCount === 0 ? (
           hasActiveFinal ? (
             <button className="secondary" onClick={() => router.push(`/invoices/${encodeURIComponent(activeFinalId)}`)}>
               View Final Invoice
@@ -483,9 +495,9 @@ export default function QuoteDetail({ id }: { id: string }) {
             </button>
           )
         ) : null}
-        {/* Per-day-range final — coexists with any whole-job final; lets the
-            operator progress-bill across multiple days without revising. */}
-        {quote.jobRequestId && !isSuperseded ? (
+        {/* Per-day-range final — mutually exclusive with whole-job
+            finals. Hidden when a whole-job final is already active. */}
+        {quote.jobRequestId && !isSuperseded && !hasActiveFinal ? (
           <button
             className="secondary"
             onClick={() => { setPerDayPicked(new Set()); setPerDayOpen(true); }}
