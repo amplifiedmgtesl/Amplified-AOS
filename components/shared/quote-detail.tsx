@@ -20,6 +20,7 @@ import {
   createDepositDraftFromQuote,
   createFinalDraftFromQuote,
   findActiveDepositInvoiceForJob,
+  findActiveWholeJobFinalInvoiceForJob,
   loadInvoices,
 } from "@/lib/store/invoices";
 import type { QuoteDraft, JobRequestShift } from "@/lib/store/types";
@@ -231,6 +232,25 @@ export default function QuoteDetail({ id }: { id: string }) {
   async function onGenerateFinal() {
     if (!quote) return;
     if (!confirm(`Generate a final invoice covering the full job from this quote?`)) return;
+    // If an issued whole-job final already exists for this job (e.g. from an
+    // earlier quote revision), warn that this draft will supersede it on
+    // issue.
+    if (quote.jobRequestId) {
+      try {
+        const existing = await findActiveWholeJobFinalInvoiceForJob(quote.jobRequestId);
+        if (existing) {
+          const label = existing.invoiceNo || existing.id;
+          if (!confirm(
+            `An issued whole-job final invoice already exists for this job: ${label}.\n\n` +
+            `Generating a new final will create a revision that supersedes it when you issue the draft. ` +
+            `Continue?`,
+          )) return;
+        }
+      } catch {
+        // Non-fatal: fall through to draft creation. The DB constraint still
+        // protects on issue.
+      }
+    }
     try {
       const draft = await createFinalDraftFromQuote(quote.id);
       router.push(`/invoices/${encodeURIComponent(draft.id)}/edit`);

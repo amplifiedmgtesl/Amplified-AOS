@@ -297,6 +297,32 @@ export async function findActiveDepositInvoiceForJob(
   };
 }
 
+/** Look up the currently-active (non-draft, non-superseded, non-void)
+ *  whole-job final invoice for a job, if any. Per-day finals
+ *  (covered_dates IS NOT NULL) are intentionally NOT exclusive — multiple
+ *  per-day finals coexist for one job — so this helper only considers
+ *  whole-job rows (covered_dates IS NULL). */
+export async function findActiveWholeJobFinalInvoiceForJob(
+  jobRequestId: string,
+): Promise<{ id: string; invoiceNo: string | null; revisionNo: number } | null> {
+  const { data, error } = await supabase
+    .from("invoices")
+    .select("id, invoice_no, revision_no")
+    .eq("job_request_id", jobRequestId)
+    .eq("invoice_type", "final")
+    .eq("is_draft", false)
+    .is("covered_dates", null)
+    .or("status.is.null,and(status.neq.superseded,status.neq.void)")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    id: data.id,
+    invoiceNo: data.invoice_no ?? null,
+    revisionNo: Number(data.revision_no ?? 1),
+  };
+}
+
 export async function createDepositDraftFromQuote(
   quoteId: string,
   opts: { amount?: number } = {},
@@ -404,6 +430,31 @@ export async function createFinalDraftFromQuote(
   if (q.is_draft) throw new Error(`Cannot generate invoice from a draft quote (${quoteId}). Issue it first.`);
   if (!q.job_request_id) throw new Error(`Quote ${quoteId} has no linked job_request.`);
 
+  const isWholeJob = !(opts.coveredDates && opts.coveredDates.length > 0);
+
+  // Whole-job finals are constrained by `invoices_one_active_wholejob_final_per_job`.
+  // If one already exists for this job, chain the new draft as a revision so
+  // issuing supersedes it through issue_invoice_draft's parent_invoice_id branch.
+  // Also clear any stale whole-job final drafts left behind by older quote
+  // revisions (they would be unissuable once a sibling is issued).
+  //
+  // Per-day finals (coveredDates set) intentionally have no such constraint —
+  // multiple per-day finals coexist for one job — so we skip this for them.
+  const activeWholeJobFinal = isWholeJob
+    ? await findActiveWholeJobFinalInvoiceForJob(q.job_request_id)
+    : null;
+
+  if (isWholeJob) {
+    const { error: clearErr } = await supabase
+      .from("invoices")
+      .delete()
+      .eq("job_request_id", q.job_request_id)
+      .eq("invoice_type", "final")
+      .eq("is_draft", true)
+      .is("covered_dates", null);
+    if (clearErr) throw clearErr;
+  }
+
   const linesRes = await supabase.from("quote_lines").select("*").eq("quote_id", quoteId).order("sort_order");
   if (linesRes.error) throw linesRes.error;
   let quoteLines = linesRes.data ?? [];
@@ -501,7 +552,8 @@ export async function createFinalDraftFromQuote(
     sourceQuoteId: q.id,
     sourceQuoteCode: q.quote_no ?? undefined,
     coveredDates: opts.coveredDates && opts.coveredDates.length > 0 ? opts.coveredDates : undefined,
-    revisionNo: 1,
+    parentInvoiceId: activeWholeJobFinal?.id,
+    revisionNo: activeWholeJobFinal ? activeWholeJobFinal.revisionNo + 1 : 1,
     depositApplied,
     creditsApplied: 0,
   };
