@@ -655,6 +655,45 @@ export async function overwriteFromTimesheets(
   //   for (client, request_date). Same resolution path the quote builder
   //   uses, so the customer sees consistent rates across quote → invoice.
   const rateCard = await resolveRateCardForJob(inv.jobRequestId);
+  // ─── 1c. Quote-aware rate-mode hints ──────────────────────────────────
+  //   Load the source quote's lines so we know the operator's billing
+  //   structure intent per (date, position, specialty). Build days quoted
+  //   at day-rate should produce day-mode invoice lines automatically;
+  //   show days quoted hourly stay hourly. Without this, every line came
+  //   back as hourly mode, forcing a manual SQL flip for every build-day
+  //   line (Connor's CCMF pain point, 2026-06-06).
+  //
+  //   Tiebreaker: if the quote has BOTH day and hourly lines for the
+  //   same (date, position, specialty) — common when bulk crew is on
+  //   day rate plus extra-hour add-ons — prefer DAY mode. Day-rate
+  //   covers the standard hours; overflow past the floor falls into
+  //   the OT bucket at the (unchanged) hourly rate, no premium.
+  type QuoteRateHint = { rateMode: "day" | "hourly"; baseDay: number; baseHourly: number };
+  const quoteRateHintByKey = new Map<string, QuoteRateHint>();
+  if (inv.sourceQuoteId) {
+    const qlRes = await supabase
+      .from("quote_lines")
+      .select("quote_date, position_id, specialty_id, rate_mode, base_day, base_hourly")
+      .eq("quote_id", inv.sourceQuoteId);
+    if (!qlRes.error) {
+      for (const ql of (qlRes.data ?? []) as any[]) {
+        if (!ql.quote_date || !ql.position_id || !ql.specialty_id) continue;
+        const key = `${ql.quote_date}|${ql.position_id}|${ql.specialty_id}`;
+        const isDay = ql.rate_mode === "day";
+        const existing = quoteRateHintByKey.get(key);
+        // First hit wins UNLESS this row is day-mode and the prior wasn't.
+        if (!existing || (isDay && existing.rateMode !== "day")) {
+          quoteRateHintByKey.set(key, {
+            rateMode: isDay ? "day" : "hourly",
+            baseDay: Number(ql.base_day ?? 0),
+            baseHourly: Number(ql.base_hourly ?? 0),
+          });
+        }
+      }
+    } else {
+      console.warn("[overwriteFromTimesheets] could not load source quote lines:", qlRes.error.message);
+    }
+  }
   const billRateBySpecialty = new Map<string, { hourly: number; otRate: number; dtRate: number }>();
   for (const row of (rateCard?.rows ?? []) as any[]) {
     if (!row.specialty_id) continue;
@@ -719,6 +758,11 @@ export async function overwriteFromTimesheets(
     dtHours: number;
     entryIds: string[];
     workerKeys: Set<string>;
+    /** Per-worker total_hours for the group. Used by the day-mode
+     *  branch to compute overflow past the day-rate floor on a
+     *  per-worker basis (Connor's CCMF contract: day rate covers
+     *  10 hrs per worker, overflow at hourly). */
+    workerTotalHours: Map<string, number>;
   };
   const groups = new Map<string, Group>();
   for (const e of entries) {
@@ -740,6 +784,7 @@ export async function overwriteFromTimesheets(
       e.is_holiday ? "h" : "n",
     ].join("|");
     const workerKey = e.employee_key ?? `entry-${e.id}`;
+    const entryTotalHours = Number(e.total_hours ?? 0);
     const g = groups.get(key);
     if (g) {
       g.stdHours += Number(e.std_hours ?? 0);
@@ -747,6 +792,7 @@ export async function overwriteFromTimesheets(
       g.dtHours  += Number(e.dt_hours  ?? 0);
       g.entryIds.push(e.id);
       g.workerKeys.add(workerKey);
+      g.workerTotalHours.set(workerKey, (g.workerTotalHours.get(workerKey) ?? 0) + entryTotalHours);
       if (e.end_date && (!g.endDate || e.end_date > g.endDate)) g.endDate = e.end_date;
     } else {
       groups.set(key, {
@@ -762,6 +808,7 @@ export async function overwriteFromTimesheets(
         dtHours:  Number(e.dt_hours  ?? 0),
         entryIds: [e.id],
         workerKeys: new Set([workerKey]),
+        workerTotalHours: new Map([[workerKey, entryTotalHours]]),
       });
     }
   }
@@ -793,19 +840,67 @@ export async function overwriteFromTimesheets(
     const baseHourly = rate?.hourly ?? 0;
     const otRate     = rate?.otRate ?? 0;
     const dtRate     = rate?.dtRate ?? 0;
+
+    // ─── Quote-aware rate mode ────────────────────────────────────────
+    // Look up the quote's intent for this (date, position, specialty).
+    // If it's day mode, build a day-mode line. The day-rate floor per
+    // worker is derived as round(base_day / base_hourly) — for Connor's
+    // CCMF rate card every position is exactly 10 (350/35, 380/38,
+    // 500/50, etc.). Overflow past that floor per worker bills into
+    // the OT bucket at base_hourly (no premium — matches contracts
+    // like "day rate covers 10hrs, hourly thereafter").
+    const hintKey = (g.workDate && g.positionId && g.specialtyId)
+      ? `${g.workDate}|${g.positionId}|${g.specialtyId}`
+      : null;
+    const hint = hintKey ? quoteRateHintByKey.get(hintKey) : undefined;
+    const useDayMode = hint?.rateMode === "day" && (hint.baseDay > 0);
+    let lineHours = +g.stdHours.toFixed(2);
+    let lineOtHours = +g.otHours.toFixed(2);
+    let lineDtHours = +g.dtHours.toFixed(2);
+    let lineBaseDay = 0;
+    let lineBaseHourly = baseHourly;
+    let lineOtRate = otRate;
+    let lineRateMode: "day" | "hourly" = "hourly";
+    let lineRule = g.isHoliday ? "Holiday timesheet actuals" : "Timesheet actuals";
+
+    if (useDayMode) {
+      const baseDay = hint!.baseDay;
+      const hourlyForOverflow = hint!.baseHourly > 0 ? hint!.baseHourly : baseHourly;
+      // Floor = how many hours the day rate "covers" per worker.
+      // Derived from quote's day/hourly ratio. For CCMF: 350/35 = 10.
+      const floor = hourlyForOverflow > 0
+        ? Math.round(baseDay / hourlyForOverflow)
+        : 10;
+      // Per-worker overflow = hours past the floor, summed across workers.
+      let overflow = 0;
+      g.workerTotalHours.forEach((hrs) => {
+        if (hrs > floor) overflow += (hrs - floor);
+      });
+      lineRateMode = "day";
+      lineBaseDay = baseDay;
+      lineBaseHourly = hourlyForOverflow;
+      lineHours = 0;                              // day mode: hours field unused
+      lineOtHours = +overflow.toFixed(2);         // overflow bills at hourly
+      lineOtRate = hourlyForOverflow;             // no premium
+      lineDtHours = 0;
+      lineRule = g.isHoliday
+        ? `Holiday day rate (floor ${floor}hr) + hourly overflow`
+        : `Day rate (floor ${floor}hr) + hourly overflow per quote`;
+    }
+
     const line: QuoteLine = {
       serviceKey: g.positionText,
       qty: crewCount,
       crewCount,
-      hours:        +g.stdHours.toFixed(2),
-      otHours:      +g.otHours.toFixed(2),
-      dtHours:      +g.dtHours.toFixed(2),
+      hours:        lineHours,
+      otHours:      lineOtHours,
+      dtHours:      lineDtHours,
       travel:       0,
-      baseHourly,
-      baseDay:      0,
-      otRate,
+      baseHourly:   lineBaseHourly,
+      baseDay:      lineBaseDay,
+      otRate:       lineOtRate,
       dtRate,
-      rule:         g.isHoliday ? "Holiday timesheet actuals" : "Timesheet actuals",
+      rule:         lineRule,
       total:        0,
       positionId:   g.positionId ?? undefined,
       specialtyId:  g.specialtyId ?? undefined,
@@ -813,7 +908,7 @@ export async function overwriteFromTimesheets(
       shiftId:      g.shiftId ?? undefined,
       quoteDate:    g.workDate,
       endDate:      g.endDate ?? undefined,
-      rateMode:     "hourly",
+      rateMode:     lineRateMode,
       sourceKind:   "timesheet_entry",
     };
     line.total = +computeLineTotal(line, {

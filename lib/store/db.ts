@@ -1265,6 +1265,23 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
   };
 }
 
+/** When an entry has a position_id but no specialty_id, fall back to
+ *  the first `show=true` specialty under that position from the cached
+ *  catalog. Prevents the orphan-line $0 bug seen on Connor's CCMF job
+ *  where entries with NULL specialty_id couldn't resolve to a rate-card
+ *  row at invoice-pull time and silently billed nothing.
+ *
+ *  Rate-neutral for jobs whose rate card has identical rates across all
+ *  specialties under a position (the common case). Operators can still
+ *  override via the cascading dropdown. */
+function defaultSpecialtyIdForPosition(positionId: string | null | undefined): string | null {
+  if (!positionId) return null;
+  const candidates = _cache.specialties
+    .filter((s) => s.positionId === positionId && s.isActive !== false)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  return candidates[0]?.id ?? null;
+}
+
 function timesheetEntryToRow(
   e: import("./types").TimeEntry,
   timesheetId: string,
@@ -1272,6 +1289,11 @@ function timesheetEntryToRow(
   jobId: string | null,
   sortOrder: number,
 ) {
+  // Auto-fill specialty_id when missing. If the operator didn't pick
+  // one (manual row add, legacy import path, etc.) we default rather
+  // than letting NULL flow through to invoice-pull time.
+  const resolvedSpecialtyId =
+    e.specialtyId ?? defaultSpecialtyIdForPosition(e.positionId ?? null);
   return {
     id: e.id,
     timesheet_id: timesheetId,
@@ -1279,7 +1301,7 @@ function timesheetEntryToRow(
     job_id: jobId,
     shift_id: e.shiftId ?? null,
     position_id: e.positionId ?? null,
-    specialty_id: e.specialtyId ?? null,
+    specialty_id: resolvedSpecialtyId,
     is_holiday: !!e.isHoliday,
     holiday_multiplier: e.holidayMultiplier ?? null,
     employee_key: e.employeeKey ?? null,
