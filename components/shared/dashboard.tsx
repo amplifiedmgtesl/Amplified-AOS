@@ -293,7 +293,7 @@ export default function Dashboard() {
       {isInitialLoad && <EqualizerLoader label="Tuning the dashboard…" />}
       {/* Quick actions */}
       <div className="action-row" style={{ flexWrap: "wrap", gap: 8 }}>
-        <Link href="/quote-builder"><button type="button">+ New Quote</button></Link>
+        <Link href="/quotes"><button type="button">+ New Quote</button></Link>
         <Link href="/invoices"><button type="button">+ New Invoice</button></Link>
         <Link href="/timekeeping"><button type="button" className="secondary">
           Approve Timesheets{pendingRows.length > 0 ? ` (${pendingRows.length})` : ""}
@@ -489,7 +489,7 @@ export default function Dashboard() {
                 Open Quotes
                 <Info text={"Quotes with status = 'quoted' that have NOT yet been converted to an invoice (no invoice references the quote's id). Value column sums each quote's stored total."} />
               </h3>
-              <Link href="/quote-builder" style={{ fontSize: 13, color: "var(--gold-dark)", fontWeight: 600 }}>Quote builder →</Link>
+              <Link href="/quotes" style={{ fontSize: 13, color: "var(--gold-dark)", fontWeight: 600 }}>Quotes →</Link>
             </div>
             <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
               {openQuotes.length} open · Pipeline value <strong>{fmtMoneyShort(openQuotesValue)}</strong>

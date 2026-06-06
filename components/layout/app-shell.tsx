@@ -27,11 +27,10 @@ const nav = [
   ["/employee-directory", "👥", "Employees"],
   // ["/call-sheets", "📞", "Call Sheets"],  // Hidden — duplicate of Job Sheets. Code kept under app/call-sheets/ but excluded from nav + analysis.
   ["/maintenance", "⚙️", "Maintenance"],
-  // Legacy entries — hidden from nav post-V2 cutover (2026-05-30). Code under
-  // app/job-sheets/ and app/invoice-builder/ is retained in case we need to
-  // refer back to it; re-add to this array to expose again.
+  // Legacy entries — hidden from nav post-V2 cutover (2026-05-30). job-sheets
+  // route still exists at app/job-sheets/. invoice-builder route removed
+  // 2026-06-06 along with its component (no longer referenced anywhere).
   // ["/job-sheets", "📑", "Job Sheets (legacy)"],
-  // ["/invoice-builder", "📄", "Invoice Builder (legacy)"],
 ] as const;
 
 const STORAGE_KEY = "aos.sidebar.collapsed";
