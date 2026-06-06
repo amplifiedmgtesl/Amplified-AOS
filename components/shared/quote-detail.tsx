@@ -45,6 +45,12 @@ export default function QuoteDetail({ id }: { id: string }) {
   const [hasActiveFinal, setHasActiveFinal] = useState(false);
   const [activeDepositId, setActiveDepositId] = useState<string | null>(null);
   const [activeFinalId, setActiveFinalId] = useState<string | null>(null);
+  /** Per-day final picker state — dates already covered by an active
+   *  per-day final are pre-disabled in the modal so the operator can't
+   *  double-bill. */
+  const [perDayOpen, setPerDayOpen] = useState(false);
+  const [perDayPicked, setPerDayPicked] = useState<Set<string>>(new Set());
+  const [perDayCoveredElsewhere, setPerDayCoveredElsewhere] = useState<Set<string>>(new Set());
 
   /** Orphan-quote linker state. Open when user clicks "Link to Job". */
   const [linkOpen, setLinkOpen] = useState(false);
@@ -105,6 +111,16 @@ export default function QuoteDetail({ id }: { id: string }) {
           setActiveDepositId(dep?.id ?? null);
           setHasActiveFinal(!!fin);
           setActiveFinalId(fin?.id ?? null);
+          // Collect dates already covered by an ACTIVE per-day final so
+          // the picker can grey them out and prevent double-billing.
+          const covered = new Set<string>();
+          for (const inv of invoices) {
+            if (inv.invoiceType !== "final") continue;
+            if (inv.status === "superseded" || inv.status === "void") continue;
+            if (!inv.coveredDates || inv.coveredDates.length === 0) continue;
+            for (const d of inv.coveredDates) covered.add(d);
+          }
+          setPerDayCoveredElsewhere(covered);
         }
         setLoading(false);
       })
@@ -256,6 +272,26 @@ export default function QuoteDetail({ id }: { id: string }) {
       router.push(`/invoices/${encodeURIComponent(draft.id)}/edit`);
     } catch (err: any) {
       alert(`Generate Final failed: ${err.message || err}`);
+    }
+  }
+
+  /** Generate a per-day-range final from the picked dates. Coexists with
+   *  any active whole-job final (the partial unique index only fires when
+   *  covered_dates IS NULL). Dates already on another active per-day
+   *  final are pre-blocked in the modal. */
+  async function onConfirmPerDayFinal() {
+    if (!quote) return;
+    const dates = Array.from(perDayPicked).sort();
+    if (dates.length === 0) {
+      alert("Pick at least one date.");
+      return;
+    }
+    try {
+      const draft = await createFinalDraftFromQuote(quote.id, { coveredDates: dates });
+      setPerDayOpen(false);
+      router.push(`/invoices/${encodeURIComponent(draft.id)}/edit`);
+    } catch (err: any) {
+      alert(`Generate Per-Day Final failed: ${err.message || err}`);
     }
   }
 
@@ -447,8 +483,87 @@ export default function QuoteDetail({ id }: { id: string }) {
             </button>
           )
         ) : null}
+        {/* Per-day-range final — coexists with any whole-job final; lets the
+            operator progress-bill across multiple days without revising. */}
+        {quote.jobRequestId && !isSuperseded ? (
+          <button
+            className="secondary"
+            onClick={() => { setPerDayPicked(new Set()); setPerDayOpen(true); }}
+            title="Bill only specific dates from this quote. Useful for progress billing across multi-day jobs."
+          >
+            Generate Per-Day Final…
+          </button>
+        ) : null}
         {/* Generate Invoice button intentionally absent — Phase C scope. */}
       </div>
+
+      {perDayOpen ? (
+        <div className="card" style={{ marginTop: 16 }}>
+          <h3 className="section-title">Generate Per-Day Final Invoice</h3>
+          <div className="muted" style={{ marginBottom: 12 }}>
+            Pick the dates to bill. The new draft will be scoped to just these dates, and won't conflict with any existing whole-job final. Dates already on another active per-day final are disabled.
+          </div>
+          {(() => {
+            const allDates = Array.from(new Set(
+              (quote.lines || [])
+                .map((l: any) => l.quoteDate)
+                .filter((d: any): d is string => !!d)
+            )).sort();
+            if (allDates.length === 0) {
+              return (
+                <div style={{ color: "#a55", marginBottom: 12 }}>
+                  This quote has no per-date lines. Add lines with dates first, or use the whole-job "Generate Final Invoice" button instead.
+                </div>
+              );
+            }
+            return (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 6, marginBottom: 12 }}>
+                {allDates.map((d) => {
+                  const alreadyCovered = perDayCoveredElsewhere.has(d);
+                  const checked = perDayPicked.has(d);
+                  return (
+                    <label
+                      key={d}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "4px 8px",
+                        borderRadius: 4,
+                        background: alreadyCovered ? "#f3ece2" : (checked ? "#fff4d6" : "transparent"),
+                        opacity: alreadyCovered ? 0.55 : 1,
+                        cursor: alreadyCovered ? "not-allowed" : "pointer",
+                      }}
+                      title={alreadyCovered ? "Already billed on another active per-day invoice" : ""}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={alreadyCovered}
+                        onChange={(e) => {
+                          setPerDayPicked((cur) => {
+                            const next = new Set(cur);
+                            if (e.target.checked) next.add(d); else next.delete(d);
+                            return next;
+                          });
+                        }}
+                      />
+                      <span style={{ fontSize: 13 }}>{d}</span>
+                      {alreadyCovered ? <span style={{ fontSize: 11, color: "#a55" }}>(billed)</span> : null}
+                    </label>
+                  );
+                })}
+              </div>
+            );
+          })()}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onConfirmPerDayFinal} disabled={perDayPicked.size === 0}>
+              Generate ({perDayPicked.size} {perDayPicked.size === 1 ? "day" : "days"})
+            </button>
+            <button className="secondary" onClick={() => setPerDayOpen(false)}>Cancel</button>
+          </div>
+        </div>
+      ) : null}
 
       {linkOpen ? (
         <div className="card" style={{ marginTop: 16 }}>
