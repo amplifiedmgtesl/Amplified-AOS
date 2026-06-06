@@ -13,6 +13,7 @@ import { JobRequestDaysSection } from "./job-request-days-section";
 import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { JobRequestCrewSection } from "./job-request-crew-section";
 import { JobRequestShiftsSection } from "./job-request-shifts-section";
+import { JobHealthSection, useJobHealthCount } from "./job-health-section";
 import { JobPrintSheet } from "./job-print-sheet";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { computeJobNo, defaultEventAbbr, sanitizeEventAbbr } from "@/lib/jobs/job-no";
@@ -47,7 +48,7 @@ function daysSince(iso?: string): number | null {
 }
 
 type Mode = "none" | "new" | "edit";
-type SectionTab = "daily" | "crew" | "shifts" | "attachments";
+type SectionTab = "daily" | "crew" | "shifts" | "attachments" | "health";
 
 export default function JobRequests() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -142,6 +143,9 @@ export default function JobRequests() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [sectionTab, setSectionTab] = useState<SectionTab>("daily");
+  // Drives the count badge on the Health Check tab. Returns null until the
+  // checks finish their first run; falsy until editingId is set.
+  const healthCounts = useJobHealthCount(editingId ? form : null, refreshKey);
   const role = useUserRole();
   const isCrewLeader = role === "crew_leader";
   const timesheetHref = isCrewLeader ? "/lead/timekeeping" : "/timekeeping";
@@ -949,8 +953,13 @@ export default function JobRequests() {
                 { id: "crew" as const,        label: "Assigned Crew" },
                 { id: "shifts" as const,      label: "Shifts" },
                 { id: "attachments" as const, label: "Attachments" },
+                { id: "health" as const,      label: "Health Check" },
               ]).map((t) => {
                 const active = sectionTab === t.id;
+                const showBadge = t.id === "health" && healthCounts && healthCounts.total > 0;
+                const badgeColor = healthCounts && healthCounts.blocker > 0 ? "#dc2626"
+                  : healthCounts && healthCounts.warning > 0 ? "#d97706"
+                  : "#2563eb";
                 return (
                   <button
                     key={t.id}
@@ -968,8 +977,24 @@ export default function JobRequests() {
                       fontWeight: active ? 600 : 500,
                       cursor: "pointer",
                       marginBottom: -1,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
                     }}
-                  >{t.label}</button>
+                  >
+                    {t.label}
+                    {showBadge ? (
+                      <span style={{
+                        background: badgeColor,
+                        color: "#fff",
+                        borderRadius: 10,
+                        padding: "1px 7px",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        lineHeight: 1.4,
+                      }}>{healthCounts!.total}</span>
+                    ) : null}
+                  </button>
                 );
               })}
             </div>
@@ -1003,6 +1028,14 @@ export default function JobRequests() {
                 ? <JobRequestAttachmentsSection jobRequestId={editingId} hideHeader />
                 : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
                     Save the job first to start adding attachments.
+                  </div>
+            )}
+
+            {sectionTab === "health" && (
+              editingId
+                ? <JobHealthSection jobRequest={form} refreshKey={refreshKey} />
+                : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
+                    Save the job first to run the health check.
                   </div>
             )}
           </div>
