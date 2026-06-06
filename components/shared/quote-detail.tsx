@@ -45,14 +45,17 @@ export default function QuoteDetail({ id }: { id: string }) {
   const [hasActiveFinal, setHasActiveFinal] = useState(false);
   const [activeDepositId, setActiveDepositId] = useState<string | null>(null);
   const [activeFinalId, setActiveFinalId] = useState<string | null>(null);
-  /** Per-day final picker state — dates already covered by an active
-   *  per-day final are pre-disabled in the modal so the operator can't
-   *  double-bill. */
-  const [perDayOpen, setPerDayOpen] = useState(false);
+  /** Final-invoice picker state. One modal handles both whole-job and
+   *  per-day-range finals so the operator picks scope inside the modal
+   *  instead of choosing between two buttons. Dates already covered by
+   *  another active per-day final are pre-disabled to block double-billing. */
+  const [finalPickerOpen, setFinalPickerOpen] = useState(false);
+  const [pickWholeJob, setPickWholeJob] = useState(false);
   const [perDayPicked, setPerDayPicked] = useState<Set<string>>(new Set());
   const [perDayCoveredElsewhere, setPerDayCoveredElsewhere] = useState<Set<string>>(new Set());
-  /** Count of active per-day final invoices for this quote's job. Drives
-   *  the mutual-exclusion guard on the whole-job-final button. */
+  /** Count of active per-day final invoices for this quote's job. Used
+   *  to disable the "Whole job" option in the picker (mutually
+   *  exclusive with per-day finals; DB trigger backs this up). */
   const [activePerDayCount, setActivePerDayCount] = useState(0);
 
   /** Orphan-quote linker state. Open when user clicks "Link to Job". */
@@ -283,23 +286,29 @@ export default function QuoteDetail({ id }: { id: string }) {
     }
   }
 
-  /** Generate a per-day-range final from the picked dates. Coexists with
-   *  any active whole-job final (the partial unique index only fires when
-   *  covered_dates IS NULL). Dates already on another active per-day
-   *  final are pre-blocked in the modal. */
-  async function onConfirmPerDayFinal() {
+  /** Confirm handler for the single final-invoice picker. Picks one of
+   *  two paths based on the modal's "Whole job" toggle:
+   *    - Whole job → createFinalDraftFromQuote(quoteId) (covered_dates NULL)
+   *    - Per-day  → createFinalDraftFromQuote(quoteId, { coveredDates }) */
+  async function onConfirmFinalPicker() {
     if (!quote) return;
-    const dates = Array.from(perDayPicked).sort();
-    if (dates.length === 0) {
-      alert("Pick at least one date.");
-      return;
-    }
     try {
+      if (pickWholeJob) {
+        const draft = await createFinalDraftFromQuote(quote.id);
+        setFinalPickerOpen(false);
+        router.push(`/invoices/${encodeURIComponent(draft.id)}/edit`);
+        return;
+      }
+      const dates = Array.from(perDayPicked).sort();
+      if (dates.length === 0) {
+        alert('Pick at least one date, or check "Whole job".');
+        return;
+      }
       const draft = await createFinalDraftFromQuote(quote.id, { coveredDates: dates });
-      setPerDayOpen(false);
+      setFinalPickerOpen(false);
       router.push(`/invoices/${encodeURIComponent(draft.id)}/edit`);
     } catch (err: any) {
-      alert(`Generate Per-Day Final failed: ${err.message || err}`);
+      alert(`Generate Final failed: ${err.message || err}`);
     }
   }
 
@@ -480,100 +489,204 @@ export default function QuoteDetail({ id }: { id: string }) {
             </button>
           )
         ) : null}
-        {/* Whole-job final — mutually exclusive with per-day finals.
-            Hidden when any per-day final is already active; the DB
-            trigger invoices_coverage_no_overlap_trg would refuse to
-            issue one anyway. */}
-        {quote.jobRequestId && !isSuperseded && activePerDayCount === 0 ? (
+        {/* Live unbilled-days badge for multi-day quotes. Shown only when
+            the quote has dated lines AND no whole-job final is active.
+            Helps the operator spot missed days without opening the picker. */}
+        {quote.jobRequestId && !isSuperseded && !hasActiveFinal ? (() => {
+          const allDates = Array.from(new Set(
+            (quote.lines || [])
+              .map((l: any) => l.quoteDate)
+              .filter((d: any): d is string => !!d)
+          ));
+          if (allDates.length === 0) return null;
+          const unbilled = allDates.filter((d) => !perDayCoveredElsewhere.has(d));
+          const allBilled = unbilled.length === 0;
+          return (
+            <span
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "4px 10px", borderRadius: 12, fontSize: 12,
+                background: allBilled ? "#eef7e8" : "#fff4d6",
+                color: allBilled ? "#2a6c2a" : "#7a5b00",
+                border: `1px solid ${allBilled ? "#bcd8b3" : "#e4cf7e"}`,
+              }}
+              title={allBilled
+                ? "Every dated line on this quote is on an active final invoice."
+                : `Unbilled dates: ${unbilled.join(", ")}`}
+            >
+              {allBilled ? "✓ All days billed" : `${unbilled.length} of ${allDates.length} days unbilled`}
+            </span>
+          );
+        })() : null}
+        {/* Single Final Invoice button. The picker modal lets the
+            operator choose between "Whole job" (covered_dates NULL) and
+            "Specific days" (per-day final). When a whole-job final is
+            already active, this button becomes "View Final Invoice"
+            (the picker hides since no further finals can be created).
+            When per-day finals exist, the picker opens with "Whole job"
+            disabled — per the DB trigger's mutual-exclusion rule. */}
+        {quote.jobRequestId && !isSuperseded ? (
           hasActiveFinal ? (
             <button className="secondary" onClick={() => router.push(`/invoices/${encodeURIComponent(activeFinalId)}`)}>
               View Final Invoice
             </button>
           ) : (
-            <button className="secondary" onClick={onGenerateFinal}>
-              Generate Final Invoice
+            <button
+              className="secondary"
+              onClick={() => {
+                setPerDayPicked(new Set());
+                // Default "Whole job" only when no per-day finals exist.
+                setPickWholeJob(activePerDayCount === 0);
+                setFinalPickerOpen(true);
+              }}
+              title="Generate a final invoice. Choose whole job or specific dates inside."
+            >
+              Generate Final Invoice…
             </button>
           )
-        ) : null}
-        {/* Per-day-range final — mutually exclusive with whole-job
-            finals. Hidden when a whole-job final is already active. */}
-        {quote.jobRequestId && !isSuperseded && !hasActiveFinal ? (
-          <button
-            className="secondary"
-            onClick={() => { setPerDayPicked(new Set()); setPerDayOpen(true); }}
-            title="Bill only specific dates from this quote. Useful for progress billing across multi-day jobs."
-          >
-            Generate Per-Day Final…
-          </button>
         ) : null}
         {/* Generate Invoice button intentionally absent — Phase C scope. */}
       </div>
 
-      {perDayOpen ? (
+      {finalPickerOpen ? (
         <div className="card" style={{ marginTop: 16 }}>
-          <h3 className="section-title">Generate Per-Day Final Invoice</h3>
-          <div className="muted" style={{ marginBottom: 12 }}>
-            Pick the dates to bill. The new draft will be scoped to just these dates, and won't conflict with any existing whole-job final. Dates already on another active per-day final are disabled.
-          </div>
+          <h3 className="section-title">Generate Final Invoice</h3>
           {(() => {
             const allDates = Array.from(new Set(
               (quote.lines || [])
                 .map((l: any) => l.quoteDate)
                 .filter((d: any): d is string => !!d)
             )).sort();
+            const unbilled = allDates.filter((d) => !perDayCoveredElsewhere.has(d));
+            const wholeJobBlocked = activePerDayCount > 0;
             if (allDates.length === 0) {
               return (
                 <div style={{ color: "#a55", marginBottom: 12 }}>
-                  This quote has no per-date lines. Add lines with dates first, or use the whole-job "Generate Final Invoice" button instead.
+                  This quote has no per-date lines — can&apos;t scope by date. Re-issue the quote with dated lines, or add lines and revise.
                 </div>
               );
             }
             return (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 6, marginBottom: 12 }}>
-                {allDates.map((d) => {
-                  const alreadyCovered = perDayCoveredElsewhere.has(d);
-                  const checked = perDayPicked.has(d);
-                  return (
-                    <label
-                      key={d}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: "4px 8px",
-                        borderRadius: 4,
-                        background: alreadyCovered ? "#f3ece2" : (checked ? "#fff4d6" : "transparent"),
-                        opacity: alreadyCovered ? 0.55 : 1,
-                        cursor: alreadyCovered ? "not-allowed" : "pointer",
-                      }}
-                      title={alreadyCovered ? "Already billed on another active per-day invoice" : ""}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={alreadyCovered}
-                        onChange={(e) => {
-                          setPerDayPicked((cur) => {
-                            const next = new Set(cur);
-                            if (e.target.checked) next.add(d); else next.delete(d);
-                            return next;
-                          });
+              <>
+                <div style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  marginBottom: 12, padding: "8px 12px", borderRadius: 6,
+                  background: unbilled.length === 0 ? "#eef7e8" : "#fff4d6",
+                  color: "#1a1a1a", fontSize: 13,
+                }}>
+                  <span>
+                    <strong>{unbilled.length}</strong> of {allDates.length} quote days are unbilled
+                    {unbilled.length > 0 && unbilled.length < allDates.length ? (
+                      <> ({allDates.length - unbilled.length} already on active per-day finals)</>
+                    ) : null}
+                  </span>
+                  {unbilled.length === 0 ? <span>✓ All days billed</span> : null}
+                </div>
+
+                <label
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "8px 12px", marginBottom: 12, borderRadius: 6,
+                    background: pickWholeJob ? "#fff4d6" : "transparent",
+                    border: "1px solid #d7c6aa",
+                    opacity: wholeJobBlocked ? 0.5 : 1,
+                    cursor: wholeJobBlocked ? "not-allowed" : "pointer",
+                  }}
+                  title={wholeJobBlocked
+                    ? "Per-day final invoices already exist for this job. Whole-job billing is mutually exclusive — void or supersede the per-day invoices first."
+                    : "Bill every day on the quote in one whole-job invoice."}
+                >
+                  <input
+                    type="radio"
+                    name="finalScope"
+                    checked={pickWholeJob}
+                    disabled={wholeJobBlocked}
+                    onChange={() => setPickWholeJob(true)}
+                  />
+                  <span style={{ fontWeight: 600 }}>Bill the entire job</span>
+                  {wholeJobBlocked ? (
+                    <span style={{ fontSize: 12, color: "#a55", marginLeft: "auto" }}>
+                      blocked — per-day finals exist
+                    </span>
+                  ) : null}
+                </label>
+
+                <label
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "8px 12px", marginBottom: 8, borderRadius: 6,
+                    background: !pickWholeJob ? "#fff4d6" : "transparent",
+                    border: "1px solid #d7c6aa", cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="finalScope"
+                    checked={!pickWholeJob}
+                    onChange={() => setPickWholeJob(false)}
+                  />
+                  <span style={{ fontWeight: 600 }}>Bill specific dates</span>
+                  <span style={{ fontSize: 12, color: "#777", marginLeft: "auto" }}>
+                    {perDayPicked.size} picked
+                  </span>
+                </label>
+
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+                  gap: 6, marginBottom: 12,
+                  padding: "8px 12px",
+                  opacity: pickWholeJob ? 0.4 : 1,
+                  pointerEvents: pickWholeJob ? "none" : "auto",
+                }}>
+                  {allDates.map((d) => {
+                    const alreadyCovered = perDayCoveredElsewhere.has(d);
+                    const checked = perDayPicked.has(d);
+                    return (
+                      <label
+                        key={d}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 6,
+                          padding: "4px 8px", borderRadius: 4,
+                          background: alreadyCovered ? "#f3ece2" : (checked ? "#fff4d6" : "transparent"),
+                          opacity: alreadyCovered ? 0.55 : 1,
+                          cursor: alreadyCovered ? "not-allowed" : "pointer",
                         }}
-                      />
-                      <span style={{ fontSize: 13 }}>{d}</span>
-                      {alreadyCovered ? <span style={{ fontSize: 11, color: "#a55" }}>(billed)</span> : null}
-                    </label>
-                  );
-                })}
-              </div>
+                        title={alreadyCovered ? "Already billed on another active per-day invoice" : ""}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={alreadyCovered || pickWholeJob}
+                          onChange={(e) => {
+                            setPerDayPicked((cur) => {
+                              const next = new Set(cur);
+                              if (e.target.checked) next.add(d); else next.delete(d);
+                              return next;
+                            });
+                          }}
+                        />
+                        <span style={{ fontSize: 13 }}>{d}</span>
+                        {alreadyCovered ? <span style={{ fontSize: 11, color: "#a55" }}>(billed)</span> : null}
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={onConfirmFinalPicker}
+                    disabled={!pickWholeJob && perDayPicked.size === 0}
+                  >
+                    Generate {pickWholeJob
+                      ? "(whole job)"
+                      : `(${perDayPicked.size} ${perDayPicked.size === 1 ? "day" : "days"})`}
+                  </button>
+                  <button className="secondary" onClick={() => setFinalPickerOpen(false)}>Cancel</button>
+                </div>
+              </>
             );
           })()}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={onConfirmPerDayFinal} disabled={perDayPicked.size === 0}>
-              Generate ({perDayPicked.size} {perDayPicked.size === 1 ? "day" : "days"})
-            </button>
-            <button className="secondary" onClick={() => setPerDayOpen(false)}>Cancel</button>
-          </div>
         </div>
       ) : null}
 
