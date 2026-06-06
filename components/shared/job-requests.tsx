@@ -267,6 +267,13 @@ export default function JobRequests() {
       setEditingId(target.id);
       setForm({ ...target });
       setMsg("");
+      // Optional tab anchor — banners from quote/invoice/timekeeping
+      // link straight into ?tab=health to land on the Health Check tab.
+      const wantTab = params.get("tab");
+      if (wantTab === "daily" || wantTab === "crew" || wantTab === "shifts"
+        || wantTab === "attachments" || wantTab === "health") {
+        setSectionTab(wantTab);
+      }
       // Clean the URL so a refresh / future save doesn't bounce back here.
       window.history.replaceState({}, "", window.location.pathname);
       setDeepLinkHandled(true);

@@ -18,6 +18,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { JobHealthBanner } from "./job-health-banner";
+import { confirmHealthOnIssue } from "@/lib/job-health/confirm-on-issue";
 import { useRouter } from "next/navigation";
 import {
   loadQuote,
@@ -510,6 +512,14 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
 
   async function onIssue() {
     if (!quote) return;
+    // Health check first — gates on any blocker findings relevant to a quote.
+    // Override path stays open so legitimate one-offs (e.g. emergency cleanup
+    // quote) can still issue, but Connor sees the blockers before he commits.
+    const ok = await confirmHealthOnIssue(quote.jobRequestId, {
+      categories: ["rate_card", "job", "consistency"],
+      docLabel: "quote",
+    });
+    if (!ok) return;
     if (!confirm("Issue this quote? Once issued it becomes read-only and a permanent quote_no is assigned.")) return;
     try {
       await saveDraft(quote);
@@ -701,6 +711,13 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
       <div className="muted" style={{ marginBottom: 12, fontSize: 13 }}>
         Projected quote # — finalized when you click Issue Quote. {!job?.job_no ? "Job has no job_no yet; finish the job request first." : null}
       </div>
+
+      <JobHealthBanner
+        jobRequestId={quote.jobRequestId}
+        categories={["rate_card", "job", "consistency"]}
+        pageContext="quote"
+      />
+
 
       {/* Read-only event panel */}
       <div className="card" style={{ marginBottom: 16, background: "rgba(0,0,0,0.02)" }}>

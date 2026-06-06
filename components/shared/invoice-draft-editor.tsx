@@ -7,6 +7,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { JobHealthBanner } from "./job-health-banner";
+import { confirmHealthOnIssue } from "@/lib/job-health/confirm-on-issue";
 import { useRouter } from "next/navigation";
 import {
   loadInvoice,
@@ -410,6 +412,14 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
 
   async function onIssue() {
     if (!invoice) return;
+    // Health check first — invoice cares about timesheet hygiene too since
+    // a final invoice pulls actuals from timesheet entries. Override stays
+    // open for legitimate exceptions.
+    const ok = await confirmHealthOnIssue(invoice.jobRequestId, {
+      categories: ["rate_card", "job", "consistency", "timesheet", "invoice"],
+      docLabel: "invoice",
+    });
+    if (!ok) return;
     if (!confirm("Issue this invoice? Once issued it becomes read-only and a permanent invoice_no is assigned.")) return;
     try {
       await saveDraft(invoice);
@@ -503,6 +513,13 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
       <div className="muted" style={{ marginBottom: 12, fontSize: 13 }}>
         Projected invoice # — finalized on Issue. {!job?.job_no ? "Job has no job_no yet." : null}
       </div>
+
+      <JobHealthBanner
+        jobRequestId={invoice.jobRequestId}
+        categories={["rate_card", "job", "consistency", "timesheet", "invoice"]}
+        pageContext="invoice"
+      />
+
 
       {/* Totals strip up top */}
       <div style={{

@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { JobHealthBanner } from "./job-health-banner";
 import { useRouter } from "next/navigation";
 import {
   loadQuote,
@@ -354,6 +355,12 @@ export default function QuoteDetail({ id }: { id: string }) {
         </h2>
         <Link href="/quotes" className="badge">← All Quotes</Link>
       </div>
+
+      <JobHealthBanner
+        jobRequestId={quote.jobRequestId}
+        categories={["rate_card", "job", "consistency"]}
+        pageContext="quote"
+      />
 
       {/* Job + client header */}
       <div className="grid2" style={{ marginBottom: 16 }}>

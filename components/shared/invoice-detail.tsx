@@ -14,6 +14,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { JobHealthBanner } from "./job-health-banner";
 import { useRouter } from "next/navigation";
 import {
   loadInvoice,
@@ -275,6 +276,13 @@ export default function InvoiceDetail({ id }: { id: string }) {
         </h2>
         <Link href="/invoices" className="badge">← All Invoices</Link>
       </div>
+
+      <JobHealthBanner
+        jobRequestId={invoice.jobRequestId}
+        categories={["rate_card", "job", "consistency", "timesheet", "invoice"]}
+        pageContext="invoice"
+      />
+
 
       <div className="grid2" style={{ marginBottom: 16 }}>
         <div>

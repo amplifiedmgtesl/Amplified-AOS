@@ -128,3 +128,48 @@ export async function runHealthChecks(jobRequest: JobRequest): Promise<{
   }
   return { ctx, findings };
 }
+
+// Sibling for callers that only know the job_request id (banners on
+// quote/invoice/timekeeping pages). Loads the job row first, then runs.
+export async function runHealthChecksByJobId(jobId: string): Promise<{
+  ctx: HealthContext;
+  findings: Finding[];
+} | null> {
+  const { data, error } = await supabase
+    .from("job_requests")
+    .select("*")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.error("[job-health] runHealthChecksByJobId:", error);
+    return null;
+  }
+  const jobRequest: JobRequest = {
+    id: data.id,
+    clientId: data.client_id ?? undefined,
+    client: data.client ?? "",
+    eventName: data.event_name ?? "",
+    venue: data.venue ?? "",
+    venueAddress: data.venue_address ?? "",
+    venueAddress2: data.venue_address_2 ?? undefined,
+    venueZip: data.venue_zip ?? undefined,
+    city: data.city ?? "",
+    state: data.state ?? "",
+    cityState: data.city_state ?? "",
+    receivedDate: data.received_date ?? "",
+    requestDate: data.request_date ?? "",
+    endDate: data.end_date ?? "",
+    startTime: data.start_time ?? "",
+    endTime: data.end_time ?? "",
+    expectedHours: data.expected_hours ?? undefined,
+    addToCalendar: data.add_to_calendar ?? undefined,
+    status: data.status ?? "",
+    notes: data.notes ?? "",
+    attachmentNames: Array.isArray(data.attachment_names) ? data.attachment_names : [],
+    packetNotes: data.packet_notes ?? "",
+    jobNo: data.job_no ?? undefined,
+    eventAbbr: data.event_abbr ?? undefined,
+    rateCardProfileId: data.rate_card_profile_id ?? undefined,
+  };
+  return runHealthChecks(jobRequest);
+}

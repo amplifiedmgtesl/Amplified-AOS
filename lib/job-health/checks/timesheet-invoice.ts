@@ -4,21 +4,25 @@
 import type { CheckFn, Finding } from "../types";
 
 export const timesheetInvoiceChecks: CheckFn[] = [
-  // 1. Approved entries missing specialty_id
+  // 1. Approved entries missing specialty_id — one finding per entry so
+  //    operator can tick them off individually. Deep-links to timekeeping.
   (ctx) => {
     const findings: Finding[] = [];
-    const bad = ctx.timesheetEntries.filter((e) => e.status === "approved" && !e.specialtyId);
-    if (bad.length === 0) return findings;
-    findings.push({
-      id: "timesheet.missing_specialty",
-      severity: "blocker",
-      category: "timesheet",
-      title: `${bad.length} approved timesheet entr${bad.length === 1 ? "y" : "ies"} missing specialty`,
-      detail: `Entries: ${bad.slice(0, 5).map((e) => `${e.firstName} ${e.lastName} ${e.workDate ?? ""}`).join("; ")}${bad.length > 5 ? `, +${bad.length - 5} more` : ""}`,
-      downstream: "Bill rate can't be resolved from the rate card. Invoice generation will skip or zero these entries.",
-      fixHref: "/timekeeping",
-      fixLabel: "Open timekeeping",
-    });
+    for (const e of ctx.timesheetEntries) {
+      if (e.status !== "approved" || e.specialtyId) continue;
+      const who = `${e.firstName ?? ""} ${e.lastName ?? ""}`.trim() || "(unknown crew)";
+      const when = e.workDate ?? "(no date)";
+      findings.push({
+        id: `timesheet.missing_specialty:${e.id}`,
+        severity: "blocker",
+        category: "timesheet",
+        title: `Missing specialty: ${who} · ${when}`,
+        detail: "Approved timesheet entry has no specialty assigned.",
+        downstream: "Bill-rate lookup against the rate card fails. Invoice generation skips or zeroes this entry.",
+        fixHref: "/timekeeping",
+        fixLabel: "Open timekeeping",
+      });
+    }
     return findings;
   },
 
@@ -92,32 +96,37 @@ export const timesheetInvoiceChecks: CheckFn[] = [
     return findings;
   },
 
-  // 5. Duplicate employee records used on this job's timesheet
-  // (related to project_employee_dedup — weekly OT spill breaks when one
-  // human exists twice in the employees table)
+  // 5. Duplicate employee records used on this job's timesheet — one
+  //    finding per duplicated human so each merge is its own action item.
+  //    (Related to project_employee_dedup — weekly OT spill breaks when
+  //    one human exists twice in the employees table.)
   (ctx) => {
-    const byName = new Map<string, Set<string>>();
+    const byName = new Map<string, { display: string; keys: Set<string> }>();
     for (const e of ctx.timesheetEntries) {
       if (!e.employeeKey) continue;
-      const name = `${(e.firstName || "").toLowerCase().trim()} ${(e.lastName || "").toLowerCase().trim()}`.trim();
-      if (!name) continue;
-      if (!byName.has(name)) byName.set(name, new Set());
-      byName.get(name)!.add(e.employeeKey);
+      const first = (e.firstName ?? "").trim();
+      const last = (e.lastName ?? "").trim();
+      const display = `${first} ${last}`.trim();
+      if (!display) continue;
+      const norm = display.toLowerCase();
+      const entry = byName.get(norm) ?? { display, keys: new Set<string>() };
+      entry.keys.add(e.employeeKey);
+      byName.set(norm, entry);
     }
-    const dupes: string[] = [];
-    for (const [name, keys] of byName) {
-      if (keys.size > 1) dupes.push(name);
+    const findings: Finding[] = [];
+    for (const [norm, { display, keys }] of byName) {
+      if (keys.size < 2) continue;
+      findings.push({
+        id: `timesheet.duplicate_employee:${norm}`,
+        severity: "warning",
+        category: "timesheet",
+        title: `Duplicate employee: ${display}`,
+        detail: `Same human appears under ${keys.size} different employee records on this job's timesheet.`,
+        downstream: "Weekly OT spill won't roll up correctly across the duplicates — payroll may miss OT.",
+        fixHref: "/employee-directory",
+        fixLabel: "Open employee directory",
+      });
     }
-    if (dupes.length === 0) return [];
-    return [{
-      id: "timesheet.duplicate_employees",
-      severity: "warning",
-      category: "timesheet",
-      title: `${dupes.length} employee${dupes.length === 1 ? "" : "s"} appears under multiple records`,
-      detail: `Same human, two employee_key rows: ${dupes.slice(0, 3).join(", ")}${dupes.length > 3 ? `, +${dupes.length - 3} more` : ""}`,
-      downstream: "Weekly OT spill won't roll up correctly across the duplicates — payroll may miss OT.",
-      fixHref: "/employee-directory",
-      fixLabel: "Open employee directory",
-    }];
+    return findings;
   },
 ];

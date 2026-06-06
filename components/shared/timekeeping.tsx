@@ -18,6 +18,7 @@ import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summar
 import { parseMinutes } from "@/lib/time-utils";
 import type { EmployeeRecord, JobRequest, JobSheet, TimeEntry, Timesheet } from "@/lib/store/types";
 import { EqualizerLoader } from "@/components/shared/equalizer-loader";
+import { JobHealthBanner } from "@/components/shared/job-health-banner";
 import { EmployeePicker, LazyEmployeePicker, pushEmployeeIntoCache, type PickerEmployee } from "@/components/shared/employee-picker";
 
 // Phase 1: picker selection encodes which world we're in.
@@ -1266,6 +1267,12 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
           }
         `}</style>
       )}
+
+      <JobHealthBanner
+        jobRequestId={currentJob?.id}
+        categories={["rate_card", "job", "timesheet"]}
+        pageContext="timesheet"
+      />
 
       <div className="invoice-shell">
         <div className="timesheet-pdf-header">
