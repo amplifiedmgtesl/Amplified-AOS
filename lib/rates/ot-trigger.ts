@@ -11,10 +11,14 @@ export function formatOtTriggerRule(value: TriggerOption): string {
   return `OT after ${value} / DT after 15`;
 }
 
+/** Generic single-value threshold label — caller decides whether they're
+ *  displaying an OT-after value or a DT-after value (see the column
+ *  headers in rate-card-editor.tsx). Replaces the older combined-string
+ *  return that assumed DT was always 15. */
 export function triggerLabel(value: TriggerOption): string {
-  if (value === "none") return "No OT (flat)";
-  if (value === "weekly40") return "OT after 40 / week";
-  return `OT after ${value} / DT after 15`;
+  if (value === "none") return "None";
+  if (value === "weekly40") return "After 40 / wk";
+  return `After ${value}`;
 }
 
 export function triggerToKind(value: TriggerOption): OtTriggerKind {

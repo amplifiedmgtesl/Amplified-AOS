@@ -31,6 +31,17 @@ function parsePicker(v: PickerValue): { kind: "none" | "job" | "legacy"; key: st
   return { kind: "legacy", key: v.slice(7) };
 }
 
+/** Map rate-card TriggerOption text → integer hour threshold for the
+ *  per-entry snapshot. "none"/""/"weekly40" → 0 (no bucket); numeric
+ *  strings parse as the threshold; anything unrecognized → null = let
+ *  computeTimeEntry use its legacy default. */
+function triggerToInt(v: string | null | undefined): number | null {
+  if (v == null) return null;
+  if (v === "none" || v === "" || v === "weekly40") return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 const TIMES = timeOptions();
 const RATES = rateOptions();
 // POSITIONS is loaded from the store at render time so it stays live
@@ -532,7 +543,14 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   // operator sees the rate that will actually be billed when the invoice
   // pulls labor actuals (see lib/store/invoices.ts:686 — bill rates come
   // from the rate card keyed by specialty_id, NOT from the timesheet row).
-  type RateCardRate = { hourly: number; otRate: number; dtRate: number };
+  type RateCardRate = {
+    hourly: number;
+    otRate: number;
+    dtRate: number;
+    /** Threshold in hours. 0 = no bucket, NULL = use legacy default. */
+    otAfter: number | null;
+    dtAfter: number | null;
+  };
   const [rateCardBySpecialty, setRateCardBySpecialty] = useState<Map<string, RateCardRate>>(new Map());
   useEffect(() => {
     if (pickerKind !== "job") {
@@ -586,7 +604,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
           // Pull the rate-card rows for this snapshot, build a per-specialty
           // map for the row render to look up.
           supabase.from("rate_card_profile_rows")
-            .select("specialty_id, hourly, ot_rate, dt_rate")
+            .select("specialty_id, hourly, ot_rate, dt_rate, ot_after, dt_after")
             .eq("profile_id", rcId)
             .then(({ data: rows, error: rowsErr }) => {
               if (rowsErr) { console.error("[timekeeping] load rate card rows:", rowsErr); return; }
@@ -597,6 +615,11 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                   hourly: Number(r.hourly ?? 0),
                   otRate: Number(r.ot_rate ?? 0),
                   dtRate: Number(r.dt_rate ?? 0),
+                  // Map TriggerOption text → int snapshot. "none"/""/"weekly40"
+                  // → 0 (no bucket); numeric strings parse as the threshold;
+                  // anything else → null = fall back to legacy default.
+                  otAfter: triggerToInt(r.ot_after),
+                  dtAfter: triggerToInt(r.dt_after),
                 });
               }
               tkPerf("rate card rows resolved → setRateCardBySpecialty", { count: m.size });
@@ -628,6 +651,11 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
         const emp = slot.employeeKey ? employees.find((e) => e.employeeKey === slot.employeeKey) : null;
         const posName = positions.find((p) => p.id === slot.positionId)?.name || "Stagehand";
         const isHol = holidayDateSet.has(slot.eventDate);
+        // Snapshot bill rates + OT/DT thresholds from rate card (migration
+        // 20260606a). Specialty-keyed lookup; falls back to blankTimeEntry
+        // defaults when missing. Thresholds left null fall through to the
+        // legacy 8/12 default in computeTimeEntry.
+        const rc = slot.specialtyId ? rateCardBySpecialty.get(slot.specialtyId) : undefined;
         nextRows.push(computeTimeEntry({
           ...blankTimeEntry(`crew-${Date.now()}-${idx}`),
           position: posName,
@@ -646,6 +674,13 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
           isHoliday: isHol,
           holidayMultiplier: isHol ? effectiveHolidayMultiplier : null,
           status: "submitted",
+          ...(rc ? {
+            billStdRate: rc.hourly,
+            billOtRate:  rc.otRate,
+            billDtRate:  rc.dtRate,
+            billOtAfter: rc.otAfter,
+            billDtAfter: rc.dtAfter,
+          } : {}),
         }));
         seen.add(key);
       });

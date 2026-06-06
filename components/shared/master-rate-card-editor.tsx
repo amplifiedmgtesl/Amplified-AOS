@@ -99,7 +99,7 @@ export default function MasterRateCardEditor() {
       hourly: 35, day: 350, otRate: 52.5, dtRate: 70,
       // Pay rates default to 0 — admin enters them explicitly.
       payHourly: 0, payOtRate: 0, payDtRate: 0,
-      dtAfter: "10" as TriggerOption, travel: 0, show: true,
+      otAfter: "none" as TriggerOption, dtAfter: "none" as TriggerOption, travel: 0, show: true,
     }]);
   }
 
@@ -182,7 +182,7 @@ export default function MasterRateCardEditor() {
                 <th>Show</th><th>Position</th><th>Specialty</th>
                 <th colSpan={4} style={{ textAlign: "center", borderBottom: "1px solid #d7c6aa" }} title="Bill rates: what AES bills the client">Bill</th>
                 <th colSpan={3} style={{ textAlign: "center", borderBottom: "1px solid #d7c6aa", background: "#fff4d6", color: "#181410" }} title="Pay rates: what AES pays the worker. ADMIN-ONLY — never appears on client-facing documents.">Pay</th>
-                <th>OT Trigger</th><th>Travel</th><th></th>
+                <th colSpan={2} style={{ textAlign: "center", borderBottom: "1px solid #d7c6aa" }} title="Hour-thresholds at which OT and DT premiums kick in. 'None' = no premium bucket; all hours stay at standard rate. Set per role.">Thresholds</th><th>Travel</th><th></th>
               </tr>
               <tr>
                 <th></th><th></th><th></th>
@@ -190,7 +190,9 @@ export default function MasterRateCardEditor() {
                 <th style={{ background: "#fff4d6", color: "#181410" }}>Hourly</th>
                 <th style={{ background: "#fff4d6", color: "#181410" }}>OT</th>
                 <th style={{ background: "#fff4d6", color: "#181410" }}>DT</th>
-                <th></th><th></th><th></th>
+                <th title="Hours after which OT bucket starts.">OT after</th>
+                <th title="Hours after which DT bucket starts.">DT after</th>
+                <th></th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -259,15 +261,30 @@ export default function MasterRateCardEditor() {
                         onChange={(e) => updateRow(index, { payDtRate: Number(e.target.value || 0) })} />
                     </td>
                     <td>
+                      <select value={row.otAfter} onChange={(e) => updateRow(index, { otAfter: e.target.value as TriggerOption })}>
+                        <option value="none">No OT</option>
+                        <option value="8">After 8</option>
+                        <option value="9">After 9</option>
+                        <option value="10">After 10</option>
+                        <option value="11">After 11</option>
+                        <option value="12">After 12</option>
+                        <option value="13">After 13</option>
+                        <option value="14">After 14</option>
+                        <option value="15">After 15</option>
+                        <option value="weekly40">After 40 / week</option>
+                      </select>
+                    </td>
+                    <td>
                       <select value={row.dtAfter} onChange={(e) => updateRow(index, { dtAfter: e.target.value as TriggerOption })}>
-                        <option value="none">No OT (flat)</option>
-                        <option value="10">OT after 10</option>
-                        <option value="11">OT after 11</option>
-                        <option value="12">OT after 12</option>
-                        <option value="13">OT after 13</option>
-                        <option value="14">OT after 14</option>
-                        <option value="15">OT after 15</option>
-                        <option value="weekly40">OT after 40 / week</option>
+                        <option value="none">No DT</option>
+                        <option value="8">After 8</option>
+                        <option value="9">After 9</option>
+                        <option value="10">After 10</option>
+                        <option value="11">After 11</option>
+                        <option value="12">After 12</option>
+                        <option value="13">After 13</option>
+                        <option value="14">After 14</option>
+                        <option value="15">After 15</option>
                       </select>
                     </td>
                     <td><input type="number" value={row.travel} onChange={(e) => updateRow(index, { travel: Number(e.target.value || 0) })} /></td>

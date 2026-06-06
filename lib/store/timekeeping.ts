@@ -67,9 +67,47 @@ export function computeTimeEntry(entry: TimeEntry): TimeEntry {
   if (totalMinutes < 0) totalMinutes = 0;
 
   const totalHours = +(totalMinutes / 60).toFixed(2);
-  const stdHours = Math.min(8, totalHours);
-  const otHours = totalHours > 8 ? Math.min(4, totalHours - 8) : 0;
-  const dtHours = totalHours > 12 ? totalHours - 12 : 0;
+
+  // OT/DT bucket split honors per-entry thresholds (migration 20260606a).
+  // Snapshotted from the rate card at entry creation. Semantics:
+  //   NULL → 0 (no bucket at this tier). Was previously hardcoded to 8/12
+  //          which silently broke jobs whose contract was "no OT
+  //          premium" — fix landed 2026-06-06.
+  //   N>0  → bucket starts after N hours.
+  //
+  // Two-tier split (when both thresholds active):
+  //   ST = min(otAfter, total)
+  //   OT = clamp(total - otAfter, 0, dtAfter - otAfter)
+  //   DT = max(total - dtAfter, 0)
+  const otAfter = entry.billOtAfter ?? 0;
+  const dtAfter = entry.billDtAfter ?? 0;
+  let stdHours: number;
+  let otHours: number;
+  let dtHours: number;
+  if (otAfter === 0 && dtAfter === 0) {
+    stdHours = totalHours;
+    otHours = 0;
+    dtHours = 0;
+  } else if (otAfter === 0) {
+    // No OT bucket; DT past dtAfter.
+    stdHours = Math.min(dtAfter, totalHours);
+    otHours = 0;
+    dtHours = totalHours > dtAfter ? totalHours - dtAfter : 0;
+  } else if (dtAfter === 0) {
+    // OT past otAfter; no DT.
+    stdHours = Math.min(otAfter, totalHours);
+    otHours = totalHours > otAfter ? totalHours - otAfter : 0;
+    dtHours = 0;
+  } else {
+    // Both tiers active. Misconfig guard: if otAfter >= dtAfter, OT
+    // window collapses to zero and DT takes over at dtAfter.
+    const otCap = Math.min(otAfter, dtAfter);
+    stdHours = Math.min(otCap, totalHours);
+    otHours = totalHours > otCap
+      ? Math.min(dtAfter - otCap, totalHours - otCap)
+      : 0;
+    dtHours = totalHours > dtAfter ? totalHours - dtAfter : 0;
+  }
 
   // Phase 4: on a holiday row, bill = totalHours × billStdRate × multiplier.
   // OT/DT premium does NOT stack on top — matches the atomic-day, flat-2×

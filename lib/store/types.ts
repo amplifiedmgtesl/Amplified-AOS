@@ -105,6 +105,14 @@ export type TimeEntry = {
   billStdRate: number;
   billOtRate: number;
   billDtRate: number;
+  /** Hours after which OT bucket starts. Snapshotted from rate card at
+   *  entry creation (migration 20260606a). NULL = no OT bucket — all
+   *  hours stay in stdHours, no premium. Used by computeTimeEntry to
+   *  split totalHours into the std/ot/dt buckets. */
+  billOtAfter?: number | null;
+  /** Hours after which DT bucket starts. Snapshotted from rate card at
+   *  entry creation. NULL = no DT bucket. */
+  billDtAfter?: number | null;
   billTotal: number;
   employeeKey?: string | null; // links to employees table
   userId?: string | null;      // set for staff-submitted entries

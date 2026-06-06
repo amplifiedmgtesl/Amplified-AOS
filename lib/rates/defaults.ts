@@ -1,4 +1,4 @@
-export type TriggerOption = "none" | "10" | "11" | "12" | "13" | "14" | "15" | "weekly40";
+export type TriggerOption = "none" | "8" | "9" | "10" | "11" | "12" | "13" | "14" | "15" | "weekly40";
 
 export type RateCardProfile = {
   id: string;
@@ -34,6 +34,11 @@ export type RateRow = {
   payOtRate: number;
   payDtRate: number;
   // ─── Other ──────────────────────────────────────────────────────────────
+  /** Hours after which OT premium applies. "none" = no OT bucket — all
+   *  hours past the std/day rate stay at hourly. Added 2026-06-06 so
+   *  contracts like CCMF ("day rate flat 10hrs, hourly thereafter, no OT")
+   *  can be expressed structurally instead of via terms text. */
+  otAfter: TriggerOption;
   dtAfter: TriggerOption;
   travel: number;
   show: boolean;
@@ -49,7 +54,12 @@ const makeRow = (specialtyId: string, position: string, specialty: string, hourl
   payHourly: 0,
   payOtRate: 0,
   payDtRate: 0,
-  dtAfter: "10",
+  // OT/DT premium is OPT-IN per role. "none" = no bucket; operator picks
+  // "8" / "10" / etc. when a specific contract calls for a premium tier.
+  // The previous hardcoded 8-hr OT default was a silent footgun that
+  // overrode contracts like CCMF ("hourly thereafter, no premium").
+  otAfter: "none",
+  dtAfter: "none",
   travel: 0,
   show: true
 });

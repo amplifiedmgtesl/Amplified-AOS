@@ -983,6 +983,7 @@ function syncRateCardProfileRows(profile: RateCardProfile) {
           pay_hourly:  row.payHourly  ?? 0,
           pay_ot_rate: row.payOtRate ?? 0,
           pay_dt_rate: row.payDtRate ?? 0,
+          ot_after:  row.otAfter,
           dt_after:  row.dtAfter,
           travel:    row.travel,
           show:      row.show,
@@ -1246,6 +1247,8 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     billStdRate: Number(r.bill_std_rate) || 35,
     billOtRate: Number(r.bill_ot_rate) || 52,
     billDtRate: Number(r.bill_dt_rate) || 70,
+    billOtAfter: r.bill_ot_after == null ? null : Number(r.bill_ot_after),
+    billDtAfter: r.bill_dt_after == null ? null : Number(r.bill_dt_after),
     billTotal: Number(r.bill_total ?? 0),
     employeeKey: r.employee_key ?? null,
     userId: r.user_id ?? null,
@@ -1303,6 +1306,8 @@ function timesheetEntryToRow(
     bill_std_rate: e.billStdRate,
     bill_ot_rate:  e.billOtRate,
     bill_dt_rate:  e.billDtRate,
+    bill_ot_after: e.billOtAfter ?? null,
+    bill_dt_after: e.billDtAfter ?? null,
     bill_total:    e.billTotal,
     sort_order: sortOrder,
     status: e.status ?? null,
@@ -1396,7 +1401,11 @@ function rowToRateRow(pr: any): RateRow {
     payHourly: Number(pr.pay_hourly  ?? 0),
     payOtRate: Number(pr.pay_ot_rate ?? 0),
     payDtRate: Number(pr.pay_dt_rate ?? 0),
-    dtAfter:  (pr.dt_after ?? "10") as import("../rates/defaults").TriggerOption,
+    // OT/DT premium is opt-in per role. NULL on either column means
+    // "no bucket at this tier." Old hardcoded 8/12 defaults were removed
+    // 2026-06-06 — they were a silent footgun.
+    otAfter:  (pr.ot_after ?? "none") as import("../rates/defaults").TriggerOption,
+    dtAfter:  (pr.dt_after ?? "none") as import("../rates/defaults").TriggerOption,
     travel:   pr.travel   ?? 0,
     show:     pr.show     ?? true,
   };
