@@ -19,6 +19,7 @@ import {
 import {
   createDepositDraftFromQuote,
   createFinalDraftFromQuote,
+  findActiveDepositInvoiceForJob,
   loadInvoices,
 } from "@/lib/store/invoices";
 import type { QuoteDraft, JobRequestShift } from "@/lib/store/types";
@@ -200,6 +201,24 @@ export default function QuoteDetail({ id }: { id: string }) {
     }
     if (amt > baseTotal + 0.005) {
       if (!confirm(`Deposit ($${amt.toFixed(2)}) is greater than the quote total ($${baseTotal.toFixed(2)}). Continue anyway?`)) return;
+    }
+    // If an issued deposit already exists for this job (e.g. from an earlier
+    // quote revision), warn that this draft will supersede it when issued.
+    if (quote.jobRequestId) {
+      try {
+        const existing = await findActiveDepositInvoiceForJob(quote.jobRequestId);
+        if (existing) {
+          const label = existing.invoiceNo || existing.id;
+          if (!confirm(
+            `An issued deposit invoice already exists for this job: ${label}.\n\n` +
+            `Generating a new deposit will create a revision that supersedes it when you issue the draft. ` +
+            `Continue?`,
+          )) return;
+        }
+      } catch {
+        // Non-fatal: if the lookup fails, fall through and let the draft
+        // creation proceed. The DB constraint still protects on issue.
+      }
     }
     try {
       const draft = await createDepositDraftFromQuote(quote.id, { amount: amt });

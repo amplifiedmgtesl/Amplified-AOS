@@ -274,6 +274,29 @@ export async function getAlreadyBilledTimesheetEntryIds(jobRequestId: string): P
  *  every new event unless the operator overrides at generation time. */
 export const DEFAULT_DEPOSIT_PCT = 50;
 
+/** Look up the currently-active (non-draft, non-superseded, non-void) deposit
+ *  invoice for a job, if any. Returned shape mirrors what the caller needs
+ *  to either chain a revision or show a confirm. */
+export async function findActiveDepositInvoiceForJob(
+  jobRequestId: string,
+): Promise<{ id: string; invoiceNo: string | null; revisionNo: number } | null> {
+  const { data, error } = await supabase
+    .from("invoices")
+    .select("id, invoice_no, revision_no")
+    .eq("job_request_id", jobRequestId)
+    .eq("invoice_type", "deposit")
+    .eq("is_draft", false)
+    .or("status.is.null,and(status.neq.superseded,status.neq.void)")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    id: data.id,
+    invoiceNo: data.invoice_no ?? null,
+    revisionNo: Number(data.revision_no ?? 1),
+  };
+}
+
 export async function createDepositDraftFromQuote(
   quoteId: string,
   opts: { amount?: number } = {},
@@ -284,6 +307,24 @@ export async function createDepositDraftFromQuote(
   const q = qRes.data;
   if (q.is_draft) throw new Error(`Cannot generate invoice from a draft quote (${quoteId}). Issue it first.`);
   if (!q.job_request_id) throw new Error(`Quote ${quoteId} has no linked job_request.`);
+
+  // If an issued deposit already exists for this job, chain the new draft as
+  // a revision so issuing it will supersede the prior one via
+  // issue_invoice_draft's parent_invoice_id branch. Without this link the
+  // unique partial index `invoices_one_active_deposit_per_job` blocks the
+  // issue at the DB level.
+  const activeDeposit = await findActiveDepositInvoiceForJob(q.job_request_id);
+
+  // Clear any stale sibling DRAFT deposits for this job — older revisions of
+  // the quote can leave orphan drafts behind that can never be issued, and
+  // they clutter the invoice list.
+  const { error: clearErr } = await supabase
+    .from("invoices")
+    .delete()
+    .eq("job_request_id", q.job_request_id)
+    .eq("invoice_type", "deposit")
+    .eq("is_draft", true);
+  if (clearErr) throw clearErr;
 
   // Deposit amount precedence:
   //   1. Explicit override from the caller (operator typed a value in the
@@ -333,7 +374,8 @@ export async function createDepositDraftFromQuote(
     jobRequestId: q.job_request_id,
     sourceQuoteId: q.id,
     sourceQuoteCode: q.quote_no ?? undefined,
-    revisionNo: 1,
+    parentInvoiceId: activeDeposit?.id,
+    revisionNo: activeDeposit ? activeDeposit.revisionNo + 1 : 1,
     depositApplied: 0,
     creditsApplied: 0,
   };
