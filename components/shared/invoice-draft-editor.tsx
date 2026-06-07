@@ -53,12 +53,15 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     status: string;
     isDraft: boolean;
   } | null>(null);
-  // Read-only comparison: timesheet entries aggregated by position. Two
-  // panels rendered below the line items:
+  // Read-only comparison: timesheet entries aggregated daily-by-position.
+  // Two panels rendered below the line items:
   //   * Approved Timesheet Actuals — what's billable today
   //   * Pending Timesheet Entries  — submitted/unapproved (heads-up that
   //     this invoice may understate actuals until those entries are reviewed)
-  // Hours only — pay belongs to the future payroll project, not the bill side.
+  //
+  // Each panel renders: a per-day section (positions + day total) then a
+  // grand total across all days. Hours only — pay belongs to the future
+  // payroll project, not the bill side.
   type SummaryRow = {
     position: string;
     workers: number;
@@ -67,8 +70,99 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     dtHours: number;
     totalHours: number;
   };
-  const [timesheetSummary, setTimesheetSummary] = useState<SummaryRow[]>([]);
-  const [pendingTimesheetSummary, setPendingTimesheetSummary] = useState<SummaryRow[]>([]);
+  type DaySummary = {
+    workDate: string;
+    positions: SummaryRow[];
+    dayTotal: SummaryRow;       // workers field = distinct workers ON that day
+  };
+  type GrandTotal = SummaryRow;  // workers = distinct workers across all days
+  type PanelData = { days: DaySummary[]; grandTotal: GrandTotal };
+  const EMPTY_PANEL: PanelData = {
+    days: [],
+    grandTotal: { position: "Grand Total", workers: 0, stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0 },
+  };
+  const [timesheetSummary, setTimesheetSummary] = useState<PanelData>(EMPTY_PANEL);
+  const [pendingTimesheetSummary, setPendingTimesheetSummary] = useState<PanelData>(EMPTY_PANEL);
+
+  /** Per-day breakdown table for the summary panels. Each day is its own
+   *  collapsed table block: position rows, day-total row at the bottom.
+   *  Grand-total row is rendered once after all days. `tinted` shades the
+   *  table for the pending/unapproved panel. */
+  function renderDailyBreakdown(panel: PanelData, tinted: boolean) {
+    const tableStyle = tinted
+      ? { background: "#fff8e1", borderLeft: "3px solid #d8a800" }
+      : undefined;
+    return (
+      <div style={{ overflowX: "auto" }}>
+        {panel.days.map((day) => (
+          <table key={day.workDate} style={{ ...tableStyle, marginBottom: 10 }}>
+            <thead>
+              <tr>
+                <th colSpan={6} style={{ textAlign: "left", background: tinted ? "#f7e9b8" : "#f2ead7" }}>
+                  {day.workDate}
+                </th>
+              </tr>
+              <tr>
+                <th>Position</th>
+                <th>Workers</th>
+                <th>ST Hrs</th>
+                <th>OT Hrs</th>
+                <th>DT Hrs</th>
+                <th>Total Hrs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {day.positions.map((r) => (
+                <tr key={r.position}>
+                  <td>{r.position}</td>
+                  <td>{r.workers}</td>
+                  <td>{r.stdHours.toFixed(2)}</td>
+                  <td>{r.otHours.toFixed(2)}</td>
+                  <td>{r.dtHours.toFixed(2)}</td>
+                  <td>{r.totalHours.toFixed(2)}</td>
+                </tr>
+              ))}
+              <tr style={{ fontWeight: 600, background: "#faf5e8" }}>
+                <td>Day Total</td>
+                <td>{day.dayTotal.workers}</td>
+                <td>{day.dayTotal.stdHours.toFixed(2)}</td>
+                <td>{day.dayTotal.otHours.toFixed(2)}</td>
+                <td>{day.dayTotal.dtHours.toFixed(2)}</td>
+                <td>{day.dayTotal.totalHours.toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+        ))}
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th colSpan={6} style={{ textAlign: "left", background: tinted ? "#e8d68a" : "#d9c890" }}>
+                Grand Total
+              </th>
+            </tr>
+            <tr>
+              <th>—</th>
+              <th>Workers</th>
+              <th>ST Hrs</th>
+              <th>OT Hrs</th>
+              <th>DT Hrs</th>
+              <th>Total Hrs</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style={{ fontWeight: 700 }}>
+              <td>All days</td>
+              <td>{panel.grandTotal.workers}</td>
+              <td>{panel.grandTotal.stdHours.toFixed(2)}</td>
+              <td>{panel.grandTotal.otHours.toFixed(2)}</td>
+              <td>{panel.grandTotal.dtHours.toFixed(2)}</td>
+              <td>{panel.grandTotal.totalHours.toFixed(2)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    );
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -168,42 +262,121 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           // two panels: approved (billable today) + pending (heads-up).
           const tsRes = await supabase
             .from("timesheet_entries")
-            .select("position, employee_key, std_hours, ot_hours, dt_hours, total_hours, status")
+            .select("work_date, position, employee_key, std_hours, ot_hours, dt_hours, total_hours, status")
             .eq("job_id", q.jobRequestId);
           if (!cancelled && !tsRes.error) {
-            type Bucket = { workers: Set<string>; stdHours: number; otHours: number; dtHours: number; totalHours: number; unlinked: number };
-            const approvedMap = new Map<string, Bucket>();
-            const pendingMap  = new Map<string, Bucket>();
+            type PosBucket = { workers: Set<string>; stdHours: number; otHours: number; dtHours: number; totalHours: number; unlinked: number };
+            type DayBucket = {
+              positions: Map<string, PosBucket>;
+              dayWorkers: Set<string>;
+              dayUnlinked: number;
+              dayStd: number; dayOt: number; dayDt: number; dayTotal: number;
+            };
+            type StatusBucket = {
+              days: Map<string, DayBucket>;
+              grandWorkers: Set<string>;
+              grandUnlinked: number;
+              grandStd: number; grandOt: number; grandDt: number; grandTotal: number;
+            };
+            const newStatusBucket = (): StatusBucket => ({
+              days: new Map(),
+              grandWorkers: new Set(),
+              grandUnlinked: 0,
+              grandStd: 0, grandOt: 0, grandDt: 0, grandTotal: 0,
+            });
+            const approved = newStatusBucket();
+            const pending  = newStatusBucket();
+
             for (const r of tsRes.data ?? []) {
               const status = (r as any).status ?? null;
               if (status === "rejected") continue;
-              // Pending = anything not yet approved (admin-typed null, or
-              // staff-submitted awaiting review). Approved = approved.
-              const target = status === "approved" ? approvedMap : pendingMap;
+              const target = status === "approved" ? approved : pending;
+              const workDate = (r.work_date as string) || "(no date)";
               const pos = (r.position as string) || "Unknown";
-              let bucket = target.get(pos);
-              if (!bucket) {
-                bucket = { workers: new Set(), stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, unlinked: 0 };
-                target.set(pos, bucket);
+              const std = Number(r.std_hours   ?? 0);
+              const ot  = Number(r.ot_hours    ?? 0);
+              const dt  = Number(r.dt_hours    ?? 0);
+              const tot = Number(r.total_hours ?? 0);
+              const empKey = (r.employee_key as string) || null;
+
+              // Day bucket
+              let day = target.days.get(workDate);
+              if (!day) {
+                day = {
+                  positions: new Map(),
+                  dayWorkers: new Set(),
+                  dayUnlinked: 0,
+                  dayStd: 0, dayOt: 0, dayDt: 0, dayTotal: 0,
+                };
+                target.days.set(workDate, day);
               }
-              if (r.employee_key) bucket.workers.add(r.employee_key as string);
-              else bucket.unlinked++;
-              bucket.stdHours   += Number(r.std_hours   ?? 0);
-              bucket.otHours    += Number(r.ot_hours    ?? 0);
-              bucket.dtHours    += Number(r.dt_hours    ?? 0);
-              bucket.totalHours += Number(r.total_hours ?? 0);
+              // Position-within-day bucket
+              let posBucket = day.positions.get(pos);
+              if (!posBucket) {
+                posBucket = { workers: new Set(), stdHours: 0, otHours: 0, dtHours: 0, totalHours: 0, unlinked: 0 };
+                day.positions.set(pos, posBucket);
+              }
+              if (empKey) {
+                posBucket.workers.add(empKey);
+                day.dayWorkers.add(empKey);
+                target.grandWorkers.add(empKey);
+              } else {
+                posBucket.unlinked++;
+                day.dayUnlinked++;
+                target.grandUnlinked++;
+              }
+              posBucket.stdHours   += std;
+              posBucket.otHours    += ot;
+              posBucket.dtHours    += dt;
+              posBucket.totalHours += tot;
+              day.dayStd   += std;
+              day.dayOt    += ot;
+              day.dayDt    += dt;
+              day.dayTotal += tot;
+              target.grandStd   += std;
+              target.grandOt    += ot;
+              target.grandDt    += dt;
+              target.grandTotal += tot;
             }
-            const toRows = (m: Map<string, Bucket>): SummaryRow[] =>
-              Array.from(m.entries()).map(([position, v]) => ({
-                position,
-                workers: v.workers.size + v.unlinked,
-                stdHours:   +v.stdHours.toFixed(2),
-                otHours:    +v.otHours.toFixed(2),
-                dtHours:    +v.dtHours.toFixed(2),
-                totalHours: +v.totalHours.toFixed(2),
-              }));
-            setTimesheetSummary(toRows(approvedMap));
-            setPendingTimesheetSummary(toRows(pendingMap));
+
+            const toPanel = (sb: StatusBucket): PanelData => {
+              const days: DaySummary[] = Array.from(sb.days.entries())
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([workDate, day]) => ({
+                  workDate,
+                  positions: Array.from(day.positions.entries())
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([position, v]) => ({
+                      position,
+                      workers: v.workers.size + v.unlinked,
+                      stdHours:   +v.stdHours.toFixed(2),
+                      otHours:    +v.otHours.toFixed(2),
+                      dtHours:    +v.dtHours.toFixed(2),
+                      totalHours: +v.totalHours.toFixed(2),
+                    })),
+                  dayTotal: {
+                    position: "Day Total",
+                    workers: day.dayWorkers.size + day.dayUnlinked,
+                    stdHours:   +day.dayStd.toFixed(2),
+                    otHours:    +day.dayOt.toFixed(2),
+                    dtHours:    +day.dayDt.toFixed(2),
+                    totalHours: +day.dayTotal.toFixed(2),
+                  },
+                }));
+              return {
+                days,
+                grandTotal: {
+                  position: "Grand Total",
+                  workers: sb.grandWorkers.size + sb.grandUnlinked,
+                  stdHours:   +sb.grandStd.toFixed(2),
+                  otHours:    +sb.grandOt.toFixed(2),
+                  dtHours:    +sb.grandDt.toFixed(2),
+                  totalHours: +sb.grandTotal.toFixed(2),
+                },
+              };
+            };
+            setTimesheetSummary(toPanel(approved));
+            setPendingTimesheetSummary(toPanel(pending));
           }
           // For final drafts, surface the linked deposit invoice so the
           // user can see what's being applied (or warn if none exists).
@@ -1041,43 +1214,19 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
       </>
       ) : null}
 
-      {timesheetSummary.length > 0 ? (
+      {timesheetSummary.days.length > 0 ? (
         <div style={{ marginTop: 16 }}>
           <h3 className="section-title" style={{ marginBottom: 4 }}>Approved Timesheet Actuals (comparison)</h3>
           <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
             Read-only roll-up of approved timesheet entries for this job — cross-check the line items above
-            reflect what the field worked. Rates and totals are intentionally bill-side concerns; payroll lives elsewhere.
+            reflect what the field worked. Per-day breakdown by position with daily totals, plus a grand total.
+            Hours only — payroll lives elsewhere.
           </div>
-          <div style={{ overflowX: "auto" }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Position</th>
-                  <th>Workers</th>
-                  <th>ST Hrs</th>
-                  <th>OT Hrs</th>
-                  <th>DT Hrs</th>
-                  <th>Total Hrs</th>
-                </tr>
-              </thead>
-              <tbody>
-                {timesheetSummary.map((r) => (
-                  <tr key={r.position}>
-                    <td>{r.position}</td>
-                    <td>{r.workers}</td>
-                    <td>{r.stdHours.toFixed(2)}</td>
-                    <td>{r.otHours.toFixed(2)}</td>
-                    <td>{r.dtHours.toFixed(2)}</td>
-                    <td>{r.totalHours.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {renderDailyBreakdown(timesheetSummary, /*tinted*/ false)}
         </div>
       ) : null}
 
-      {pendingTimesheetSummary.length > 0 ? (
+      {pendingTimesheetSummary.days.length > 0 ? (
         <div style={{ marginTop: 16 }}>
           <h3 className="section-title" style={{ marginBottom: 4, color: "#7a5a1a" }}>
             ⚠ Pending Timesheet Entries (not yet approved)
@@ -1087,32 +1236,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
             Overwrite from Timesheets until they're approved on the Timekeeping screen. Heads-up that this
             invoice may understate actual labor until that happens.
           </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ background: "#fff8e1", borderLeft: "3px solid #d8a800" }}>
-              <thead>
-                <tr>
-                  <th>Position</th>
-                  <th>Workers</th>
-                  <th>ST Hrs</th>
-                  <th>OT Hrs</th>
-                  <th>DT Hrs</th>
-                  <th>Total Hrs</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pendingTimesheetSummary.map((r) => (
-                  <tr key={r.position}>
-                    <td>{r.position}</td>
-                    <td>{r.workers}</td>
-                    <td>{r.stdHours.toFixed(2)}</td>
-                    <td>{r.otHours.toFixed(2)}</td>
-                    <td>{r.dtHours.toFixed(2)}</td>
-                    <td>{r.totalHours.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {renderDailyBreakdown(pendingTimesheetSummary, /*tinted*/ true)}
         </div>
       ) : null}
 
