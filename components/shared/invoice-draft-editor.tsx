@@ -98,7 +98,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
           <table key={day.workDate} style={{ ...tableStyle, marginBottom: 10 }}>
             <thead>
               <tr>
-                <th colSpan={6} style={{ textAlign: "left", background: tinted ? "#f7e9b8" : "#f2ead7" }}>
+                <th colSpan={6} style={{ textAlign: "left", background: tinted ? "#f7e9b8" : "#f2ead7", color: "#000" }}>
                   {day.workDate}
                 </th>
               </tr>
@@ -136,7 +136,7 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
         <table style={tableStyle}>
           <thead>
             <tr>
-              <th colSpan={6} style={{ textAlign: "left", background: tinted ? "#e8d68a" : "#d9c890" }}>
+              <th colSpan={6} style={{ textAlign: "left", background: tinted ? "#e8d68a" : "#d9c890", color: "#000" }}>
                 Grand Total
               </th>
             </tr>
