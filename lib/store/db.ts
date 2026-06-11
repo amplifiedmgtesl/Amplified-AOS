@@ -866,8 +866,35 @@ function syncTimesheet(t: Timesheet) {
     supabase
       .from("timesheet_entries")
       .upsert(entryRows, { onConflict: "id" })
-      .then(({ error }) => { if (error) console.error("[db] syncTimesheet upsert entries error:", error); });
+      .then(({ error }) => {
+        if (error) {
+          console.error("[db] syncTimesheet upsert entries error:", error);
+          notifyTimesheetSaveError(error);
+        } else {
+          // A clean save re-arms the warning so a NEW failure later
+          // in the session still alerts.
+          timesheetSaveErrorWarned = false;
+        }
+      });
   }
+}
+
+// One alert per failure streak — the entries upsert re-fires on every edit,
+// and a persistent failure (e.g. an FK violation) would otherwise stack an
+// alert per keystroke. Postgres rejects the WHOLE batch on one bad row, so
+// this is always worth interrupting the operator for: rows they believe are
+// saved are not. (2026-06-11: Brent lost 39 of 59 entries this way, silently.)
+let timesheetSaveErrorWarned = false;
+function notifyTimesheetSaveError(error: unknown) {
+  if (typeof window === "undefined" || timesheetSaveErrorWarned) return;
+  timesheetSaveErrorWarned = true;
+  const code = (error as any)?.code ? ` (code ${(error as any).code})` : "";
+  alert(
+    "⚠ Timesheet entries FAILED to save to the database" + code + ".\n\n"
+    + "The rows on screen are NOT saved — if you leave this page they will be lost.\n\n"
+    + "Try editing any row to retrigger the save. If this message keeps appearing, "
+    + "screenshot it and contact IT before closing the tab."
+  );
 }
 
 // ─── Employees ────────────────────────────────────────────────────────────────
@@ -880,9 +907,13 @@ export function setEmployees(rows: EmployeeRecord[]) {
   for (const r of rows) sync("employees", employeeToRow(r, false));
 }
 
-export function upsertEmployee(row: EmployeeRecord) {
+export function upsertEmployee(row: EmployeeRecord): Promise<{ error: unknown | null }> {
   _cache.employees = [..._cache.employees.filter((r) => r.employeeKey !== row.employeeKey), row];
-  sync("employees", employeeToRow(row, false));
+  // Returns the sync promise so callers that are about to write rows
+  // referencing this employee_key (FK) can await the insert commit first.
+  // Timekeeping's inline-create raced this against the timesheet_entries
+  // upsert and lost entire autosave batches to 23503 (2026-06-11, Brent).
+  return sync("employees", employeeToRow(row, false));
 }
 
 export function markEmployeeDeleted(employeeKey: string) {

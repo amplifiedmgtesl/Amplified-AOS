@@ -1530,7 +1530,12 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                                   // without coordinator action.
                                   hireDate: new Date().toISOString().slice(0, 10),
                                 };
-                                upsertEmployee(newEmployee);
+                                // Await the employee insert before the picker
+                                // links the row — the timesheet_entries upsert
+                                // carries an FK on employee_key, and racing it
+                                // rolled back whole autosave batches.
+                                const { error } = await upsertEmployee(newEmployee);
+                                if (error) throw error;
                                 setRefreshKey((k) => k + 1);
                                 // Hand the same record back to EmployeePicker as
                                 // a PickerEmployee — it'll call onSelect with it
@@ -2004,7 +2009,10 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                   type: "contractor",
                   hireDate: new Date().toISOString().slice(0, 10),
                 };
-                upsertEmployee(newEmployee);
+                // Await the insert so the new employee_key exists before any
+                // timesheet_entries row references it (FK race — see above).
+                const { error } = await upsertEmployee(newEmployee);
+                if (error) throw error;
                 setRefreshKey((k) => k + 1);
                 const picked: PickerEmployee = {
                   employeeKey: newEmployee.employeeKey,

@@ -162,7 +162,7 @@ export function addWorkerToTimesheet(jobSheetId: string, worker: JobSheetWorker)
 
 export function loadEmployees(): EmployeeRecord[] { return db.getEmployees(); }
 export function saveEmployees(rows: EmployeeRecord[]) { db.setEmployees(rows); }
-export function upsertEmployee(row: EmployeeRecord) { db.upsertEmployee(row); }
+export function upsertEmployee(row: EmployeeRecord) { return db.upsertEmployee(row); }
 export function deleteEmployee(employeeKey: string) { markEmployeeDeleted(employeeKey); }
 export function loadDeletedEmployeeKeys(): string[] { return db.getDeletedEmployeeKeys(); }
 export function markEmployeeDeleted(employeeKey: string) { db.markEmployeeDeleted(employeeKey); }
