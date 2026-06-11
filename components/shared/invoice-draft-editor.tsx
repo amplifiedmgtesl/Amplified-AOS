@@ -502,6 +502,14 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
     const newLines = invoice.lines.map((l, i) => {
       if (i !== index) return l;
       const merged = { ...l, ...patch };
+      // Operator touched a pulled (timesheet/quote-sourced) line → flag it so
+      // Overwrite from Timesheets preserves it instead of rebuilding it.
+      // Skipped when the patch IS the flag itself (the preserve checkbox).
+      if (!("manuallyEdited" in patch)
+          && l.sourceKind && l.sourceKind !== "manual_override"
+          && Object.keys(patch).some((k) => (patch as any)[k] !== (l as any)[k])) {
+        merged.manuallyEdited = true;
+      }
       merged.total = recomputeLineTotal(merged);
       return merged;
     });
@@ -605,17 +613,51 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
 
   async function onOverwriteFromTimesheets() {
     if (!invoice) return;
-    if (!confirm(
-      "Replace timesheet-sourced line items with aggregated approved timesheet entries?\n\n" +
-      "• Manual lines you typed in (source = 'manual') are preserved.\n" +
-      "• Quote-sourced and prior timesheet-sourced lines are rebuilt.\n" +
-      "• Entries already billed on a non-superseded invoice are skipped.\n" +
-      "• Each contributing entry gets linked to its new line so it won't double-bill."
-    )) return;
     setSaving("saving");
     try {
-      // Persist any unsaved header edits first.
+      // Persist any unsaved edits first — also flushes manually_edited flags
+      // so the dry run partitions preserved vs replaceable lines correctly.
       await saveDraft(invoice);
+
+      // Dry run: compute the diff, write nothing. The confirm below shows
+      // exactly what the pull will add / rewrite / remove before it happens.
+      const plan = await overwriteFromTimesheets(invoice.id, {
+        coveredDates: invoice.coveredDates,
+        dryRun: true,
+      });
+      const p = plan.preview;
+      if (p.added.length === 0 && p.changed.length === 0 && p.removed.length === 0) {
+        setSaving("idle");
+        alert(
+          "Nothing to pull — the invoice already matches the approved timesheet entries.\n\n" +
+          `${plan.keptEditedLineCount} corrected and ${plan.keptManualLineCount} manual line(s) are preserved as-is. ` +
+          "Newly approved entries will show up here once they're approved on the Timekeeping screen."
+        );
+        return;
+      }
+      const fmtMoney = (n: number) => `$${n.toFixed(2)}`;
+      const msg: string[] = ["Pull labor actuals from approved timesheets?"];
+      if (p.added.length > 0) {
+        msg.push(`\nADD ${p.added.length} new line${p.added.length === 1 ? "" : "s"}:`);
+        for (const a of p.added) msg.push(`  + ${a.date}  ${a.label} — ${a.crew} crew, ${fmtMoney(a.total)}`);
+      }
+      if (p.changed.length > 0) {
+        msg.push(`\n⚠ REWRITE ${p.changed.length} existing line${p.changed.length === 1 ? "" : "s"} (timesheet data changed since last pull):`);
+        for (const c of p.changed) msg.push(`  ~ ${c.date}  ${c.label} — ${c.beforeHours}h / ${fmtMoney(c.beforeTotal)} → ${c.afterHours}h / ${fmtMoney(c.afterTotal)}`);
+      }
+      if (p.removed.length > 0) {
+        msg.push(`\n⚠ REMOVE ${p.removed.length} line${p.removed.length === 1 ? "" : "s"} (no matching approved entries anymore):`);
+        for (const r of p.removed) msg.push(`  − ${r.date}  ${r.label} — ${fmtMoney(r.total)}`);
+      }
+      msg.push(
+        `\n${plan.keptEditedLineCount} corrected + ${plan.keptManualLineCount} manual line(s) will be preserved untouched.` +
+        "\nTo protect a line from being rewritten, cancel and tick “corrected — preserve on re-pull” on it first."
+      );
+      if (!confirm(msg.join("\n"))) {
+        setSaving("idle");
+        return;
+      }
+
       const result = await overwriteFromTimesheets(invoice.id, {
         coveredDates: invoice.coveredDates,
       });
@@ -626,9 +668,12 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
       // Surface what just happened. Counts always show; skipped reasons
       // shown verbosely so the operator can fix data and re-pull.
       const lines: string[] = [
-        `${result.newLineCount} new line${result.newLineCount === 1 ? "" : "s"} from ${result.consumedEntries} of ${result.totalEntries} approved entries.`,
-        `${result.keptManualLineCount} manual line${result.keptManualLineCount === 1 ? "" : "s"} preserved.`,
+        `${result.newLineCount} line${result.newLineCount === 1 ? "" : "s"} written from ${result.consumedEntries} of ${result.totalEntries} approved entries.`,
+        `${result.keptEditedLineCount} corrected + ${result.keptManualLineCount} manual line${result.keptManualLineCount === 1 && result.keptEditedLineCount === 0 ? "" : "s"} preserved.`,
       ];
+      if (result.preservedEntryCount > 0) {
+        lines.push(`${result.preservedEntryCount} entr${result.preservedEntryCount === 1 ? "y" : "ies"} absorbed into preserved corrected lines (won't double-bill).`);
+      }
       if (result.skipped.length > 0) {
         const byKind = new Map<string, number>();
         for (const s of result.skipped) byKind.set(s.kind, (byKind.get(s.kind) ?? 0) + 1);
@@ -1203,6 +1248,20 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                       <span style={{ marginRight: 14 }}>
                         <strong>Source:</strong> {l.sourceKind === "timesheet_entry" ? "Timesheet" : l.sourceKind === "quote_line" ? "Quote" : l.sourceKind ?? "manual"}
                       </span>
+                      {l.sourceKind && l.sourceKind !== "manual_override" ? (
+                        <label
+                          style={{ marginRight: 14, cursor: "pointer", color: l.manuallyEdited ? "#7a5a1a" : undefined, fontWeight: l.manuallyEdited ? 600 : undefined }}
+                          title="Preserved lines are kept exactly as-is by Overwrite from Timesheets — only unpreserved lines get rebuilt from approved entries. Set automatically when you edit a pulled line; toggle it off to let the next pull rebuild this line."
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!l.manuallyEdited}
+                            onChange={(e) => updateLine(i, { manuallyEdited: e.target.checked })}
+                            style={{ verticalAlign: "middle", marginRight: 4 }}
+                          />
+                          corrected — preserve on re-pull
+                        </label>
+                      ) : null}
                     </td>
                   </tr>
                 </React.Fragment>

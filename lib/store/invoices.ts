@@ -113,6 +113,8 @@ function rowToInvoiceLine(r: any): QuoteLine {
     rateMode:     r.rate_mode     ?? undefined,
     sourceKind:   r.source_kind   ?? undefined,
     sourceQuoteLineId:      r.source_quote_line_id      ?? undefined,
+    id:             r.id              ?? undefined,
+    manuallyEdited: r.manually_edited ?? undefined,
   };
 }
 
@@ -162,7 +164,7 @@ function invoiceLineToRow(invoiceId: string, l: QuoteLine, index: number, existi
   // qty (legacy invoice-builder, exports, audit) stays correct.
   const crew = Number(l.crewCount ?? l.qty ?? 1);
   return {
-    id:            existingId ?? newLineId(),
+    id:            existingId ?? l.id ?? newLineId(),
     invoice_id:    invoiceId,
     sort_order:    index,
     service_key:   l.serviceKey,
@@ -190,6 +192,7 @@ function invoiceLineToRow(invoiceId: string, l: QuoteLine, index: number, existi
     rate_mode:     l.rateMode    ?? null,
     source_kind:   l.sourceKind             ?? null,
     source_quote_line_id:      l.sourceQuoteLineId      ?? null,
+    manually_edited: l.manuallyEdited ?? false,
   };
 }
 
@@ -600,29 +603,50 @@ export async function createFinalDraftFromQuote(
  *  freeze trigger prevents status changes on invoice-bound entries, so
  *  by the time we get here the input set is internally consistent.
  *
+ *  Preservation (2026-06-11, Connor's "don't lose my corrections" ask):
+ *  manual_override lines AND manually_edited pulled lines survive the pull
+ *  untouched. Entry groups matching a preserved corrected line's
+ *  (date, position, specialty, shift) are absorbed into it via back-link
+ *  instead of being rebuilt — so re-pulling after new days are approved is
+ *  purely additive for corrected days. Pass dryRun=true to get the diff
+ *  (`preview`) without writing anything; the editor uses it to warn before
+ *  rewriting existing lines.
+ *
  *  Throws if the invoice is frozen, not final, or has no jobRequestId.
  */
 export type OverwriteFromTimesheetsResult = {
   invoice: InvoiceDraft;
   /** Lines preserved (source_kind='manual_override'). */
   keptManualLineCount: number;
+  /** Pulled lines preserved because the operator corrected them (manually_edited). */
+  keptEditedLineCount: number;
   /** New lines created from timesheet aggregates. */
   newLineCount: number;
   /** Approved timesheet entries considered before dedupe. */
   totalEntries: number;
   /** Entries that landed in the new lines (after dedupe + skip). */
   consumedEntries: number;
+  /** Entries folded into preserved corrected lines (back-linked, not rebuilt). */
+  preservedEntryCount: number;
   /** Per-reason breakdown of entries / groups that didn't produce a line. */
   skipped: Array<{
     kind: "no_position_id" | "no_rate_card_row";
     entryId?: string;
     detail: string;
   }>;
+  /** Line-table diff vs the existing draft — drives the pre-pull confirm.
+   *  Keys aggregate on (date, position, specialty, shift); `hours` is total
+   *  person-hours (ST+OT+DT). */
+  preview: {
+    added:   Array<{ date: string; label: string; crew: number; total: number }>;
+    changed: Array<{ date: string; label: string; beforeTotal: number; afterTotal: number; beforeHours: number; afterHours: number }>;
+    removed: Array<{ date: string; label: string; total: number }>;
+  };
 };
 
 export async function overwriteFromTimesheets(
   invoiceId: string,
-  opts: { coveredDates?: string[] } = {},
+  opts: { coveredDates?: string[]; dryRun?: boolean } = {},
 ): Promise<OverwriteFromTimesheetsResult> {
   const inv = await loadInvoice(invoiceId);
   if (!inv) throw new Error(`Invoice not found: ${invoiceId}`);
@@ -716,20 +740,30 @@ export async function overwriteFromTimesheets(
   //   THIS draft that we're ABOUT to delete (they get re-included since
   //   they'll be replaced).
   //
-  //   Existing lines are partitioned by source_kind:
+  //   Existing lines are partitioned by source_kind + manually_edited:
   //     * source_kind='manual_override' → preserved (user-typed, can't be
   //       reconstructed from timesheets)
+  //     * manually_edited=true → preserved (operator corrected a pulled
+  //       line; rebuilding would destroy the correction)
   //     * everything else → deleted and rebuilt from current entries
   const alreadyBilled = await getAlreadyBilledTimesheetEntryIds(inv.jobRequestId);
   const ownLinesRes = await supabase
-    .from("invoice_lines").select("id, source_kind, sort_order")
+    .from("invoice_lines")
+    .select("id, source_kind, sort_order, manually_edited, quote_date, position_id, specialty_id, shift_id, service_key, crew_count, hours, ot_hours, dt_hours, total")
     .eq("invoice_id", invoiceId);
   if (ownLinesRes.error) throw ownLinesRes.error;
-  const allOwnLines = (ownLinesRes.data ?? []) as Array<{ id: string; source_kind: string | null; sort_order: number | null }>;
+  type OwnLine = {
+    id: string; source_kind: string | null; sort_order: number | null;
+    manually_edited: boolean | null; quote_date: string | null;
+    position_id: string | null; specialty_id: string | null; shift_id: string | null;
+    service_key: string | null; crew_count: number | null;
+    hours: number | null; ot_hours: number | null; dt_hours: number | null; total: number | null;
+  };
+  const allOwnLines = (ownLinesRes.data ?? []) as OwnLine[];
   const keptManualLines = allOwnLines.filter((r) => r.source_kind === "manual_override");
-  const replaceableLineIds = allOwnLines
-    .filter((r) => r.source_kind !== "manual_override")
-    .map((r) => r.id);
+  const keptEditedLines = allOwnLines.filter((r) => r.source_kind !== "manual_override" && !!r.manually_edited);
+  const replaceableLines = allOwnLines.filter((r) => r.source_kind !== "manual_override" && !r.manually_edited);
+  const replaceableLineIds = replaceableLines.map((r) => r.id);
   const ownEntryIdsRes = await supabase
     .from("timesheet_entries").select("id")
     .in("invoice_line_id", replaceableLineIds.length > 0 ? replaceableLineIds : ["__none__"]);
@@ -811,6 +845,28 @@ export async function overwriteFromTimesheets(
         workerTotalHours: new Map([[workerKey, entryTotalHours]]),
       });
     }
+  }
+
+  // ─── 4b. Preserve operator-corrected lines ─────────────────────────────
+  //   A pulled line the operator edited (manually_edited) is NOT rebuilt.
+  //   Any entry group matching its (date, position, specialty, shift)
+  //   identity is skipped — instead its entries get back-linked to the
+  //   preserved line so the dedupe + freeze machinery still owns them.
+  //   The holiday flag is deliberately ignored in the match: if the operator
+  //   corrected either half of a holiday-split day we leave that whole
+  //   (date, position, specialty, shift) alone rather than half-rebuilding.
+  const editedLineIdByKey = new Map<string, string>();
+  for (const l of keptEditedLines) {
+    if (!l.quote_date || !l.position_id) continue; // unmatchable — still preserved, just can't absorb entries
+    editedLineIdByKey.set(`${l.quote_date}|${l.position_id}|${l.specialty_id ?? ""}|${l.shift_id ?? ""}`, l.id);
+  }
+  const preservedBackLinks = new Map<string, string[]>(); // preserved line id → entry ids to absorb
+  for (const [key, g] of Array.from(groups.entries())) {
+    const editKey = `${g.workDate}|${g.positionId ?? ""}|${g.specialtyId ?? ""}|${g.shiftId ?? ""}`;
+    const editedLineId = editedLineIdByKey.get(editKey);
+    if (!editedLineId) continue;
+    groups.delete(key);
+    preservedBackLinks.set(editedLineId, (preservedBackLinks.get(editedLineId) ?? []).concat(g.entryIds));
   }
 
   // ─── 5. Build invoice lines ────────────────────────────────────────────
@@ -918,6 +974,75 @@ export async function overwriteFromTimesheets(
     return line;
   });
 
+  // ─── 5b. Diff vs existing replaceable lines (preview / pre-pull warn) ──
+  //   Aggregated per (date, position, specialty, shift) because a holiday-
+  //   split day produces two lines sharing one key. Preserved (manual +
+  //   corrected) lines are not part of the diff — they don't change.
+  const diffKey = (
+    date: string | null | undefined, pos: string | null | undefined,
+    spec: string | null | undefined, shift: string | null | undefined,
+  ) => `${date ?? ""}|${pos ?? ""}|${spec ?? ""}|${shift ?? ""}`;
+  type DiffAgg = { label: string; date: string; crew: number; hours: number; total: number };
+  const aggInto = (m: Map<string, DiffAgg>, key: string, label: string, date: string, crew: number, hours: number, total: number) => {
+    const prior = m.get(key);
+    if (prior) { prior.crew += crew; prior.hours += hours; prior.total += total; }
+    else m.set(key, { label, date, crew, hours, total });
+  };
+  const oldByKey = new Map<string, DiffAgg>();
+  for (const r of replaceableLines) {
+    aggInto(
+      oldByKey, diffKey(r.quote_date, r.position_id, r.specialty_id, r.shift_id),
+      r.service_key ?? "", r.quote_date ?? "", Number(r.crew_count ?? 0),
+      Number(r.hours ?? 0) + Number(r.ot_hours ?? 0) + Number(r.dt_hours ?? 0),
+      Number(r.total ?? 0),
+    );
+  }
+  const newByKey = new Map<string, DiffAgg>();
+  for (const l of newLines) {
+    aggInto(
+      newByKey, diffKey(l.quoteDate, l.positionId, l.specialtyId, l.shiftId),
+      l.serviceKey, l.quoteDate ?? "", l.crewCount,
+      (l.hours ?? 0) + (l.otHours ?? 0) + (l.dtHours ?? 0),
+      l.total,
+    );
+  }
+  const preview: OverwriteFromTimesheetsResult["preview"] = { added: [], changed: [], removed: [] };
+  for (const [key, n] of newByKey.entries()) {
+    const o = oldByKey.get(key);
+    if (!o) {
+      preview.added.push({ date: n.date, label: n.label, crew: n.crew, total: +n.total.toFixed(2) });
+    } else if (Math.abs(o.total - n.total) > 0.005 || Math.abs(o.hours - n.hours) > 0.005 || o.crew !== n.crew) {
+      preview.changed.push({
+        date: n.date, label: n.label,
+        beforeTotal: +o.total.toFixed(2), afterTotal: +n.total.toFixed(2),
+        beforeHours: +o.hours.toFixed(2), afterHours: +n.hours.toFixed(2),
+      });
+    }
+  }
+  for (const [key, o] of oldByKey.entries()) {
+    if (!newByKey.has(key)) preview.removed.push({ date: o.date, label: o.label, total: +o.total.toFixed(2) });
+  }
+  const byDate = (a: { date: string }, b: { date: string }) => a.date.localeCompare(b.date);
+  preview.added.sort(byDate); preview.changed.sort(byDate); preview.removed.sort(byDate);
+
+  //   Dry run: report what WOULD happen, write nothing. Everything below
+  //   this point mutates (invoice_days, lines, back-links, header totals).
+  const plannedPreservedEntryCount = Array.from(preservedBackLinks.values())
+    .reduce((s, ids) => s + ids.length, 0);
+  if (opts.dryRun) {
+    return {
+      invoice: inv,
+      keptManualLineCount: keptManualLines.length,
+      keptEditedLineCount: keptEditedLines.length,
+      newLineCount: newLines.length,
+      totalEntries,
+      consumedEntries: sorted.reduce((s, g) => s + g.entryIds.length, 0),
+      preservedEntryCount: plannedPreservedEntryCount,
+      skipped,
+      preview,
+    };
+  }
+
   // ─── 6. Sync invoice_days with the pulled holiday flags ────────────────
   //   The invoice's calc engine reads invoice_days to decide holiday
   //   treatment. Since we split holiday vs non-holiday into different
@@ -957,8 +1082,8 @@ export async function overwriteFromTimesheets(
     if (delErr) throw delErr;
   }
 
-  // New lines sort AFTER any preserved manual lines.
-  const sortOrderOffset = keptManualLines.reduce(
+  // New lines sort AFTER any preserved (manual + corrected) lines.
+  const sortOrderOffset = [...keptManualLines, ...keptEditedLines].reduce(
     (max, l) => Math.max(max, (l.sort_order ?? -1) + 1),
     0,
   );
@@ -984,6 +1109,21 @@ export async function overwriteFromTimesheets(
     }
   }
 
+  // 7b. Back-link entries whose group was absorbed by a preserved corrected
+  //     line. No line was rebuilt for them, but the dedupe + freeze
+  //     machinery must still own them or a later pull (on any invoice)
+  //     would double-bill the same hours.
+  let preservedEntryCount = 0;
+  for (const [lineId, ids] of preservedBackLinks.entries()) {
+    if (ids.length === 0) continue;
+    const { error: linkErr } = await supabase
+      .from("timesheet_entries")
+      .update({ invoice_line_id: lineId })
+      .in("id", ids);
+    if (linkErr) throw linkErr;
+    preservedEntryCount += ids.length;
+  }
+
   // 8. Update invoice header subtotal + amount_due. Subtotal sums BOTH
   //    preserved manual lines and the freshly-inserted ones — reload to get
   //    a truthful total without recomputing manual line math here.
@@ -1006,10 +1146,13 @@ export async function overwriteFromTimesheets(
   return {
     invoice: refreshed,
     keptManualLineCount: keptManualLines.length,
+    keptEditedLineCount: keptEditedLines.length,
     newLineCount: newLines.length,
     totalEntries,
     consumedEntries,
+    preservedEntryCount,
     skipped,
+    preview,
   };
 }
 
@@ -1027,18 +1170,28 @@ async function persistDraft(invoice: InvoiceDraft): Promise<void> {
     .upsert(invoiceToDraftRow(invoice), { onConflict: "id" });
   if (invErr) throw invErr;
 
-  // Replace lines: delete then insert. Drafts only — frozen lines protected by trigger.
-  const { error: delErr } = await supabase
-    .from("invoice_lines")
-    .delete()
-    .eq("invoice_id", invoice.id);
-  if (delErr) throw delErr;
-
-  if (invoice.lines.length > 0) {
-    const rows = invoice.lines.map((l, i) => invoiceLineToRow(invoice.id, l, i));
-    const { error: insErr } = await supabase.from("invoice_lines").insert(rows);
-    if (insErr) throw insErr;
+  // Stable-id line persistence (2026-06-11). The old path deleted every line
+  // and reinserted with fresh ids on each save — which fired ON DELETE SET
+  // NULL on timesheet_entries.invoice_line_id and silently severed the
+  // back-links the double-billing dedupe and the entry freeze trigger depend
+  // on. Now: assign an id once per line, upsert in place, and delete only
+  // rows the user actually removed. Drafts only — frozen lines protected by
+  // trigger.
+  for (const l of invoice.lines) if (!l.id) l.id = newLineId();
+  const rows = invoice.lines.map((l, i) => invoiceLineToRow(invoice.id, l, i));
+  if (rows.length > 0) {
+    const { error: upErr } = await supabase
+      .from("invoice_lines")
+      .upsert(rows, { onConflict: "id" });
+    if (upErr) throw upErr;
   }
+
+  let delQuery = supabase.from("invoice_lines").delete().eq("invoice_id", invoice.id);
+  if (rows.length > 0) {
+    delQuery = delQuery.not("id", "in", `(${rows.map((r) => r.id).join(",")})`);
+  }
+  const { error: delErr } = await delQuery;
+  if (delErr) throw delErr;
 }
 
 /** Issue a draft → frozen via the issue_invoice_draft RPC. */
@@ -1134,7 +1287,11 @@ export async function reviseInvoice(invoiceId: string): Promise<InvoiceDraft> {
     voidReason: undefined,
     paidAmount: 0,         // payments belong to the parent, not the revision
     creditsApplied: 0,
-    lines: parent.lines.map((l) => ({ ...l })),
+    // Strip line ids: the revision gets its OWN invoice_lines rows. Carrying
+    // the parent's ids would make persistDraft's upsert steal (re-parent) the
+    // frozen parent's lines. manuallyEdited carries over so corrections
+    // survive a revise → re-pull cycle.
+    lines: parent.lines.map((l) => ({ ...l, id: undefined })),
   };
 
   await persistDraft(draft);

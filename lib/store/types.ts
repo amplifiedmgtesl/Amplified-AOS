@@ -72,6 +72,16 @@ export type QuoteLine = {
   // Timesheet→invoice linkage flipped 2026-05-10: timesheet_entries now have
   // an invoice_line_id back-reference (handles many-to-one aggregation).
   // The per-line sourceTimesheetEntryId field was dropped.
+  /** invoice_lines row id. Stable across draft saves (2026-06-11) so the
+   *  timesheet_entries.invoice_line_id back-links survive editing — the old
+   *  delete-all/reinsert save path regenerated ids and severed them. Only
+   *  populated on lines loaded from / persisted to invoice_lines. */
+  id?: string;
+  /** Operator hand-corrected this pulled line. Overwrite from Timesheets
+   *  preserves flagged lines instead of rebuilding them (manual_override
+   *  lines are always preserved regardless). Set automatically by the draft
+   *  editor on any value edit to a pulled line; toggleable in the UI. */
+  manuallyEdited?: boolean;
 };
 
 export type TimeEntry = {
