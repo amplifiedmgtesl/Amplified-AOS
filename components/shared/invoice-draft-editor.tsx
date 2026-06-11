@@ -1250,14 +1250,22 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
                       </span>
                       {l.sourceKind && l.sourceKind !== "manual_override" ? (
                         <label
-                          style={{ marginRight: 14, cursor: "pointer", color: l.manuallyEdited ? "#7a5a1a" : undefined, fontWeight: l.manuallyEdited ? 600 : undefined }}
+                          style={{
+                            // Globals make every <input> width:100% with padding — undo that
+                            // here or the checkbox becomes a full-width row of its own.
+                            display: "inline-flex", alignItems: "center", gap: 5,
+                            whiteSpace: "nowrap", verticalAlign: "middle",
+                            marginRight: 14, cursor: "pointer",
+                            color: l.manuallyEdited ? "#7a5a1a" : undefined,
+                            fontWeight: l.manuallyEdited ? 600 : undefined,
+                          }}
                           title="Preserved lines are kept exactly as-is by Overwrite from Timesheets — only unpreserved lines get rebuilt from approved entries. Set automatically when you edit a pulled line; toggle it off to let the next pull rebuild this line."
                         >
                           <input
                             type="checkbox"
                             checked={!!l.manuallyEdited}
                             onChange={(e) => updateLine(i, { manuallyEdited: e.target.checked })}
-                            style={{ verticalAlign: "middle", marginRight: 4 }}
+                            style={{ width: 13, height: 13, margin: 0, padding: 0 }}
                           />
                           corrected — preserve on re-pull
                         </label>
