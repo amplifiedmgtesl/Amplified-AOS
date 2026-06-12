@@ -37,7 +37,7 @@ export default function LoginPage() {
     }
 
     window.location.href =
-      profileData.role === "crew_leader" ? "/lead/job-sheets"
+      profileData.role === "crew_leader" ? "/lead/timekeeping"
       : profileData.role === "payroll" ? "/payroll"
       : "/dashboard";
   }

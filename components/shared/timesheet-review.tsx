@@ -6,7 +6,6 @@ import {
   approveStaffEntry,
   rejectStaffEntry,
   setEntryApproved,
-  ensureTimesheetForJob,
   ensureTimesheetForJobRequest,
   loadJobRequests,
 } from "@/lib/store/app-store";
@@ -150,12 +149,8 @@ export default function TimesheetReview() {
         try {
           const label = jobLabel(r, jobNoById);
           let tsId = r.timesheetId;
-          if (!tsId) {
-            if (r.jobId) {
-              tsId = await ensureTimesheetForJobRequest(r.jobId, { jobTitle: label, jobSheetId: r.jobSheetId });
-            } else if (r.jobSheetId) {
-              tsId = await ensureTimesheetForJob(r.jobSheetId, label);
-            }
+          if (!tsId && r.jobId) {
+            tsId = await ensureTimesheetForJobRequest(r.jobId, { jobTitle: label });
           }
           if (tsId) await approveStaffEntry(r.id, tsId);
           else      await setEntryApproved(r.id);

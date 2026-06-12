@@ -5,8 +5,8 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { printWithTitle } from "@/lib/print-with-title";
 import {
   getActiveJob, setActiveJob,
-  loadJobRequests, loadJobSheets, loadTimesheets,
-  getTimesheetByJobId, getTimesheetByJobSheetId,
+  loadJobRequests, loadTimesheets,
+  getTimesheetByJobId,
   ensureTimesheetForJobRequest,
   upsertTimesheet, positionNames, loadEmployees, loadPositions, loadSpecialties,
   upsertEmployee,
@@ -16,20 +16,20 @@ import {
 import { loadJobCrewSlots } from "@/lib/storage/job-request-assignments";
 import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
 import { parseMinutes } from "@/lib/time-utils";
-import type { EmployeeRecord, JobRequest, JobSheet, TimeEntry, Timesheet } from "@/lib/store/types";
+import type { EmployeeRecord, JobRequest, TimeEntry, Timesheet } from "@/lib/store/types";
 import { EqualizerLoader } from "@/components/shared/equalizer-loader";
 import { JobHealthBanner } from "@/components/shared/job-health-banner";
 import { EmployeePicker, LazyEmployeePicker, pushEmployeeIntoCache, type PickerEmployee } from "@/components/shared/employee-picker";
 
-// Phase 1: picker selection encodes which world we're in.
-//   "job:<jobId>"        — canonical, anchored on job_requests
-//   "legacy:<jobSheetId>" — pre-rewrite timesheet whose job_id couldn't be backfilled
-type PickerValue = "" | `job:${string}` | `legacy:${string}`;
+// Picker selection — always anchored on job_requests ("job:<jobId>").
+// The pre-rewrite "legacy:<jobSheetId>" mode was retired 2026-06-11 after the
+// last sheet-only timesheet entries were linked to real jobs by SQL (see
+// docs/data-integrity/legacy-jobsheet-timesheet-linking/).
+type PickerValue = "" | `job:${string}`;
 
-function parsePicker(v: PickerValue): { kind: "none" | "job" | "legacy"; key: string } {
+function parsePicker(v: PickerValue): { kind: "none" | "job"; key: string } {
   if (!v) return { kind: "none", key: "" };
-  if (v.startsWith("job:")) return { kind: "job", key: v.slice(4) };
-  return { kind: "legacy", key: v.slice(7) };
+  return { kind: "job", key: v.slice(4) };
 }
 
 /** Map rate-card TriggerOption text → integer hour threshold for the
@@ -105,11 +105,6 @@ function LazyTimeSelect({
       {value || <span style={{ color: "#bbb" }}>—</span>}
     </div>
   );
-}
-
-function splitName(fullName: string) {
-  const parts = fullName.trim().split(" ");
-  return { firstName: parts[0] || "", lastName: parts.slice(1).join(" ") || "" };
 }
 
 // ─── Dev-only perf logger ────────────────────────────────────────────────────
@@ -204,7 +199,6 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
     return !!positionId && positionsRequiringSpecialty.has(positionId);
   }
   const [refreshKey, setRefreshKey] = useState(0);
-  const sheets = useMemo(() => loadJobSheets(), [refreshKey]);
   const jobRequests = useMemo(() => loadJobRequests(), [refreshKey]);
   const timesheets = useMemo(() => loadTimesheets(), [refreshKey]);
   // NOTE: the legacy in-memory `employees` array used to be passed to the
@@ -214,16 +208,14 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   // inline by addCrewFromJob() for one-off name lookups.
   const [pendingEntries, setPendingEntries] = useState<import("@/lib/store/types").TimeEntry[]>([]);
 
-  // Picker state — encodes both kinds of selection (canonical job vs. legacy job_sheet).
-  // Initial value: prefer the last picked job (Phase 1 sticky state). If none, default
-  // to the most recent job_request that already has a timesheet linked to it.
+  // Picker state. Initial value: prefer the last picked job (sticky state).
+  // If none, default to the most recent job_request that already has a
+  // timesheet linked to it.
   const initialPicker: PickerValue = (() => {
     const lastJobId = getActiveJob();
     if (lastJobId && jobRequests.some((j) => j.id === lastJobId)) return `job:${lastJobId}`;
     const firstLinked = timesheets.find((t) => t.jobId);
     if (firstLinked?.jobId) return `job:${firstLinked.jobId}`;
-    const firstLegacy = timesheets.find((t) => !t.jobId);
-    if (firstLegacy?.jobSheetId) return `legacy:${firstLegacy.jobSheetId}`;
     return "";
   })();
   const [picker, setPicker] = useState<PickerValue>(initialPicker);
@@ -308,22 +300,6 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
             hideBillColumns: false, rows: [],
           });
         }).catch((e) => console.error("[timekeeping] ensure failed:", e));
-      }
-    } else if (pickerKind === "legacy") {
-      const jobSheetId = pickerKey;
-      const linked = getTimesheetByJobSheetId(jobSheetId);
-      const sheet = sheets.find((s) => s.id === jobSheetId);
-      if (linked) {
-        setTimesheet(linked);
-      } else if (sheet) {
-        setTimesheet({
-          id: `timesheet-${sheet.id}`,
-          jobSheetId: sheet.id,
-          jobId: null,
-          title: sheet.title,
-          hideBillColumns: false,
-          rows: [],
-        });
       }
     }
     setDayFilter("all");
@@ -423,12 +399,6 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   useEffect(() => {
     if (pickerKind === "job") {
       getPendingStaffEntriesByJobId(pickerKey).then(setPendingEntries);
-    } else if (pickerKind === "legacy") {
-      // Legacy job_sheets: staff entries still keyed on job_sheet_id today.
-      // Phase 2 retires this branch entirely.
-      import("@/lib/store/app-store").then(({ getPendingStaffEntries }) =>
-        getPendingStaffEntries(pickerKey).then(setPendingEntries)
-      );
     } else {
       setPendingEntries([]);
     }
@@ -439,19 +409,10 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
     () => (pickerKind === "job" ? jobRequests.find((j) => j.id === pickerKey) || null : null),
     [picker, jobRequests],
   );
-  // The job_sheet for legacy mode (and an auxiliary lookup for "Add Crew from
-  // Job Sheet" when a canonical job happens to also have a matching sheet).
-  const currentSheet: JobSheet | null = useMemo(() => {
-    if (pickerKind === "legacy") return sheets.find((s) => s.id === pickerKey) || null;
-    if (pickerKind === "job" && timesheet?.jobSheetId) {
-      return sheets.find((s) => s.id === timesheet.jobSheetId) || null;
-    }
-    return null;
-  }, [picker, sheets, timesheet?.jobSheetId]);
   const headerTitle = currentJob
     ? `${currentJob.jobNo ? currentJob.jobNo + " — " : ""}${currentJob.eventName || ""} — ${currentJob.client || ""}`.replace(/ — $/, "")
-    : (currentSheet?.title || "No job selected");
-  const headerClient = currentJob?.client || currentSheet?.client || "";
+    : "No job selected";
+  const headerClient = currentJob?.client || "";
   const summary = useMemo(() => summarizeTimesheet(timesheet), [timesheet]);
   const approvedSummary = useMemo(
     () => summarizeTimesheet(timesheet, (r) => r.status === "approved"),
@@ -493,30 +454,6 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
         status: "submitted",
       }],
     });
-  }
-
-  // Legacy path — pulls a flat worker list off the linked job_sheet.
-  // Phase 2 retires this for canonical jobs (which have per-day assignments);
-  // kept available for the 3 stragglers whose job_id couldn't be backfilled.
-  function addWorkersFromJobSheet() {
-    if (!timesheet || !currentSheet) return;
-    const existingEmails = new Set(timesheet.rows.map((r) => r.email));
-    const nextRows = [...timesheet.rows];
-    currentSheet.workers.forEach((w, idx) => {
-      if (existingEmails.has(w.email)) return;
-      const parts = splitName(w.fullName);
-      nextRows.push(computeTimeEntry({
-        ...blankTimeEntry(`worker-${Date.now()}-${idx}`),
-        position: w.role || "Stagehand",
-        firstName: parts.firstName,
-        lastName: parts.lastName,
-        phone: w.phone || "",
-        email: w.email || "",
-        employeeKey: w.employeeKey || null,
-        status: "submitted",
-      }));
-    });
-    persist({ ...timesheet, rows: nextRows });
   }
 
   // Phase 2 canonical path — seeds one TimeEntry per per-day crew assignment
@@ -1066,21 +1003,6 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                     </option>
                   ))}
               </optgroup>
-              {timesheets.some((t) => !t.jobId) && (
-                <optgroup label="Legacy (no Job linked)">
-                  {timesheets
-                    .filter((t) => !t.jobId && t.jobSheetId)
-                    .map((t) => {
-                      const sheet = sheets.find((s) => s.id === t.jobSheetId);
-                      const label = sheet
-                        ? `${sheet.client || ""} — ${sheet.eventName || sheet.title || ""} — ${sheet.date || ""}`
-                        : t.title;
-                      return (
-                        <option key={t.id} value={`legacy:${t.jobSheetId}`}>{label}</option>
-                      );
-                    })}
-                </optgroup>
-              )}
             </select>
           </div>
           {!hideBillAlways && (
@@ -1179,23 +1101,13 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
           </div>
         )}
         <div className="action-row" style={{ marginTop: 12 }}>
-          {pickerKind === "job" ? (
-            <button
-              onClick={addCrewFromJob}
-              disabled={!timesheet || addingCrew}
-              title="Seed one row per scheduled assignment from the Job Request → Assigned Crew tab"
-            >
-              {addingCrew ? "Loading…" : "Add Crew from Job"}
-            </button>
-          ) : (
-            <button
-              onClick={addWorkersFromJobSheet}
-              disabled={!currentSheet}
-              title="Legacy: pulls workers from the linked job_sheet's flat crew list"
-            >
-              Add Crew from Job Sheet
-            </button>
-          )}
+          <button
+            onClick={addCrewFromJob}
+            disabled={!timesheet || addingCrew}
+            title="Seed one row per scheduled assignment from the Job Request → Assigned Crew tab"
+          >
+            {addingCrew ? "Loading…" : "Add Crew from Job"}
+          </button>
           <button className="secondary" onClick={addManualCrew} disabled={!timesheet}>+ Add Crew Member</button>
           {timesheet && timesheet.rows.length > 0 && (
             <>

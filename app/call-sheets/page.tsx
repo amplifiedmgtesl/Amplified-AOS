@@ -1,1 +1,0 @@
-import { AppShell } from "@/components/layout/app-shell"; import CallSheets from "@/components/shared/call-sheets"; export default function Page(){ return <AppShell title="Call Sheets" subtitle="This page mirrors the job sheet workflow for easy crew management."><CallSheets /></AppShell>; }

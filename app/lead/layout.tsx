@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
 const nav = [
-  ["/lead/job-sheets", "📑", "Job Sheets"],
   ["/lead/timekeeping", "⏱️", "Timekeeping"],
   ["/lead/employees", "👥", "Employees"],
 ] as const;

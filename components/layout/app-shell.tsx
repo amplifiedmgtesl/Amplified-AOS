@@ -8,10 +8,13 @@ import { supabase } from "@/lib/supabase/client";
 
 // Order roughly follows the lifecycle: see what's happening (Dashboard,
 // Calendar) → who you're working with (Clients) → the work itself (Jobs) →
-// pricing (Quotes, Invoices, Rate Card) → execution (Job Sheets, Timekeeping)
+// pricing (Quotes, Invoices, Rate Card) → execution (Timekeeping)
 // → review/finance (Timesheet Review, Job Costing) → roster + admin.
 // "/job-requests" route is kept as-is for now (rename to /jobs is part of
 // Phase B in the system rewrite); only the label says "Jobs".
+// Job Sheets + Call Sheets were decommissioned 2026-06-11 (routes and
+// components removed). The job_sheets/job_sheet_workers tables are kept
+// as inert history — legacy timesheet entries point at them.
 const nav = [
   ["/dashboard", "🏠", "Dashboard"],
   ["/master-calendar", "🗓️", "Calendar"],
@@ -25,12 +28,7 @@ const nav = [
   ["/payroll", "💰", "Payroll"],
   ["/job-costing", "📈", "Job Costing"],
   ["/employee-directory", "👥", "Employees"],
-  // ["/call-sheets", "📞", "Call Sheets"],  // Hidden — duplicate of Job Sheets. Code kept under app/call-sheets/ but excluded from nav + analysis.
   ["/maintenance", "⚙️", "Maintenance"],
-  // Legacy entries — hidden from nav post-V2 cutover (2026-05-30). job-sheets
-  // route still exists at app/job-sheets/. invoice-builder route removed
-  // 2026-06-06 along with its component (no longer referenced anywhere).
-  // ["/job-sheets", "📑", "Job Sheets (legacy)"],
 ] as const;
 
 const STORAGE_KEY = "aos.sidebar.collapsed";
@@ -74,7 +72,7 @@ export function AppShell({
       if (cancelled) return;
 
       if (profile?.role === "crew_leader") {
-        window.location.href = "/lead/job-sheets";
+        window.location.href = "/lead/timekeeping";
         return;
       }
 

@@ -11,7 +11,6 @@
 
 import * as db from "./db";
 import { loadJSON, saveJSON } from "./local";
-import { blankTimeEntry, computeTimeEntry } from "./timekeeping";
 import type {
   CalendarEvent,
   QuoteDraft,
@@ -21,7 +20,6 @@ import type {
   Timesheet,
   EmployeeRecord,
   JobCostingDraft,
-  JobSheetWorker,
 } from "./types";
 
 // ─── Calendar Events ──────────────────────────────────────────────────────────
@@ -69,16 +67,12 @@ export function saveJobRequests(rows: JobRequest[]) { db.setJobRequests(rows); }
 export function upsertJobRequest(row: JobRequest) { db.upsertJobRequest(row); }
 export async function deleteJobRequest(id: string): Promise<string | null> { return db.deleteJobRequest(id); }
 
-// ─── Job Sheets ───────────────────────────────────────────────────────────────
+// ─── Job Sheets (decommissioned 2026-06-11 — read-only history) ──────────────
+// The job_sheets table is kept as inert history; legacy timesheets, entries,
+// job-costing drafts, and employee job-history reads still reference it.
+// All write paths were removed with the Job Sheets screens.
 
 export function loadJobSheets(): JobSheet[] { return db.getJobSheets(); }
-export function saveJobSheets(rows: JobSheet[]) { db.setJobSheets(rows); }
-export function upsertJobSheet(row: JobSheet) { db.upsertJobSheet(row); }
-
-export function setActiveJobSheet(id: string) { saveJSON("aes_active_job_sheet_v2", id); }
-export function getActiveJobSheet(): string | null {
-  return loadJSON<string | null>("aes_active_job_sheet_v2", null);
-}
 
 // ─── Timesheets ───────────────────────────────────────────────────────────────
 
@@ -86,22 +80,18 @@ export function loadTimesheets(): Timesheet[] { return db.getTimesheets(); }
 export function saveTimesheets(rows: Timesheet[]) { db.setTimesheets(rows); }
 export function upsertTimesheet(row: Timesheet) { db.upsertTimesheet(row); }
 
-export async function getPendingStaffEntries(jobSheetId: string) { return db.getPendingStaffEntries(jobSheetId); }
 export async function getAllStaffReviewEntries() { return db.getAllStaffReviewEntries(); }
-export async function ensureTimesheetForJob(jobSheetId: string, jobTitle?: string) { return db.ensureTimesheetForJob(jobSheetId, jobTitle); }
-export async function getApprovedEntriesForJob(jobSheetId: string) { return db.getApprovedEntriesForJob(jobSheetId); }
-export async function getEntryCountsForJob(jobSheetId: string) { return db.getEntryCountsForJob(jobSheetId); }
 export async function approveStaffEntry(entryId: string, timesheetId: string) { return db.approveStaffEntry(entryId, timesheetId); }
 export async function rejectStaffEntry(entryId: string) { return db.rejectStaffEntry(entryId); }
 export async function setEntryApproved(entryId: string) { return db.setEntryApproved(entryId); }
 export async function setEntrySubmitted(entryId: string) { return db.setEntrySubmitted(entryId); }
-export async function pullApprovedTimesheetSummary(jobSheetId: string) { return db.pullApprovedTimesheetSummary(jobSheetId); }
 
+// Read-only legacy lookup — job-costing drafts may still link a job_sheet.
 export function getTimesheetByJobSheetId(jobSheetId: string): Timesheet | null {
   return db.getTimesheets().find((t) => t.jobSheetId === jobSheetId) || null;
 }
 
-// ─── Phase 1: job_id-anchored API (prefer these over the *ByJobSheetId twins)
+// ─── Job_id-anchored API (canonical) ─────────────────────────────────────────
 export function getTimesheetByJobId(jobId: string): Timesheet | null {
   return db.getTimesheets().find((t) => t.jobId === jobId) || null;
 }
@@ -116,46 +106,15 @@ export async function getEntryCountsForJobByJobId(jobId: string) {
 }
 export async function ensureTimesheetForJobRequest(
   jobId: string,
-  opts: { jobTitle?: string; jobSheetId?: string | null } = {},
+  opts: { jobTitle?: string } = {},
 ) {
   return db.ensureTimesheetForJobRequest(jobId, opts);
 }
 
-// Tracks the user's last-picked job on the timekeeping screen (replaces
-// getActiveJobSheet for the new flow).
+// Tracks the user's last-picked job on the timekeeping screen.
 export function setActiveJob(jobId: string) { saveJSON("aes_active_job_v1", jobId); }
 export function getActiveJob(): string | null {
   return loadJSON<string | null>("aes_active_job_v1", null);
-}
-
-export function addWorkerToTimesheet(jobSheetId: string, worker: JobSheetWorker) {
-  const existing = getTimesheetByJobSheetId(jobSheetId);
-  const base = existing || {
-    id: `timesheet-${jobSheetId}`,
-    jobSheetId,
-    title: "Timekeeping Sheet",
-    hideBillColumns: false,
-    rows: [],
-  };
-  const exists = base.rows.some(
-    (r) =>
-      (r.email && worker.email && r.email === worker.email) ||
-      `${r.firstName} ${r.lastName}`.trim() === worker.fullName.trim()
-  );
-  if (exists) return;
-  const row = computeTimeEntry({
-    ...blankTimeEntry(`ts-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`),
-    position: worker.role || "Crew",
-    firstName: worker.firstName || worker.fullName.split(" ")[0] || "",
-    lastName: worker.lastName || worker.fullName.split(" ").slice(1).join(" "),
-    phone: worker.phone || "",
-    email: worker.email || "",
-    employeeKey: worker.employeeKey || null,
-    // Entries linked to an employee start as "submitted" so the employee
-    // can review and the admin must explicitly approve before it's locked
-    status: worker.employeeKey ? "submitted" : null,
-  });
-  upsertTimesheet({ ...base, rows: [...base.rows, row] });
 }
 
 // ─── Employees ────────────────────────────────────────────────────────────────

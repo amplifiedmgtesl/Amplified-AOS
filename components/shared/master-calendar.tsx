@@ -3,9 +3,9 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { combinedCalendarEvents, googleCalendarLink, parseHour } from "@/lib/store/calendar";
-import { deleteEventById, loadEventProfiles, loadJobSheets, saveEventProfile, setActiveJobSheet, upsertJobSheet, upsertManualEvent } from "@/lib/store/app-store";
+import { deleteEventById, loadEventProfiles, saveEventProfile, upsertManualEvent } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
-import type { CalendarEvent, JobSheet } from "@/lib/store/types";
+import type { CalendarEvent } from "@/lib/store/types";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 function pad(n: number) { return String(n).padStart(2, "0"); }
@@ -121,7 +121,6 @@ export default function MasterCalendar() {
   const [selectedEventId, setSelectedEventId] = useState("");
   const selectedEvent = events.find((e) => e.id === selectedEventId) || null;
   const profiles = loadEventProfiles();
-  const allSheets = loadJobSheets();
   const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
   const [clientIdDraft, setClientIdDraft] = useState("");
   const [clientNameDraft, setClientNameDraft] = useState("");
@@ -207,32 +206,6 @@ export default function MasterCalendar() {
     const updated: CalendarEvent = { ...selectedEvent, clientId: clientIdDraft || undefined, client: clientNameDraft };
     upsertManualEvent(updated);
     setRefreshKey((x) => x + 1);
-  }
-
-  function openOrCreateJobSheetForEvent(event: CalendarEvent) {
-    const existing = allSheets.find((s) => s.sourceEventId === event.id);
-    if (existing) { setActiveJobSheet(existing.id); window.location.href = "/job-sheets"; return; }
-    const row: JobSheet = {
-      id: `jobsheet-${Date.now()}`,
-      sourceEventId: event.id,
-      title: `${event.client} - ${event.eventName}`,
-      client: event.client,
-      eventName: event.eventName,
-      venue: event.venue,
-      venueAddress: event.venueAddress || "",
-      city: event.city || "",
-      state: event.state || "",
-      cityState: event.cityState,
-      googleMapsLink: event.googleMapsLink || "",
-      date: event.startDate,
-      callTime: event.startTime || "08:00",
-      notes: event.notes || "",
-      attachmentNames: [],
-      workers: []
-    };
-    upsertJobSheet(row);
-    setActiveJobSheet(row.id);
-    window.location.href = "/job-sheets";
   }
 
   function saveSelectedProfile(files: FileList | null) {
@@ -417,9 +390,6 @@ export default function MasterCalendar() {
               <button onClick={() => { saveSelectedProfile(null); if (isEditableSource(selectedEvent.source)) saveClientToEvent(); }}>Save Job Profile</button>
               {selectedEvent.googleMapsLink ? <a className="badge" href={selectedEvent.googleMapsLink} target="_blank" rel="noreferrer">Open Google Maps</a> : null}
               <a className="badge" href={googleCalendarLink(selectedEvent)} target="_blank" rel="noreferrer">Add to Google Calendar</a>
-              <button className="secondary" onClick={() => openOrCreateJobSheetForEvent(selectedEvent)}>
-                {allSheets.find((s) => s.sourceEventId === selectedEvent.id) ? "Open Associated Job Sheet" : "Create Associated Job Sheet"}
-              </button>
               <button className="secondary" onClick={() => handleDelete(selectedEvent.id)}>Delete Event</button>
             </div>
           </div>
