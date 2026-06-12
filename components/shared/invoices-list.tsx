@@ -156,12 +156,14 @@ export default function InvoicesList() {
             ) : visible.map((q) => {
               const href = q.isDraft ? `/invoices/${encodeURIComponent(q.id)}/edit` : `/invoices/${encodeURIComponent(q.id)}`;
               const projected = projectedInvoiceNo(q, q.jobRequestId ? jobNoMap.get(q.jobRequestId) : undefined);
-              // Frozen rows show invoice_no. Drafts show the projected #
-              // (so the operator can tell six drafts apart) and only fall
-              // back to "— Draft —" when the job has no job_no yet.
+              // Prefer the projected V2-spec number (AES_*_INV / _DEP) when
+              // we can compute one — applies to legacy invoices that were
+              // backfilled to a job_no during V2 cutover. Falls back to the
+              // stored invoice_no for invoices whose job has no job_no
+              // (e.g. quarantine), then to "— Draft —" / id slice.
               const labelInvoiceNo =
-                q.invoiceNo ||
                 projected ||
+                q.invoiceNo ||
                 (q.isDraft ? "— Draft —" : q.id.slice(0, 12));
               return (
                 <tr key={q.id}>
