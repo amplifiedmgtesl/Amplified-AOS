@@ -768,10 +768,9 @@ function notifyTimesheetSaveError(error: unknown) {
 export function getEmployees() { return _cache.employees; }
 export function getDeletedEmployeeKeys() { return _cache.deletedEmployeeKeys; }
 
-export function setEmployees(rows: EmployeeRecord[]) {
-  _cache.employees = rows;
-  for (const r of rows) sync("employees", employeeToRow(r, false));
-}
+// setEmployees (bulk fire-and-forget) was removed 2026-06-12: it had no
+// callers, and its un-awaited per-row sync was the same FK-race shape that
+// lost Brent's entries. Use upsertEmployee (awaitable) or bulkUpsertEmployees.
 
 export function upsertEmployee(row: EmployeeRecord): Promise<{ error: unknown | null }> {
   _cache.employees = [..._cache.employees.filter((r) => r.employeeKey !== row.employeeKey), row];

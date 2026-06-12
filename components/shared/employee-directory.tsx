@@ -91,14 +91,21 @@ export default function EmployeeDirectory({ hideBill: hideBillProp = false }: { 
     return rows;
   }, [query, stateFilter, cityFilter, statusFilter, typeFilter, sortAZ, employees]);
 
-  function startNewEmployee() {
+  async function startNewEmployee() {
     const key = `emp-${Date.now()}`;
     const blank: EmployeeRecord = {
       employeeKey: key, fullName: "", firstName: "", lastName: "", phone: "", email: "",
       stateCode: "", state: "", city: "", address: "", employmentType: "", status: "",
       type: "contractor", notes: "", source: "local",
     };
-    upsertEmployee(blank);
+    // Await the insert: timesheet entries / crew assignments FK onto
+    // employee_key, so a silently-failed create here surfaces later as a
+    // 23503 that rolls back whole timesheet batches (Brent, 2026-06-11).
+    const { error } = await upsertEmployee(blank);
+    if (error) {
+      alert("Failed to create the employee record in the database — try again. If this keeps happening, contact IT.");
+      return;
+    }
     setActiveEmployee(key);
     setRefreshKey((x) => x + 1);
   }
@@ -118,16 +125,19 @@ export default function EmployeeDirectory({ hideBill: hideBillProp = false }: { 
     setRefreshKey((x) => x + 1);
   }
 
-  function importCsv() {
+  async function importCsv() {
     const lines = csvText.split(/\r?\n/).filter(Boolean);
     if (lines.length < 2) { setImportModalOpen(false); return; }
     const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
-    lines.slice(1).forEach((line, idx) => {
+    // Await every insert and report failures — a silently-dropped row here
+    // is an employee the operator believes exists (same FK-race family as
+    // the Brent timesheet loss).
+    const results = await Promise.all(lines.slice(1).map((line, idx) => {
       const cols = line.split(",").map((c) => c.trim());
       const get = (name: string) => cols[headers.indexOf(name)] || "";
       const firstName = get("first name") || get("firstname");
       const lastName = get("last name") || get("lastname");
-      upsertEmployee({
+      return upsertEmployee({
         employeeKey: get("employee key") || `csv-${Date.now()}-${idx}`,
         fullName: get("full name") || `${firstName} ${lastName}`.trim(),
         firstName, lastName,
@@ -139,7 +149,11 @@ export default function EmployeeDirectory({ hideBill: hideBillProp = false }: { 
         type: get("type") === "staff" ? "staff" : "contractor",
         source: "local"
       });
-    });
+    }));
+    const failed = results.filter((r) => r.error).length;
+    if (failed > 0) {
+      alert(`${failed} of ${results.length} imported employee row${failed === 1 ? "" : "s"} FAILED to save to the database. Check the console for details and re-import the failed rows.`);
+    }
     setCsvText("");
     setRefreshKey((x) => x + 1);
     setImportModalOpen(false);
