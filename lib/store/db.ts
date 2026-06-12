@@ -1791,12 +1791,23 @@ export async function mergeClients(sourceId: string, targetId: string): Promise<
   await supabase.from("quotes").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("calendar_events").update({ client_id: target.id }).eq("client_id", source.id);
   await supabase.from("invoices").update({ client_id: target.id }).eq("client_id", source.id);
-  for (const t of ["quotes", "invoices"] as const) {
-    const key = t === "quotes" ? "quotes" : "invoiceDrafts";
-    (_cache as any)[key] = (_cache as any)[key].map((r: any) =>
-      r.client === source.name ? { ...r, client: target.name } : r
-    );
-  }
+  // Refresh in-memory caches (clientId + denormalized name) so the UI
+  // reflects the merge without a page reload
+  const reassign = <T,>(rows: T[], nameField: "client" | "clientName"): T[] =>
+    rows.map((r: any) => {
+      if (r.clientId !== source.id && r[nameField] !== source.name) return r;
+      const next = { ...r };
+      if (next.clientId === source.id) next.clientId = target.id;
+      if (next[nameField] === source.name) next[nameField] = target.name;
+      return next;
+    });
+  _cache.quotes = reassign(_cache.quotes, "client");
+  _cache.invoiceDrafts = reassign(_cache.invoiceDrafts, "client");
+  _cache.jobRequests = reassign(_cache.jobRequests, "client");
+  _cache.manualEvents = reassign(_cache.manualEvents, "client");
+  _cache.jobSheets = reassign(_cache.jobSheets, "client");
+  _cache.jobCostingDrafts = reassign(_cache.jobCostingDrafts, "client");
+  _cache.rateCardProfiles = reassign(_cache.rateCardProfiles, "clientName");
   // Soft-delete source
   _cache.clients = _cache.clients.filter((c) => c.id !== sourceId);
   sync("clients", { id: sourceId, name: source.name, is_active: false });
