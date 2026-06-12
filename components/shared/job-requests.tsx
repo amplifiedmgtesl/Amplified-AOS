@@ -765,7 +765,9 @@ export default function JobRequests() {
 
           {/* Rate card pick (optional override). Filtered to cards for the
               selected client plus the master default. Quotes off this job
-              honor the pin; if left as Auto, pickRateCardForJob runs. */}
+              honor the pin; if left as Auto, pickRateCardForJob runs.
+              Hidden from crew leaders — billing config is admin-only. */}
+          {!isCrewLeader && (
           <div style={{ marginTop: 12, fontSize: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <small style={{ opacity: 0.7 }}>Rate card</small>
             <select
@@ -796,6 +798,7 @@ export default function JobRequests() {
                 })}
             </select>
           </div>
+          )}
 
           {editingId && shiftCount === 0 ? (
             <div style={{
@@ -945,7 +948,7 @@ export default function JobRequests() {
               </button>
             )}
             <button className="secondary" onClick={cancelEdit}>{editingId ? "Cancel" : "Clear"}</button>
-            {editingId && (
+            {editingId && !isCrewLeader && (
               <button className="secondary" style={{ color: "#c00", marginLeft: "auto" }} onClick={requestDelete}>
                 Delete
               </button>
