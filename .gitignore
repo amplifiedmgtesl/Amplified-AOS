@@ -8,6 +8,9 @@ tsconfig.tsbuildinfo
 # Local-only Claude Code session settings.
 .claude/settings.local.json
 
+# Local-only MCP server config (Supabase dev/prod connections).
+.mcp.json
+
 # macOS Finder cruft (and the AppleDouble shadow files it drops on
 # network shares / USB / non-HFS volumes).
 .DS_Store
