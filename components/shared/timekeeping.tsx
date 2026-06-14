@@ -443,25 +443,21 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   // otherwise we end up with blank rows (the Carolina cleanup found 20 of
   // these on a single job, all needing manual deletion later).
   const [addCrewModalOpen, setAddCrewModalOpen] = useState(false);
+  // Date chosen in the "+ Add Crew Member" modal — pre-filled by addManualCrew,
+  // editable by the operator, and applied to the new row by addRowForEmployee.
+  const [addCrewDate, setAddCrewDate] = useState<string>("");
   function addRowForEmployee(emp: PickerEmployee) {
     if (!timesheet) return;
     const stamp = Date.now();
-    // Default the new row's date to the day the operator currently has open —
-    // i.e. when exactly one DATED day group is expanded. Otherwise (none or
-    // several expanded, or only the "(no date)" group) leave it blank and the
-    // row lands in the "(no date)" group for the operator to date manually.
-    const expandedDated = dayGroups
-      .filter(([day]) => day !== "no-date" && !isDayCollapsed(day))
-      .map(([day]) => day);
-    const defaultDate = expandedDated.length === 1 ? expandedDated[0] : undefined;
-    const isHol = !!defaultDate && holidayDateSet.has(defaultDate);
+    const date = addCrewDate || undefined;
+    const isHol = !!date && holidayDateSet.has(date);
     const base = blankTimeEntry(`manual-${stamp}`);
     persist({
       ...timesheet,
       rows: [...timesheet.rows, computeTimeEntry({
         ...base,
-        workDate: defaultDate,
-        endDate: defaultDate,
+        workDate: date,
+        endDate: date,
         isHoliday: isHol,
         holidayMultiplier: isHol ? effectiveHolidayMultiplier : null,
         employeeKey: emp.employeeKey,
@@ -722,6 +718,15 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   // "+ Add Blank Row" path that created rows with no employee linked.
   function addManualCrew() {
     if (!timesheet) return;
+    // Pre-fill the modal's date: the open day if exactly one dated day is
+    // expanded, else the earliest expanded day, else the sheet's first day,
+    // else today. The operator can change it before picking the person.
+    const expandedDated = dayGroups
+      .filter(([d]) => d !== "no-date" && !isDayCollapsed(d))
+      .map(([d]) => d);
+    const datedDays = dayGroups.map(([d]) => d).filter((d) => d !== "no-date");
+    const seed = expandedDated[0] ?? datedDays[0] ?? new Date().toISOString().slice(0, 10);
+    setAddCrewDate(seed);
     setAddCrewModalOpen(true);
   }
 
@@ -1950,9 +1955,13 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
               <button type="button" onClick={() => setAddCrewModalOpen(false)} style={{ background: "transparent", border: "none", fontSize: 18, cursor: "pointer" }} title="Cancel (esc)">✕</button>
             </div>
             <div className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-              Pick the person who worked. A new timesheet row will be added for them.
-              Searching by name not finding the person? Type their full name then use
-              &ldquo;+ Create employee&rdquo; to add them to the directory inline.
+              Pick the work date, then the person who worked. A new timesheet row will be
+              added for them on that day. Searching by name not finding the person? Type
+              their full name then use &ldquo;+ Create employee&rdquo; to add them inline.
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>Work date</label>
+              <input type="date" value={addCrewDate} onChange={(e) => setAddCrewDate(e.target.value)} style={{ width: "100%" }} />
             </div>
             <EmployeePicker
               employeeKey={null}
