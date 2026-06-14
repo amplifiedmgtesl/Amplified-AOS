@@ -1142,6 +1142,10 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     specialtyId: r.specialty_id ?? null,
     isHoliday: !!r.is_holiday,
     holidayMultiplier: r.holiday_multiplier == null ? null : Number(r.holiday_multiplier),
+    // Staff-app finalization signal (read-only here; the staff app writes it,
+    // AOS never clobbers it — timesheetEntryToRow omits the column).
+    staffFinalized: !!r.staff_finalized,
+    staffFinalizedAt: r.staff_finalized_at ?? null,
   };
 }
 

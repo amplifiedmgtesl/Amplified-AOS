@@ -35,7 +35,9 @@ function parsePicker(v: PickerValue): { kind: "none" | "job"; key: string } {
 /** Map rate-card TriggerOption text → integer hour threshold for the
  *  per-entry snapshot. "none"/""/"weekly40" → 0 (no bucket); numeric
  *  strings parse as the threshold; anything unrecognized → null = let
- *  computeTimeEntry use its legacy default. */
+ *  computeTimeEntry use its legacy default.
+ *  ⚠ SYNCED COPY: mirrored in amplified-staff/lib/calc/rate-resolution.ts.
+ *  Mirror any change there. See amplified-staff/docs/v2-alignment-plan.md. */
 function triggerToInt(v: string | null | undefined): number | null {
   if (v == null) return null;
   if (v === "none" || v === "" || v === "weekly40") return 0;
@@ -243,6 +245,9 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
 
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
   const [dayFilter, setDayFilter] = useState<string>("all");
+  // Staff-finalization filter (migration 20260614a). Lets the crew leader collapse
+  // the grid to just the workers who haven't marked their time final yet.
+  const [finalizeFilter, setFinalizeFilter] = useState<"all" | "awaiting" | "done">("all");
   // Bulk selection (admin only — gated on !hideBillAlways at render time).
   // Cleared whenever the picker switches timesheets so we never act on
   // entries from a different job.
@@ -522,6 +527,10 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
       // Resolve the multiplier + rate card profile via the job's most recent
       // quote (the V2 snapshot pattern locks the rate card to the quote, so
       // this is the source of truth for what will be billed).
+      // ⚠ SYNCED COPY: this quote→rate-card→specialty resolution is mirrored in
+      // the staff app at amplified-staff/lib/calc/rate-resolution.ts
+      // (resolveEntryRates). Mirror any change there so staff timesheets price the
+      // same way. See amplified-staff/docs/v2-alignment-plan.md.
       supabase.from("quotes")
         .select("holiday_multiplier, rate_card_profile_id")
         .eq("job_request_id", pickerKey)
@@ -1112,6 +1121,16 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
           {timesheet && timesheet.rows.length > 0 && (
             <>
               <span style={{ flex: 1 }} />
+              {!hideBillAlways && (
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }} title="Filter the grid by whether the worker marked their time final in the staff app">
+                  Staff time:
+                  <select value={finalizeFilter} onChange={(e) => setFinalizeFilter(e.target.value as "all" | "awaiting" | "done")} style={{ fontSize: 12, padding: "3px 6px" }}>
+                    <option value="all">All</option>
+                    <option value="awaiting">Awaiting staff</option>
+                    <option value="done">Staff done</option>
+                  </select>
+                </label>
+              )}
               <button className="secondary" onClick={expandAll} style={{ fontSize: 12, padding: "4px 10px" }}>Expand all</button>
               <button className="secondary" onClick={collapseAll} style={{ fontSize: 12, padding: "4px 10px" }}>Collapse all</button>
             </>
@@ -1344,6 +1363,10 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                               {statusMix.approved ? `· ${statusMix.approved} approved ` : ""}
                               {statusMix.submitted ? `· ${statusMix.submitted} pending ` : ""}
                               {statusMix.rejected ? `· ${statusMix.rejected} rejected ` : ""}
+                              {(() => {
+                                const fin = dayRows.filter((r) => r.staffFinalized).length;
+                                return fin ? `· ${fin} staff-finalized` : "";
+                              })()}
                             </span>
                             <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                               {prevDayKey && prevDayKey !== "no-date" && day !== "no-date" && (
@@ -1386,6 +1409,10 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                       </tr>
                     </tbody>
                     {!isCollapsed && dayRows.map((row, dayIdx) => {
+                    // Staff-finalization filter (advisory). "awaiting" hides rows the
+                    // worker already marked final; "done" shows only those.
+                    if (finalizeFilter === "awaiting" && row.staffFinalized) return null;
+                    if (finalizeFilter === "done" && !row.staffFinalized) return null;
                     const idx = rowIndexById.get(row.id) ?? 0;
                     const band = `line-band-${idx % 4}`;
                     const unlinked = !row.employeeKey;
@@ -1664,6 +1691,17 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                             <span className="badge"
                                   style={{ fontSize: 11, background: "#e8f0fe", color: "#1a56c4", textAlign: "center", padding: "3px 8px" }}>
                               Pending
+                            </span>
+                          )}
+                          {/* Staff-finalization marker (advisory). Only the positive
+                              "✓ Staff done" chip renders, to avoid cluttering the busy
+                              grid — use the "Awaiting staff" filter + day-header counter
+                              to find rows still awaiting worker input. */}
+                          {row.status === "submitted" && row.staffFinalized && (
+                            <span className="badge"
+                                  style={{ fontSize: 11, background: "#e8f7e8", color: "#1a5a1a", textAlign: "center", padding: "3px 8px" }}
+                                  title={row.staffFinalizedAt ? `Staff marked final ${new Date(row.staffFinalizedAt).toLocaleString()}` : "Staff marked their time final"}>
+                              ✓ Staff done
                             </span>
                           )}
                           {/* 3. Holiday — READ-ONLY badge. Driven by the day-level
