@@ -213,6 +213,12 @@ export async function loadQuote(id: string): Promise<QuoteDraft | null> {
 }
 
 // ─── Rate card selection ─────────────────────────────────────────────────────
+// NOTE: these (pickRateCardForJob / resolveRateCardForJob) drive the QUOTE/INVOICE
+// builders via the job_request pin + client/effective-date fallback. They are NOT
+// the path the staff app mirrors — staff TIMESHEET pricing follows the timekeeping
+// screen, which resolves the rate card from the job's most recent QUOTE. The synced
+// copy lives at amplified-staff/lib/calc/rate-resolution.ts and is sourced from
+// components/shared/timekeeping.tsx (job-meta useEffect), not from here.
 
 /** Pick the rate card profile effective for the given client + job start date.
  *  Lookup order:

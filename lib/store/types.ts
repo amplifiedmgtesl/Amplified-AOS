@@ -160,6 +160,11 @@ export type TimeEntry = {
   // card; defaults to 2.0 in calc when null.
   isHoliday?: boolean;
   holidayMultiplier?: number | null;
+  // Staff-app finalization signal (migration 20260614a). Set by the staff app when
+  // a worker marks their actual time final; read-only in AOS (advisory — does not
+  // gate approval). NULL/false on planned + admin-created rows.
+  staffFinalized?: boolean;
+  staffFinalizedAt?: string | null;
 };
 
 export type Timesheet = {

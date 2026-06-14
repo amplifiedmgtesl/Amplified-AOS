@@ -25,6 +25,10 @@ export function lunchOptions() {
 export function mealBreakOptions() {
   return [0, 30, 60];
 }
+// ⚠ SYNCED COPY: computeTimeEntry + inferPairDatesLocal are mirrored in the
+// staff app at amplified-staff/lib/calc/timekeeping.ts so staff-submitted
+// timesheets price identically. If you change the hours / OT-DT / holiday math
+// here, mirror it there. See amplified-staff/docs/v2-alignment-plan.md.
 export function computeTimeEntry(entry: TimeEntry): TimeEntry {
   const workDate = entry.workDate;
   // Auto-seed endDate: if we have a workDate, infer the true shift-end date

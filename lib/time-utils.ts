@@ -1,3 +1,7 @@
+// ⚠ SYNCED COPY: durationMinutes (and its helpers) are mirrored in the staff app
+// at amplified-staff/lib/calc/time-utils.ts. Mirror any change there.
+// See amplified-staff/docs/v2-alignment-plan.md.
+//
 // Shared time helpers used across timekeeping, quote builder, and invoice builder.
 //
 // The app is single-timezone; all dates/times are local wall-clock. Real date+time
