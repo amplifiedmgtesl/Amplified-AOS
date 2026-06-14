@@ -446,18 +446,31 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   function addRowForEmployee(emp: PickerEmployee) {
     if (!timesheet) return;
     const stamp = Date.now();
+    // Default the new row's date to the day the operator currently has open —
+    // i.e. when exactly one DATED day group is expanded. Otherwise (none or
+    // several expanded, or only the "(no date)" group) leave it blank and the
+    // row lands in the "(no date)" group for the operator to date manually.
+    const expandedDated = dayGroups
+      .filter(([day]) => day !== "no-date" && !isDayCollapsed(day))
+      .map(([day]) => day);
+    const defaultDate = expandedDated.length === 1 ? expandedDated[0] : undefined;
+    const isHol = !!defaultDate && holidayDateSet.has(defaultDate);
     const base = blankTimeEntry(`manual-${stamp}`);
     persist({
       ...timesheet,
-      rows: [...timesheet.rows, {
+      rows: [...timesheet.rows, computeTimeEntry({
         ...base,
+        workDate: defaultDate,
+        endDate: defaultDate,
+        isHoliday: isHol,
+        holidayMultiplier: isHol ? effectiveHolidayMultiplier : null,
         employeeKey: emp.employeeKey,
         firstName: emp.firstName || emp.fullName.split(" ")[0] || "",
         lastName:  emp.lastName  || emp.fullName.split(" ").slice(1).join(" ") || "",
         phone: emp.phone || "",
         email: emp.email || "",
         status: "submitted",
-      }],
+      })],
     });
   }
 
