@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { upsertJobRequest, deleteJobRequest, setActiveQuote } from "@/lib/store/app-store";
-import { createDraftFromJob, pickRateCardForJob } from "@/lib/store/quotes";
+import { createDraftFromJob, pickRateCardForJob, loadJobQuoteState } from "@/lib/store/quotes";
 import { googleCalendarLink } from "@/lib/store/calendar";
 import { loadJobRequests } from "@/lib/store/app-store";
 import { timeOptions } from "@/lib/store/timekeeping";
@@ -173,20 +173,15 @@ export default function JobRequests() {
   useEffect(() => {
     if (!editingId) { setOpenDraftId(null); setLatestIssuedId(null); return; }
     let cancelled = false;
-    supabase
-      .from("quotes")
-      .select("id, is_draft, status, parent_quote_id, updated_at")
-      .eq("job_request_id", editingId)
-      .order("updated_at", { ascending: false })
-      .then(({ data, error }) => {
+    // Shared definition of the job's quote state — also used by the crew-roster
+    // export's "active quote" source. See lib/store/quotes.ts.
+    loadJobQuoteState(editingId)
+      .then(({ openDraftId, latestIssuedId }) => {
         if (cancelled) return;
-        if (error) { console.error("[job-requests] quote state load failed:", error); return; }
-        const rows = data ?? [];
-        const draft = rows.find((r: any) => r.is_draft);
-        const issuedNonSuperseded = rows.find((r: any) => !r.is_draft && r.status !== "superseded");
-        setOpenDraftId(draft?.id ?? null);
-        setLatestIssuedId(issuedNonSuperseded?.id ?? null);
-      });
+        setOpenDraftId(openDraftId);
+        setLatestIssuedId(latestIssuedId);
+      })
+      .catch((error) => console.error("[job-requests] quote state load failed:", error));
     return () => { cancelled = true; };
   }, [editingId, refreshKey]);
 

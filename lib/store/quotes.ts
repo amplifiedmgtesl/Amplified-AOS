@@ -212,6 +212,52 @@ export async function loadQuote(id: string): Promise<QuoteDraft | null> {
   return rowToQuote(quoteRes.data, linesRes.data ?? []);
 }
 
+// ─── Active-quote resolution ─────────────────────────────────────────────────
+// Single definition of "the quote for this job", shared by the job-screen
+// Continue-Draft / View-Quote buttons (job-requests.tsx) and the crew-roster
+// export. Keys on quotes.job_request_id (matches the existing button), newest
+// first.
+
+async function loadJobQuoteRows(jobRequestId: string): Promise<any[]> {
+  const { data, error } = await supabase
+    .from("quotes")
+    .select("id, is_draft, status, parent_quote_id, updated_at, revision_no, quote_no, event_name")
+    .eq("job_request_id", jobRequestId)
+    .order("updated_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** The job-screen button's two-state view: the open draft (if any) and the
+ *  latest issued, non-superseded quote (if any). Either may be null. */
+export async function loadJobQuoteState(
+  jobRequestId: string,
+): Promise<{ openDraftId: string | null; latestIssuedId: string | null }> {
+  const rows = await loadJobQuoteRows(jobRequestId);
+  return {
+    openDraftId: rows.find((r) => r.is_draft)?.id ?? null,
+    latestIssuedId: rows.find((r) => !r.is_draft && r.status !== "superseded")?.id ?? null,
+  };
+}
+
+/** The single "active" quote: the open draft if one exists, otherwise the
+ *  latest issued non-superseded quote. Returns null if the job has no quote. */
+export async function resolveActiveQuoteForJob(
+  jobRequestId: string,
+): Promise<{ id: string; isDraft: boolean; revisionNo: number; displayCode: string } | null> {
+  const rows = await loadJobQuoteRows(jobRequestId);
+  const chosen =
+    rows.find((r) => r.is_draft) ??
+    rows.find((r) => !r.is_draft && r.status !== "superseded");
+  if (!chosen) return null;
+  return {
+    id: chosen.id,
+    isDraft: !!chosen.is_draft,
+    revisionNo: chosen.revision_no ?? 1,
+    displayCode: chosen.quote_no || chosen.id,
+  };
+}
+
 // ─── Rate card selection ─────────────────────────────────────────────────────
 // NOTE: these (pickRateCardForJob / resolveRateCardForJob) drive the QUOTE/INVOICE
 // builders via the job_request pin + client/effective-date fallback. They are NOT

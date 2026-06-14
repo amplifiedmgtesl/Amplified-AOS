@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import {
   loadJobRequestDays,
@@ -21,6 +21,39 @@ import type {
   Specialty,
 } from "@/lib/store/types";
 import { LazyEmployeePicker } from "./employee-picker";
+import { buildRosterWorkbookBlob } from "@/lib/storage/crew-roster-export";
+import {
+  parseRosterWorkbook,
+  planEmployeeReconciliation,
+  commitRosterImport,
+  buildReexportBlob,
+  type EmployeeMatch,
+  type EmployeeDecision,
+  type ParsedRoster,
+} from "@/lib/storage/crew-roster-import";
+import type { RosterSource } from "@/lib/storage/crew-roster-schema";
+
+const menuItemStyle: React.CSSProperties = {
+  display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
+  background: "none", border: "none", borderBottom: "1px solid #f0e9e0",
+  cursor: "pointer", fontSize: 12, color: "#0366d6",
+};
+
+// Must match normName() in crew-roster-import.ts so decision keys line up.
+function normNameKey(s: string): string {
+  return s.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 function newAssignmentId(): string {
   return `jra-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -44,6 +77,19 @@ export function JobRequestCrewSection({
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  // ─── Roster spreadsheet round-trip ───────────────────────────────────────
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [rosterBusy, setRosterBusy] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  // Pending name-variation decisions surfaced after an import parse.
+  const [pendingImport, setPendingImport] = useState<{
+    parsed: ParsedRoster;
+    ambiguous: EmployeeMatch[];
+    autoCreateCount: number;
+    // employee normName -> chosen action
+    choices: Record<string, EmployeeDecision>;
+  } | null>(null);
 
   // Load positions + specialties once. Employees are loaded by EmployeePicker
   // on first focus (search-on-type, scales to thousands).
@@ -188,6 +234,78 @@ export function JobRequestCrewSection({
     }
   }
 
+  async function doExport(source: RosterSource) {
+    setExportMenuOpen(false);
+    setRosterBusy(true);
+    try {
+      const { blob, filename } = await buildRosterWorkbookBlob(jobRequestId, source, new Date().toISOString());
+      downloadBlob(blob, filename);
+      flash(`Exported ${filename}.`);
+    } catch (err: any) {
+      flash(`Export failed: ${err?.message ?? err}`, false);
+    } finally {
+      setRosterBusy(false);
+    }
+  }
+
+  async function onPickImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    setRosterBusy(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const parsed = await parseRosterWorkbook(buffer);
+      if (parsed.meta.jobRequestId !== jobRequestId) {
+        throw new Error(
+          `This sheet is for Job ${parsed.meta.jobNo || parsed.meta.jobRequestId} (${parsed.meta.eventName}); you're on a different job.`,
+        );
+      }
+      const plan = await planEmployeeReconciliation(parsed);
+      if (plan.ambiguous.length === 0) {
+        await finalizeImport(parsed, {});
+      } else {
+        // Default every ambiguous row to its top candidate (link) — friction
+        // is on choosing "create new", which the coordinator must opt into.
+        const choices: Record<string, EmployeeDecision> = {};
+        for (const m of plan.ambiguous) {
+          choices[normNameKey(m.parsed.fullName)] = { action: "link", linkKey: m.candidates[0].employeeKey };
+        }
+        setPendingImport({ parsed, ambiguous: plan.ambiguous, autoCreateCount: plan.autoCreate.length, choices });
+      }
+    } catch (err: any) {
+      flash(`Import failed: ${err?.message ?? err}`, false);
+    } finally {
+      setRosterBusy(false);
+    }
+  }
+
+  async function finalizeImport(parsed: ParsedRoster, choices: Record<string, EmployeeDecision>) {
+    setRosterBusy(true);
+    try {
+      const decisions = new Map<string, EmployeeDecision>(Object.entries(choices));
+      const result = await commitRosterImport(jobRequestId, parsed, decisions, new Date().toISOString().slice(0, 10));
+      // Re-export the reviewed workbook (the fix loop).
+      const { blob, filename } = await buildReexportBlob(
+        jobRequestId, parsed.meta.source, new Date().toISOString(), result.skipped,
+      );
+      downloadBlob(blob, filename);
+      await reload();
+      const bits = [
+        `${result.assignmentsUpserted} loaded`,
+        result.assignmentsDeleted ? `${result.assignmentsDeleted} removed` : "",
+        result.employeesCreated ? `${result.employeesCreated} new` : "",
+        result.skipped.length ? `${result.skipped.length} need fixing — see downloaded sheet` : "",
+      ].filter(Boolean);
+      flash(bits.join(" · "), result.skipped.length === 0);
+    } catch (err: any) {
+      flash(`Import failed: ${err?.message ?? err}`, false);
+    } finally {
+      setRosterBusy(false);
+      setPendingImport(null);
+    }
+  }
+
   function dayLabel(d: JobRequestDay): string {
     const date = d.eventDate;
     const wd = date ? new Date(date + "T00:00:00").toLocaleDateString(undefined, { weekday: "short" }) : "";
@@ -214,6 +332,54 @@ export function JobRequestCrewSection({
           borderRadius: 6, padding: "6px 12px", fontSize: 12, marginBottom: 8,
         }}>{msg.text}</div>
       )}
+
+      {/* Roster spreadsheet round-trip toolbar */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+        <div style={{ position: "relative" }}>
+          <button
+            type="button"
+            disabled={rosterBusy}
+            onClick={() => setExportMenuOpen((o) => !o)}
+            style={{ fontSize: 12, padding: "4px 10px" }}
+            title="Download an Excel roster template for coordinators"
+          >
+            {rosterBusy ? "Working…" : "Export Roster ▾"}
+          </button>
+          {exportMenuOpen && (
+            <div style={{
+              position: "absolute", top: "100%", left: 0, zIndex: 50, marginTop: 2,
+              background: "#fff", border: "1px solid #d7c6aa", borderRadius: 8,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.18)", minWidth: 220, overflow: "hidden",
+            }}>
+              <button type="button" className="link" style={menuItemStyle} onClick={() => doExport("requirements")}>
+                From job requirements
+              </button>
+              <button type="button" className="link" style={menuItemStyle} onClick={() => doExport("quote")}>
+                From active quote
+              </button>
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          disabled={rosterBusy}
+          onClick={() => fileInputRef.current?.click()}
+          style={{ fontSize: 12, padding: "4px 10px" }}
+          title="Upload a filled roster workbook to populate crew assignments"
+        >
+          Import Roster
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xlsx"
+          style={{ display: "none" }}
+          onChange={onPickImportFile}
+        />
+        <span className="muted" style={{ fontSize: 11 }}>
+          Coordinators fill the Employee column, then re-upload.
+        </span>
+      </div>
 
       {loading ? (
         <div className="muted" style={{ fontSize: 13 }}>Loading…</div>
@@ -438,6 +604,82 @@ export function JobRequestCrewSection({
             );
           })}
         </>
+      )}
+
+      {pendingImport && (
+        <div
+          onClick={() => !rosterBusy && setPendingImport(null)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 3000,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(640px, 95vw)", maxHeight: "90vh", overflow: "auto",
+              background: "#fff", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,0.3)", padding: 18,
+            }}
+          >
+            <h3 style={{ marginTop: 0, fontSize: 16 }}>Some new names look like existing people</h3>
+            <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+              Pick the existing person, or choose to create a new employee. New names with no
+              match{pendingImport.autoCreateCount > 0 ? ` (${pendingImport.autoCreateCount})` : ""} are added automatically.
+            </p>
+            {pendingImport.ambiguous.map((m) => {
+              const key = normNameKey(m.parsed.fullName);
+              const choice = pendingImport.choices[key];
+              const setChoice = (d: EmployeeDecision) =>
+                setPendingImport((cur) => cur ? { ...cur, choices: { ...cur.choices, [key]: d } } : cur);
+              return (
+                <div key={key} style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, marginBottom: 10 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>
+                    Sheet name: “{m.parsed.fullName}”
+                  </div>
+                  {m.candidates.map((c) => (
+                    <label key={c.employeeKey} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, padding: "3px 0" }}>
+                      <input
+                        type="radio"
+                        name={`match-${key}`}
+                        checked={choice?.action === "link" && choice.linkKey === c.employeeKey}
+                        onChange={() => setChoice({ action: "link", linkKey: c.employeeKey })}
+                      />
+                      <span>
+                        Use <strong>{c.fullName}</strong>
+                        <span className="muted">
+                          {[c.phone, c.email, [c.city, c.state].filter(Boolean).join(", ")].filter(Boolean).length
+                            ? " · " + [c.phone, c.email, [c.city, c.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ")
+                            : ""}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                  <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, padding: "3px 0", color: "#a05a00" }}>
+                    <input
+                      type="radio"
+                      name={`match-${key}`}
+                      checked={choice?.action === "create"}
+                      onChange={() => setChoice({ action: "create" })}
+                    />
+                    <span>Create new employee “{m.parsed.fullName}”</span>
+                  </label>
+                </div>
+              );
+            })}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+              <button type="button" className="secondary" disabled={rosterBusy} onClick={() => setPendingImport(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={rosterBusy}
+                onClick={() => finalizeImport(pendingImport.parsed, pendingImport.choices)}
+              >
+                {rosterBusy ? "Importing…" : "Import"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </SectionFrame>
   );
