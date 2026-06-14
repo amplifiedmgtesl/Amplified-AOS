@@ -1895,8 +1895,8 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
                     <td>{entry.firstName} {entry.lastName}</td>
                     <td>{entry.position}</td>
                     <td>{(entry as any).workDate || "—"}</td>
-                    <td>{entry.timeIn1 || "—"}</td>
-                    <td>{entry.timeOut1 || "—"}</td>
+                    <td>{entry.timeIn1 || "—"}{entry.timeIn2 ? <div style={{ fontSize: 11, opacity: 0.7 }}>{entry.timeIn2}</div> : null}</td>
+                    <td>{entry.timeOut1 || "—"}{entry.timeOut2 ? <div style={{ fontSize: 11, opacity: 0.7 }}>{entry.timeOut2}</div> : null}</td>
                     <td>{((entry.mealBreak1Minutes ?? entry.lunchMinutes ?? 0) + (entry.mealBreak2Minutes ?? 0))}m</td>
                     <td>{entry.stdHours.toFixed(2)}</td>
                     <td>{entry.otHours.toFixed(2)}</td>
