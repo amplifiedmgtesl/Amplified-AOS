@@ -241,10 +241,13 @@ export async function loadJobQuoteState(
 }
 
 /** The single "active" quote: the open draft if one exists, otherwise the
- *  latest issued non-superseded quote. Returns null if the job has no quote. */
+ *  latest issued non-superseded quote. Returns null if the job has no quote.
+ *  `quoteNo` is the real assigned quote number, or null on drafts that don't
+ *  have one yet — callers display the job's AES number in that case rather
+ *  than the opaque row id. */
 export async function resolveActiveQuoteForJob(
   jobRequestId: string,
-): Promise<{ id: string; isDraft: boolean; revisionNo: number; displayCode: string } | null> {
+): Promise<{ id: string; isDraft: boolean; revisionNo: number; quoteNo: string | null } | null> {
   const rows = await loadJobQuoteRows(jobRequestId);
   const chosen =
     rows.find((r) => r.is_draft) ??
@@ -254,7 +257,7 @@ export async function resolveActiveQuoteForJob(
     id: chosen.id,
     isDraft: !!chosen.is_draft,
     revisionNo: chosen.revision_no ?? 1,
-    displayCode: chosen.quote_no || chosen.id,
+    quoteNo: chosen.quote_no || null,
   };
 }
 

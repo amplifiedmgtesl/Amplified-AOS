@@ -53,6 +53,7 @@ export type ParsedEmployeeRow = {
 
 export type ParsedCrewRow = {
   rowNumber: number;
+  positionName: string;
   specialtyName: string;
   employeeName: string;
   confirmed: boolean;
@@ -68,7 +69,11 @@ export type ParsedRoster = {
   meta: RosterMeta;
   crew: ParsedCrewRow[];
   employees: ParsedEmployeeRow[];
-  roleSpecByName: Map<string, string>; // specialtyName (lower) -> specialtyId
+  /** "position||specialty" (lower) -> specialtyId — disambiguates specialty
+   *  names that repeat across positions. */
+  roleByPosSpec: Map<string, string>;
+  /** specialtyName (lower) -> specialtyId — fallback when position is blank. */
+  roleSpecByName: Map<string, string>;
 };
 
 // ─── Cell helpers ──────────────────────────────────────────────────────────────
@@ -110,13 +115,18 @@ export async function parseRosterWorkbook(buffer: ArrayBuffer): Promise<ParsedRo
   const roleWs = wb.getWorksheet(SHEET.validRoles);
   if (!crewWs || !empWs) throw new Error("Roster workbook is missing the Crew or Employees tab.");
 
+  const roleByPosSpec = new Map<string, string>();
   const roleSpecByName = new Map<string, string>();
   if (roleWs) {
     roleWs.eachRow((row: any, n: number) => {
       if (n === 1) return;
+      const pos = cellStr(roleWs, n, ROLE_COL.position).trim();
       const name = cellStr(roleWs, n, ROLE_COL.specialty).trim();
       const id = cellStr(roleWs, n, ROLE_COL.specialtyId).trim();
-      if (name) roleSpecByName.set(name.toLowerCase(), id);
+      if (name && id) {
+        roleSpecByName.set(name.toLowerCase(), id);
+        roleByPosSpec.set(`${pos.toLowerCase()}||${name.toLowerCase()}`, id);
+      }
     });
   }
 
@@ -145,6 +155,7 @@ export async function parseRosterWorkbook(buffer: ArrayBuffer): Promise<ParsedRo
     if (n === 1) return;
     crew.push({
       rowNumber: n,
+      positionName: cellStr(crewWs, n, CREW_COL.position).trim(),
       specialtyName: cellStr(crewWs, n, CREW_COL.specialty).trim(),
       employeeName: cellStr(crewWs, n, CREW_COL.employee).trim(),
       confirmed: cellStr(crewWs, n, CREW_COL.confirmed).trim().toLowerCase() === CONFIRMED_YES.toLowerCase(),
@@ -157,7 +168,7 @@ export async function parseRosterWorkbook(buffer: ArrayBuffer): Promise<ParsedRo
     });
   });
 
-  return { meta, crew, employees, roleSpecByName };
+  return { meta, crew, employees, roleByPosSpec, roleSpecByName };
 }
 
 // ─── Name matching (deliberately name-based; phone/email too dirty to require) ──
@@ -360,10 +371,14 @@ export async function commitRosterImport(
       result.skipped.push({ rowNumber: r.rowNumber, employeeName: r.employeeName, reason: "row's day is not part of this job" });
       continue;
     }
-    // resolve specialty: hidden id wins, else name → id via Valid Roles tab
+    // resolve specialty: hidden id wins, else (position,specialty) pair via
+    // Valid Roles, else specialty name alone as a last resort.
     let specialtyId = r.specialtyId;
     if (!specialtyId && r.specialtyName) {
-      specialtyId = parsed.roleSpecByName.get(r.specialtyName.toLowerCase()) ?? "";
+      specialtyId =
+        parsed.roleByPosSpec.get(`${r.positionName.toLowerCase()}||${r.specialtyName.toLowerCase()}`) ||
+        parsed.roleSpecByName.get(r.specialtyName.toLowerCase()) ||
+        "";
     }
     if (specialtyId && !posBySpecialty.has(specialtyId)) specialtyId = ""; // stale id
     if (!specialtyId) {

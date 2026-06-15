@@ -33,8 +33,8 @@ export const CREW_COL = {
   call: 4,
   start: 5,
   end: 6,
-  specialty: 7,   // dropdown-validated against Valid Roles
-  position: 8,    // formula-derived from specialty (display only)
+  position: 7,    // dropdown-validated against the distinct positions list
+  specialty: 8,   // dropdown cascades from the chosen position (valid pairs only)
   employee: 9,    // dropdown-validated against Employees; the one field they fill
   confirmed: 10,  // Yes/No
   notes: 11,
@@ -49,7 +49,7 @@ export const CREW_COL = {
 
 export const CREW_HEADERS = [
   "Date", "Day", "Shift", "Call", "Start", "End",
-  "Specialty", "Position", "Employee", "Confirmed", "Notes", "Status",
+  "Position", "Specialty", "Employee", "Confirmed", "Notes", "Status",
   "day_id", "shift_id", "specialty_id", "position_id", "assignment_id",
 ];
 
@@ -77,12 +77,13 @@ export const EMP_HEADERS = [
 /** Valid Roles tab columns, 1-based. NO rate columns — coordinators never see
  *  billing or pay figures anywhere in the workbook. */
 export const ROLE_COL = {
-  position: 1,
+  position: 1,    // sorted by position so each position's specialties are contiguous (cascade needs this)
   specialty: 2,
-  specialtyId: 3, // hidden — authoritative id for name→id resolution on import
+  specialtyId: 3, // hidden — authoritative id for (position,specialty) name→id resolution on import
+  positionList: 4, // hidden — distinct positions; source for the Position dropdown
 } as const;
 
-export const ROLE_HEADERS = ["Position", "Specialty", "specialty_id"];
+export const ROLE_HEADERS = ["Position", "Specialty", "specialty_id", "Positions"];
 
 /** Max data rows a validation list / formula range spans. Generous headroom. */
 export const MAX_LIST_ROWS = 2000;

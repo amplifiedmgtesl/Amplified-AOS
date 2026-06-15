@@ -45,6 +45,17 @@ import {
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+/** 1-based column index → Excel column letter (7 → "G"). */
+function colLetter(n: number): string {
+  let s = "";
+  while (n > 0) {
+    const m = (n - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
 export type RosterSlotRow = {
   eventDate: string;
   day: string;
@@ -353,7 +364,9 @@ export async function gatherRoster(
   return {
     job,
     source,
-    quoteDisplayCode: active?.displayCode,
+    // Real quote number when one exists; undefined on drafts (the Job Info tab
+    // then shows the AES job number instead of the opaque quote row id).
+    quoteDisplayCode: active?.quoteNo ?? undefined,
     quoteId: active?.id,
     dateRange,
     slots,
@@ -422,7 +435,7 @@ export async function writeRosterWorkbook(data: RosterData, exportedAtISO: strin
   infoRow("Dates", data.dateRange);
   infoRow("Times", [data.job.startTime, data.job.endTime].filter(Boolean).join(" – "));
   infoRow("Template source", data.source === "quote"
-    ? `Quote ${data.quoteDisplayCode ?? ""}`.trim()
+    ? `Quote — ${data.quoteDisplayCode || data.job.jobNo || ""}`.trim()
     : "Job requirements");
   infoRow("Exported", exportedAtISO);
   info.addRow([]);
@@ -435,11 +448,25 @@ export async function writeRosterWorkbook(data: RosterData, exportedAtISO: strin
   }
 
   // ── Valid Roles (write before Crew so validation can reference it) ──
+  // data.roles is sorted by position then specialty, so each position's
+  // specialties are contiguous — required by the cascading specialty list.
   const roles = wb.addWorksheet(SHEET.validRoles);
   roles.addRow(ROLE_HEADERS).font = { bold: true };
-  for (const r of data.roles) roles.addRow([r.positionName, r.specialtyName, r.specialtyId]);
+  const distinctPositions: string[] = [];
+  for (const r of data.roles) {
+    roles.addRow([r.positionName, r.specialtyName, r.specialtyId]);
+    if (r.positionName && !distinctPositions.includes(r.positionName)) distinctPositions.push(r.positionName);
+  }
+  // Distinct positions into the hidden positionList column (source for the
+  // Position dropdown). Written down column D independent of the A/B rows.
+  distinctPositions.forEach((p, i) => { roles.getCell(i + 2, ROLE_COL.positionList).value = p; });
   roles.getColumn(ROLE_COL.specialtyId).hidden = true;
-  roles.columns.forEach((c, i) => { if (i < 2) c.width = 22; });
+  roles.getColumn(ROLE_COL.positionList).hidden = true;
+  roles.getColumn(ROLE_COL.position).width = 22;
+  roles.getColumn(ROLE_COL.specialty).width = 22;
+
+  const lastRoleRow = data.roles.length + 1;        // header + role rows
+  const lastPosRow = distinctPositions.length + 1;  // header + distinct positions
 
   // ── Employees ──
   const emps = wb.addWorksheet(SHEET.employees);
@@ -450,30 +477,39 @@ export async function writeRosterWorkbook(data: RosterData, exportedAtISO: strin
   emps.getColumn(EMP_COL.employeeKey).hidden = true;
   [22, 14, 14, 16, 26, 28, 16, 8, 10].forEach((w, i) => { emps.getColumn(i + 1).width = w; });
 
-  // ── Crew ──
+  // ── Crew ── (Position before Specialty per request)
   const crew = wb.addWorksheet(SHEET.crew);
   crew.addRow(CREW_HEADERS).font = { bold: true };
   for (const s of data.slots) {
-    const row = crew.addRow([
+    crew.addRow([
       s.eventDate, s.day, s.shiftLabel, s.call, s.start, s.end,
-      s.specialtyName, "", s.employeeName, s.confirmed ? CONFIRMED_YES : CONFIRMED_NO, s.notes, s.status,
+      s.positionName, s.specialtyName, s.employeeName, s.confirmed ? CONFIRMED_YES : CONFIRMED_NO, s.notes, s.status,
       s.dayId, s.shiftId, s.specialtyId, s.positionId, s.assignmentId,
     ]);
-    // Position column = formula derived from the picked specialty (display only).
-    row.getCell(CREW_COL.position).value = {
-      formula: `IFERROR(INDEX('${SHEET.validRoles}'!$A:$A,MATCH(G${row.number},'${SHEET.validRoles}'!$B:$B,0)),"")`,
-    } as any;
   }
   // Hide binding id columns.
   for (let c = CREW_FIRST_HIDDEN_COL; c <= CREW_HEADERS.length; c++) crew.getColumn(c).hidden = true;
-  [12, 6, 12, 8, 8, 8, 20, 18, 24, 11, 24, 30].forEach((w, i) => { crew.getColumn(i + 1).width = w; });
+  [12, 6, 12, 8, 8, 8, 18, 20, 24, 11, 24, 30].forEach((w, i) => { crew.getColumn(i + 1).width = w; });
 
-  // Per-cell list validation across the data range.
-  const lastDataRow = MAX_LIST_ROWS;
+  // Validation only across the populated range + a buffer for extra rows —
+  // keeps the file lean and the cascade formulas bounded.
+  const posCol = colLetter(CREW_COL.position);
+  const lastDataRow = Math.max(data.slots.length + 1 + 100, 200);
   for (let r = 2; r <= lastDataRow; r++) {
+    // Position: pick from the distinct-positions list.
+    crew.getCell(r, CREW_COL.position).dataValidation = {
+      type: "list", allowBlank: true,
+      formulae: [`'${SHEET.validRoles}'!$D$2:$D$${lastPosRow}`],
+    };
+    // Specialty: cascades from the row's Position — the contiguous block of
+    // specialties for that position (Valid Roles is sorted by position).
     crew.getCell(r, CREW_COL.specialty).dataValidation = {
       type: "list", allowBlank: true,
-      formulae: [`'${SHEET.validRoles}'!$B$2:$B$${MAX_LIST_ROWS}`],
+      formulae: [
+        `OFFSET('${SHEET.validRoles}'!$B$2,` +
+          `MATCH($${posCol}${r},'${SHEET.validRoles}'!$A$2:$A$${lastRoleRow},0)-1,0,` +
+          `COUNTIF('${SHEET.validRoles}'!$A$2:$A$${lastRoleRow},$${posCol}${r}),1)`,
+      ],
     };
     crew.getCell(r, CREW_COL.employee).dataValidation = {
       type: "list", allowBlank: true,
@@ -492,7 +528,7 @@ export async function writeRosterWorkbook(data: RosterData, exportedAtISO: strin
     eventName: data.job.eventName,
     source: data.source,
     quoteId: data.quoteId,
-    quoteDisplayCode: data.quoteDisplayCode,
+    quoteDisplayCode: data.source === "quote" ? (data.quoteDisplayCode || data.job.jobNo) : undefined,
     exportedAt: exportedAtISO,
   };
   const metaSheet = wb.addWorksheet(SHEET.meta);

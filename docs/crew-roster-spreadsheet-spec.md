@@ -63,8 +63,8 @@ rows). Columns:
 | Day | derived | Mon/Tue… for readability |
 | Shift | shift label | blank if job has no shifts |
 | Call / Start / End | day or quote line | times, display-only |
-| Specialty | specialty name | **dropdown validated against Valid Roles** — the authoritative pick |
-| Position | derived | auto-derived from the chosen specialty (`specialty.position_id`); display-only, not separately editable |
+| Position | position name | **dropdown** validated against the distinct-positions list on Valid Roles |
+| Specialty | specialty name | **dropdown that cascades from Position** — only that position's specialties are selectable, so only valid pairs |
 | **Employee** | **blank / pre-filled** | the one field they fill; list-validated against the Employees tab |
 | **Confirmed** | blank / pre-filled | Yes/No validation; coordinator sets confirmation here |
 | Notes | need/line notes | optional, coordinator-editable |
@@ -76,7 +76,7 @@ rows). Columns:
   existing `loadJobCrewSlots()` join.
 - **Extras beyond requirements:** coordinators may add rows past the pre-filled
   set. `job_request_assignments` does not enforce against `crew_needs`, so extras
-  just become extra assignments. They fill Date/Shift/Specialty (validated) +
+  just become extra assignments. They fill Date/Shift/Position+Specialty (validated) +
   Employee for an added row.
 - **Employee validation:** Excel list validation pointing at the Employees tab
   Table column. To add someone not in the list, the coordinator adds a row on the
@@ -90,18 +90,22 @@ Address, City, State, Zip, plus a hidden `employee_key`. Coordinators append new
 people at the bottom; new rows have a blank `employee_key` (the import mints it).
 
 ### Tab — "Valid Roles" (reference + validation source)
-The position/specialty combos allowed for this job, as an Excel Table. Columns:
-**Position, Specialty only — no rates.** Coordinators never see billing or pay
-figures anywhere in this workbook. The tab exists purely to constrain role
-selection. It drives **dropdown validation** on the Crew tab's **Specialty**
-column so any **extra rows** a coordinator adds can only use valid roles.
+The position/specialty combos allowed for this job, as an Excel Table. Visible
+columns: **Position, Specialty only — no rates.** Coordinators never see billing
+or pay figures anywhere in this workbook. The tab exists purely to constrain role
+selection. Two hidden helper columns back the dropdowns: `specialty_id` (the
+authoritative id for name→id resolution on import) and a distinct-positions list
+(source for the Position dropdown). Rows are **sorted by position** so each
+position's specialties are contiguous.
 
-**Validate the specialty, not position+specialty separately.** A valid role is a
-*pair*, but Excel validates per-column — two independent dropdowns would let a
-coordinator pick a position and a non-matching specialty. Since specialty
-determines position (`specialty.position_id`), the Crew tab validates the
-**Specialty** column against this tab and **derives Position** from the pick
-(display-only). One dropdown, only real pairs selectable.
+**Cascading dropdowns — Position then Specialty.** Position picks from the
+distinct-positions list. Specialty cascades from the chosen position via an
+`OFFSET(… MATCH … COUNTIF …)` list formula that returns only that position's
+contiguous block of specialties — so a coordinator can only land on a valid
+(position, specialty) **pair**, never a mismatch. On import the pair resolves to
+`specialty_id` (hidden id wins; else the (position, specialty) name pair; else
+specialty name alone), and `position_id` is re-derived from the specialty
+server-side as the authority.
 
 **Source:** the job's resolved rate card via `pickRateCardForJob(clientId,
 requestDate)` → `rate_card_profile_rows` (used only to determine *which* roles are
@@ -164,6 +168,10 @@ Export dialog offers two sources (no quote picker needed):
   (`quote_line.specialty_id → specialties.position_id`) — quote lines have no
   `position_id` column, and that's correct normalization, not a gap. The
   `service_key` text ("… | Fork Op | …") is cosmetic only.
+  - **Job Info "Template source" label** shows the real quote number when the
+    quote has one, else the job's **AES number** (`job_no`) — never the opaque
+    quote row id. `resolveActiveQuoteForJob` returns `quoteNo` (nullable) for
+    this; drafts without a number fall back to the AES.
 
 ### Shared "active quote" resolver
 Extract the logic currently inline in `job-requests.tsx` (~line 173) into
@@ -327,9 +335,10 @@ or invented), so the row can be fixed and re-uploaded:
 - **No full on-screen preview.** Only name-variation decisions are interactive;
   all row-level data errors are written back into a **re-exported workbook**
   (Status column) for fix-and-re-upload. One bad row never rejects the sheet.
-- **"Valid Roles" tab** sourced from the job's rate card validates the
-  Specialty (position derived) of any extra rows. **No rates anywhere in the
-  workbook** — coordinators never see bill or pay figures; the rate card is used
+- **"Valid Roles" tab** sourced from the job's rate card drives **cascading
+  Position → Specialty** dropdowns on the Crew tab (Position first; Specialty
+  limited to that position's specialties). **No rates anywhere in the workbook**
+  — coordinators never see bill or pay figures; the rate card is used
   only to decide which roles are valid. Off-card roles flagged "verify", not
   rejected.
 - **Job Info tab** (visible) shows client/event/dates/location + the source quote
