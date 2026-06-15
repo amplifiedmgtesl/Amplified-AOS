@@ -242,22 +242,40 @@ export async function loadJobQuoteState(
 
 /** The single "active" quote: the open draft if one exists, otherwise the
  *  latest issued non-superseded quote. Returns null if the job has no quote.
- *  `quoteNo` is the real assigned quote number, or null on drafts that don't
- *  have one yet — callers display the job's AES number in that case rather
- *  than the opaque row id. */
+ *
+ *  `displayCode` mirrors the quote-draft-editor header exactly: the frozen
+ *  `quote_no` once issued, else the projected `{job_no}_EST` (or
+ *  `{job_no}_EST_REV{parentRevision}` for a revision draft). */
 export async function resolveActiveQuoteForJob(
   jobRequestId: string,
-): Promise<{ id: string; isDraft: boolean; revisionNo: number; quoteNo: string | null } | null> {
+): Promise<{ id: string; isDraft: boolean; revisionNo: number; quoteNo: string | null; displayCode: string } | null> {
   const rows = await loadJobQuoteRows(jobRequestId);
   const chosen =
     rows.find((r) => r.is_draft) ??
     rows.find((r) => !r.is_draft && r.status !== "superseded");
   if (!chosen) return null;
+
+  let displayCode = chosen.quote_no || "";
+  if (!displayCode) {
+    // Draft with no frozen number yet — replicate the editor's projected code.
+    const jr = await supabase.from("job_requests").select("job_no").eq("id", jobRequestId).maybeSingle();
+    const jobNo = jr.data?.job_no ?? "";
+    let parentRev: number | null = null;
+    if (chosen.parent_quote_id) {
+      const p = await supabase.from("quotes").select("revision_no").eq("id", chosen.parent_quote_id).maybeSingle();
+      parentRev = p.data?.revision_no ?? null;
+    }
+    displayCode = jobNo
+      ? (chosen.parent_quote_id && parentRev !== null ? `${jobNo}_EST_REV${parentRev}` : `${jobNo}_EST`)
+      : chosen.id;
+  }
+
   return {
     id: chosen.id,
     isDraft: !!chosen.is_draft,
     revisionNo: chosen.revision_no ?? 1,
     quoteNo: chosen.quote_no || null,
+    displayCode,
   };
 }
 

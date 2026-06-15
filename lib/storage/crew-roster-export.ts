@@ -364,9 +364,9 @@ export async function gatherRoster(
   return {
     job,
     source,
-    // Real quote number when one exists; undefined on drafts (the Job Info tab
-    // then shows the AES job number instead of the opaque quote row id).
-    quoteDisplayCode: active?.quoteNo ?? undefined,
+    // The quote's display code, matching the quote-draft-editor header:
+    // frozen quote_no once issued, else the projected {job_no}_EST[_REVn].
+    quoteDisplayCode: active?.displayCode ?? undefined,
     quoteId: active?.id,
     dateRange,
     slots,
@@ -435,7 +435,7 @@ export async function writeRosterWorkbook(data: RosterData, exportedAtISO: strin
   infoRow("Dates", data.dateRange);
   infoRow("Times", [data.job.startTime, data.job.endTime].filter(Boolean).join(" – "));
   infoRow("Template source", data.source === "quote"
-    ? `Quote — ${data.quoteDisplayCode || data.job.jobNo || ""}`.trim()
+    ? `Quote ${data.quoteDisplayCode || data.job.jobNo || ""}`.trim()
     : "Job requirements");
   infoRow("Exported", exportedAtISO);
   info.addRow([]);
@@ -519,6 +519,27 @@ export async function writeRosterWorkbook(data: RosterData, exportedAtISO: strin
       type: "list", allowBlank: true, formulae: [`"${CONFIRMED_YES},${CONFIRMED_NO}"`],
     };
   }
+
+  // Plain .xlsx can't auto-clear or auto-fill Specialty when Position changes
+  // (that needs a macro). Instead, flag a Specialty that isn't valid for its
+  // Position in red so the coordinator re-picks from the (now-cascaded) list.
+  const specCol = colLetter(CREW_COL.specialty);
+  crew.addConditionalFormatting({
+    ref: `${specCol}2:${specCol}${lastDataRow}`,
+    rules: [
+      {
+        type: "expression",
+        priority: 1,
+        formulae: [
+          `AND($${specCol}2<>"",COUNTIFS('${SHEET.validRoles}'!$A:$A,$${posCol}2,'${SHEET.validRoles}'!$B:$B,$${specCol}2)=0)`,
+        ],
+        style: {
+          fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFFFC7CE" } },
+          font: { color: { argb: "FF9C0006" } },
+        },
+      },
+    ],
+  });
 
   // ── Meta (very hidden machine stamp) ──
   const meta: RosterMeta = {
