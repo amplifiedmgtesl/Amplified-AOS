@@ -133,13 +133,17 @@ export async function parseRosterWorkbook(buffer: ArrayBuffer): Promise<ParsedRo
   const employees: ParsedEmployeeRow[] = [];
   empWs.eachRow((row: any, n: number) => {
     if (n === 1) return;
-    const fullName = cellStr(empWs, n, EMP_COL.fullName).trim();
+    const first = cellStr(empWs, n, EMP_COL.first).trim();
+    const last = cellStr(empWs, n, EMP_COL.last).trim();
+    // Full Name is what the Crew dropdown shows, but tolerate a coordinator who
+    // filled only First/Last — derive the name so the row still imports.
+    const fullName = cellStr(empWs, n, EMP_COL.fullName).trim() || [first, last].filter(Boolean).join(" ");
     if (!fullName) return;
     employees.push({
       rowNumber: n,
       fullName,
-      first: cellStr(empWs, n, EMP_COL.first).trim(),
-      last: cellStr(empWs, n, EMP_COL.last).trim(),
+      first,
+      last,
       phone: cellStr(empWs, n, EMP_COL.phone).trim(),
       email: cellStr(empWs, n, EMP_COL.email).trim(),
       address: cellStr(empWs, n, EMP_COL.address).trim(),

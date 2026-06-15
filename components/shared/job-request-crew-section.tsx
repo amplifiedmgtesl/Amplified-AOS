@@ -75,7 +75,8 @@ export function JobRequestCrewSection({
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [crewNeedsByDay, setCrewNeedsByDay] = useState<Record<string, JobRequestCrewNeed[]>>({});
   const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [msg, setMsg] = useState<{ text: string; ok: boolean; sticky?: boolean } | null>(null);
+  const msgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   // ─── Roster spreadsheet round-trip ───────────────────────────────────────
@@ -155,9 +156,11 @@ export function JobRequestCrewSection({
     return map;
   }, [specialties]);
 
-  function flash(text: string, ok = true) {
-    setMsg({ text, ok });
-    setTimeout(() => setMsg(null), 2500);
+  function flash(text: string, ok = true, sticky = false) {
+    if (msgTimerRef.current) { clearTimeout(msgTimerRef.current); msgTimerRef.current = null; }
+    setMsg({ text, ok, sticky });
+    // Errors stay until dismissed; successes auto-clear.
+    if (!sticky && ok) msgTimerRef.current = setTimeout(() => setMsg(null), 2500);
   }
 
   function toggleExpanded(id: string) {
@@ -330,7 +333,18 @@ export function JobRequestCrewSection({
           border: `1px solid ${msg.ok ? "#b6e0b6" : "#e0a0a0"}`,
           color: msg.ok ? "#2e6b2e" : "#a00",
           borderRadius: 6, padding: "6px 12px", fontSize: 12, marginBottom: 8,
-        }}>{msg.text}</div>
+          display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10,
+        }}>
+          <span style={{ whiteSpace: "pre-wrap" }}>{msg.text}</span>
+          {!msg.ok && (
+            <button
+              type="button"
+              onClick={() => { if (msgTimerRef.current) clearTimeout(msgTimerRef.current); setMsg(null); }}
+              title="Dismiss"
+              style={{ background: "none", border: "none", color: "#a00", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}
+            >✕</button>
+          )}
+        </div>
       )}
 
       {/* Roster spreadsheet round-trip toolbar */}

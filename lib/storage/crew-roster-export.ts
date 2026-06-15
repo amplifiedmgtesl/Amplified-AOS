@@ -35,7 +35,6 @@ import {
   EMP_HEADERS,
   ROLE_COL,
   ROLE_HEADERS,
-  MAX_LIST_ROWS,
   ROSTER_SCHEMA_VERSION,
   CONFIRMED_YES,
   CONFIRMED_NO,
@@ -477,6 +476,16 @@ export async function writeRosterWorkbook(data: RosterData, exportedAtISO: strin
   emps.getColumn(EMP_COL.employeeKey).hidden = true;
   [22, 14, 14, 16, 26, 28, 16, 8, 10].forEach((w, i) => { emps.getColumn(i + 1).width = w; });
 
+  // Named ranges drive the cross-sheet dropdowns. A raw cross-sheet range in
+  // data validation is unreliable (Excel may drop/repair it); a defined name is
+  // the supported way. Sized to current data + a growth buffer so employees the
+  // coordinator appends still appear in the Crew dropdown. (ExcelJS can't write
+  // a dynamic OFFSET/COUNTA name — it corrupts the formula — so we use a fixed
+  // bound with headroom.)
+  const empListLastRow = data.employees.length + 1 + 200; // header + rows + buffer
+  wb.definedNames.add(`${SHEET.employees}!$A$2:$A$${empListLastRow}`, "EmployeeNames");
+  wb.definedNames.add(`'${SHEET.validRoles}'!$D$2:$D$${lastPosRow}`, "PositionNames");
+
   // ── Crew ── (Position before Specialty per request)
   const crew = wb.addWorksheet(SHEET.crew);
   crew.addRow(CREW_HEADERS).font = { bold: true };
@@ -496,10 +505,10 @@ export async function writeRosterWorkbook(data: RosterData, exportedAtISO: strin
   const posCol = colLetter(CREW_COL.position);
   const lastDataRow = Math.max(data.slots.length + 1 + 100, 200);
   for (let r = 2; r <= lastDataRow; r++) {
-    // Position: pick from the distinct-positions list.
+    // Position: pick from the distinct-positions named range.
     crew.getCell(r, CREW_COL.position).dataValidation = {
       type: "list", allowBlank: true,
-      formulae: [`'${SHEET.validRoles}'!$D$2:$D$${lastPosRow}`],
+      formulae: ["PositionNames"],
     };
     // Specialty: cascades from the row's Position — the contiguous block of
     // specialties for that position (Valid Roles is sorted by position).
@@ -511,9 +520,11 @@ export async function writeRosterWorkbook(data: RosterData, exportedAtISO: strin
           `COUNTIF('${SHEET.validRoles}'!$A$2:$A$${lastRoleRow},$${posCol}${r}),1)`,
       ],
     };
+    // Employee: named range so appended employees still appear (and the
+    // cross-sheet reference stays reliable).
     crew.getCell(r, CREW_COL.employee).dataValidation = {
       type: "list", allowBlank: true,
-      formulae: [`${SHEET.employees}!$A$2:$A$${MAX_LIST_ROWS}`],
+      formulae: ["EmployeeNames"],
     };
     crew.getCell(r, CREW_COL.confirmed).dataValidation = {
       type: "list", allowBlank: true, formulae: [`"${CONFIRMED_YES},${CONFIRMED_NO}"`],
