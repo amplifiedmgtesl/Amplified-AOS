@@ -196,10 +196,10 @@ export default function EmployeeDirectory({
                       : <span className="muted">—</span>}
                   </td>
                   <td>
-                    <div className="action-row">
-                      <Link href={profileHref(e.employeeKey)} className="secondary" style={{ textDecoration: "none", padding: "4px 10px", border: "1px solid var(--border, #e5e7eb)", borderRadius: 6, fontSize: 13 }}>Open Profile</Link>
-                      <button className="secondary" onClick={() => { if (confirm(`Delete ${e.fullName || "this employee"}?`)) { deleteEmployee(e.employeeKey); setRefreshKey((x)=>x+1); } }}>Delete</button>
-                    </div>
+                    <button
+                      onClick={() => { if (confirm(`Delete ${e.fullName || "this employee"}?`)) { deleteEmployee(e.employeeKey); setRefreshKey((x)=>x+1); } }}
+                      style={{ background: "none", border: "none", padding: 0, color: "#c00", fontSize: 12, textDecoration: "underline", cursor: "pointer" }}
+                    >Delete</button>
                   </td>
                 </tr>
               ))}
