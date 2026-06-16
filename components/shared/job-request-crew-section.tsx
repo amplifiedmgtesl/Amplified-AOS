@@ -38,6 +38,10 @@ import {
 } from "@/lib/storage/crew-roster-import";
 import type { RosterSource } from "@/lib/storage/crew-roster-schema";
 
+// Global CSS sets input{width:100%}; checkboxes/radios must opt out or they
+// stretch the row and shove the label to the far edge.
+const checkInputStyle: React.CSSProperties = { width: "auto", flex: "0 0 auto", margin: 0 };
+
 const menuItemStyle: React.CSSProperties = {
   display: "block", width: "100%", textAlign: "left", padding: "8px 12px",
   background: "none", border: "none", borderBottom: "1px solid #f0e9e0",
@@ -717,6 +721,7 @@ export function JobRequestCrewSection({
                       <input
                         type="radio"
                         name={`match-${key}`}
+                        style={checkInputStyle}
                         checked={choice?.action === "link" && choice.linkKey === c.employeeKey}
                         onChange={() => setChoice({ action: "link", linkKey: c.employeeKey })}
                       />
@@ -734,6 +739,7 @@ export function JobRequestCrewSection({
                     <input
                       type="radio"
                       name={`match-${key}`}
+                      style={checkInputStyle}
                       checked={choice?.action === "create"}
                       onChange={() => setChoice({ action: "create" })}
                     />
@@ -755,9 +761,10 @@ export function JobRequestCrewSection({
                     {u.changes.map((c) => {
                       const fkey = `${u.employeeKey}::${c.field}`;
                       return (
-                        <label key={fkey} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, padding: "3px 0" }}>
+                        <label key={fkey} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, padding: "3px 0" }}>
                           <input
                             type="checkbox"
+                            style={{ ...checkInputStyle, marginTop: 2 }}
                             checked={!!pendingImport.approvedFields[fkey]}
                             onChange={(e) =>
                               setPendingImport((cur) => cur
