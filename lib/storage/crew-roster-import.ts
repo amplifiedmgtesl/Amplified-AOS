@@ -288,7 +288,38 @@ export type ImportResult = {
   assignmentsUpserted: number;
   assignmentsDeleted: number;
   skipped: { rowNumber: number; employeeName: string; reason: string }[];
+  /** Non-blocking notices — e.g. a new employee whose First/Last didn't match
+   *  the Full Name (Excel autocomplete), reconciled from the Full Name. */
+  warnings: string[];
 };
+
+/** Reconcile a new employee's name parts against the Full Name. Excel's in-cell
+ *  AutoComplete can silently fill First/Last from another row (e.g. "Doe" ->
+ *  "Doeringer"). The Full Name is what the coordinator sees and what the Crew
+ *  dropdown binds to, so it's authoritative: a typed First/Last is trusted only
+ *  when it actually appears in the Full Name; otherwise it's re-derived and a
+ *  warning is raised. */
+function reconcileName(fullNameRaw: string, firstRaw: string, lastRaw: string): {
+  fullName: string; first: string; last: string; warning: string | null;
+} {
+  const fullName = (fullNameRaw || [firstRaw, lastRaw].filter(Boolean).join(" ")).trim();
+  const tokens = fullName.split(/\s+/).filter(Boolean);
+  const derivedFirst = tokens[0] ?? "";
+  const derivedLast = tokens.slice(1).join(" ");
+  const first = firstRaw.trim();
+  const last = lastRaw.trim();
+  const fl = fullName.toLowerCase();
+  const firstBad = !!first && !fl.includes(first.toLowerCase());
+  const lastBad = !!last && !fl.includes(last.toLowerCase());
+  const finalFirst = first && !firstBad ? first : derivedFirst;
+  const finalLast = last && !lastBad ? last : derivedLast;
+  let warning: string | null = null;
+  if (firstBad || lastBad) {
+    const bad = [firstBad ? `First "${first}"` : "", lastBad ? `Last "${last}"` : ""].filter(Boolean).join(" / ");
+    warning = `"${fullName}": ${bad} didn't match the Full Name (likely Excel autocomplete) — saved as ${finalFirst} ${finalLast}. Verify on the Employees tab.`;
+  }
+  return { fullName, first: finalFirst, last: finalLast, warning };
+}
 
 function newAssignmentId(): string {
   return `jra-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -324,6 +355,7 @@ export async function commitRosterImport(
     assignmentsUpserted: 0,
     assignmentsDeleted: 0,
     skipped: [],
+    warnings: [],
   };
 
   // ── Step A: resolve employees (name → employee_key) ──
@@ -346,13 +378,15 @@ export async function commitRosterImport(
     // create (explicit decision, or auto for novel names with no decision)
     const employeeKey = newEmployeeKey(createIdx++);
     keyByName.set(nkey, employeeKey);
+    const nm = reconcileName(row.fullName, row.first, row.last);
+    if (nm.warning) result.warnings.push(nm.warning);
     toCreate.push({
       name: row.fullName,
       record: {
         employee_key: employeeKey,
-        full_name: row.fullName,
-        first_name: row.first || row.fullName.split(/\s+/)[0] || "",
-        last_name: row.last || row.fullName.split(/\s+/).slice(1).join(" ") || "",
+        full_name: nm.fullName,
+        first_name: nm.first,
+        last_name: nm.last,
         phone: row.phone || null,
         email: row.email || null,
         address: row.address || null,

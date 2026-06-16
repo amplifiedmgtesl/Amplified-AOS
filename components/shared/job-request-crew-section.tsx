@@ -310,11 +310,14 @@ export function JobRequestCrewSection({
         (result.assignmentsDeleted ? `• ${result.assignmentsDeleted} removed\n` : "") +
         (result.employeesCreated ? `• ${result.employeesCreated} new employee${result.employeesCreated === 1 ? "" : "s"} added\n` : "") +
         (result.employeesLinked ? `• ${result.employeesLinked} matched to existing people\n` : "");
+      const warnBlock = result.warnings.length
+        ? `\n⚠ Name check:\n` + result.warnings.map((w) => `• ${w}`).join("\n") + "\n"
+        : "";
       const tail = result.skipped.length
         ? `\n⚠ ${result.skipped.length} row${result.skipped.length === 1 ? "" : "s"} need attention. ` +
           `A refreshed file "${filename}" was downloaded — open it and check the Status column on the Crew tab, fix those rows, then re-upload.`
-        : `\nEverything imported cleanly — no review needed. A refreshed copy "${filename}" was downloaded for your records.`;
-      window.alert(summary + tail);
+        : `\nEverything imported cleanly${result.warnings.length ? " (aside from the name note above)" : " — no review needed"}. A refreshed copy "${filename}" was downloaded for your records.`;
+      window.alert(summary + warnBlock + tail);
     } catch (err: any) {
       flash(`Import failed: ${err?.message ?? err}`, false);
     } finally {
