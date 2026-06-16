@@ -21,15 +21,19 @@ import type {
   Specialty,
 } from "@/lib/store/types";
 import { LazyEmployeePicker } from "./employee-picker";
-import { buildRosterWorkbookBlob } from "@/lib/storage/crew-roster-export";
+import { buildRosterWorkbookBlob, loadActiveEmployeeRows } from "@/lib/storage/crew-roster-export";
 import {
   parseRosterWorkbook,
   planEmployeeReconciliation,
+  planContactUpdates,
   commitRosterImport,
   buildReexportBlob,
+  CONTACT_FIELDS,
   type EmployeeMatch,
   type EmployeeDecision,
   type ParsedRoster,
+  type ContactUpdate,
+  type ApprovedUpdate,
 } from "@/lib/storage/crew-roster-import";
 import type { RosterSource } from "@/lib/storage/crew-roster-schema";
 
@@ -90,6 +94,10 @@ export function JobRequestCrewSection({
     autoCreateCount: number;
     // employee normName -> chosen action
     choices: Record<string, EmployeeDecision>;
+    // contact-field edits to existing employees, awaiting confirmation
+    contactUpdates: ContactUpdate[];
+    // `${employeeKey}::${field}` -> apply this change?
+    approvedFields: Record<string, boolean>;
   } | null>(null);
 
   // Load positions + specialties once. Employees are loaded by EmployeePicker
@@ -264,9 +272,11 @@ export function JobRequestCrewSection({
           `This sheet is for Job ${parsed.meta.jobNo || parsed.meta.jobRequestId} (${parsed.meta.eventName}); you're on a different job.`,
         );
       }
-      const plan = await planEmployeeReconciliation(parsed);
-      if (plan.ambiguous.length === 0) {
-        await finalizeImport(parsed, {});
+      const existing = await loadActiveEmployeeRows();
+      const plan = await planEmployeeReconciliation(parsed, existing);
+      const contactUpdates = planContactUpdates(parsed, existing);
+      if (plan.ambiguous.length === 0 && contactUpdates.length === 0) {
+        await finalizeImport(parsed, {}, []);
       } else {
         // Default every ambiguous row to its top candidate (link) — friction
         // is on choosing "create new", which the coordinator must opt into.
@@ -274,7 +284,13 @@ export function JobRequestCrewSection({
         for (const m of plan.ambiguous) {
           choices[normNameKey(m.parsed.fullName)] = { action: "link", linkKey: m.candidates[0].employeeKey };
         }
-        setPendingImport({ parsed, ambiguous: plan.ambiguous, autoCreateCount: plan.autoCreate.length, choices });
+        // Contact edits default to applied (checked); coordinator can uncheck.
+        const approvedFields: Record<string, boolean> = {};
+        for (const u of contactUpdates) for (const c of u.changes) approvedFields[`${u.employeeKey}::${c.field}`] = true;
+        setPendingImport({
+          parsed, ambiguous: plan.ambiguous, autoCreateCount: plan.autoCreate.length,
+          choices, contactUpdates, approvedFields,
+        });
       }
     } catch (err: any) {
       flash(`Import failed: ${err?.message ?? err}`, false);
@@ -283,11 +299,15 @@ export function JobRequestCrewSection({
     }
   }
 
-  async function finalizeImport(parsed: ParsedRoster, choices: Record<string, EmployeeDecision>) {
+  async function finalizeImport(
+    parsed: ParsedRoster,
+    choices: Record<string, EmployeeDecision>,
+    approvedUpdates: ApprovedUpdate[],
+  ) {
     setRosterBusy(true);
     try {
       const decisions = new Map<string, EmployeeDecision>(Object.entries(choices));
-      const result = await commitRosterImport(jobRequestId, parsed, decisions, new Date().toISOString().slice(0, 10));
+      const result = await commitRosterImport(jobRequestId, parsed, decisions, new Date().toISOString().slice(0, 10), approvedUpdates);
       // Re-export the reviewed workbook (the fix loop).
       const { blob, filename } = await buildReexportBlob(
         jobRequestId, parsed.meta.source, new Date().toISOString(), result.skipped,
@@ -309,6 +329,7 @@ export function JobRequestCrewSection({
         `• ${result.assignmentsUpserted} crew loaded\n` +
         (result.assignmentsDeleted ? `• ${result.assignmentsDeleted} removed\n` : "") +
         (result.employeesCreated ? `• ${result.employeesCreated} new employee${result.employeesCreated === 1 ? "" : "s"} added\n` : "") +
+        (result.employeesUpdated ? `• ${result.employeesUpdated} employee contact${result.employeesUpdated === 1 ? "" : "s"} updated\n` : "") +
         (result.employeesLinked ? `• ${result.employeesLinked} matched to existing people\n` : "");
       const warnBlock = result.warnings.length
         ? `\n⚠ Name check:\n` + result.warnings.map((w) => `• ${w}`).join("\n") + "\n"
@@ -324,6 +345,22 @@ export function JobRequestCrewSection({
       setRosterBusy(false);
       setPendingImport(null);
     }
+  }
+
+  // Build approved contact updates from the checkbox state, then finalize.
+  function confirmPendingImport() {
+    if (!pendingImport) return;
+    const colByField: Record<string, string> = Object.fromEntries(CONTACT_FIELDS.map((f) => [f.key, f.col]));
+    const approvedUpdates: ApprovedUpdate[] = pendingImport.contactUpdates
+      .map((u) => {
+        const set: Record<string, string> = {};
+        for (const c of u.changes) {
+          if (pendingImport.approvedFields[`${u.employeeKey}::${c.field}`]) set[colByField[c.field]] = c.to;
+        }
+        return { employeeKey: u.employeeKey, set };
+      })
+      .filter((u) => Object.keys(u.set).length > 0);
+    void finalizeImport(pendingImport.parsed, pendingImport.choices, approvedUpdates);
   }
 
   function dayLabel(d: JobRequestDay): string {
@@ -652,11 +689,13 @@ export function JobRequestCrewSection({
               background: "#fff", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,0.3)", padding: 18,
             }}
           >
-            <h3 style={{ marginTop: 0, fontSize: 16 }}>Some new names look like existing people</h3>
-            <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
-              Pick the existing person, or choose to create a new employee. New names with no
-              match{pendingImport.autoCreateCount > 0 ? ` (${pendingImport.autoCreateCount})` : ""} are added automatically.
-            </p>
+            <h3 style={{ marginTop: 0, fontSize: 16 }}>Confirm import</h3>
+            {pendingImport.ambiguous.length > 0 && (
+              <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+                <strong>Some new names look like existing people.</strong> Pick the existing person, or choose to
+                create a new employee. New names with no match{pendingImport.autoCreateCount > 0 ? ` (${pendingImport.autoCreateCount})` : ""} are added automatically.
+              </p>
+            )}
             {pendingImport.ambiguous.map((m) => {
               const key = normNameKey(m.parsed.fullName);
               const choice = pendingImport.choices[key];
@@ -697,6 +736,41 @@ export function JobRequestCrewSection({
                 </div>
               );
             })}
+
+            {pendingImport.contactUpdates.length > 0 && (
+              <div style={{ marginTop: pendingImport.ambiguous.length > 0 ? 16 : 0 }}>
+                <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+                  <strong>Contact updates for existing people.</strong> The sheet differs from what's on file.
+                  Check the ones to apply (unchecked = keep what's in the database). Names aren't changed here.
+                </p>
+                {pendingImport.contactUpdates.map((u) => (
+                  <div key={u.employeeKey} style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, marginBottom: 10 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>{u.fullName}</div>
+                    {u.changes.map((c) => {
+                      const fkey = `${u.employeeKey}::${c.field}`;
+                      return (
+                        <label key={fkey} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12, padding: "3px 0" }}>
+                          <input
+                            type="checkbox"
+                            checked={!!pendingImport.approvedFields[fkey]}
+                            onChange={(e) =>
+                              setPendingImport((cur) => cur
+                                ? { ...cur, approvedFields: { ...cur.approvedFields, [fkey]: e.target.checked } }
+                                : cur)
+                            }
+                          />
+                          <span>
+                            <strong>{c.label}:</strong>{" "}
+                            <span className="muted">{c.from || "(blank)"}</span> → {c.to}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
               <button type="button" className="secondary" disabled={rosterBusy} onClick={() => setPendingImport(null)}>
                 Cancel
@@ -704,7 +778,7 @@ export function JobRequestCrewSection({
               <button
                 type="button"
                 disabled={rosterBusy}
-                onClick={() => finalizeImport(pendingImport.parsed, pendingImport.choices)}
+                onClick={confirmPendingImport}
               >
                 {rosterBusy ? "Importing…" : "Import"}
               </button>

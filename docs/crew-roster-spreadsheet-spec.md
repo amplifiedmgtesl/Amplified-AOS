@@ -245,6 +245,23 @@ For each Employees-tab row with a blank `employee_key`:
 > but adds the human "link vs create" confirm. Hardening the timekeeping gate
 > itself stays a separate backlog item.
 
+**New-employee name reconciliation.** Excel in-cell AutoComplete can silently fill
+First/Last from another row (e.g. "Doe" → "Doeringer") while the Full Name stays
+"John Doe". The **Full Name is authoritative** for new employees (it's what the
+dropdown binds to): a typed First/Last is kept only if it appears in the Full
+Name, else re-derived from it, with a non-blocking warning in the completion
+pop-up. Name fields are otherwise never changed from the sheet.
+
+**Contact updates for EXISTING employees (confirm-changed-fields).** For
+Employees-tab rows that already have an `employee_key`, the import diffs the
+contact fields (phone/email/address/city/state/zip — **not** name) against the DB.
+Any field where the sheet is non-blank and differs is surfaced in the same
+confirmation modal as a checkbox (default on; phone compared on digits only). Only
+checked fields are written; a blank sheet cell never clears a DB value. This
+captures corrections/additions a coordinator discovers, while a confirm step
+guards against stale-export / typo / autocomplete clobber. `employeesUpdated` is
+reported in the completion pop-up.
+
 ### Step B — Assignment diff (upsert + delete)
 For the target job, compare the sheet's filled slots against existing
 `job_request_assignments`:

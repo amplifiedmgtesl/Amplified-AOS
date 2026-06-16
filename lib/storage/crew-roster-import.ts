@@ -278,13 +278,62 @@ export async function planEmployeeReconciliation(
   return { autoCreate, ambiguous };
 }
 
+// ─── Contact-info updates for EXISTING employees ───────────────────────────────
+// A coordinator may correct an existing person's phone/email/address on the
+// Employees tab. We surface those diffs for confirmation (never auto-applied,
+// never silently overwritten). Name fields are intentionally excluded — Excel
+// autocomplete makes sheet-driven name edits too risky; names change in the
+// Employee Directory.
+
+/** field = ParsedEmployeeRow/RosterEmployeeRow property; col = employees column. */
+export const CONTACT_FIELDS = [
+  { key: "phone", label: "Phone", col: "phone" },
+  { key: "email", label: "Email", col: "email" },
+  { key: "address", label: "Address", col: "address" },
+  { key: "city", label: "City", col: "city" },
+  { key: "state", label: "State", col: "state_code" },
+  { key: "zip", label: "Zip", col: "zip" },
+] as const;
+
+export type ContactChange = { field: string; label: string; from: string; to: string };
+export type ContactUpdate = { employeeKey: string; fullName: string; changes: ContactChange[] };
+
+/** Diff the sheet's existing-employee rows against the DB. A blank sheet cell is
+ *  "no change" (we never clear a DB value). Phone compares on digits only so
+ *  formatting differences don't register as edits. */
+export function planContactUpdates(parsed: ParsedRoster, existing: RosterEmployeeRow[]): ContactUpdate[] {
+  const byKey = new Map(existing.map((e) => [e.employeeKey, e]));
+  const out: ContactUpdate[] = [];
+  for (const row of parsed.employees) {
+    if (!row.employeeKey) continue; // new employees handled by reconciliation
+    const cur = byKey.get(row.employeeKey);
+    if (!cur) continue;
+    const changes: ContactChange[] = [];
+    for (const f of CONTACT_FIELDS) {
+      const to = String((row as any)[f.key] ?? "").trim();
+      if (!to) continue; // blank = leave the DB value alone
+      const from = String((cur as any)[f.key] ?? "").trim();
+      const same = f.key === "phone"
+        ? to.replace(/\D/g, "") === from.replace(/\D/g, "")
+        : to.toLowerCase() === from.toLowerCase();
+      if (!same) changes.push({ field: f.key, label: f.label, from, to });
+    }
+    if (changes.length) out.push({ employeeKey: row.employeeKey, fullName: row.fullName, changes });
+  }
+  return out;
+}
+
 // ─── Commit ────────────────────────────────────────────────────────────────────
 
 export type EmployeeDecision = { action: "create" | "link"; linkKey?: string };
 
+/** Approved contact updates to apply: employee_key + the columns→values. */
+export type ApprovedUpdate = { employeeKey: string; set: Record<string, string> };
+
 export type ImportResult = {
   employeesCreated: number;
   employeesLinked: number;
+  employeesUpdated: number;
   assignmentsUpserted: number;
   assignmentsDeleted: number;
   skipped: { rowNumber: number; employeeName: string; reason: string }[];
@@ -340,6 +389,7 @@ export async function commitRosterImport(
   parsed: ParsedRoster,
   decisions: Map<string, EmployeeDecision>,
   todayISO: string,
+  approvedUpdates: ApprovedUpdate[] = [],
 ): Promise<ImportResult> {
   // ── Step 0: job-identity guard ──
   if (parsed.meta.jobRequestId !== jobRequestId) {
@@ -352,6 +402,7 @@ export async function commitRosterImport(
   const result: ImportResult = {
     employeesCreated: 0,
     employeesLinked: 0,
+    employeesUpdated: 0,
     assignmentsUpserted: 0,
     assignmentsDeleted: 0,
     skipped: [],
@@ -406,6 +457,14 @@ export async function commitRosterImport(
     const { error } = await supabase.from("employees").insert(toCreate.map((t) => t.record));
     if (error) throw new Error(`Failed to create new employees: ${error.message}`);
     result.employeesCreated = toCreate.length;
+  }
+
+  // Apply coordinator-confirmed contact updates to existing employees.
+  for (const u of approvedUpdates) {
+    if (!u.employeeKey || Object.keys(u.set).length === 0) continue;
+    const { error } = await supabase.from("employees").update(u.set).eq("employee_key", u.employeeKey);
+    if (error) throw new Error(`Failed to update employee ${u.employeeKey}: ${error.message}`);
+    result.employeesUpdated++;
   }
 
   // ── Step B: build desired assignments + diff ──
