@@ -359,7 +359,8 @@ export async function commitRosterImport(
         city: row.city || null,
         state_code: row.state || null,
         zip: row.zip || null,
-        type: "contractor",
+        // No `type` column on employees — it's derived from employment_type
+        // (≠ "Employee" ⇒ contractor), so leaving it unset is correct here.
         source: "roster-import",
         hire_date: todayISO,
         is_deleted: false,
