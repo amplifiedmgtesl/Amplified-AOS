@@ -18,6 +18,7 @@ import {
   deleteAssignment,
 } from "./job-request-assignments";
 import { loadJobRequestDays } from "./job-request-days";
+import { loadShifts } from "./job-request-shifts";
 import {
   gatherRoster,
   writeRosterWorkbook,
@@ -53,6 +54,8 @@ export type ParsedEmployeeRow = {
 
 export type ParsedCrewRow = {
   rowNumber: number;
+  eventDate: string;   // visible Date column, normalized YYYY-MM-DD — authoritative for day binding
+  shiftLabel: string;  // visible Shift column — authoritative for shift binding
   positionName: string;
   specialtyName: string;
   employeeName: string;
@@ -90,6 +93,25 @@ function cellStr(ws: any, row: number, col: number): string {
     return String(c.text ?? "");
   }
   return String(v);
+}
+
+/** Read a date cell as YYYY-MM-DD regardless of whether Excel kept it as text
+ *  or coerced it to a real date (e.g. after the coordinator copied the row). */
+function cellDate(ws: any, row: number, col: number): string {
+  const v = ws.getCell(row, col)?.value;
+  if (v == null) return "";
+  const norm = (x: any): string => {
+    if (x instanceof Date) {
+      return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}-${String(x.getUTCDate()).padStart(2, "0")}`;
+    }
+    const s = String(x).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+    return s;
+  };
+  if (typeof v === "object" && !(v instanceof Date) && "result" in v) return norm((v as any).result);
+  return norm(v);
 }
 
 // ─── Parse ───────────────────────────────────────────────────────────────────
@@ -159,6 +181,8 @@ export async function parseRosterWorkbook(buffer: ArrayBuffer): Promise<ParsedRo
     if (n === 1) return;
     crew.push({
       rowNumber: n,
+      eventDate: cellDate(crewWs, n, CREW_COL.date),
+      shiftLabel: cellStr(crewWs, n, CREW_COL.shift).trim(),
       positionName: cellStr(crewWs, n, CREW_COL.position).trim(),
       specialtyName: cellStr(crewWs, n, CREW_COL.specialty).trim(),
       employeeName: cellStr(crewWs, n, CREW_COL.employee).trim(),
@@ -350,8 +374,15 @@ export async function commitRosterImport(
   }
 
   // ── Step B: build desired assignments + diff ──
+  // Binding is driven by the VISIBLE columns (Date, Shift, Position/Specialty),
+  // not the hidden ids — so a coordinator can copy a row to other days (Excel
+  // copies the hidden cells too) and it still binds to the day the row shows.
+  // Hidden ids are only a fallback when the visible value can't be resolved.
   const jobDays = await loadJobRequestDays(jobRequestId);
   const jobDayIds = new Set(jobDays.map((d) => d.id));
+  const dayByDate = new Map(jobDays.map((d) => [d.eventDate, d.id]));
+  const shifts = await loadShifts(jobRequestId);
+  const shiftByLabel = new Map(shifts.map((s) => [s.label.toLowerCase(), s.id]));
 
   // specialty -> position lookup for derivation + validation
   const spcRes = await supabase.from("specialties").select("id, position_id");
@@ -359,9 +390,12 @@ export async function commitRosterImport(
   const posBySpecialty = new Map<string, string>();
   for (const s of spcRes.data ?? []) posBySpecialty.set(s.id, s.position_id);
 
+  const existing = await loadAssignmentsForRequest(jobRequestId);
+  const existingBySig = new Map<string, JobRequestAssignment>();
+  for (const a of existing) existingBySig.set(`${a.jobRequestDayId}::${a.shiftId || ""}::${a.employeeKey || ""}`, a);
+
   const desired: JobRequestAssignment[] = [];
   const desiredSig = new Set<string>(); // dayId|shift|employeeKey — dedupe + keep-detection
-  const desiredAsgIds = new Set<string>();
   let sortOrder = 0;
 
   for (const r of parsed.crew) {
@@ -371,52 +405,56 @@ export async function commitRosterImport(
       result.skipped.push({ rowNumber: r.rowNumber, employeeName: r.employeeName, reason: "employee not found on the Employees tab" });
       continue;
     }
-    if (!r.dayId || !jobDayIds.has(r.dayId)) {
-      result.skipped.push({ rowNumber: r.rowNumber, employeeName: r.employeeName, reason: "row's day is not part of this job" });
+    // Day: visible Date first (copy-paste safe), hidden day_id as fallback.
+    const dayId = (r.eventDate && dayByDate.get(r.eventDate)) || (jobDayIds.has(r.dayId) ? r.dayId : "");
+    if (!dayId) {
+      result.skipped.push({ rowNumber: r.rowNumber, employeeName: r.employeeName, reason: "row's date is not a day on this job" });
       continue;
     }
-    // resolve specialty: hidden id wins, else (position,specialty) pair via
-    // Valid Roles, else specialty name alone as a last resort.
-    let specialtyId = r.specialtyId;
-    if (!specialtyId && r.specialtyName) {
-      specialtyId =
-        parsed.roleByPosSpec.get(`${r.positionName.toLowerCase()}||${r.specialtyName.toLowerCase()}`) ||
-        parsed.roleSpecByName.get(r.specialtyName.toLowerCase()) ||
-        "";
-    }
+    // Shift: visible label first, hidden shift_id only when no label is shown.
+    let shiftId = "";
+    if (r.shiftLabel) shiftId = shiftByLabel.get(r.shiftLabel.toLowerCase()) ?? "";
+    else if (r.shiftId) shiftId = r.shiftId;
+    // Specialty: visible (position,specialty) pair first, then specialty name,
+    // then hidden id — so changing the dropdown on a copied row wins.
+    let specialtyId =
+      parsed.roleByPosSpec.get(`${r.positionName.toLowerCase()}||${r.specialtyName.toLowerCase()}`) ||
+      (r.specialtyName ? parsed.roleSpecByName.get(r.specialtyName.toLowerCase()) : "") ||
+      r.specialtyId ||
+      "";
     if (specialtyId && !posBySpecialty.has(specialtyId)) specialtyId = ""; // stale id
     if (!specialtyId) {
       result.skipped.push({ rowNumber: r.rowNumber, employeeName: r.employeeName, reason: `"${r.specialtyName || "(blank)"}" is not a valid role` });
       continue;
     }
-    const positionId = posBySpecialty.get(specialtyId) ?? r.positionId ?? "";
-    const sig = `${r.dayId}::${r.shiftId || ""}::${employeeKey}`;
+    const positionId = posBySpecialty.get(specialtyId) ?? "";
+    const sig = `${dayId}::${shiftId || ""}::${employeeKey}`;
     if (desiredSig.has(sig)) {
       result.skipped.push({ rowNumber: r.rowNumber, employeeName: r.employeeName, reason: "duplicate (same day, shift, employee)" });
       continue;
     }
     desiredSig.add(sig);
-    const id = r.assignmentId || newAssignmentId();
-    desiredAsgIds.add(id);
+    // Reuse the existing assignment's id when one already covers this slot
+    // (idempotent update); otherwise mint a fresh id. The hidden assignment_id
+    // is intentionally NOT trusted — a copied row carries a stale one.
+    const id = existingBySig.get(sig)?.id || newAssignmentId();
     desired.push({
       id,
-      jobRequestDayId: r.dayId,
+      jobRequestDayId: dayId,
       employeeKey,
       positionId: positionId || undefined,
       specialtyId,
-      shiftId: r.shiftId || undefined,
+      shiftId: shiftId || undefined,
       confirmed: r.confirmed,
       notes: r.notes || undefined,
       sortOrder: sortOrder++,
     });
   }
 
-  // Existing assignments: keep if matched by id or signature, else delete.
-  const existing = await loadAssignmentsForRequest(jobRequestId);
+  // Existing assignments not present in the sheet (by slot signature) → delete.
   for (const a of existing) {
     const sig = `${a.jobRequestDayId}::${a.shiftId || ""}::${a.employeeKey || ""}`;
-    const keep = desiredAsgIds.has(a.id) || desiredSig.has(sig);
-    if (!keep) {
+    if (!desiredSig.has(sig)) {
       await deleteAssignment(a.id);
       result.assignmentsDeleted++;
     }
