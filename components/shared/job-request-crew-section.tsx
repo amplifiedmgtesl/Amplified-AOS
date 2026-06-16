@@ -301,6 +301,20 @@ export function JobRequestCrewSection({
         result.skipped.length ? `${result.skipped.length} need fixing — see downloaded sheet` : "",
       ].filter(Boolean);
       flash(bits.join(" · "), result.skipped.length === 0);
+
+      // Unmissable completion notice. Always hand back the refreshed workbook;
+      // only ask them to open it when something needs attention.
+      const summary =
+        `Import complete.\n\n` +
+        `• ${result.assignmentsUpserted} crew loaded\n` +
+        (result.assignmentsDeleted ? `• ${result.assignmentsDeleted} removed\n` : "") +
+        (result.employeesCreated ? `• ${result.employeesCreated} new employee${result.employeesCreated === 1 ? "" : "s"} added\n` : "") +
+        (result.employeesLinked ? `• ${result.employeesLinked} matched to existing people\n` : "");
+      const tail = result.skipped.length
+        ? `\n⚠ ${result.skipped.length} row${result.skipped.length === 1 ? "" : "s"} need attention. ` +
+          `A refreshed file "${filename}" was downloaded — open it and check the Status column on the Crew tab, fix those rows, then re-upload.`
+        : `\nEverything imported cleanly — no review needed. A refreshed copy "${filename}" was downloaded for your records.`;
+      window.alert(summary + tail);
     } catch (err: any) {
       flash(`Import failed: ${err?.message ?? err}`, false);
     } finally {
