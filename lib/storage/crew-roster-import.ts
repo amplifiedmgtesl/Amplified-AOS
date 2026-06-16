@@ -500,9 +500,18 @@ export async function commitRosterImport(
       continue;
     }
     // Day: visible Date first (copy-paste safe), hidden day_id as fallback.
-    const dayId = (r.eventDate && dayByDate.get(r.eventDate)) || (jobDayIds.has(r.dayId) ? r.dayId : "");
+    // The VISIBLE Date is authoritative. If it's filled but isn't a day on this
+    // job, stop and say so — don't silently fall back to the hidden day_id (that
+    // would make a date edit look ignored). Only use the hidden id when the
+    // visible Date is blank.
+    let dayId = "";
+    if (r.eventDate) dayId = dayByDate.get(r.eventDate) ?? "";
+    else if (jobDayIds.has(r.dayId)) dayId = r.dayId;
     if (!dayId) {
-      result.skipped.push({ rowNumber: r.rowNumber, employeeName: r.employeeName, reason: "row's date is not a day on this job" });
+      const reason = r.eventDate
+        ? `date ${r.eventDate} isn't a day on this job — add it under Daily Requirements, or fix the date`
+        : "row has no date";
+      result.skipped.push({ rowNumber: r.rowNumber, employeeName: r.employeeName, reason });
       continue;
     }
     // Shift: visible label first, hidden shift_id only when no label is shown.
