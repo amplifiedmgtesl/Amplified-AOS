@@ -59,8 +59,7 @@ rows). Columns:
 
 | Column | Source | Notes |
 |---|---|---|
-| Date | day | `event_date`, e.g. 2026-08-10 |
-| Day | derived | Mon/Tue… for readability |
+| Date | day | `event_date`, e.g. 2026-08-10 — the binding source of truth for the day (no day-of-week column, so there's nothing to leave inconsistent when copying a row) |
 | Shift | shift label | blank if job has no shifts |
 | Call / Start / End | day or quote line | times, display-only |
 | Position | position name | **dropdown** validated against the distinct-positions list on Valid Roles |

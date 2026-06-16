@@ -27,28 +27,27 @@ export type RosterSource = "requirements" | "quote";
  * never has to text-match.
  */
 export const CREW_COL = {
-  date: 1,
-  day: 2,
-  shift: 3,
-  call: 4,
-  start: 5,
-  end: 6,
-  position: 7,    // dropdown-validated against the distinct positions list
-  specialty: 8,   // dropdown cascades from the chosen position (valid pairs only)
-  employee: 9,    // dropdown-validated against Employees; the one field they fill
-  confirmed: 10,  // Yes/No
-  notes: 11,
-  status: 12,     // written on (re-)export; read-only guidance
+  date: 1,        // the binding source of truth for the day (no day-of-week column — avoids editing one but not the other)
+  shift: 2,
+  call: 3,
+  start: 4,
+  end: 5,
+  position: 6,    // dropdown-validated against the distinct positions list
+  specialty: 7,   // dropdown cascades from the chosen position (valid pairs only)
+  employee: 8,    // dropdown-validated against Employees; the one field they fill
+  confirmed: 9,   // Yes/No
+  notes: 10,
+  status: 11,     // written on (re-)export; read-only guidance
   // hidden binding ids
-  dayId: 13,
-  shiftId: 14,
-  specialtyId: 15,
-  positionId: 16,
-  assignmentId: 17,
+  dayId: 12,
+  shiftId: 13,
+  specialtyId: 14,
+  positionId: 15,
+  assignmentId: 16,
 } as const;
 
 export const CREW_HEADERS = [
-  "Date", "Day", "Shift", "Call", "Start", "End",
+  "Date", "Shift", "Call", "Start", "End",
   "Position", "Specialty", "Employee", "Confirmed", "Notes", "Status",
   "day_id", "shift_id", "specialty_id", "position_id", "assignment_id",
 ];

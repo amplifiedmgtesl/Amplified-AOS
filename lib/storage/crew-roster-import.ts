@@ -482,7 +482,7 @@ export async function buildReexportBlob(
   // Append skipped rows so the coordinator can see + fix them.
   for (const s of skipped) {
     data.slots.push({
-      eventDate: "", day: "", shiftLabel: "", call: "", start: "", end: "",
+      eventDate: "", shiftLabel: "", call: "", start: "", end: "",
       specialtyName: "", positionName: "", employeeName: s.employeeName,
       confirmed: false, notes: "", status: `⚠ skipped — ${s.reason}`,
       dayId: "", shiftId: "", specialtyId: "", positionId: "", assignmentId: "",

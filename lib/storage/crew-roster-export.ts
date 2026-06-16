@@ -42,8 +42,6 @@ import {
   type RosterMeta,
 } from "./crew-roster-schema";
 
-const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
 /** 1-based column index → Excel column letter (7 → "G"). */
 function colLetter(n: number): string {
   let s = "";
@@ -57,7 +55,6 @@ function colLetter(n: number): string {
 
 export type RosterSlotRow = {
   eventDate: string;
-  day: string;
   shiftLabel: string;
   call: string;
   start: string;
@@ -253,7 +250,6 @@ export async function gatherRoster(
     const d: JobRequestDay | undefined = dayById.get(dayId);
     return {
       eventDate: d?.eventDate ?? "",
-      day: d?.eventDate ? DOW[new Date(d.eventDate + "T00:00:00").getDay()] : "",
       call: d?.callTime ?? "",
       start: d?.startTime ?? "",
       end: d?.endTime ?? "",
@@ -491,14 +487,14 @@ export async function writeRosterWorkbook(data: RosterData, exportedAtISO: strin
   crew.addRow(CREW_HEADERS).font = { bold: true };
   for (const s of data.slots) {
     crew.addRow([
-      s.eventDate, s.day, s.shiftLabel, s.call, s.start, s.end,
+      s.eventDate, s.shiftLabel, s.call, s.start, s.end,
       s.positionName, s.specialtyName, s.employeeName, s.confirmed ? CONFIRMED_YES : CONFIRMED_NO, s.notes, s.status,
       s.dayId, s.shiftId, s.specialtyId, s.positionId, s.assignmentId,
     ]);
   }
   // Hide binding id columns.
   for (let c = CREW_FIRST_HIDDEN_COL; c <= CREW_HEADERS.length; c++) crew.getColumn(c).hidden = true;
-  [12, 6, 12, 8, 8, 8, 18, 20, 24, 11, 24, 30].forEach((w, i) => { crew.getColumn(i + 1).width = w; });
+  [12, 12, 8, 8, 8, 18, 20, 24, 11, 24, 30].forEach((w, i) => { crew.getColumn(i + 1).width = w; });
 
   // Validation only across the populated range + a buffer for extra rows —
   // keeps the file lean and the cascade formulas bounded.
