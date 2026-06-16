@@ -21,6 +21,7 @@ import type {
   Specialty,
 } from "@/lib/store/types";
 import { LazyEmployeePicker } from "./employee-picker";
+import { EqualizerLoader } from "./equalizer-loader";
 import { buildRosterWorkbookBlob, loadActiveEmployeeRows } from "@/lib/storage/crew-roster-export";
 import {
   parseRosterWorkbook,
@@ -86,6 +87,7 @@ export function JobRequestCrewSection({
   // ─── Roster spreadsheet round-trip ───────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [rosterBusy, setRosterBusy] = useState(false);
+  const [rosterStatus, setRosterStatus] = useState("Working…");
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   // Pending name-variation decisions surfaced after an import parse.
   const [pendingImport, setPendingImport] = useState<{
@@ -247,6 +249,7 @@ export function JobRequestCrewSection({
 
   async function doExport(source: RosterSource) {
     setExportMenuOpen(false);
+    setRosterStatus("Building the roster file…");
     setRosterBusy(true);
     try {
       const { blob, filename } = await buildRosterWorkbookBlob(jobRequestId, source, new Date().toISOString());
@@ -263,6 +266,7 @@ export function JobRequestCrewSection({
     const file = e.target.files?.[0];
     e.target.value = ""; // allow re-picking the same file
     if (!file) return;
+    setRosterStatus("Reading the spreadsheet…");
     setRosterBusy(true);
     try {
       const buffer = await file.arrayBuffer();
@@ -272,6 +276,7 @@ export function JobRequestCrewSection({
           `This sheet is for Job ${parsed.meta.jobNo || parsed.meta.jobRequestId} (${parsed.meta.eventName}); you're on a different job.`,
         );
       }
+      setRosterStatus("Checking employees…");
       const existing = await loadActiveEmployeeRows();
       const plan = await planEmployeeReconciliation(parsed, existing);
       const contactUpdates = planContactUpdates(parsed, existing);
@@ -304,6 +309,7 @@ export function JobRequestCrewSection({
     choices: Record<string, EmployeeDecision>,
     approvedUpdates: ApprovedUpdate[],
   ) {
+    setRosterStatus("Importing — saving crew & employees…");
     setRosterBusy(true);
     try {
       const decisions = new Map<string, EmployeeDecision>(Object.entries(choices));
@@ -380,7 +386,7 @@ export function JobRequestCrewSection({
   }
 
   return (
-    <SectionFrame hideHeader={hideHeader}>
+    <SectionFrame hideHeader={hideHeader} overlay={rosterBusy ? <EqualizerLoader label={rosterStatus} /> : null}>
       {msg && (
         <div style={{
           background: msg.ok ? "#eef9ee" : "#fff3f3",
@@ -790,18 +796,21 @@ export function JobRequestCrewSection({
   );
 }
 
-function SectionFrame({ children, hideHeader = false }: { children: React.ReactNode; hideHeader?: boolean }) {
+function SectionFrame({ children, hideHeader = false, overlay }: { children: React.ReactNode; hideHeader?: boolean; overlay?: React.ReactNode }) {
   return (
-    <div style={hideHeader
-      ? { marginTop: 4 }
-      : { marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border, #e5e7eb)" }
-    }>
+    <div style={{
+      position: "relative",
+      ...(hideHeader
+        ? { marginTop: 4 }
+        : { marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border, #e5e7eb)" }),
+    }}>
       {!hideHeader && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
           <h3 style={{ margin: 0, fontSize: 14 }}>Assigned Crew</h3>
         </div>
       )}
       {children}
+      {overlay}
     </div>
   );
 }
