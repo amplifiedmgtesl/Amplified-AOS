@@ -4,9 +4,10 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+import os
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem,
-    Table, TableStyle, HRFlowable, KeepTogether,
+    Table, TableStyle, HRFlowable, KeepTogether, Image,
 )
 
 OUT = "docs/timekeeping-crew-lead-guide.pdf"
@@ -56,6 +57,30 @@ def callout(title, body_items, bg, border, title_color):
 
 def section_rule():
     return HRFlowable(width="100%", thickness=1, color=LINE, spaceBefore=6, spaceAfter=10)
+
+
+# Embed a screenshot from docs/guide-images/ ONLY if the file exists, scaled to fit
+# the content width and captioned. Returns [] when the file isn't present, so the
+# guide builds with or without the images.
+GUIDE_IMG_DIR = "docs/guide-images"
+MAX_IMG_W = 6.0 * inch
+
+
+def screenshot(filename, caption=""):
+    path = os.path.join(GUIDE_IMG_DIR, filename)
+    if not os.path.exists(path):
+        return []
+    img = Image(path)
+    iw, ih = float(img.imageWidth), float(img.imageHeight)
+    w = min(MAX_IMG_W, iw)
+    img.drawWidth = w
+    img.drawHeight = w * ih / iw
+    img.hAlign = "CENTER"
+    out = [Spacer(1, 6), img]
+    if caption:
+        out.append(Paragraph(caption, ParagraphStyle("cap", parent=SMALL, alignment=1, spaceBefore=3)))
+    out.append(Spacer(1, 8))
+    return [KeepTogether(out)]
 
 
 story = []
@@ -122,6 +147,11 @@ story.append(Paragraph(
 
 # ─── 4. Crew member: staff app ────────────────────────────────────────────
 story.append(Paragraph("4. Crew Member — entering time in the Staff App", H1))
+story.append(Paragraph(
+    "The staff home shows each worker their status at a glance — how many shifts <b>need their time</b>, "
+    "are <b>awaiting approval</b>, and are <b>approved</b> — plus their upcoming jobs.", BODY))
+for f in screenshot("dashboard.png", "Staff app home — status cards and upcoming jobs."):
+    story.append(f)
 story.append(bullets([
     "<b>Shifts needing your time</b> on the home/Timesheets screen lists the planned shifts that still need actual time.",
     "Tapping <b>Enter time</b> opens the entry: pick the real Time In/Out (a split shift has a second pair), meal breaks, and confirm position/specialty/shift.",
@@ -130,6 +160,10 @@ story.append(bullets([
 ]))
 story.append(Paragraph(
     "Crew don't see billing dollars — only their hours. Rates and totals are computed behind the scenes from the job's quote.", SMALL))
+for f in screenshot("staff-needs-time.png", "Staff app — “Shifts needing your time” and timesheet history."):
+    story.append(f)
+for f in screenshot("staff-edit.png", "Staff app — entering actual time (split shift) and the “I'm done” checkbox."):
+    story.append(f)
 
 # ─── 5. Review & approve ──────────────────────────────────────────────────
 story.append(Paragraph("5. Reviewing &amp; approving", H1))
@@ -139,6 +173,8 @@ story.append(bullets([
     "Use the <b>“Staff time” filter</b> (All / Awaiting staff / Staff done) to narrow the grid to who still hasn't finalized.",
     "Approving attaches the entry to the job's timesheet and <b>locks it</b>. To change an approved entry, unlock it (set back to submitted) first.",
 ]))
+for f in screenshot("aos-pending-review.png", "AOS Timekeeping — “Staff Submissions Pending Review,” where staff entries are approved."):
+    story.append(f)
 
 # ─── 6. Rules to know ─────────────────────────────────────────────────────
 story.append(Paragraph("6. Rules worth knowing", H1))
@@ -167,11 +203,11 @@ story.append(Paragraph(
     "and is well defined. Phase 2 (QR / on-site clock-in) still needs design before it's workable.", NOTE))
 
 story.append(Paragraph("Phase 1 (next) — close the loop with crew", H2))
-story.append(Paragraph("<b>Assignment notifications + auto login</b>", BODY))
+story.append(Paragraph("<b>Assignment notifications + auto account creation</b>", BODY))
 story.append(bullets([
     "When a crew member is <b>confirmed</b> for a job (or a timekeeping row is added for them), send an <b>email and/or SMS</b> with the assignment (job, date, call time, role).",
     "The message includes a <b>link to the Staff App</b> and their <b>username</b>.",
-    "If they don't yet have a Staff App login, <b>create one automatically</b> and include the password in the message.",
+    "If they don't yet have a Staff App account, <b>create one automatically</b> and include the password in the message so they can log in themselves.",
     "Result: the crew member opens the app, sees the shift under “needing your time,” and enters their hours — the loop is closed end to end.",
 ]))
 story.append(Paragraph("<b>Spreadsheet crew load</b>", BODY))

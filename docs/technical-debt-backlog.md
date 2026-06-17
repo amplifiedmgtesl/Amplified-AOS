@@ -793,6 +793,14 @@ The `holidayHours` field exists on every quote_line and invoice_line, drives mea
 
 ## Bulk import: load crew assignments from a spreadsheet
 
+**STATUS: SHIPPED to prod 2026-06-16** (merge `d179a01`) as the full crew-roster
+export/import round-trip. Spec: `docs/crew-roster-spreadsheet-spec.md`. The design
+below is the original stub, kept for history. **Open follow-up (deferred):** the
+import-completion notice is a native `window.alert`; convert it to an in-app
+dialog — nicer looking and screenshottable. Revisit after coordinators have used
+the feature for a bit (per user, 2026-06-16) and roll in any other UX changes
+that surface from real use.
+
 **Why:** Building out crew assignments one-by-one through the UI is slow when a job has dozens of confirmed crew. Connor (and other coordinators) typically build the roster in a spreadsheet first — pasting names + dates + positions into the app would be much faster than the per-row form. Logged 2026-05-28 during V2 testing.
 
 **How to apply:**

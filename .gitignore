@@ -19,3 +19,14 @@ tsconfig.tsbuildinfo
 # Quote/invoice recovery workspace — contains signed client PDFs, extracted data, and recovery scripts.
 # Never commit any of this. Recovery scripts can be reconstructed from project_todo if needed.
 recovery/
+
+# Crew-roster coordinator guide — screenshots/renders contain real employee PII
+# (names, phones, emails, addresses). Keep local-only; never commit.
+docs/img/
+docs/crew-roster-guide.pdf
+scripts/make_crew_roster_guide.py
+
+# Timekeeping crew-lead/admin guide — screenshots/PDF contain real employee PII.
+# Keep local-only; never commit. Generator script is safe to commit.
+docs/guide-images/
+docs/timekeeping-crew-lead-guide.pdf
