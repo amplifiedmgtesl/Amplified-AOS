@@ -907,6 +907,45 @@ Fix: dedupe, debounce, or properly memoize the dependency array.
 
 ---
 
+## Timekeeping save path — upsert-all-rows-on-every-edit (write/WAL amplification)
+
+**Filed 2026-06-18 after a full prod outage** — see [docs/incidents/2026-06-18-prod-disk-io-outage.md](docs/incidents/2026-06-18-prod-disk-io-outage.md). This is the **write-side** companion to the read-side timekeeping perf items above ([Effect-loop re-fetching](#effect-loop-re-fetching-on-timekeeping), [fetch waterfall](#timekeeping-page-perf--fetch-waterfall-21-requests-per-load)).
+
+**Why:** [`syncTimesheet`](lib/store/db.ts) ([db.ts:706](lib/store/db.ts)) upserts the **entire set** of AOS-managed rows (`t.rows.filter(r => !r.userId)`) on **every edit** — the comment at [db.ts:748](lib/store/db.ts) says so explicitly (*"the entries upsert re-fires on every edit"*). The per-line **employee picker** is the edit trigger. Each `ON CONFLICT DO UPDATE` rewrites every row's tuple (even unchanged ones) and maintains all 8 of the table's indexes, producing heavy WAL + full-page images. Measured in the outage: `timesheet_entries` upserts generated **~940 MB of WAL** on a 27 MB DB — **247 KB of WAL per single-row upsert** — the dominant disk-write source that drained the Nano instance's disk-IO budget. The prior redesign moved this off delete+reinsert to upsert, but it still writes *every row on every edit*.
+
+**Fix (priority order):**
+1. **Upsert only changed rows.** Dirty-track which rows actually changed since last save and upsert just those. One changed line → 1 row write instead of ~30. Biggest win, lowest risk.
+2. **Debounce the autosave** (currently per-keystroke/edit). A 1–2 s debounce collapses an edit burst into a single save.
+3. Pairs with the read-side fixes above (dedup/debounce the re-fetch effects) — same screen, same root instinct (the picker triggers too much work too often).
+
+**Verification:** the `monitoring.statement_snapshot` job (added 2026-06-18) now captures WAL per statement every 15 min — measure WAL/hour from the `timesheet_entries` upsert before vs. after to prove the drop.
+
+**Sequencing:** independent of the quote/invoice rewrite. High value — this is what actually prevents a recurrence regardless of compute size.
+
+---
+
+## Revisit `timesheet_entries` index cleanup — drop truly-unused indexes
+
+**Filed 2026-06-18. ⏰ Revisit on/after ~2026-06-23** (needs ~a week of `monitoring.index_snapshot` data — the per-index `idx_scan` counters reset at the 2026-06-18 compute resize, so "unused" is not trustworthy before then). Context: [incident doc](docs/incidents/2026-06-18-prod-disk-io-outage.md).
+
+**Why:** `timesheet_entries` (1,863 rows) carries **8 indexes**. Every extra index is re-maintained on every upsert — and that table's upsert is the #1 WAL generator (see the save-path item above). Dropping genuinely-dead indexes is a real **write-side** win (less WAL per write) with zero app-code change, fully reversible. As of the resize, 5 of 8 showed 0 scans, but that window is too short to act on.
+
+**Candidates to confirm dead (then drop):** `idx_timesheet_entries_is_holiday`, `idx_timesheet_entries_payroll_run_id`, `idx_timesheet_entries_position_id`, `idx_timesheet_entries_shift_id`, `timesheet_entries_invoice_line_idx`. Known-used (keep): `timesheet_entries_pkey`, `idx_timesheet_entries_job_id`.
+
+**How to check (run after the window):**
+```sql
+select relname, indexrelname, max(idx_scan) - min(idx_scan) as scans_in_window
+from monitoring.index_snapshot
+where relname = 'timesheet_entries'
+group by relname, indexrelname
+order by scans_in_window;
+```
+Drop any `timesheet_entries` index with `scans_in_window = 0` over a representative week (must include a busy timekeeping day). Re-check the advisor afterward.
+
+**Do NOT** add the 3 advisor-flagged missing FK indexes (`employee_key`, `timesheet_id`, `user_id`) as a "fix" — at 1,863 rows seq scans are sub-ms/cached, and new indexes *increase* write amplification on the hot path. Revisit only if/when the table grows large (tens of thousands of rows).
+
+---
+
 ## "Load every table upfront" architecture (initStore)
 
 **Filed 2026-05-30 after perf debugging.** Cold start fires 73+ requests in parallel to hydrate every table on app boot (lib/store/db.ts:115 initStore). With prod data sizes (2570 employees, 588 calendar_events, 615 quote_lines, 724 timesheet_entries) this transfers ~1MB and takes 10-20s on a hard refresh / first page load.
