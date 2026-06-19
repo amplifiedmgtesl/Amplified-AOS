@@ -868,6 +868,37 @@ Connor's mental model is "merge", not "replace whole-line-item-set." Logged 2026
 
 ---
 
+## ⭐ EPIC: Timekeeping save + load overhaul (write + read, one project)
+
+**Filed 2026-06-18.** Consolidates the scattered timekeeping performance items below into **one coordinated project**. They share the same files, the same root cause, and a real data-model dependency — doing them as separate branches would conflict and force rework, and they all touch a **high-risk screen** (freeze triggers, the Brent FK-race history, the 99-row Bruno Mars render cliff; a prior read-side attempt was reverted as `e02cab8` / React #301). Work them together on one branch, shipped in verifiable increments. Per-piece detail lives in the individual sections referenced below — this entry is the framing + sequencing only. (High-level for now; dig into specifics when the project starts.)
+
+**Trigger:** the [2026-06-18 prod disk-IO outage](docs/incidents/2026-06-18-prod-disk-io-outage.md) was caused by the *write* side of this screen.
+
+**Shared surface:** `components/shared/timekeeping.tsx` (~2,000-line grid/picker/approval/print) + `lib/store/db.ts` (`syncTimesheet` + the read helpers).
+
+**Constituent items (already filed separately, rolled up here):**
+- **WRITE** — "Timekeeping save path — upsert-all-rows-on-every-edit (write/WAL amplification)" — the outage-prevention fix; dirty-track changed rows + debounce autosave.
+- **READ** — "Effect-loop re-fetching on timekeeping" (3× refetch per swap).
+- **READ** — "Timekeeping page perf — fetch waterfall (21+ requests per load)" + "Repeated `positions`/`profiles`/`user` queries (no dedup)" (in-flight dedupe map / nested PostgREST selects).
+- **RENDER** — "Timekeeping render perf — synchronous collapse on timesheet swap" (derive default-collapsed; mind the prior revert `e02cab8` / React #301).
+- **REFACTOR** — app-review **Q1**: break up the ~2,000-line `timekeeping.tsx`.
+- **RELATED (broader)** — "'Load every table upfront' architecture (initStore)" affects this page's cold start too; can fold in or stay separate.
+
+**Why one project (the coupling):**
+1. **Same files** — separate branches would all edit the same effects/handlers → conflicts + repeated review of fragile code.
+2. **Same root cause** — "the picker/grid does too much work, too often." Debounce-the-save (write) and debounce/dedupe-the-fetch (read) are the *same* effect plumbing.
+3. **Data-model dependency** — the write fix's mechanism is **dirty-tracking** (upsert only changed rows), which needs a clean **load baseline** (read). The two can't be designed in isolation.
+4. **One QA cycle** on an operationally-central, fragile screen instead of three.
+
+**Sequencing (incremental — one branch, NOT a big-bang merge):**
+1. **Write fix first** — dirty-track + debounce autosave. Highest urgency (outage prevention) and it establishes the dirty/clean state model the read work reuses. Verify the WAL/hour drop via `monitoring.statement_snapshot` before moving on.
+2. **Read fixes** — in-flight request dedupe, kill the 3× effect-loop refetch, collapse the waterfall.
+3. **Render + refactor** — derive default-collapsed state; fold the behavioral fixes into the Q1 file breakup rather than drive-by edits around it.
+
+**Owner/branch:** one owner, one branch, ship verifiable steps. Each increment can still merge dev→prod on its own once verified — "one project" means shared design + no parallel conflicts, not one massive merge.
+
+---
+
 ## Timekeeping render perf — synchronous collapse on timesheet swap
 
 **Filed 2026-05-30.** Selecting a multi-day timesheet with many entries (Bruno Mars: 99 entries × 5 days) takes 18-20s wall-clock even after the network fixes. Only 4 network requests fire (~2s total parallel) — the other 15-18s is React rendering time.
