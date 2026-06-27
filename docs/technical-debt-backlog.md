@@ -1160,3 +1160,103 @@ when next touched.
 - Carolina 6/04 (this session) — 33 timesheet rows missing specialty, all from manual picker
 - Bruno Mars [Timesheet OT split](#timesheet-stdotdt-split-should-derive-from-the-jobs-billing-rule) — timesheets entered before the quote existed, so no rule was available to validate against
 - [Enforce client consistency](#enforce-client-consistency-across-job--quote--rate-card--invoice) — quote/invoice/rate-card client mismatches happen because no cross-entity validation runs at save
+
+---
+
+# Crew-facing portal & mobile app (theme — added 2026-06-26)
+
+Four related items captured from John 2026-06-26. They cluster around giving crew (and the
+onsite crew leader) a way into the system without exposing the full admin app. #1–#3 share the
+same auth/role foundation and the read-only-first rollout; #4 is an independent privacy fix on
+the existing coordinator export. The assignment-notification half of #3 already has its own
+design — see [notifications-spec.md](notifications-spec.md) (crew_assigned event, Resend/Twilio,
+template at `lib/notifications/templates/crew-assigned.ts`). Build the role/auth layer once and
+let all of these hang off it.
+
+## Onsite mobile time clock — crew leader sign-in/out with on-device signature
+
+**Why:** The crew leader onsite at a job has no way to capture shift attendance digitally. Today
+hours get entered later, by an admin, from paper. Goal: a phone/tablet-friendly screen the crew
+leader signs into, picks a crew member from that job's timekeeping list, and that member signs
+**in** (physical signature captured on the device) and **out** for each shift. This is the
+on-the-ground capture source that should feed `timesheet_entries` instead of after-the-fact
+manual entry.
+
+**How to apply:**
+- Mobile-first route (its own minimal layout — big touch targets, no admin chrome). Crew-leader
+  login scoped to a single job (or the jobs they lead) so the device only ever lists that job's
+  crew. Reuse the assignment list already built for the job (`job_request_assignments` /
+  `loadAssignmentsForRequest`), not the whole employee directory.
+- Per crew member, per shift: **Sign In** and **Sign Out** buttons that each open a signature pad
+  (`signature_pad` canvas — same lib already proposed for [quote e-signature](#online-quote-review--e-signature-no-adobe--docusign)).
+  Capture signature image + timestamp + (optional) device geolocation.
+- Persist to a new `shift_clock_events` table (or directly create/update `timesheet_entries` with
+  actual in/out times). Store the two signature images in a Supabase Storage bucket following the
+  canonical attachment pattern. One in/out pair per (employee, shift, day).
+- Pairs with the [`timesheet_days`](#introduce-timesheet_days-table--peer-of-job_request_days)
+  work — the day/shift structure this writes into should be the normalized one, not per-row
+  denormalized fields.
+- Offline tolerance is desirable (venues have bad signal) but can be a v2 — start online-only.
+- **Sequencing:** depends on the crew role/auth layer below. Signature capture + storage pattern
+  is shared with the crew e-signature feature.
+
+## "Crew" user role — read-only login (staff app), editing later
+
+**Why:** Baby-steps toward crew self-service. Stand up a `crew` user/role that can log in to the
+staff app ([amplified-staff](../../amplified-staff)) and see **only their own information,
+read-only**. Editing stays off until the read-only version is proven, then gets turned back on
+selectively.
+
+**How to apply:**
+- Add a `crew` role to the user/role model (`app/api/users/route.ts`, `user-management.tsx`).
+  Link the auth user to their `employees` row via `employee_key`.
+- RLS: crew users can `SELECT` only rows scoped to their own `employee_key` (their assignments,
+  their timesheet entries, their pay-visible hours) and nothing else. No write policies at first.
+- Staff-app UI gated by role: a crew user lands on a personal read-only view, not the admin
+  surfaces. Hide every nav item that isn't theirs.
+- Phase 2 (later): grant narrow write access (e.g. confirm/decline an assignment, edit own
+  contact info) by adding scoped write RLS + un-disabling specific fields. Keep the read-only
+  rollout in production for a cycle before flipping anything to editable.
+
+## Crew portal — notify on assignment + crew login to see assigned shifts & entered hours
+
+**Why:** When a crew member is assigned to a job, (a) email/text them automatically, and (b) give
+them a login (the read-only `crew` user from #2) to see their assigned shifts and the hours that
+were entered for them. The notification half is already designed.
+
+**How to apply:**
+- **Notification on assignment:** already specced — implement per
+  [notifications-spec.md](notifications-spec.md) (crew_assigned event → Resend email + Twilio SMS,
+  fired from the crew-assignment server action). Prerequisite there: structured recipient phone
+  data (see that doc's "Recipient phone data" section).
+- **Crew portal view:** built on the #2 role/auth + RLS. A crew member logs in and sees their
+  assigned shifts (from `job_request_assignments` + the job's days/shifts) and the
+  `timesheet_entries` recorded against them, **read-only** — hours entered, dates, positions, and
+  (if cleared for crew visibility) pay hours. Decide explicitly which columns crew may see
+  (e.g. show hours; gate bill rates — those are already never crew-facing).
+- This is the consumer side of the [time clock](#onsite-mobile-time-clock--crew-leader-sign-inout-with-on-device-signature):
+  what the crew leader captures onsite is what the crew member later reviews here.
+
+## Restrict crew-roster export "Employees" tab to within ~100 mi of the event
+
+**Why:** The coordinator crew-roster export ([lib/storage/crew-roster-export.ts](../lib/storage/crew-roster-export.ts))
+includes an **Employees** tab built by `loadActiveEmployeeRows()` — today the *entire* active
+employee roster. A coordinator who leaves could walk off with the full employee directory.
+Restricting that tab to employees within ~100 miles of the event location limits the exposure to
+people plausibly relevant to that job.
+
+**How to apply:**
+- Filter `loadActiveEmployeeRows()` (or its caller in `buildRosterWorkbook`) by distance between
+  the employee's location and the job's venue. Pass the `JobRequest` venue (it has
+  `venueAddress` / `city` / `venueZip`) into the export so the filter has an anchor.
+- **Geocoding gap:** employees store `city` / `state` / `zip` but **no lat/long**
+  ([lib/store/types.ts](../lib/store/types.ts) Employee type), so there's nothing to compute
+  distance from yet. Cheapest path: a static US ZIP→lat/long centroid table (bundled dataset, no
+  API) and a haversine distance; ZIP-centroid accuracy (~city-level) is fine for a 100-mi cutoff.
+  Geocode the venue ZIP the same way. Employees with no/blank ZIP → decide whether to include or
+  exclude (recommend exclude from the trimmed tab, since they can't be confirmed in-radius).
+- Make the radius a constant (default 100 mi) so it's easy to tune. Consider an admin override
+  (full roster) for internal exports vs. coordinator-facing ones.
+- The Crew (slots) tab and import-matching path must still resolve any already-assigned employee
+  even if they're outside the radius — only the *browse-the-whole-directory* Employees tab gets
+  trimmed.
