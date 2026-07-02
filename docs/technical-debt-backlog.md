@@ -44,6 +44,14 @@ Cache only **small, bounded, slowly-changing reference/lookup** tables (position
 
 The quote-system-rewrite section below remains the immediate Phase A focus; the design doc covers the larger context.
 
+## Rewrite `timesheet_entries_freeze_check()` as a denylist (trigger drift, added 2026-07-02)
+
+The freeze trigger's UPDATE guard lists frozen columns **by hand**, so migrations that add columns silently escape it. As of 2026-07-02 these columns are NOT in the freeze list: `payroll_run_id`, `staff_finalized`, `staff_finalized_at`, `job_name`. Low billing risk today (every money column — hours/rates/dates/position/specialty/meal/bill totals — is still frozen; the gaps are workflow/linkage/label fields), but it will keep drifting.
+
+Also: on **DELETE** the trigger only blocks `invoice_line_id IS NOT NULL` — it does NOT block approved-not-invoiced or payroll-locked rows (payroll is covered separately by the `payroll_run_entries` FK's default NO ACTION). A code comment in [timekeeping.tsx](components/shared/timekeeping.tsx) falsely claims "the DB freeze trigger would reject the delete anyway" for approved rows — it doesn't. Delete safety is now enforced in `deleteTimesheetEntries()` ([db.ts](lib/store/db.ts), commit `f6f1b1b`): it checks approved/invoice-bound/payroll against the live DB and refuses locked rows, so it does not depend on the trigger.
+
+**Fix:** flip the UPDATE freeze to a denylist — freeze ALL columns except an explicit mutable set (`sort_order`, `updated_at`/`created_at`, audit cols, and the lock pointers themselves) — so new columns are frozen by default and the trigger can't fall behind the schema. Correct the false code comment while at it.
+
 ### Quote system rewrite + Connor incident recovery (Phase A)
 
 **Status (as of 2026-04-29):** Designed end-to-end. Hot-fix shipped to prod 2026-04-29 (commits `02fc1bc`, `19784dd`, `1c57eee`, `cff6a6e`, `1138e17`, `23d1e5f`) covering: (1) saveInvoiceDraft no longer mutates the quote, (2) currentQuoteId recomputes fresh, (3) upsertQuote refuses cross-client overwrites, (4) "+ New Quote" button + dropdown reset properly, (5) no auto-load of saved quotes on mount, (6) **invoices now use unique ids per generation + warn on duplicate**. The deterministic-id pattern was an invoice-side analogue of Connor's bug — every "Save Invoice Draft" for the same quote overwrote prior invoice lines via syncInvoiceLines' delete-then-insert. Recovery from PDFs needs to cover invoice_lines too, not just quote headers. Awaiting dev environment, then PDF batch from Connor.
