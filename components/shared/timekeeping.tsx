@@ -7,6 +7,7 @@ import {
   getActiveJob, setActiveJob,
   loadJobRequests, loadTimesheets,
   loadTimesheetForJobLive,
+  deleteTimesheetEntries,
   ensureTimesheetForJobRequest,
   upsertTimesheet, positionNames, loadEmployees, loadPositions, loadSpecialties,
   upsertEmployee,
@@ -735,8 +736,21 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
     // the next save. If the entry has already been billed onto an invoice
     // line, the invoice_line_id pointer will go stale and the entry will
     // re-appear available on a future "Overwrite from Timesheets" run.
-    if (!confirm("Delete this timesheet row? This removes the entry from the timesheet on save.")) return;
+    if (!confirm("Delete this timesheet row? This permanently removes the entry.")) return;
     persist({ ...timesheet, rows: timesheet.rows.filter((r) => r.id !== id) });
+    // Hard-delete from the DB — persist() only re-upserts the survivors, so
+    // without this the row reappears on reload. deleteTimesheetEntries refuses
+    // approved / invoice-bound / payroll-locked rows; if this one is refused,
+    // tell the operator why and reload so it reappears (not silently gone).
+    void deleteTimesheetEntries([id]).then((res) => {
+      if (res.error || res.skipped.length > 0) {
+        const why = res.skipped[0]?.reason;
+        alert(why
+          ? `Can't delete: this entry is ${why}. Unlock it (or void/supersede the invoice) first. It will reappear on reload.`
+          : "This row could not be deleted from the database and will reappear on reload.");
+        setRefreshKey((k) => k + 1);
+      }
+    });
   }
 
   async function handleApprove(entry: import("@/lib/store/types").TimeEntry) {
@@ -926,10 +940,28 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
     const skippedNote = approvedCount > 0
       ? `\n\n${approvedCount} approved entr${approvedCount === 1 ? "y" : "ies"} will be skipped (unlock first to delete).`
       : "";
-    if (!confirm(`Delete ${deletable.length} timesheet row${deletable.length === 1 ? "" : "s"}? This removes them from the timesheet on save.${skippedNote}`)) return;
+    if (!confirm(`Delete ${deletable.length} timesheet row${deletable.length === 1 ? "" : "s"}? This permanently removes them.${skippedNote}`)) return;
     const ids = new Set(deletable.map((r) => r.id));
     persist({ ...timesheet, rows: timesheet.rows.filter((r) => !ids.has(r.id)) });
     setSelectedIds(new Set());
+    // Hard-delete from the DB — persist() only re-upserts the survivors, so
+    // without this the rows reappear on reload. The DB call refuses
+    // approved / invoice-bound / payroll-locked rows; report any that were
+    // refused and reload so they reappear rather than looking deleted.
+    void deleteTimesheetEntries([...ids]).then((res) => {
+      if (res.error) {
+        alert("Delete failed — the rows will reappear on reload.");
+        setRefreshKey((k) => k + 1);
+        return;
+      }
+      if (res.skipped.length > 0) {
+        const byReason = res.skipped.reduce<Record<string, number>>((m, s) => { m[s.reason] = (m[s.reason] ?? 0) + 1; return m; }, {});
+        alert(`Deleted ${res.deleted.length}. ${res.skipped.length} could not be deleted (`
+          + Object.entries(byReason).map(([r, n]) => `${n} ${r}`).join(", ")
+          + `) — unlock those first. They will reappear on reload.`);
+        setRefreshKey((k) => k + 1);
+      }
+    });
   }
 
   const totals = useMemo(() => {

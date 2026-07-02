@@ -742,6 +742,55 @@ export async function loadTimesheetForJobLive(jobId: string): Promise<Timesheet 
   return ts;
 }
 
+export type DeleteEntriesResult = {
+  deleted: string[];
+  skipped: { id: string; reason: "approved" | "invoice-bound" | "payroll-locked" }[];
+  error: unknown | null;
+};
+
+// Hard-delete timesheet entries by id. The grid's delete buttons previously only
+// dropped rows from the local array + re-upserted the survivors via syncTimesheet
+// — no DELETE was ever issued, so "deleted" rows persisted in the DB and
+// reappeared on reload (which is why blank/duplicate cruft accumulated and manual
+// cleanup never stuck).
+//
+// Lock enforcement lives HERE, checked against the live DB, on purpose — not in
+// the client (a grid row may not carry payroll state, and "approved implies
+// locked" is an unstated invariant) and not solely on the freeze trigger (it
+// only blocks invoice-bound DELETEs, and its column list has drifted out of sync
+// with the schema). We never delete a row that is approved, invoice-bound, or in
+// a payroll run; those are returned in `skipped` so the UI can report + reload.
+export async function deleteTimesheetEntries(ids: string[]): Promise<DeleteEntriesResult> {
+  if (ids.length === 0) return { deleted: [], skipped: [], error: null };
+
+  const { data: rows, error: readErr } = await supabase
+    .from("timesheet_entries")
+    .select("id, status, invoice_line_id")
+    .in("id", ids);
+  if (readErr) { console.error("[db] deleteTimesheetEntries lock read:", readErr); return { deleted: [], skipped: [], error: readErr }; }
+
+  const { data: pay, error: payErr } = await supabase
+    .from("payroll_run_entries")
+    .select("timesheet_entry_id")
+    .in("timesheet_entry_id", ids);
+  if (payErr) { console.error("[db] deleteTimesheetEntries payroll read:", payErr); return { deleted: [], skipped: [], error: payErr }; }
+  const payrollLocked = new Set((pay ?? []).map((r: any) => r.timesheet_entry_id));
+
+  const skipped: DeleteEntriesResult["skipped"] = [];
+  const deletable: string[] = [];
+  for (const r of (rows ?? []) as any[]) {
+    if (r.status === "approved")       skipped.push({ id: r.id, reason: "approved" });
+    else if (r.invoice_line_id)        skipped.push({ id: r.id, reason: "invoice-bound" });
+    else if (payrollLocked.has(r.id))  skipped.push({ id: r.id, reason: "payroll-locked" });
+    else deletable.push(r.id);
+  }
+  if (deletable.length === 0) return { deleted: [], skipped, error: null };
+
+  const { error } = await supabase.from("timesheet_entries").delete().in("id", deletable);
+  if (error) { console.error("[db] deleteTimesheetEntries:", error); return { deleted: [], skipped, error }; }
+  return { deleted: deletable, skipped, error: null };
+}
+
 function syncTimesheet(t: Timesheet) {
   // Upsert header (no rows column). job_sheet_id is no longer written —
   // legacy timesheets keep their stored value (upsert only touches the

@@ -99,6 +99,11 @@ export function getTimesheetByJobId(jobId: string): Timesheet | null {
 export function loadTimesheetForJobLive(jobId: string): Promise<Timesheet | null> {
   return db.loadTimesheetForJobLive(jobId);
 }
+// Hard-delete entries from the DB (the grid delete buttons only removed them from
+// view before). Authoritatively skips approved/invoice-bound/payroll-locked rows.
+export function deleteTimesheetEntries(ids: string[]): Promise<db.DeleteEntriesResult> {
+  return db.deleteTimesheetEntries(ids);
+}
 export async function getPendingStaffEntriesByJobId(jobId: string) {
   return db.getPendingStaffEntriesByJobId(jobId);
 }
