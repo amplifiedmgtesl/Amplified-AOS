@@ -703,6 +703,45 @@ export async function ensureTimesheetForJobRequest(
   return id;
 }
 
+// Live, per-job load of a timesheet + its entries — bypasses the global
+// in-memory cache. `_loadAll` reads ALL timesheet_entries in one PostgREST
+// query, which is capped at 1000 rows; once the table grew past that, large or
+// recently-edited jobs silently lost rows on the timekeeping grid (POTUS showed
+// 23 of 136), so saved entries looked missing and operators re-entered them,
+// minting duplicates. A single job is far under the cap — query it straight
+// from the DB so the grid is always complete and always fresh.
+export async function loadTimesheetForJobLive(jobId: string): Promise<Timesheet | null> {
+  // Header lives in the small `timesheets` table — reuse the cached row if this
+  // session already has it, otherwise look it up live.
+  const cached = _cache.timesheets.find((t) => t.jobId === jobId);
+  let headerRow: any = cached
+    ? { id: cached.id, job_sheet_id: cached.jobSheetId, job_id: cached.jobId, title: cached.title, hide_pay_columns: cached.hideBillColumns }
+    : null;
+  if (!headerRow) {
+    const { data, error } = await supabase
+      .from("timesheets")
+      .select("id, job_sheet_id, job_id, title, hide_pay_columns")
+      .eq("job_id", jobId)
+      .maybeSingle();
+    if (error) { console.error("[db] loadTimesheetForJobLive header:", error); return null; }
+    headerRow = data ?? null;
+  }
+  if (!headerRow) return null;
+
+  const { data: entries, error } = await supabase
+    .from("timesheet_entries")
+    .select("*")
+    .eq("timesheet_id", headerRow.id)
+    .order("sort_order", { ascending: true });
+  if (error) { console.error("[db] loadTimesheetForJobLive entries:", error); return null; }
+
+  const ts = rowToTimesheet(headerRow, entries ?? []);
+  // Heal the shared cache too, so any other screen reading getTimesheets() for
+  // this job sees the full, fresh set instead of the truncated one.
+  _cache.timesheets = [..._cache.timesheets.filter((t) => t.id !== ts.id), ts];
+  return ts;
+}
+
 function syncTimesheet(t: Timesheet) {
   // Upsert header (no rows column). job_sheet_id is no longer written —
   // legacy timesheets keep their stored value (upsert only touches the

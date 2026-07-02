@@ -95,6 +95,10 @@ export function getTimesheetByJobSheetId(jobSheetId: string): Timesheet | null {
 export function getTimesheetByJobId(jobId: string): Timesheet | null {
   return db.getTimesheets().find((t) => t.jobId === jobId) || null;
 }
+// Live per-job load — always complete + fresh, unlike the 1000-row-capped cache.
+export function loadTimesheetForJobLive(jobId: string): Promise<Timesheet | null> {
+  return db.loadTimesheetForJobLive(jobId);
+}
 export async function getPendingStaffEntriesByJobId(jobId: string) {
   return db.getPendingStaffEntriesByJobId(jobId);
 }

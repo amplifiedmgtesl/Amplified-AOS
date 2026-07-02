@@ -6,7 +6,7 @@ import { printWithTitle } from "@/lib/print-with-title";
 import {
   getActiveJob, setActiveJob,
   loadJobRequests, loadTimesheets,
-  getTimesheetByJobId,
+  loadTimesheetForJobLive,
   ensureTimesheetForJobRequest,
   upsertTimesheet, positionNames, loadEmployees, loadPositions, loadSpecialties,
   upsertEmployee,
@@ -278,43 +278,42 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
 
   useEffect(() => {
     tkPerf("picker useEffect entered", { pickerKind, pickerKey });
-    if (pickerKind === "none") { setTimesheet(null); return; }
-
-    if (pickerKind === "job") {
-      const jobId = pickerKey;
-      const jr = jobRequests.find((j) => j.id === jobId);
-      if (!jr) return;
-      // Remember the user's last-picked job for next visit
-      setActiveJob(jobId);
-
-      const linked = getTimesheetByJobId(jobId);
-      tkPerf("getTimesheetByJobId returned", {
-        found: !!linked,
-        rowCount: linked?.rows?.length ?? 0,
-      });
-      if (linked) {
-        setTimesheet(linked);
-        tkPerf("setTimesheet(linked) called");
-      } else {
-        // Lazily create a timesheet in the DB so staff approval has somewhere
-        // to land. The DB call de-dupes if a row already exists.
-        const title = `${jr.jobNo ? jr.jobNo + " — " : ""}${jr.eventName || "Job"}`;
-        ensureTimesheetForJobRequest(jobId, { jobTitle: title }).then((id) => {
-          setTimesheet({
-            id, jobId, jobSheetId: "", title,
-            hideBillColumns: false, rows: [],
-          });
-        }).catch((e) => console.error("[timekeeping] ensure failed:", e));
-      }
-    }
     setDayFilter("all");
-    tkPerf("picker useEffect leaving (scheduled isSwitchingJob clear)");
-    // Allow the overlay to clear once the new timesheet has been swapped in.
-    // Wrapped in RAF so the spinner stays through the heavy render commit.
-    requestAnimationFrame(() => {
-      tkPerf("RAF → setIsSwitchingJob(false)");
-      setIsSwitchingJob(false);
-    });
+    if (pickerKind === "none") { setTimesheet(null); setIsSwitchingJob(false); return; }
+    if (pickerKind !== "job") { requestAnimationFrame(() => setIsSwitchingJob(false)); return; }
+
+    const jobId = pickerKey;
+    const jr = jobRequests.find((j) => j.id === jobId);
+    if (!jr) { setIsSwitchingJob(false); return; }
+    // Remember the user's last-picked job for next visit
+    setActiveJob(jobId);
+    const title = `${jr.jobNo ? jr.jobNo + " — " : ""}${jr.eventName || "Job"}`;
+
+    // Per-job LIVE load (replaces the global cache read). getTimesheetByJobId()
+    // read an in-memory cache of ALL timesheet_entries that PostgREST caps at
+    // 1000 rows, so large/active jobs silently lost rows on the grid (POTUS
+    // showed 23 of 136) — saved entries looked missing and got re-entered as
+    // duplicates. One job is well under the cap: load it straight from the DB,
+    // always complete and always current. `cancelled` guards a rapid job swap.
+    let cancelled = false;
+    loadTimesheetForJobLive(jobId)
+      .then((live) => {
+        if (cancelled) return;
+        if (live) {
+          setTimesheet(live);
+          tkPerf("loadTimesheetForJobLive returned", { rowCount: live.rows.length });
+        } else {
+          // No header yet — lazily create one so staff approval has somewhere
+          // to land. The DB call de-dupes if a row already exists.
+          return ensureTimesheetForJobRequest(jobId, { jobTitle: title }).then((id) => {
+            if (!cancelled) setTimesheet({ id, jobId, jobSheetId: "", title, hideBillColumns: false, rows: [] });
+          });
+        }
+      })
+      .catch((e) => console.error("[timekeeping] live load failed:", e))
+      .finally(() => { if (!cancelled) requestAnimationFrame(() => setIsSwitchingJob(false)); });
+
+    return () => { cancelled = true; };
   }, [picker, refreshKey]);
 
   // Group rows by workDate (with a "no-date" bucket for blank ones), days
