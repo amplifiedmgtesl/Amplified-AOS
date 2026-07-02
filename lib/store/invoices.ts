@@ -681,14 +681,21 @@ export async function overwriteFromTimesheets(
   const rateCard = await resolveRateCardForJob(inv.jobRequestId);
   // ─── 1c. Quote-aware rate-mode hints ──────────────────────────────────
   //   Load the source quote's lines so we know the operator's billing
-  //   structure intent per (date, position, specialty). Build days quoted
+  //   structure intent per (date, specialty). Build days quoted
   //   at day-rate should produce day-mode invoice lines automatically;
   //   show days quoted hourly stay hourly. Without this, every line came
   //   back as hourly mode, forcing a manual SQL flip for every build-day
   //   line (Connor's CCMF pain point, 2026-06-06).
   //
+  //   Keyed on (date, specialty) — quote_lines.position_id was dropped in
+  //   migration 20260505b, and specialty already implies position (each
+  //   specialty belongs to one position), so it's redundant here. Selecting
+  //   the dropped column previously 400'd this read and silently killed the
+  //   rate hints, so every invoice line rebuilt as hourly (2026-07-02: the
+  //   Morgan Wallen invoice Connor/Chris had to hand-fix).
+  //
   //   Tiebreaker: if the quote has BOTH day and hourly lines for the
-  //   same (date, position, specialty) — common when bulk crew is on
+  //   same (date, specialty) — common when bulk crew is on
   //   day rate plus extra-hour add-ons — prefer DAY mode. Day-rate
   //   covers the standard hours; overflow past the floor falls into
   //   the OT bucket at the (unchanged) hourly rate, no premium.
@@ -697,12 +704,12 @@ export async function overwriteFromTimesheets(
   if (inv.sourceQuoteId) {
     const qlRes = await supabase
       .from("quote_lines")
-      .select("quote_date, position_id, specialty_id, rate_mode, base_day, base_hourly")
+      .select("quote_date, specialty_id, rate_mode, base_day, base_hourly")
       .eq("quote_id", inv.sourceQuoteId);
     if (!qlRes.error) {
       for (const ql of (qlRes.data ?? []) as any[]) {
-        if (!ql.quote_date || !ql.position_id || !ql.specialty_id) continue;
-        const key = `${ql.quote_date}|${ql.position_id}|${ql.specialty_id}`;
+        if (!ql.quote_date || !ql.specialty_id) continue;
+        const key = `${ql.quote_date}|${ql.specialty_id}`;
         const isDay = ql.rate_mode === "day";
         const existing = quoteRateHintByKey.get(key);
         // First hit wins UNLESS this row is day-mode and the prior wasn't.
@@ -898,15 +905,16 @@ export async function overwriteFromTimesheets(
     const dtRate     = rate?.dtRate ?? 0;
 
     // ─── Quote-aware rate mode ────────────────────────────────────────
-    // Look up the quote's intent for this (date, position, specialty).
-    // If it's day mode, build a day-mode line. The day-rate floor per
+    // Look up the quote's intent for this (date, specialty). If it's day
+    // mode, build a day-mode line. The day-rate floor per
     // worker is derived as round(base_day / base_hourly) — for Connor's
     // CCMF rate card every position is exactly 10 (350/35, 380/38,
     // 500/50, etc.). Overflow past that floor per worker bills into
     // the OT bucket at base_hourly (no premium — matches contracts
     // like "day rate covers 10hrs, hourly thereafter").
-    const hintKey = (g.workDate && g.positionId && g.specialtyId)
-      ? `${g.workDate}|${g.positionId}|${g.specialtyId}`
+    // Key must match the quote-hint map above: (date, specialty).
+    const hintKey = (g.workDate && g.specialtyId)
+      ? `${g.workDate}|${g.specialtyId}`
       : null;
     const hint = hintKey ? quoteRateHintByKey.get(hintKey) : undefined;
     const useDayMode = hint?.rateMode === "day" && (hint.baseDay > 0);
