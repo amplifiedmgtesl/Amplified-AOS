@@ -2,6 +2,42 @@
 
 Full detail for every deferred cleanup task, design note, and open follow-up. Moved here from Claude's session memory on 2026-06-12 — the memory file (`project_todo.md`) now keeps only a one-line index per item pointing at this doc. Some links below reference Claude memory files (`feedback_*.md`, `project_*.md`) that live in `~/.claude/projects/.../memory/`, not this repo.
 
+## 🔥 PROJECT: De-cache raw job data — the 1000-row cache truncation (added 2026-07-02)
+
+**Status:** discovered + partially fixed 2026-07-02. Timekeeping hot-fix shipped to prod (commit `5e63ba4`). The broader audit below is not yet done.
+
+### Why this exists
+
+`_loadAll()` ([db.ts:110](lib/store/db.ts:110)) hydrates one global in-memory cache at app startup by `select("*")`-ing entire tables. **PostgREST caps every such select at `max_rows = 1000`** (confirmed via the project config). The `select()`s have **no `ORDER BY`**, so past 1000 rows PostgREST returns an arbitrary (physical/ctid-order) 1000 and **silently drops the rest** — no error, no warning.
+
+### Confirmed impact (2026-07-02)
+
+- **Timekeeping outage.** `timesheet_entries` has ~2,124 rows. The grid read the capped cache, so large/active jobs lost rows: **POTUS rendered 23 of its 136 entries** — proven exactly: the 23 rows that survive `select … where timesheet_id is not null limit 1000` are name-for-name identical to the 23 on Connor's printed timekeeping sheet. Morgan Wallen: 77 of 101. Review was unaffected (it orders by `updated_at desc`, keeping the newest rows inside its own 1000 cap).
+- **Duplicate storm → likely bad invoices.** Because saved entries looked missing, operators re-entered them repeatedly: **82 duplicate rows on POTUS, 27 on Morgan Wallen**. Duplicates inflate the hours/crew the invoice pull (`overwriteFromTimesheets`) sums — a strong candidate for invoicing being "way off." *Not yet verified against actual invoice numbers.*
+
+### Cached tables over the cap TODAY (silently truncated)
+
+| Table | Rows | Cache appropriate? |
+|---|---|---|
+| employees | 2,743 | No — too large; needs server-side search |
+| timesheet_entries | 2,124 | No — raw job data (FIXED: per-job live load) |
+| quote_lines | 975 | No — raw; about to cross 1000 |
+| invoice_lines | 812 | No — raw; will cross soon |
+| calendar_events | 588 | No — raw/unbounded |
+| positions / specialties / clients / rate cards | 18–48 | **Yes** — small, bounded, slow-changing |
+
+### The principle (decided 2026-07-02)
+
+Cache only **small, bounded, slowly-changing reference/lookup** tables (positions, specialties, clients, rate-card profiles, app config). **Query raw/transactional/unbounded data live, scoped to the view** (per-job, per-invoice). The real test is *bounded-and-small vs unbounded* — even a "master" table (employees, 2,743) is unsafe to fully cache.
+
+### Work
+
+1. **DONE** — Timekeeping: `loadTimesheetForJobLive(jobId)` queries one job's entries live ([db.ts](lib/store/db.ts), commit `5e63ba4`).
+2. Audit every table in `_loadAll` (invoices/invoice_lines, quotes/quote_lines, job_sheets, calendar_events, employees) → convert raw-data reads to live, per-view queries. Or, as an interim guard, paginate cache loads with `.range()` so nothing is silently dropped.
+3. **Employees:** replace the full-roster cache with server-side search/typeahead (the picker already has its own loader — consolidate on it).
+4. **Verify + clean** the existing duplicate `timesheet_entries` (82 POTUS, 27 Morgan Wallen; read-only keep/remove report first) and add a dedup guard on `(employee_key, work_date, shift_id)` across all add paths.
+5. Re-check whether the POTUS/Morgan invoices already went out with inflated hours.
+
 ## ⭐ ACTIVE PROJECT: Full client→invoice system rewrite (incl. Connor recovery)
 
 **Design document:** [docs/system-flow-rewrite.md](docs/system-flow-rewrite.md) — Mermaid diagrams of current vs proposed state, per-entity changes, cross-cutting concerns, open questions, phased rollout (A: quote rewrite + Connor recovery; B: rename `job_requests` → `jobs` + extend; C: invoice rewrite; D: shifts; E: client contacts/email; F: timesheet-driven invoice lines). Two findings worth memorizing: (1) `job_sheets`/`timesheet_entries` are already separate tables — only the dummy-vs-real distinction within `job_sheet_workers` uses a nullable FK; (2) `job_requests` already holds ~90% of the `jobs` master entity shape, so Phase B is a rename + additive columns, not a new table.
