@@ -33,6 +33,9 @@ const nav = [
 
 const STORAGE_KEY = "aos.sidebar.collapsed";
 const SHOW_IDS_KEY = "aos.showIds";
+// Matches the mobile breakpoint in globals.css. Below this the sidebar
+// becomes an off-canvas drawer toggled by the topbar hamburger.
+const MOBILE_QUERY = "(max-width: 960px)";
 
 export function AppShell({
   title,
@@ -47,6 +50,11 @@ export function AppShell({
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState<boolean>(true);
   const [userRole, setUserRole] = useState<string | null>(null);
+  // Mobile drawer: on phones the sidebar slides in over the content instead
+  // of stacking above it. `isMobile` drives which affordances render; both
+  // default to a desktop-safe value so SSR and first client paint agree.
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+  const [navOpen, setNavOpen] = useState<boolean>(false);
   // Admin debug toggle: when on, .record-id chips on rows reveal record
   // GUIDs. Default off — zero clutter for normal use. Persisted to
   // localStorage so the choice survives a reload. Body class drives the
@@ -97,6 +105,20 @@ export function AppShell({
     return () => { cancelled = true; };
   }, [pathname]);
 
+  // Track the mobile breakpoint so the drawer logic knows which mode we're in.
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_QUERY);
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  // Close the drawer whenever the route changes (a nav link was followed)
+  // or when we grow back to desktop width.
+  useEffect(() => { setNavOpen(false); }, [pathname]);
+  useEffect(() => { if (!isMobile) setNavOpen(false); }, [isMobile]);
+
   // Load persisted preferences (skipped during SSR to avoid hydration mismatch)
   useEffect(() => {
     try {
@@ -143,9 +165,15 @@ export function AppShell({
     : nav;
   const brandSub = userRole === "payroll" ? "Payroll" : "Operations Suite";
 
+  // The collapsed (icon-only) rail is a desktop affordance. On mobile the
+  // sidebar is a full-width drawer, so always show labels/logo there even if
+  // the user previously collapsed the desktop rail.
+  const railCollapsed = !isMobile && collapsed;
+
   return (
-    <div className={`layout${collapsed ? " layout-collapsed" : ""}`}>
+    <div className={`layout${railCollapsed ? " layout-collapsed" : ""}${navOpen ? " nav-open" : ""}`}>
       <aside className="sidebar">
+        {/* Desktop rail collapse toggle (hidden on mobile via CSS). */}
         <button
           type="button"
           className="sidebar-toggle"
@@ -156,8 +184,18 @@ export function AppShell({
           {collapsed ? "›" : "‹"}
         </button>
 
+        {/* Mobile drawer close button (hidden on desktop via CSS). */}
+        <button
+          type="button"
+          className="drawer-close"
+          onClick={() => setNavOpen(false)}
+          aria-label="Close menu"
+        >
+          ×
+        </button>
+
         <div style={{ textAlign: "center", marginBottom: 20 }}>
-          {collapsed ? (
+          {railCollapsed ? (
             <div className="sidebar-brand-mini">AES</div>
           ) : (
             <>
@@ -170,9 +208,15 @@ export function AppShell({
         <div style={{ height: 12 }} />
 
         {visibleNav.map(([href, icon, label]) => (
-          <Link key={href} href={href} className="nav-link" title={collapsed ? label : undefined}>
-            <span style={{ fontSize: 18, marginRight: collapsed ? 0 : 10 }}>{icon}</span>
-            {!collapsed && label}
+          <Link
+            key={href}
+            href={href}
+            className="nav-link"
+            title={railCollapsed ? label : undefined}
+            onClick={() => setNavOpen(false)}
+          >
+            <span style={{ fontSize: 18, marginRight: railCollapsed ? 0 : 10 }}>{icon}</span>
+            {!railCollapsed && label}
           </Link>
         ))}
 
@@ -182,23 +226,36 @@ export function AppShell({
               conversations. Off by default. */}
           <button
             onClick={toggleShowIds}
-            title={collapsed ? (showIds ? "Hide record IDs" : "Show record IDs") : undefined}
+            title={railCollapsed ? (showIds ? "Hide record IDs" : "Show record IDs") : undefined}
             style={{ width: "100%", background: showIds ? "#3a3a2a" : "transparent", border: "1px solid #555", color: "#999", borderRadius: 6, padding: "6px 10px", cursor: "pointer", fontSize: 11, marginBottom: 8 }}
           >
-            {collapsed ? "🆔" : (showIds ? "🆔 IDs: on" : "🆔 Show IDs")}
+            {railCollapsed ? "🆔" : (showIds ? "🆔 IDs: on" : "🆔 Show IDs")}
           </button>
           <button
             onClick={handleSignOut}
-            title={collapsed ? "Sign out" : undefined}
+            title={railCollapsed ? "Sign out" : undefined}
             style={{ width: "100%", background: "transparent", border: "1px solid #555", color: "#999", borderRadius: 6, padding: "8px 12px", cursor: "pointer", fontSize: 13 }}
           >
-            {collapsed ? "⎋" : "Sign out"}
+            {railCollapsed ? "⎋" : "Sign out"}
           </button>
         </div>
       </aside>
 
+      {/* Dark backdrop behind the open drawer; tap to dismiss. */}
+      {navOpen ? <div className="nav-backdrop" onClick={() => setNavOpen(false)} /> : null}
+
       <main className="main">
         <div className="topbar">
+          {/* Hamburger — mobile only (hidden on desktop via CSS). */}
+          <button
+            type="button"
+            className="mobile-menu-btn"
+            onClick={() => setNavOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={navOpen}
+          >
+            ☰
+          </button>
           <img src="/branding/client-logo.png" alt="Logo" className="header-logo" />
           <div>
             <h1 className="page-title">{title}</h1>
