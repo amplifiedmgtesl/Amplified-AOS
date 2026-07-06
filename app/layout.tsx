@@ -5,6 +5,7 @@ import { EnvBanner } from "../components/layout/env-banner";
 import { UpdateBanner } from "../components/layout/update-banner";
 
 export const metadata = { title: "Amplified Operations Suite", description: "Stable operations rebuild" };
+export const viewport = { width: "device-width", initialScale: 1 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
