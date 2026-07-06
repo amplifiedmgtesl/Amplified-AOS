@@ -99,12 +99,58 @@ small,.muted{color:var(--muted)}
 @media (max-width:1200px){.grid4{grid-template-columns:1fr 1fr}}
 @media (max-width:960px){
   .layout{grid-template-columns:1fr}
-  .grid2,.grid3,.grid4,.sig-grid,.pdf-header,.invoice-top,.total-row{grid-template-columns:1fr}
+  /* minmax(0,1fr) — not plain 1fr — so tracks may shrink below their
+     content's width; otherwise a wide table inside a grid cell grows the
+     whole page. Plain `.grid` (implicit auto column) is included too. */
+  .grid,.grid2,.grid3,.grid4,.sig-grid,.pdf-header,.invoice-top,.total-row{grid-template-columns:minmax(0,1fr)}
   .main{padding:20px}
-  .page-title{font-size:34px}
   .month-grid{grid-template-columns:1fr}
   .day-name{display:none}
   .month-cell{min-height:auto}
+
+  /* --- Mobile foundation (#2): overflow safety net ---------------------
+     The core fix. On a phone a single element wider than the screen (a
+     data table, a fixed-width input) makes the browser widen the whole
+     page and shrink everything — the "goes tiny" effect. These rules keep
+     wide content inside its own box so the page itself never grows wider
+     than the screen. */
+
+  /* The keystone: .main is the 1fr grid item and defaults to min-width:auto,
+     so it refuses to shrink below its widest child and drags the whole page
+     wide. min-width:0 lets it shrink to the screen; wide children then
+     overflow *inside* their own scroll boxes. Same trap for nested
+     grid/flex tracks. */
+  .main{min-width:0}
+  .grid,.grid2,.grid3,.grid4,.action-row,.card,.metric-card,.list-card{min-width:0}
+
+  /* Any table scrolls sideways within its own frame instead of pushing the
+     page wide. (GitHub's markdown-table pattern.) */
+  table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+
+  /* Fixed pixel min-widths on inputs/selects (e.g. minWidth:320) overflow a
+     ~350px screen; let them shrink to fit. */
+  input,select,textarea{min-width:0 !important;max-width:100%}
+
+  /* Hover tooltips sit in the layout (opacity:0) and their fixed 260px width
+     hangs off the right edge. They don't work on touch anyway, so hide them
+     on mobile — a tap-friendly replacement is tracked as a follow-up. */
+  .info-tip{display:none}
+
+  /* Trim oversized headings so they don't eat the screen or overflow. */
+  .page-title{font-size:26px;letter-spacing:1px}
+  .section-title{font-size:19px}
+  .invoice-number{font-size:22px}
+  .metric-value{font-size:26px}
+
+  /* Topbar is a flex row (hamburger + logo + title); let it wrap and let the
+     title shrink/break so a long page name can't push the row off-screen. */
+  .topbar{flex-wrap:wrap}
+  .topbar>div{min-width:0}
+  .page-title{overflow-wrap:anywhere}
+
+  /* Comfortable touch targets. */
+  .nav-link{padding:14px}
+  button{min-height:40px}
 
   /* Sidebar becomes an off-canvas drawer that slides in over the content,
      instead of stacking as a tall block above it. */
