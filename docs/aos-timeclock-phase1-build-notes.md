@@ -21,22 +21,17 @@ New **`/timeclock`** kiosk (name: **"Time Clock"**). Crew leader opens it on a s
 - Raw instant + `capture_tz` stored per punch; signatures in a **private** bucket (PNG for Phase 1; vector deferred to the Phase 2 PDF).
 
 ## Verification done
-- ✅ Migration applied to **DEV** (`ovtbvnfhteqxnyirzctt`) via Management API; objects confirmed present.
+- ✅ Migration applied to **dev** (`amplified-aos-dev` / `ovtbvnfhteqxnyirzctt`) via Management API; objects confirmed present.
 - ✅ `npx tsc --noEmit` clean.
 - ✅ `npm run build` succeeds; `/timeclock` route compiles.
-- ⏳ **Interactive preview not run** — see below.
+- ✅ Committed and pushed to **`origin/dev`** → Vercel builds a dev preview against `amplified-aos-dev`.
+- ⏳ **Interactive preview to be checked in the Vercel dev deployment** (`/timeclock`, logged in as crew_leader/admin, on a job with seeded crew).
 
-## ⚠️ Two things for you in the morning
+## Environment notes
 
-1. **`.env.local` points at PRODUCTION** (`wmssllfmahotppoyxxrr`), not dev. So a plain `npm run dev` runs the app against **prod**. The Phase 1 migration was applied to **DEV only**; prod does NOT have `timesheet_captures`/the bucket. To preview safely, point the dev server at dev by creating `.env.development.local`:
-   ```
-   NEXT_PUBLIC_SUPABASE_URL=https://ovtbvnfhteqxnyirzctt.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=<dev anon key>
-   ```
-   I did **not** fetch the dev anon key (a credential-materialization guardrail blocked it, correctly — it wasn't something you'd explicitly asked me to pull). Grab it from the dev project's API settings. `.gitignore` now ignores `.env*.local`. Then `npm run dev` → open `/timeclock`, log in as a crew_leader/admin, pick a job with seeded crew, and exercise sign-in/out.
-   - Separately: `.env.local` (with a prod service-role key) has historically been committed — worth rotating that key.
-
-2. **When you're ready to ship to prod**, apply `20260708a_timeclock_captures.sql` to the prod project too.
+- **Dev flow (confirmed):** Supabase `amplified-aos-dev` + GitHub `dev` branch → Vercel preview → promote to prod. The migration correctly targets `amplified-aos-dev`, and Vercel's dev env vars point there — so the pushed code should preview correctly.
+- **Before promoting to prod:** apply `20260708a_timeclock_captures.sql` to the prod project (`amplified-aos` / `wmssllfmahotppoyxxrr`) — it does **not** have `timesheet_captures` / the bucket yet.
+- **Local-only footgun:** this Mac's `Amplified-AOS/.env.local` points at **prod** (`amplified-aos`), so a local `npm run dev` would hit live data. Not part of the Vercel flow, but avoid local dev runs without repointing that file. (Also: `.env.local` reportedly carries a prod service-role key — worth rotating. `.gitignore` now ignores `.env*.local`.)
 
 ## Known Phase-1 limitations / notes
 - Rounded time uses the **device** (on-site) timezone; `job_requests.timezone` is stored but not yet threaded into the picker (device zone is correct on-site). ZIP→timezone auto-derivation deferred.
