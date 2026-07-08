@@ -542,6 +542,14 @@ export type JobRequestAssignment = {
   confirmed: boolean;
   notes?: string;
   sortOrder: number;
+  /** Planned (scheduled) times for THIS worker, two-pair shape mirroring the
+   *  timesheet. All optional — leave blank to fall back to the day window
+   *  (job_request_days.start_time/end_time). Pair 2 = meal-break return or a
+   *  second shift. HH:MM 24h. See docs/timekeeping-planned-vs-actual-design.md §5.1. */
+  plannedIn1?: string;
+  plannedOut1?: string;
+  plannedIn2?: string;
+  plannedOut2?: string;
 };
 
 export type JobSheetWorker = {

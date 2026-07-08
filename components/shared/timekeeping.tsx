@@ -476,6 +476,7 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
   // Dedupes against existing rows by (employee_key, work_date, shift_id) so
   // re-running the button doesn't double-add.
   const [addingCrew, setAddingCrew] = useState(false);
+  const [copyingPlanned, setCopyingPlanned] = useState(false);
   // Phase 2: shift label lookup for the selected job, so per-row chips can
   // show which shift each entry belongs to. Loaded once per job switch.
   const [shiftLabelById, setShiftLabelById] = useState<Map<string, string>>(new Map());
@@ -624,8 +625,12 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
           employeeKey: slot.employeeKey || null,
           workDate: slot.eventDate || undefined,
           endDate:  slot.eventDate || undefined,
-          timeIn1:  slot.startTime || "",
-          timeOut1: slot.endTime || "",
+          // Actual times start BLANK — the scheduled window is "planned", not
+          // "actual" (Planned-vs-Actual redesign §5.3). A no-show left untouched
+          // is correctly 0 hours, not scheduled hours. Use "Copy planned →
+          // actual" to pull the plan into these columns on demand.
+          timeIn1:  "",
+          timeOut1: "",
           shiftId: slot.shiftId,
           isHoliday: isHol,
           holidayMultiplier: isHol ? effectiveHolidayMultiplier : null,
@@ -650,6 +655,66 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
       alert("Couldn't load crew assignments — see console for details.");
     } finally {
       setAddingCrew(false);
+    }
+  }
+
+  // Copy planned → actual (Planned-vs-Actual redesign §5.4). Pulls each row's
+  // planned times from its crew assignment into the ACTUAL time columns, on
+  // demand — the deliberate replacement for the old silent import-time copy.
+  // Per-assignment planned times win; pair 1 falls back to the day window
+  // when a worker has none. Only fills rows whose actual times are all blank
+  // (never clobbers entered actuals) and never touches locked (approved) rows.
+  async function copyPlannedToActual() {
+    if (!timesheet || pickerKind !== "job") return;
+    setCopyingPlanned(true);
+    try {
+      const slots = await loadJobCrewSlots(pickerKey);
+      // Index planned data by the same (employee|date|shift) grain the grid uses.
+      const bySlotKey = new Map<string, (typeof slots)[number]>();
+      for (const s of slots) {
+        bySlotKey.set(`${s.employeeKey || ""}|${s.eventDate}|${s.shiftId || ""}`, s);
+      }
+      let filled = 0, skippedFilled = 0, skippedLocked = 0, noPlan = 0;
+      const nextRows = timesheet.rows.map((r) => {
+        if (r.status === "approved") { skippedLocked++; return r; }
+        const hasActual = !!(r.timeIn1 || r.timeOut1 || r.timeIn2 || r.timeOut2);
+        if (hasActual) { skippedFilled++; return r; }
+        const s = bySlotKey.get(`${r.employeeKey || ""}|${r.workDate || ""}|${r.shiftId || ""}`);
+        if (!s) return r;
+        // Pair 1 falls back to the day window; pair 2 has no day-window fallback.
+        const in1  = s.plannedIn1  ?? s.startTime ?? "";
+        const out1 = s.plannedOut1 ?? s.endTime   ?? "";
+        const in2  = s.plannedIn2  ?? "";
+        const out2 = s.plannedOut2 ?? "";
+        if (!in1 && !out1 && !in2 && !out2) { noPlan++; return r; }
+        filled++;
+        return computeTimeEntry({ ...r, timeIn1: in1, timeOut1: out1, timeIn2: in2, timeOut2: out2 });
+      });
+      if (filled === 0) {
+        const bits = [
+          skippedFilled ? `${skippedFilled} already have actual times` : "",
+          skippedLocked ? `${skippedLocked} are locked/approved` : "",
+          noPlan ? `${noPlan} have no planned times or day window` : "",
+        ].filter(Boolean);
+        alert(bits.length
+          ? `Nothing to fill — ${bits.join(", ")}.`
+          : "No matching crew assignments found for these rows.");
+        return;
+      }
+      persist({ ...timesheet, rows: nextRows });
+      const tail = [
+        skippedFilled ? `${skippedFilled} kept (already filled)` : "",
+        skippedLocked ? `${skippedLocked} locked` : "",
+      ].filter(Boolean);
+      if (tail.length) {
+        // Non-blocking confirmation only when we deliberately skipped rows.
+        console.info(`[timekeeping] copyPlannedToActual: filled ${filled}; ${tail.join(", ")}.`);
+      }
+    } catch (e) {
+      console.error("[timekeeping] copyPlannedToActual failed:", e);
+      alert("Couldn't copy planned times — see console for details.");
+    } finally {
+      setCopyingPlanned(false);
     }
   }
 
@@ -1162,10 +1227,20 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
           <button
             onClick={addCrewFromJob}
             disabled={!timesheet || addingCrew}
-            title="Seed one row per scheduled assignment from the Job Request → Assigned Crew tab"
+            title="Seed one row per scheduled assignment from the Job Request → Assigned Crew tab. Actual times start blank — use “Copy planned → actual” to pre-fill."
           >
             {addingCrew ? "Loading…" : "Add Crew from Job"}
           </button>
+          {pickerKind === "job" && (
+            <button
+              className="secondary"
+              onClick={copyPlannedToActual}
+              disabled={!timesheet || copyingPlanned || (timesheet?.rows.length ?? 0) === 0}
+              title="Fill blank actual times from each worker's planned times (falling back to the day window). Skips rows that already have times or are locked."
+            >
+              {copyingPlanned ? "Copying…" : "Copy planned → actual"}
+            </button>
+          )}
           <button className="secondary" onClick={addManualCrew} disabled={!timesheet}>+ Add Crew Member</button>
           {timesheet && timesheet.rows.length > 0 && (
             <>

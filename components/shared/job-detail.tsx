@@ -15,6 +15,7 @@ import { JobRequestCrewSection } from "./job-request-crew-section";
 import { JobRequestShiftsSection } from "./job-request-shifts-section";
 import { JobHealthSection, useJobHealthCount } from "./job-health-section";
 import { JobPrintSheet } from "./job-print-sheet";
+import { CrewSignInSheet } from "./crew-sign-in-sheet";
 import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { computeJobNo, defaultEventAbbr, sanitizeEventAbbr } from "@/lib/jobs/job-no";
@@ -694,6 +695,26 @@ export default function JobDetail({
               Print PDF
             </button>
           )}
+          {editingId && (
+            <button
+              className="secondary"
+              onClick={() => {
+                // Reveal the sign-in sheet (and hide the summary sheet) for this
+                // one print, then clean the body class up on afterprint.
+                document.body.classList.add("printing-signin");
+                const cleanup = () => {
+                  document.body.classList.remove("printing-signin");
+                  window.removeEventListener("afterprint", cleanup);
+                };
+                window.addEventListener("afterprint", cleanup);
+                setTimeout(cleanup, 60_000);
+                printWithTitle(["Sign-In Sheet", form.jobNo || form.eventName, form.client]);
+              }}
+              title="Print a crew sign-in sheet (planned times + blank time/signature lines) from the assigned crew"
+            >
+              Sign-In Sheet
+            </button>
+          )}
           {editingId && form.addToCalendar && (
             <button
               onClick={sendToGoogleCalendar}
@@ -825,6 +846,7 @@ export default function JobDetail({
 
       {/* Print-only summary; rendered hidden on screen, fully laid out in print. */}
       {editingId && <JobPrintSheet form={form} />}
+      {editingId && <CrewSignInSheet form={form} />}
     </div>
   );
 }

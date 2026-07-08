@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import {
   loadJobRequestDays,
@@ -597,8 +597,13 @@ export function JobRequestCrewSection({
                         <tbody>
                           {crew.map((a) => {
                             const spcOptions = a.positionId ? (specialtiesByPosition.get(a.positionId) ?? []) : [];
+                            const plannedColSpan = 6 + (shifts.length >= 2 ? 1 : 0);
+                            const windowHint = (d.startTime || d.endTime)
+                              ? `${d.startTime || "?"}–${d.endTime || "?"}`
+                              : "";
                             return (
-                              <tr key={a.id}>
+                              <Fragment key={a.id}>
+                              <tr>
                                 <td>
                                   <LazyEmployeePicker
                                     employeeKey={a.employeeKey}
@@ -671,6 +676,61 @@ export function JobRequestCrewSection({
                                   >✕</button>
                                 </td>
                               </tr>
+                              {/* Planned times — the "planned" side of Planned-vs-Actual.
+                                  Optional per-worker schedule; blank pair-1 falls back to
+                                  the day window shown as placeholder. Pair 2 = meal-break
+                                  return or a second shift. */}
+                              <tr>
+                                <td colSpan={plannedColSpan} style={{ paddingTop: 0, paddingBottom: 8 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 11, color: "#666" }}>
+                                    <span style={{ minWidth: 54 }}>Planned:</span>
+                                    <input
+                                      type="time"
+                                      aria-label="Planned in (pair 1)"
+                                      disabled={disabled}
+                                      value={a.plannedIn1 ?? ""}
+                                      placeholder={d.startTime || ""}
+                                      onChange={(e) => patchAssignment(d.id, a, { plannedIn1: e.target.value || undefined })}
+                                      style={{ width: 92, flex: "0 0 auto" }}
+                                    />
+                                    <span>–</span>
+                                    <input
+                                      type="time"
+                                      aria-label="Planned out (pair 1)"
+                                      disabled={disabled}
+                                      value={a.plannedOut1 ?? ""}
+                                      placeholder={d.endTime || ""}
+                                      onChange={(e) => patchAssignment(d.id, a, { plannedOut1: e.target.value || undefined })}
+                                      style={{ width: 92, flex: "0 0 auto" }}
+                                    />
+                                    <span style={{ opacity: 0.6, padding: "0 4px" }}>·</span>
+                                    <span style={{ minWidth: 30 }}>back</span>
+                                    <input
+                                      type="time"
+                                      aria-label="Planned in (pair 2)"
+                                      disabled={disabled}
+                                      value={a.plannedIn2 ?? ""}
+                                      onChange={(e) => patchAssignment(d.id, a, { plannedIn2: e.target.value || undefined })}
+                                      style={{ width: 92, flex: "0 0 auto" }}
+                                    />
+                                    <span>–</span>
+                                    <input
+                                      type="time"
+                                      aria-label="Planned out (pair 2)"
+                                      disabled={disabled}
+                                      value={a.plannedOut2 ?? ""}
+                                      onChange={(e) => patchAssignment(d.id, a, { plannedOut2: e.target.value || undefined })}
+                                      style={{ width: 92, flex: "0 0 auto" }}
+                                    />
+                                    {windowHint && (
+                                      <span style={{ opacity: 0.75 }}>
+                                        (blank pair 1 → day window {windowHint})
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                              </Fragment>
                             );
                           })}
                         </tbody>

@@ -20,6 +20,10 @@ function rowToAssignment(r: any): JobRequestAssignment {
     confirmed: !!r.confirmed,
     notes: r.notes ?? undefined,
     sortOrder: r.sort_order ?? 0,
+    plannedIn1: r.planned_in1 ?? undefined,
+    plannedOut1: r.planned_out1 ?? undefined,
+    plannedIn2: r.planned_in2 ?? undefined,
+    plannedOut2: r.planned_out2 ?? undefined,
   };
 }
 
@@ -34,6 +38,10 @@ function assignmentToRow(a: JobRequestAssignment): Record<string, unknown> {
     confirmed: !!a.confirmed,
     notes: a.notes || null,
     sort_order: a.sortOrder ?? 0,
+    planned_in1: a.plannedIn1 || null,
+    planned_out1: a.plannedOut1 || null,
+    planned_in2: a.plannedIn2 || null,
+    planned_out2: a.plannedOut2 || null,
   };
 }
 
@@ -88,8 +96,14 @@ export type JobCrewSlot = {
   assignmentId: string;
   jobRequestDayId: string;
   eventDate: string;               // YYYY-MM-DD
-  startTime: string | null;        // HH:MM (24h) or null
+  startTime: string | null;        // HH:MM (24h) day window, or null
   endTime: string | null;
+  // Per-worker planned times (assignment-level), HH:MM (24h) or null. When
+  // null, callers fall back to the day window (startTime/endTime) for pair 1.
+  plannedIn1: string | null;
+  plannedOut1: string | null;
+  plannedIn2: string | null;
+  plannedOut2: string | null;
   shiftId: string | null;
   shiftLabel: string | null;
   positionId: string | null;
@@ -126,7 +140,7 @@ export async function loadJobCrewSlots(jobRequestId: string): Promise<JobCrewSlo
   const dayIds = (days as any[]).map((d) => d.id);
   const { data: aRows, error: aErr } = await supabase
     .from("job_request_assignments")
-    .select("id, job_request_day_id, shift_id, position_id, specialty_id, employee_key, sort_order")
+    .select("id, job_request_day_id, shift_id, position_id, specialty_id, employee_key, sort_order, planned_in1, planned_out1, planned_in2, planned_out2")
     .in("job_request_day_id", dayIds)
     .order("sort_order", { ascending: true });
   if (aErr) throw aErr;
@@ -139,6 +153,10 @@ export async function loadJobCrewSlots(jobRequestId: string): Promise<JobCrewSlo
       eventDate: day?.event_date ?? "",
       startTime: day?.start_time ?? null,
       endTime: day?.end_time ?? null,
+      plannedIn1: r.planned_in1 ?? null,
+      plannedOut1: r.planned_out1 ?? null,
+      plannedIn2: r.planned_in2 ?? null,
+      plannedOut2: r.planned_out2 ?? null,
       shiftId: r.shift_id ?? null,
       shiftLabel: r.shift_id ? (shiftMap.get(r.shift_id) ?? null) : null,
       positionId: r.position_id ?? null,

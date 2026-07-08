@@ -722,6 +722,72 @@ td, th {
 }
 
 
+/* ===== CREW SIGN-IN SHEET (Jobs editor → Sign-In Sheet) ===== */
+/* Hidden on screen AND in ordinary print. Revealed only when <body> carries
+   `printing-signin`, which the Sign-In Sheet button sets for one print run —
+   the same class hides the summary sheet so exactly one prints. */
+.crew-sign-in-sheet { display: none; }
+
+@media print {
+  body.printing-signin .job-print-sheet { display: none !important; }
+  body.printing-signin .crew-sign-in-sheet {
+    display: block;
+    font-family: Arial, Helvetica, sans-serif;
+    color: #1a1a1a;
+    font-size: 11pt;
+    line-height: 1.4;
+  }
+  .crew-sign-in-sheet .csis-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #8a6f3a;
+    margin-bottom: 14px;
+  }
+  .crew-sign-in-sheet .csis-logo { max-height: 50px; width: auto; object-fit: contain; }
+  .crew-sign-in-sheet .csis-title-block { flex: 1; }
+  .crew-sign-in-sheet .csis-job-no {
+    font-family: monospace; font-size: 11pt; color: #666; letter-spacing: 0.5px;
+  }
+  .crew-sign-in-sheet .csis-event-name {
+    font-size: 17pt; margin: 2px 0 4px; color: #1a1a1a; font-weight: 700;
+  }
+  .crew-sign-in-sheet .csis-meta { font-size: 10pt; color: #444; }
+  .crew-sign-in-sheet .csis-day {
+    page-break-inside: avoid; margin-top: 14px;
+  }
+  .crew-sign-in-sheet .csis-day-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 6px; border-bottom: 1px solid #d7c6aa; padding-bottom: 3px;
+  }
+  .crew-sign-in-sheet .csis-day-header h2 {
+    font-size: 12pt; margin: 0; color: #8a6f3a;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .crew-sign-in-sheet .csis-day-meta { font-size: 9pt; color: #555; }
+  .crew-sign-in-sheet .csis-table {
+    width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: 4px;
+  }
+  .crew-sign-in-sheet .csis-table th {
+    background: #e0e0e0; color: #000; text-align: left;
+    padding: 4px 6px; border: 1px solid #888; font-weight: 700;
+  }
+  .crew-sign-in-sheet .csis-table td {
+    padding: 6px; border: 1px solid #999; background: #fff; vertical-align: bottom;
+  }
+  /* Blank capture cells need room for handwriting. */
+  .crew-sign-in-sheet .csis-table td.csis-blank { height: 26px; }
+  .crew-sign-in-sheet .csis-empty {
+    font-size: 10pt; font-style: italic; color: #777; padding: 4px 0;
+  }
+  .crew-sign-in-sheet .csis-footer {
+    margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc;
+    font-size: 8pt; color: #888; text-align: center;
+  }
+}
+
+
 /* ===== QUOTE COVER PAGE ===== */
 .quote-cover-page {
   display: none;
