@@ -424,6 +424,36 @@ export default function InvoicePdfView({ id }: { id: string }) {
           <div>{[company.city, company.state, company.zip].filter(Boolean).join(", ")}</div>
           {company.email ? <div>{company.email}</div> : null}
           {company.phone ? <div>{company.phone}</div> : null}
+
+          {/* Bank details for ACH / wire — only render fields that are set. */}
+          {(company.bankName || company.bankAccountNumber || company.bankRoutingNumber) ? (
+            <div className="bank-details">
+              <div className="bank-heading">Bank Payment Details (ACH / Wire)</div>
+              <table className="bank-table"><tbody>
+                {company.bankName ? (
+                  <tr><td>Bank</td><td>{company.bankName}</td></tr>
+                ) : null}
+                {company.bankAccountName ? (
+                  <tr><td>Account name</td><td>{company.bankAccountName}</td></tr>
+                ) : null}
+                {company.bankAccountNumber ? (
+                  <tr><td>Account #</td><td>{company.bankAccountNumber}</td></tr>
+                ) : null}
+                {company.bankAccountType ? (
+                  <tr><td>Account type</td><td>{company.bankAccountType}</td></tr>
+                ) : null}
+                {company.bankRoutingNumber ? (
+                  <tr><td>Routing (ACH)</td><td>{company.bankRoutingNumber}</td></tr>
+                ) : null}
+                {company.bankWireRoutingNumber ? (
+                  <tr><td>Routing (wire)</td><td>{company.bankWireRoutingNumber}</td></tr>
+                ) : null}
+                {company.bankAddress ? (
+                  <tr><td>Bank address</td><td>{company.bankAddress}</td></tr>
+                ) : null}
+              </tbody></table>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -614,6 +644,31 @@ export default function InvoicePdfView({ id }: { id: string }) {
           text-transform: uppercase;
           letter-spacing: 0.08em;
           color: #6c6358;
+        }
+        .pay-to .bank-details {
+          margin-top: 8px;
+          padding-top: 8px;
+          border-top: 1px solid #dcc9a8;
+        }
+        .pay-to .bank-heading {
+          font-size: 8.5pt;
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          color: #6c6358;
+          margin-bottom: 3px;
+        }
+        .pay-to .bank-table {
+          border-collapse: collapse;
+          font-size: 9.5pt;
+        }
+        .pay-to .bank-table td {
+          padding: 1px 0;
+          vertical-align: top;
+        }
+        .pay-to .bank-table td:first-child {
+          color: #6c6358;
+          padding-right: 14px;
+          white-space: nowrap;
         }
 
         /* Terms: full-width, allowed to break across pages so long T&Cs

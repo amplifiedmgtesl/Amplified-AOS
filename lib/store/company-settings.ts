@@ -16,6 +16,14 @@ export type CompanySettings = {
   email: string;
   website: string;
   taxId: string;
+  // Banking / remittance — printed in the invoice "Remit Payment To" block.
+  bankName: string;
+  bankAccountName: string;
+  bankAccountNumber: string;
+  bankAccountType: string;
+  bankRoutingNumber: string;
+  bankWireRoutingNumber: string;
+  bankAddress: string;
 };
 
 const EMPTY: CompanySettings = {
@@ -29,6 +37,13 @@ const EMPTY: CompanySettings = {
   email: "",
   website: "",
   taxId: "",
+  bankName: "",
+  bankAccountName: "",
+  bankAccountNumber: "",
+  bankAccountType: "",
+  bankRoutingNumber: "",
+  bankWireRoutingNumber: "",
+  bankAddress: "",
 };
 
 export async function loadCompanySettings(): Promise<CompanySettings> {
@@ -53,5 +68,12 @@ export async function loadCompanySettings(): Promise<CompanySettings> {
     email:        data.email         ?? "",
     website:      data.website       ?? "",
     taxId:        data.tax_id        ?? "",
+    bankName:              data.bank_name                ?? "",
+    bankAccountName:       data.bank_account_name        ?? "",
+    bankAccountNumber:     data.bank_account_number      ?? "",
+    bankAccountType:       data.bank_account_type        ?? "",
+    bankRoutingNumber:     data.bank_routing_number      ?? "",
+    bankWireRoutingNumber: data.bank_wire_routing_number ?? "",
+    bankAddress:           data.bank_address             ?? "",
   };
 }

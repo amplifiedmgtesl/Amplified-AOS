@@ -23,6 +23,13 @@ const EMPTY: CompanySettings = {
   email: "",
   website: "",
   taxId: "",
+  bankName: "",
+  bankAccountName: "",
+  bankAccountNumber: "",
+  bankAccountType: "",
+  bankRoutingNumber: "",
+  bankWireRoutingNumber: "",
+  bankAddress: "",
 };
 
 export default function CompanySettingsEditor() {
@@ -63,6 +70,13 @@ export default function CompanySettingsEditor() {
           email:         form.email        || null,
           website:       form.website      || null,
           tax_id:        form.taxId        || null,
+          bank_name:                form.bankName              || null,
+          bank_account_name:        form.bankAccountName       || null,
+          bank_account_number:      form.bankAccountNumber     || null,
+          bank_account_type:        form.bankAccountType       || null,
+          bank_routing_number:      form.bankRoutingNumber     || null,
+          bank_wire_routing_number: form.bankWireRoutingNumber || null,
+          bank_address:             form.bankAddress           || null,
         }, { onConflict: "id" });
       if (error) throw error;
       setStatusMsg({ text: "Company settings saved.", ok: true });
@@ -205,6 +219,90 @@ export default function CompanySettingsEditor() {
 
         <div className="muted" style={{ fontSize: 11, marginTop: 12 }}>
           A logo image is also part of the letterhead. Replace <code>public/branding/client-logo.png</code> in the repo to change it.
+        </div>
+      </div>
+
+      <div className="card">
+        <h2 className="section-title" style={{ margin: "0 0 4px" }}>🏦 Payment / Banking</h2>
+        <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
+          Prints in the <strong>Remit Payment To</strong> block on invoices so clients can pay by
+          ACH or wire. Bank name, account holder, and account number are shared by both methods.
+          Leave a field blank to omit it from the invoice.
+        </div>
+
+        <div className="grid2">
+          <div>
+            <label>
+              <div className="muted">Bank name</div>
+              <input
+                type="text"
+                value={form.bankName}
+                onChange={(e) => patch({ bankName: e.target.value })}
+                placeholder="First National Bank"
+              />
+            </label>
+            <label style={{ marginTop: 8, display: "block" }}>
+              <div className="muted">Account holder name <span style={{ fontSize: 11 }}>(beneficiary)</span></div>
+              <input
+                type="text"
+                value={form.bankAccountName}
+                onChange={(e) => patch({ bankAccountName: e.target.value })}
+                placeholder="Amplified Event Solutions"
+              />
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginTop: 8 }}>
+              <label>
+                <div className="muted">Account number</div>
+                <input
+                  type="text"
+                  value={form.bankAccountNumber}
+                  onChange={(e) => patch({ bankAccountNumber: e.target.value })}
+                  placeholder="000123456789"
+                />
+              </label>
+              <label>
+                <div className="muted">Account type</div>
+                <select
+                  value={form.bankAccountType}
+                  onChange={(e) => patch({ bankAccountType: e.target.value })}
+                >
+                  <option value="">—</option>
+                  <option value="Checking">Checking</option>
+                  <option value="Savings">Savings</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label>
+              <div className="muted">Routing number (ABA) <span style={{ fontSize: 11 }}>— for ACH</span></div>
+              <input
+                type="text"
+                value={form.bankRoutingNumber}
+                onChange={(e) => patch({ bankRoutingNumber: e.target.value })}
+                placeholder="123456789"
+              />
+            </label>
+            <label style={{ marginTop: 8, display: "block" }}>
+              <div className="muted">Wire routing number <span style={{ fontSize: 11 }}>(only if different from ACH)</span></div>
+              <input
+                type="text"
+                value={form.bankWireRoutingNumber}
+                onChange={(e) => patch({ bankWireRoutingNumber: e.target.value })}
+                placeholder="Leave blank if same as ACH routing"
+              />
+            </label>
+            <label style={{ marginTop: 8, display: "block" }}>
+              <div className="muted">Bank address <span style={{ fontSize: 11 }}>(for wire instructions)</span></div>
+              <input
+                type="text"
+                value={form.bankAddress}
+                onChange={(e) => patch({ bankAddress: e.target.value })}
+                placeholder="123 Main St, City, ST 00000"
+              />
+            </label>
+          </div>
         </div>
       </div>
     </div>
