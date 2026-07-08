@@ -30,3 +30,10 @@ scripts/make_crew_roster_guide.py
 # Keep local-only; never commit. Generator script is safe to commit.
 docs/guide-images/
 docs/timekeeping-crew-lead-guide.pdf
+
+# Local env files (may contain secrets) — never commit
+.env*.local
+
+# Supabase CLI temp
+supabase/.temp/
+.claude/launch.json
