@@ -505,6 +505,12 @@ export function JobRequestCrewSection({
               if (s.confirmed < s.need) deficit += s.need - s.confirmed;
               if (s.confirmed > s.need) extras += s.confirmed - s.need;
             }
+            // Read-only day window (both blocks), from Daily Requirements. Shown
+            // in the header + panel because <input type="time"> ignores
+            // placeholder, so the per-worker defaults aren't otherwise visible.
+            const dwin1 = (d.startTime || d.endTime) ? `${d.startTime || "?"}–${d.endTime || "?"}` : "";
+            const dwin2 = (d.startTime2 || d.endTime2) ? `${d.startTime2 || "?"}–${d.endTime2 || "?"}` : "";
+            const dayWindow = [dwin1, dwin2].filter(Boolean).join(" · ");
             return (
               <div key={d.id} style={{
                 border: "1px solid var(--border, #e5e7eb)", borderRadius: 8,
@@ -524,6 +530,11 @@ export function JobRequestCrewSection({
                 >
                   <span style={{ fontSize: 12, opacity: 0.85, width: 12 }}>{isExpanded ? "▾" : "▸"}</span>
                   <strong style={{ fontSize: 14, minWidth: 140 }}>{dayLabel(d)}</strong>
+                  {dayWindow && (
+                    <span style={{ fontSize: 12, opacity: 0.9, whiteSpace: "nowrap" }} title="Planned day window (set on Daily Requirements)">
+                      🕐 {dayWindow}
+                    </span>
+                  )}
                   <span style={{ fontSize: 12, flex: 1, opacity: 0.9, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                     {totalNeed > 0 && (
                       <span>{totalConfirmed}/{totalNeed} spec filled</span>
@@ -553,6 +564,17 @@ export function JobRequestCrewSection({
 
                 {isExpanded && (
                   <div style={{ padding: 10 }}>
+                    <div style={{
+                      fontSize: 11, marginBottom: 8, padding: "5px 9px",
+                      background: "#f7f4ee", border: "1px solid var(--border, #e5e7eb)",
+                      borderRadius: 6, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap",
+                    }}>
+                      <strong style={{ opacity: 0.7 }}>Planned day window:</strong>
+                      {dayWindow
+                        ? <span>{dayWindow}</span>
+                        : <span className="muted"><em>none set</em> — add it on the Daily Requirements tab</span>}
+                      <span className="muted">· blank crew times below default to this. Set a crew member&apos;s time only to override.</span>
+                    </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                       <div className="muted" style={{ fontSize: 11 }}>
                         Pick the actual people scheduled for this day. Confirmed = they&apos;ve agreed to work it.
@@ -598,9 +620,6 @@ export function JobRequestCrewSection({
                           {crew.map((a) => {
                             const spcOptions = a.positionId ? (specialtiesByPosition.get(a.positionId) ?? []) : [];
                             const plannedColSpan = 6 + (shifts.length >= 2 ? 1 : 0);
-                            const win1 = (d.startTime || d.endTime) ? `${d.startTime || "?"}–${d.endTime || "?"}` : "";
-                            const win2 = (d.startTime2 || d.endTime2) ? `${d.startTime2 || "?"}–${d.endTime2 || "?"}` : "";
-                            const windowHint = [win1, win2].filter(Boolean).join(" · ");
                             return (
                               <Fragment key={a.id}>
                               <tr>
@@ -724,11 +743,7 @@ export function JobRequestCrewSection({
                                       onChange={(e) => patchAssignment(d.id, a, { plannedOut2: e.target.value || undefined })}
                                       style={{ width: 92, flex: "0 0 auto" }}
                                     />
-                                    {windowHint && (
-                                      <span style={{ opacity: 0.75 }}>
-                                        (blank → day window {windowHint})
-                                      </span>
-                                    )}
+                                    <span style={{ opacity: 0.6 }}>· override only</span>
                                   </div>
                                 </td>
                               </tr>
