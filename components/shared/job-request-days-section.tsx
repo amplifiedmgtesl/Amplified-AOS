@@ -290,6 +290,8 @@ export function JobRequestDaysSection({
       callTime: prev.callTime,
       startTime: prev.startTime,
       endTime: prev.endTime,
+      startTime2: prev.startTime2,
+      endTime2: prev.endTime2,
       expectedHours: prev.expectedHours,
     };
     await patchDay(d, patch);
@@ -498,6 +500,28 @@ export function JobRequestDaysSection({
                       style={{ color: "#a00", padding: "4px 8px", fontSize: 12 }}
                     >✕</button>
                   </div>
+                </div>
+
+                {/* Optional second block — the day-level default for a
+                    work → meal → work schedule (e.g. back at 14:00). Flows to
+                    the Assigned Crew planned-times fallback, copy planned→actual,
+                    and the sign-in sheet. Leave blank for a single-block day. */}
+                <div style={{ display: "flex", gap: 8, alignItems: "end", marginTop: 8, flexWrap: "wrap" }}>
+                  <div>
+                    <small>2nd Start</small>
+                    <select disabled={disabled} value={d.startTime2 ?? ""} onChange={(e) => patchDay(d, { startTime2: e.target.value })} style={{ width: 110 }}>
+                      {TIMES.map((t) => <option key={t} value={t}>{t || "—"}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <small>2nd End</small>
+                    <select disabled={disabled} value={d.endTime2 ?? ""} onChange={(e) => patchDay(d, { endTime2: e.target.value })} style={{ width: 110 }}>
+                      {TIMES.map((t) => <option key={t} value={t}>{t || "—"}</option>)}
+                    </select>
+                  </div>
+                  <span className="muted" style={{ fontSize: 11, paddingBottom: 6 }}>
+                    Second block (e.g. after lunch). Leave blank for a single-block day.
+                  </span>
                 </div>
 
                 <div style={{ marginTop: 10, paddingLeft: 8, borderLeft: "2px solid var(--border, #e5e7eb)" }}>

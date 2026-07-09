@@ -681,11 +681,12 @@ export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways
         if (hasActual) { skippedFilled++; return r; }
         const s = bySlotKey.get(`${r.employeeKey || ""}|${r.workDate || ""}|${r.shiftId || ""}`);
         if (!s) return r;
-        // Pair 1 falls back to the day window; pair 2 has no day-window fallback.
-        const in1  = s.plannedIn1  ?? s.startTime ?? "";
-        const out1 = s.plannedOut1 ?? s.endTime   ?? "";
-        const in2  = s.plannedIn2  ?? "";
-        const out2 = s.plannedOut2 ?? "";
+        // Each pair falls back to the matching day window block (pair 1 →
+        // start/end, pair 2 → start2/end2). Per-assignment planned times win.
+        const in1  = s.plannedIn1  ?? s.startTime  ?? "";
+        const out1 = s.plannedOut1 ?? s.endTime    ?? "";
+        const in2  = s.plannedIn2  ?? s.startTime2 ?? "";
+        const out2 = s.plannedOut2 ?? s.endTime2   ?? "";
         if (!in1 && !out1 && !in2 && !out2) { noPlan++; return r; }
         filled++;
         return computeTimeEntry({ ...r, timeIn1: in1, timeOut1: out1, timeIn2: in2, timeOut2: out2 });

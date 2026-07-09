@@ -598,9 +598,9 @@ export function JobRequestCrewSection({
                           {crew.map((a) => {
                             const spcOptions = a.positionId ? (specialtiesByPosition.get(a.positionId) ?? []) : [];
                             const plannedColSpan = 6 + (shifts.length >= 2 ? 1 : 0);
-                            const windowHint = (d.startTime || d.endTime)
-                              ? `${d.startTime || "?"}–${d.endTime || "?"}`
-                              : "";
+                            const win1 = (d.startTime || d.endTime) ? `${d.startTime || "?"}–${d.endTime || "?"}` : "";
+                            const win2 = (d.startTime2 || d.endTime2) ? `${d.startTime2 || "?"}–${d.endTime2 || "?"}` : "";
+                            const windowHint = [win1, win2].filter(Boolean).join(" · ");
                             return (
                               <Fragment key={a.id}>
                               <tr>
@@ -710,6 +710,7 @@ export function JobRequestCrewSection({
                                       aria-label="Planned in (pair 2)"
                                       disabled={disabled}
                                       value={a.plannedIn2 ?? ""}
+                                      placeholder={d.startTime2 || ""}
                                       onChange={(e) => patchAssignment(d.id, a, { plannedIn2: e.target.value || undefined })}
                                       style={{ width: 92, flex: "0 0 auto" }}
                                     />
@@ -719,12 +720,13 @@ export function JobRequestCrewSection({
                                       aria-label="Planned out (pair 2)"
                                       disabled={disabled}
                                       value={a.plannedOut2 ?? ""}
+                                      placeholder={d.endTime2 || ""}
                                       onChange={(e) => patchAssignment(d.id, a, { plannedOut2: e.target.value || undefined })}
                                       style={{ width: 92, flex: "0 0 auto" }}
                                     />
                                     {windowHint && (
                                       <span style={{ opacity: 0.75 }}>
-                                        (blank pair 1 → day window {windowHint})
+                                        (blank → day window {windowHint})
                                       </span>
                                     )}
                                   </div>

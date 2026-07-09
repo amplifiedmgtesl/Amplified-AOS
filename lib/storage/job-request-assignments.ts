@@ -96,8 +96,10 @@ export type JobCrewSlot = {
   assignmentId: string;
   jobRequestDayId: string;
   eventDate: string;               // YYYY-MM-DD
-  startTime: string | null;        // HH:MM (24h) day window, or null
+  startTime: string | null;        // HH:MM (24h) day window pair 1, or null
   endTime: string | null;
+  startTime2: string | null;       // day window pair 2 (after-break block), or null
+  endTime2: string | null;
   // Per-worker planned times (assignment-level), HH:MM (24h) or null. When
   // null, callers fall back to the day window (startTime/endTime) for pair 1.
   plannedIn1: string | null;
@@ -118,15 +120,15 @@ export type JobCrewSlot = {
 export async function loadJobCrewSlots(jobRequestId: string): Promise<JobCrewSlot[]> {
   const { data: days, error: dayErr } = await supabase
     .from("job_request_days")
-    .select("id, event_date, start_time, end_time, sort_order")
+    .select("id, event_date, start_time, end_time, start_time2, end_time2, sort_order")
     .eq("job_request_id", jobRequestId)
     .order("event_date", { ascending: true });
   if (dayErr) throw dayErr;
   if (!days || days.length === 0) return [];
 
-  const dayMap = new Map<string, { event_date: string; start_time: string | null; end_time: string | null }>();
+  const dayMap = new Map<string, { event_date: string; start_time: string | null; end_time: string | null; start_time2: string | null; end_time2: string | null }>();
   for (const d of days as any[]) {
-    dayMap.set(d.id, { event_date: d.event_date, start_time: d.start_time ?? null, end_time: d.end_time ?? null });
+    dayMap.set(d.id, { event_date: d.event_date, start_time: d.start_time ?? null, end_time: d.end_time ?? null, start_time2: d.start_time2 ?? null, end_time2: d.end_time2 ?? null });
   }
 
   const { data: shifts, error: shErr } = await supabase
@@ -153,6 +155,8 @@ export async function loadJobCrewSlots(jobRequestId: string): Promise<JobCrewSlo
       eventDate: day?.event_date ?? "",
       startTime: day?.start_time ?? null,
       endTime: day?.end_time ?? null,
+      startTime2: day?.start_time2 ?? null,
+      endTime2: day?.end_time2 ?? null,
       plannedIn1: r.planned_in1 ?? null,
       plannedOut1: r.planned_out1 ?? null,
       plannedIn2: r.planned_in2 ?? null,

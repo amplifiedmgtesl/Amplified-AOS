@@ -34,15 +34,15 @@ type Employee = {
   phone?: string;
 };
 
-// Planned window text for one assignment. Pair 1 falls back to the day
-// window; pair 2 is shown only when present. Mirrors copyPlannedToActual.
+// Planned window text for one assignment. Each pair falls back to the matching
+// day block (pair 1 → start/end, pair 2 → start2/end2). Mirrors copyPlannedToActual.
 function expectedTimes(a: JobRequestAssignment, day: JobRequestDay): string {
   const in1 = a.plannedIn1 || day.startTime || "";
   const out1 = a.plannedOut1 || day.endTime || "";
   const pair1 = in1 || out1 ? `${in1 || "?"}–${out1 || "?"}` : "";
-  const pair2 = a.plannedIn2 || a.plannedOut2
-    ? `${a.plannedIn2 || "?"}–${a.plannedOut2 || "?"}`
-    : "";
+  const in2 = a.plannedIn2 || day.startTime2 || "";
+  const out2 = a.plannedOut2 || day.endTime2 || "";
+  const pair2 = in2 || out2 ? `${in2 || "?"}–${out2 || "?"}` : "";
   return [pair1, pair2].filter(Boolean).join(" · ");
 }
 

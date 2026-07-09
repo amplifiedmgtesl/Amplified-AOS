@@ -501,6 +501,12 @@ export type JobRequestDay = {
   callTime?: string;
   startTime?: string;
   endTime?: string;
+  /** Optional second time block (pair 2) — the day-level default for a
+   *  work → meal → work schedule (e.g. back at 14:00). NULL = single-block day.
+   *  Falls through to the crew-assignment planned-times fallback, the copy
+   *  planned→actual button, and the sign-in sheet. HH:MM 24h. */
+  startTime2?: string;
+  endTime2?: string;
   expectedHours?: number;
   notes?: string;
   sortOrder: number;
