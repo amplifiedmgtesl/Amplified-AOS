@@ -503,25 +503,30 @@ export function JobRequestDaysSection({
                 </div>
 
                 {/* Optional second block — the day-level default for a
-                    work → meal → work schedule (e.g. back at 14:00). Flows to
-                    the Assigned Crew planned-times fallback, copy planned→actual,
-                    and the sign-in sheet. Leave blank for a single-block day. */}
-                <div style={{ display: "flex", gap: 8, alignItems: "end", marginTop: 8, flexWrap: "wrap" }}>
+                    work → meal → work schedule (e.g. back at 14:00). Same grid
+                    template as the row above so "2nd Start / 2nd End" line up
+                    directly under "Start Time / End Time". Flows to the Assigned
+                    Crew fallback, copy planned→actual, and the sign-in sheet. */}
+                <div style={{ display: "grid", gridTemplateColumns: "130px 110px 110px 110px 90px 1fr 110px 80px", gap: 8, alignItems: "end", marginTop: 6 }}>
+                  <div />
+                  <div style={{ textAlign: "right", alignSelf: "center" }}>
+                    <small className="muted">2nd block</small>
+                  </div>
                   <div>
                     <small>2nd Start</small>
-                    <select disabled={disabled} value={d.startTime2 ?? ""} onChange={(e) => patchDay(d, { startTime2: e.target.value })} style={{ width: 110 }}>
+                    <select disabled={disabled} value={d.startTime2 ?? ""} onChange={(e) => patchDay(d, { startTime2: e.target.value })}>
                       {TIMES.map((t) => <option key={t} value={t}>{t || "—"}</option>)}
                     </select>
                   </div>
                   <div>
                     <small>2nd End</small>
-                    <select disabled={disabled} value={d.endTime2 ?? ""} onChange={(e) => patchDay(d, { endTime2: e.target.value })} style={{ width: 110 }}>
+                    <select disabled={disabled} value={d.endTime2 ?? ""} onChange={(e) => patchDay(d, { endTime2: e.target.value })}>
                       {TIMES.map((t) => <option key={t} value={t}>{t || "—"}</option>)}
                     </select>
                   </div>
-                  <span className="muted" style={{ fontSize: 11, paddingBottom: 6 }}>
-                    Second block (e.g. after lunch). Leave blank for a single-block day.
-                  </span>
+                  <div style={{ gridColumn: "5 / -1", alignSelf: "center" }}>
+                    <small className="muted">Second block (e.g. after lunch). Leave blank for a single-block day.</small>
+                  </div>
                 </div>
 
                 <div style={{ marginTop: 10, paddingLeft: 8, borderLeft: "2px solid var(--border, #e5e7eb)" }}>
