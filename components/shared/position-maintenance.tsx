@@ -15,14 +15,21 @@ async function fetchAll(): Promise<{ positions: Position[]; specialties: Special
 
   const positions = (posRes.data ?? [])
     .filter((r: any) => r.is_active !== false)
-    .map((r: any) => ({ id: r.id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active }));
+    .map((r: any) => ({ id: r.id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active, ripplingEarningType: r.rippling_earning_type ?? null }));
 
   const specialties = (spcRes.data ?? [])
     .filter((r: any) => r.is_active !== false)
-    .map((r: any) => ({ id: r.id, positionId: r.position_id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active }));
+    .map((r: any) => ({ id: r.id, positionId: r.position_id, name: r.name, sortOrder: r.sort_order, isActive: r.is_active, ripplingEarningType: r.rippling_earning_type ?? null }));
 
   return { positions, specialties, error: null };
 }
+
+// Valid Rippling earning types (the columns in Rippling's custom-earnings
+// import). A position/specialty with no mapping falls back to "Day Rate 1"
+// in the export. Keep in sync with lib/store/rippling-headers.ts.
+const RIPPLING_EARNING_TYPES = [
+  "Rigger", "Fork", "Lead", "Day Rate 1", "Climber", "Coordinator", "Contractor Hourly",
+];
 
 export default function PositionMaintenance() {
   const [positions, setPositions] = useState<Position[]>([]);
@@ -174,6 +181,20 @@ export default function PositionMaintenance() {
     await reload();
   }
 
+  // ─── Rippling earning-type mapping ─────────────────────────────────────────
+  // Position = default; specialty = optional override. Persist + update local
+  // state optimistically (no full reload — avoids a select-flash).
+  function setPosEarning(p: Position, value: string) {
+    const v = value || null;
+    upsertPosition({ ...p, ripplingEarningType: v });
+    setPositions((prev) => prev.map((x) => (x.id === p.id ? { ...x, ripplingEarningType: v } : x)));
+  }
+  function setSpcEarning(s: Specialty, value: string) {
+    const v = value || null;
+    upsertSpecialty({ ...s, ripplingEarningType: v });
+    setSpecialties((prev) => prev.map((x) => (x.id === s.id ? { ...x, ripplingEarningType: v } : x)));
+  }
+
   async function addSpecialty(posId: string) {
     const name = (newSpcNames[posId] ?? "").trim();
     if (!name) return;
@@ -247,6 +268,19 @@ export default function PositionMaintenance() {
                 </div>
               </div>
 
+              {/* Rippling pay-type default for this position */}
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }} title="Which Rippling earning column this position's hours are paid under. Specialties can override below.">
+                <small className="muted" style={{ minWidth: 90 }}>Rippling pay type</small>
+                <select
+                  value={p.ripplingEarningType ?? ""}
+                  onChange={(e) => setPosEarning(p, e.target.value)}
+                  style={{ flex: 1, fontSize: 12 }}
+                >
+                  <option value="">— none (→ Day Rate 1)</option>
+                  {RIPPLING_EARNING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+
               <hr style={{ margin: 0, borderColor: "#e8dfd0" }} />
 
               {/* Specialties list */}
@@ -270,6 +304,15 @@ export default function PositionMaintenance() {
                         <span style={{ fontSize: 13 }}>{s.name}</span>
                       )}
                     </div>
+                    <select
+                      value={s.ripplingEarningType ?? ""}
+                      onChange={(e) => setSpcEarning(s, e.target.value)}
+                      title="Rippling earning type for this specialty. Blank = inherit the position's pay type."
+                      style={{ fontSize: 11, maxWidth: 108 }}
+                    >
+                      <option value="">↳ inherit</option>
+                      {RIPPLING_EARNING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
                     <div className="action-row" style={{ gap: 4 }}>
                       {editingSpcId === s.id ? (
                         <>
