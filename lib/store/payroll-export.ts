@@ -37,10 +37,32 @@ function hours(n: number): string {
   return n > 0 ? n.toFixed(4) : "";
 }
 
+// Week-start for a work date — MUST match how the payroll engine buckets weekly
+// OT (payWeekStartFor in payroll.ts), so the export's week boundaries line up
+// exactly with the OT that was already computed. Reimplemented here (pure, ~10
+// lines) to keep the exporter free of payroll.ts's supabase deps.
+function weekStartISO(workDate: string, weekStart: "sun" | "mon"): string {
+  const [y, m, d] = workDate.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const day = dt.getUTCDay(); // 0=Sun..6=Sat
+  const offset = weekStart === "sun" ? day : (day + 6) % 7;
+  dt.setUTCDate(dt.getUTCDate() - offset);
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${dt.getUTCFullYear()}-${mm}-${dd}`;
+}
+// Rippling dates render MM/DD/YYYY (matches the template's Earning Period style).
+function mdy(iso: string): string {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-");
+  return `${m}/${d}/${y}`;
+}
+
 type Bucket = { std: number; ot: number; dt: number };
 type EmpRow = {
   empNo: number | null;
   name: string;
+  workweek: string; // ISO week-start, "" when the entry has no work date
   notes: Set<string>;
   byType: Map<string, Bucket>;
 };
@@ -79,15 +101,21 @@ export function buildRipplingCsv(
     return FALLBACK_EARNING_TYPE;
   }
 
-  // ── Aggregate: one EmpRow per employee, hours bucketed by earning type ─────
+  // ── Aggregate: one EmpRow per (employee, workweek), hours bucketed by ──────
+  // earning type. Splitting by workweek keeps multi-week runs correct: FLSA OT
+  // is a weekly concept, and the payroll engine already computed OT per this
+  // same week boundary, so each week's row carries its own pre-computed buckets.
   const rows = new Map<string, EmpRow>();
   for (const e of entries) {
-    const key = e.employeeKey || `${e.firstName ?? ""} ${e.lastName ?? ""}`.trim() || e.email || "(unknown)";
+    const idKey = e.employeeKey || `${e.firstName ?? ""} ${e.lastName ?? ""}`.trim() || e.email || "(unknown)";
+    const wk = e.workDate ? weekStartISO(e.workDate, run.payWeekStart) : "";
+    const key = `${idKey}|${wk}`;
     let r = rows.get(key);
     if (!r) {
       r = {
         empNo: e.employeeKey ? (empNoByKey.get(e.employeeKey) ?? null) : null,
         name: `${e.firstName ?? ""} ${e.lastName ?? ""}`.trim() || e.email || "(unknown)",
+        workweek: wk,
         notes: new Set(),
         byType: new Map(),
       };
@@ -114,11 +142,12 @@ export function buildRipplingCsv(
     // Drop anyone with no pay hours at all — an all-blank row imports nothing
     // into Rippling and just clutters the clerk's review.
     .filter((r) => [...r.byType.values()].some((b) => b.std > 0 || b.ot > 0 || b.dt > 0))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => a.name.localeCompare(b.name) || a.workweek.localeCompare(b.workweek));
   for (const r of sorted) {
     const cell: Record<string, string> = {
       "Rippling Emp No": r.empNo != null ? String(r.empNo) : "",
       "Employee Name": r.name,
+      "Workweek": mdy(r.workweek),
       "Paystub Note": [...r.notes].join("; "),
     };
     for (const [et, b] of r.byType) {
