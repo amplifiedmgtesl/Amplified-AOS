@@ -24,7 +24,7 @@ import {
   type PayrollCandidateRow,
 } from "@/lib/store/payroll";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "@/lib/store/types";
-import { loadJobRequests, loadEmployees } from "@/lib/store/app-store";
+import { loadJobRequests, loadEmployees, loadPositions, loadSpecialties } from "@/lib/store/app-store";
 import { buildRipplingCsv, ripplingCsvFilename } from "@/lib/store/payroll-export";
 import { useUserEmail } from "@/lib/auth/use-user-email";
 
@@ -587,7 +587,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
 
   function handleExportRipplingCsv() {
     if (!run) return;
-    const csv = buildRipplingCsv(run, entries, loadEmployees(), loadJobRequests());
+    const csv = buildRipplingCsv(run, entries, loadEmployees(), loadPositions(), loadSpecialties());
     const filename = ripplingCsvFilename(run);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);

@@ -1711,6 +1711,7 @@ function rowToPosition(r: any): Position {
     name: r.name ?? "",
     sortOrder: r.sort_order ?? 0,
     isActive: r.is_active ?? true,
+    ripplingEarningType: r.rippling_earning_type ?? null,
   };
 }
 
@@ -1727,6 +1728,7 @@ export function upsertPosition(position: Position): void {
     name: position.name,
     sort_order: position.sortOrder,
     is_active: position.isActive,
+    rippling_earning_type: position.ripplingEarningType ?? null,
   });
 }
 
@@ -1753,6 +1755,7 @@ function rowToSpecialty(r: any): Specialty {
     name: r.name ?? "",
     sortOrder: r.sort_order ?? 0,
     isActive: r.is_active ?? true,
+    ripplingEarningType: r.rippling_earning_type ?? null,
   };
 }
 
@@ -1776,6 +1779,7 @@ export function upsertSpecialty(specialty: Specialty): void {
     name: specialty.name,
     sort_order: specialty.sortOrder,
     is_active: specialty.isActive,
+    rippling_earning_type: specialty.ripplingEarningType ?? null,
   });
 }
 
