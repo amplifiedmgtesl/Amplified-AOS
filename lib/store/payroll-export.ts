@@ -128,11 +128,12 @@ export function buildRipplingCsv(
     b.ot += e.payOtHours;
     b.dt += e.payDtHours;
 
-    // Paystub note carries the real AOS position/specialty the bucket hides,
-    // plus any pay-adjustment reason, so the clerk (and the worker) can see it.
+    // Paystub note lists the positions/specialties worked — for the payroll
+    // clerk, who mostly won't be in the app. Deliberately NO pay-adjustment /
+    // rounding reasons here: this column PRINTS on the Rippling paystub, and we
+    // don't want "5hr min applied / rounded up / weekly OT spill" on a check.
     const role = e.specialty ? `${e.position ?? ""}/${e.specialty}` : (e.position ?? "");
     if (role) r.notes.add(role);
-    if (e.payAdjustmentReason) r.notes.add(e.payAdjustmentReason);
   }
 
   // ── Emit ───────────────────────────────────────────────────────────────────
