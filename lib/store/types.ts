@@ -700,6 +700,10 @@ export type Position = {
   name: string;
   sortOrder: number;
   isActive: boolean;
+  /** Default Rippling earning type for this position (Rigger/Fork/Lead/Day Rate 1/
+   *  Climber/Coordinator). Overridden per-specialty. NULL → exporter Day Rate 1
+   *  catch-all. Drives the Rippling CSV export + pay-rate seeding. */
+  ripplingEarningType?: string | null;
 };
 
 export type Specialty = {
@@ -708,6 +712,9 @@ export type Specialty = {
   name: string;
   sortOrder: number;
   isActive: boolean;
+  /** Rippling earning-type override for this specialty. NULL → falls back to the
+   *  position's mapping, then the exporter Day Rate 1 catch-all. */
+  ripplingEarningType?: string | null;
 };
 
 /** Job-scoped shift master. Each job_request defines its own list of shifts;
