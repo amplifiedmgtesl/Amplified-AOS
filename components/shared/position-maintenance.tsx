@@ -221,7 +221,7 @@ export default function PositionMaintenance() {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(440px, 1fr))", gap: 16 }}>
         {sorted.map((p, idx) => {
           const spcs = spcForPosition(p.id);
           return (
@@ -268,15 +268,16 @@ export default function PositionMaintenance() {
                 </div>
               </div>
 
-              {/* Rippling pay-type default for this position */}
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }} title="Which Rippling earning column this position's hours are paid under. Specialties can override below.">
-                <small className="muted" style={{ minWidth: 90 }}>Rippling pay type</small>
+              {/* Rippling pay type for the position itself (used when an entry
+                  has this position but no specialty). */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }} title="Rippling earning column this position's hours are paid under when the entry has no specialty.">
+                <small className="muted" style={{ minWidth: 110 }}>Rippling pay type</small>
                 <select
                   value={p.ripplingEarningType ?? ""}
                   onChange={(e) => setPosEarning(p, e.target.value)}
-                  style={{ flex: 1, fontSize: 12 }}
+                  style={{ flex: 1, fontSize: 13, padding: "4px 6px" }}
                 >
-                  <option value="">— none (→ Day Rate 1)</option>
+                  <option value="">— not set —</option>
                   {RIPPLING_EARNING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
@@ -307,10 +308,10 @@ export default function PositionMaintenance() {
                     <select
                       value={s.ripplingEarningType ?? ""}
                       onChange={(e) => setSpcEarning(s, e.target.value)}
-                      title="Rippling earning type for this specialty. Blank = inherit the position's pay type."
-                      style={{ fontSize: 11, maxWidth: 108 }}
+                      title="Rippling earning type this specialty is paid under."
+                      style={{ fontSize: 12, width: 140, padding: "3px 5px" }}
                     >
-                      <option value="">↳ inherit</option>
+                      <option value="">— not set —</option>
                       {RIPPLING_EARNING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                     <div className="action-row" style={{ gap: 4 }}>
