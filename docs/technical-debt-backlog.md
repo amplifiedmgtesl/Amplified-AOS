@@ -482,11 +482,11 @@ timesheet_entries
 
 ## Remove the rate card (Rate Schedule) from the quote PDF (added 2026-07-16)
 
+**BUILT 2026-07-18** on `feature/quote-pdf-rate-schedule-toggle` (commit `5d86df0`), pending dev merge + preview test. Decision (John, 7/18): gate it behind a toggle rather than delete — an "Include rate schedule" checkbox on the PDF preview next to the Print/Save button, **default OFF** (driven by a `?rates=1` URL param, same pattern as the orientation/detail toggles). The rate-card fetch is skipped entirely when off.
+
 **Connor's note (2026-07-16):** Remove the rate card from the quote PDF — clients shouldn't get the full rate schedule on the quote they receive.
 
-**Why:** The quote PDF currently renders a "Rate Schedule" appendix built from the quote's rate card profile — every position/specialty rate. Connor wants that off the client-facing document.
-
-**How to apply:** In [components/shared/quote-pdf-view.tsx](components/shared/quote-pdf-view.tsx), drop the Rate Schedule appendix block (the `rateScheduleRows.length > 0 ? ...` section around line 412, plus its `rate_card_profiles` / `rate_card_profile_rows` fetch around line 149). The rate card stays in the app/editor; only the generated PDF changes. Confirm with Connor whether it should be gone entirely or gated behind a toggle for internal copies.
+**Why:** The quote PDF rendered a "Rate Schedule" appendix built from the quote's rate card profile — every position/specialty rate — unconditionally, in [components/shared/quote-pdf-view.tsx](components/shared/quote-pdf-view.tsx).
 
 ## Revamp the printed timesheet PDF for legibility (added 2026-07-16)
 
