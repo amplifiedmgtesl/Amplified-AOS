@@ -86,8 +86,12 @@ export default function QuotePdfView({ id }: { id: string }) {
   // ?orientation=landscape — wider page, fits more columns. Default portrait.
   // ?detail=full — show all line fields (holiday, travel, OT, DT, rule).
   //   Default basic (Position / Specialty / Shift / Qty / Hrs / Rate / Total).
+  // ?rates=1 — include the Rate Schedule appendix. Default OFF: clients
+  //   shouldn't get the full rate schedule unless deliberately included
+  //   (Connor, 2026-07-16 — backlog #9).
   const orientation = (searchParams?.get("orientation") === "landscape") ? "landscape" : "portrait";
   const detail = (searchParams?.get("detail") === "full") ? "full" : "basic";
+  const showRateSchedule = searchParams?.get("rates") === "1";
   const [quote, setQuote] = useState<QuoteDraft | null>(null);
   const [job, setJob] = useState<LoadedJob | null>(null);
   const [client, setClient] = useState<LoadedClient | null>(null);
@@ -146,8 +150,9 @@ export default function QuotePdfView({ id }: { id: string }) {
         const qds = await loadQuoteDays(q.id);
         if (!cancelled) setHolidayByDate(holidayLookup(qds));
 
-        // Load the rate card profile + its rows for the appendix Rate Schedule.
-        if (q.rateCardProfileId) {
+        // Load the rate card profile + its rows for the appendix Rate Schedule
+        // — only when the toggle asked for it (off by default).
+        if (q.rateCardProfileId && showRateSchedule) {
           const [profileRes, rowsRes] = await Promise.all([
             supabase.from("rate_card_profiles").select("name, client_name").eq("id", q.rateCardProfileId).maybeSingle(),
             supabase.from("rate_card_profile_rows").select("*").eq("profile_id", q.rateCardProfileId).order("sort_order"),
@@ -170,7 +175,9 @@ export default function QuotePdfView({ id }: { id: string }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [id]);
+    // showRateSchedule comes from the URL; toggling it reloads the document,
+    // but keep it in deps so a soft param change would also refetch.
+  }, [id, showRateSchedule]);
 
   if (loading) return <div style={{ padding: 40 }} className="muted">Loading…</div>;
   if (error) return <div style={{ padding: 40 }} className="muted">{error}</div>;
@@ -409,8 +416,8 @@ export default function QuotePdfView({ id }: { id: string }) {
         </table>
       </section>
 
-      {/* ─── Rate Schedule (appendix) ─────────────────────────────────────── */}
-      {rateScheduleRows.length > 0 ? (
+      {/* ─── Rate Schedule (appendix) — opt-in via the checkbox below ─────── */}
+      {showRateSchedule && rateScheduleRows.length > 0 ? (
         <section className="rate-schedule">
           <h3>Rate Schedule {rateScheduleProfileName ? <span className="schedule-profile">— {rateScheduleProfileName}</span> : null}</h3>
           <div className="schedule-note">
@@ -527,6 +534,20 @@ export default function QuotePdfView({ id }: { id: string }) {
               <option value="basic">Basic (customer-facing)</option>
               <option value="full">Full (all fields)</option>
             </select>
+          </label>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 5 }} title="Append the full rate schedule to the printed quote. Off by default — clients only get it when deliberately included.">
+            <input
+              type="checkbox"
+              checked={showRateSchedule}
+              onChange={(e) => {
+                const params = new URLSearchParams(searchParams?.toString() ?? "");
+                if (e.target.checked) params.set("rates", "1");
+                else params.delete("rates");
+                window.location.search = params.toString();
+              }}
+              style={{ width: "auto", flex: "0 0 auto", margin: 0 }}
+            />
+            Include rate schedule
           </label>
         </div>
         <span className="muted" style={{ marginLeft: 12, fontSize: 12 }}>
