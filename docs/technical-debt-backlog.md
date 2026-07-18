@@ -2,6 +2,46 @@
 
 Full detail for every deferred cleanup task, design note, and open follow-up. Moved here from Claude's session memory on 2026-06-12 — the memory file (`project_todo.md`) now keeps only a one-line index per item pointing at this doc. Some links below reference Claude memory files (`feedback_*.md`, `project_*.md`) that live in `~/.claude/projects/.../memory/`, not this repo.
 
+---
+
+## 📌 CURRENT PRIORITY RANKING (set with John, 2026-07-16)
+
+Working priority order for active/requested projects. The `#N` ids are stable labels from the 2026-07-16 triage (not positions) — reference them when discussing. Three buckets, mapping to a **Now / Next / Later** frame: **Ranked = Now**, **Unranked = Next**, **On hold = Later**.
+
+**RANKED (Now):**
+1. **#5** — Crew Assignment export radius filter (~100 mi) — *security / roster-leak*
+2. **#9** — Remove Rate Schedule from the quote PDF (Connor, 7/16)
+3. **#12** — Pre-invoice client report (actual days + billing amounts) (7/14)
+4. **#16** — Trim the Timekeeping job dropdown (added 7/18, ranked 7/18) — detail: [`docs/timekeeping-job-list-filter-todo.md`](timekeeping-job-list-filter-todo.md)
+5. **#13** — Add invoice discount (amount/%) (7/14)
+6. **#2** — Timekeeping planned-vs-actual (Phase 0) — verify on dev preview → promote to prod ⎫
+7. **#3** — Time Clock kiosk (Phase 1) — client digital-sig sign-off → re-apply on Phase 0 → prod ⎬ **one workstream, + #4 folded in**
+8. **#11** — Bulk-import ACTUAL timekeeping hours (round-trip export/import) (Connor/John, 7/16) ⎭
+9. **#10** — Revamp printed timesheet PDF for legibility (Connor, 7/16)
+
+**#4 + freeze-trigger fold-in:** Timesheet↔invoice linking redesign is done *inside* the #2/#3 timekeeping/billing workstream — all touch `timesheet_entries` billing/lock state; rework that area once. **The `timesheet_entries_freeze_check()` denylist refactor is also merged into this workstream:** #4 deletes the `invoice_line_id` column that the freeze trigger's DELETE guard currently keys on, so the trigger must be rewritten when #4 lands anyway — do the allowlist→denylist flip (+ fix the stale delete comment in `timekeeping.tsx`) in that same rewrite. Also relates to #14 & #15.
+
+**UNRANKED (Next) — awaiting John's slotting:**
+- **#6** — AOS Assistant in-app chat agent (spec'd)
+- **#7** — De-cache 1000-row truncation — broader audit (hot-fix shipped) *(ties to #15)*
+- **#14** — Review invoice void process — *the void/reissue feature is BUILT; this is test/verify only*
+- **#15** — Review timekeeping reset/cleanup process — *ties to #7 dedup*
+- **#17** — Let the payroll role view the job screen (added 2026-07-18, John). Today the payroll role is confined to `/payroll/*` + `/employee-directory` by the route guard in [components/layout/app-shell.tsx](../components/layout/app-shell.tsx) (~line 92); jobs are out of reach. Open the jobs list/detail (`/jobs/*`) to payroll — decide view-only vs. edit, and whether the sidebar nav should show the Jobs link for payroll users.
+
+**ON HOLD (Later):**
+- **#1** — Rippling payroll export follow-ups (waiting on Connor: mapping review, W-2/1099, 5 rate mismatches, real test-import)
+
+**Closed 2026-07-16:**
+- **~~#8~~** — Full client→invoice system rewrite + Connor PDF recovery — ✅ DONE (see the ✅ DONE section below; bug class mechanically impossible + recovery executed).
+
+---
+
+## 🧭 PROJECT: Timesheet ↔ invoice linking redesign (added 2026-07-12)
+
+**Status:** design agreed, not started. Full write-up: [`docs/timesheet-invoice-linking-redesign.md`](timesheet-invoice-linking-redesign.md).
+
+The single mutable `timesheet_entries.invoice_line_id` pointer (no history, last-writer-wins) lets the billing link sit on a throwaway draft while the issued invoice has none — so deleting an unneeded draft revision silently **unbills** records a live invoice still covers. Also the Timesheet Review screen doesn't show billed state at all (only Timekeeping does). Fix: derive "billed" from live invoice links backed by a `invoice_line_entries` many-to-many table (keeps provenance; partial-unique guards against double active-billing). Two cheap interim mitigations documented (show billed on Review; warn on draft-delete that would orphan records). Surfaced 2026-07-12 on job `AES_26070312_DOD_COUNTRYC` (dup Soni Nichols entries; 0 links on issued rev2, all 38 on draft rev3).
+
 ## 🔥 PROJECT: De-cache raw job data — the 1000-row cache truncation (added 2026-07-02)
 
 **Status:** discovered + partially fixed 2026-07-02. Timekeeping hot-fix shipped to prod (commit `5e63ba4`). The broader audit below is not yet done.
@@ -38,7 +78,9 @@ Cache only **small, bounded, slowly-changing reference/lookup** tables (position
 4. **Verify + clean** the existing duplicate `timesheet_entries` (82 POTUS, 27 Morgan Wallen; read-only keep/remove report first) and add a dedup guard on `(employee_key, work_date, shift_id)` across all add paths.
 5. Re-check whether the POTUS/Morgan invoices already went out with inflated hours.
 
-## ⭐ ACTIVE PROJECT: Full client→invoice system rewrite (incl. Connor recovery)
+## ✅ DONE: Full client→invoice system rewrite (incl. Connor recovery)
+
+**Status: COMPLETE (confirmed 2026-07-16).** The structural rewrite shipped incrementally and the original overwrite bug class is now **mechanically impossible**, verified against code/migrations 2026-07-16: opaque random ids (no content-derived slug PKs), `quote_draft_workspaces` JSONB dropped, invoice generation is a pure read-then-INSERT that never writes the quote, DB freeze triggers reject any edit/delete of an issued quote or its lines, and the blind `upsertQuote()` is deleted (invoice analogue has a cross-client collision guard). The **Connor PDF recovery ran** — the lost historical quote entities were reconstructed. NOTE: the `timesheet_entries_freeze_check()` denylist refactor (separate `##` section immediately below, added 2026-07-02) is an INDEPENDENT open item and is NOT closed by this. The two trivial loose ends (INV-2026-0427-875 draft/sent status; 40-char `event_name` cap) are moot/negligible.
 
 **Design document:** [docs/system-flow-rewrite.md](docs/system-flow-rewrite.md) — Mermaid diagrams of current vs proposed state, per-entity changes, cross-cutting concerns, open questions, phased rollout (A: quote rewrite + Connor recovery; B: rename `job_requests` → `jobs` + extend; C: invoice rewrite; D: shifts; E: client contacts/email; F: timesheet-driven invoice lines). Two findings worth memorizing: (1) `job_sheets`/`timesheet_entries` are already separate tables — only the dummy-vs-real distinction within `job_sheet_workers` uses a nullable FK; (2) `job_requests` already holds ~90% of the `jobs` master entity shape, so Phase B is a rename + additive columns, not a new table.
 
@@ -46,13 +88,17 @@ The quote-system-rewrite section below remains the immediate Phase A focus; the 
 
 ## Rewrite `timesheet_entries_freeze_check()` as a denylist (trigger drift, added 2026-07-02)
 
+**MERGED into the #2/#3/#4 timekeeping/billing workstream (2026-07-16).** #4 (timesheet↔invoice linking redesign) deletes the `invoice_line_id` column the DELETE guard keys on, forcing a trigger rewrite anyway — do the allowlist→denylist flip there. Not a standalone item. Detail below.
+
 The freeze trigger's UPDATE guard lists frozen columns **by hand**, so migrations that add columns silently escape it. As of 2026-07-02 these columns are NOT in the freeze list: `payroll_run_id`, `staff_finalized`, `staff_finalized_at`, `job_name`. Low billing risk today (every money column — hours/rates/dates/position/specialty/meal/bill totals — is still frozen; the gaps are workflow/linkage/label fields), but it will keep drifting.
 
 Also: on **DELETE** the trigger only blocks `invoice_line_id IS NOT NULL` — it does NOT block approved-not-invoiced or payroll-locked rows (payroll is covered separately by the `payroll_run_entries` FK's default NO ACTION). A code comment in [timekeeping.tsx](components/shared/timekeeping.tsx) falsely claims "the DB freeze trigger would reject the delete anyway" for approved rows — it doesn't. Delete safety is now enforced in `deleteTimesheetEntries()` ([db.ts](lib/store/db.ts), commit `f6f1b1b`): it checks approved/invoice-bound/payroll against the live DB and refuses locked rows, so it does not depend on the trigger.
 
 **Fix:** flip the UPDATE freeze to a denylist — freeze ALL columns except an explicit mutable set (`sort_order`, `updated_at`/`created_at`, audit cols, and the lock pointers themselves) — so new columns are frozen by default and the trigger can't fall behind the schema. Correct the false code comment while at it.
 
-### Quote system rewrite + Connor incident recovery (Phase A)
+### Quote system rewrite + Connor incident recovery (Phase A) — ✅ DONE
+
+**✅ COMPLETE (confirmed 2026-07-16):** structural rewrite shipped incrementally (overwrite bug class now mechanically impossible — see the ✅ DONE banner at the top of this project section) AND the Connor PDF recovery was executed — the ~16–17 lost historical quote entities were reconstructed. Original design/history preserved below for reference.
 
 **Status (as of 2026-04-29):** Designed end-to-end. Hot-fix shipped to prod 2026-04-29 (commits `02fc1bc`, `19784dd`, `1c57eee`, `cff6a6e`, `1138e17`, `23d1e5f`) covering: (1) saveInvoiceDraft no longer mutates the quote, (2) currentQuoteId recomputes fresh, (3) upsertQuote refuses cross-client overwrites, (4) "+ New Quote" button + dropdown reset properly, (5) no auto-load of saved quotes on mount, (6) **invoices now use unique ids per generation + warn on duplicate**. The deterministic-id pattern was an invoice-side analogue of Connor's bug — every "Save Invoice Draft" for the same quote overwrote prior invoice lines via syncInvoiceLines' delete-then-insert. Recovery from PDFs needs to cover invoice_lines too, not just quote headers. Awaiting dev environment, then PDF batch from Connor.
 
@@ -431,6 +477,24 @@ timesheet_entries
 - Mirror the change in both Quotes and Invoices summaries
 
 **Sequencing:** Pairs naturally with the per-day timesheet expansion work (when "Add Crew from Job Sheet" starts generating one row per worker per day, this summary becomes more valuable). Can ship before that change too — it just makes existing multi-day timesheets more legible.
+
+**Connor's note (2026-07-16):** Same ask, on the **invoice hours layout** specifically. Keep the total man-hours for the whole project, but **show the math for each line** — each line should display the hours breakdown that rolls up into the project total (e.g. `4 × 8 hrs`), not just a single aggregate number. This is the invoice-output side of the per-day/per-position breakdown above; carry it through to the invoice PDF ([components/shared/invoice-pdf-view.tsx](components/shared/invoice-pdf-view.tsx)), not only the on-screen Labor Summary.
+
+## Remove the rate card (Rate Schedule) from the quote PDF (added 2026-07-16)
+
+**Connor's note (2026-07-16):** Remove the rate card from the quote PDF — clients shouldn't get the full rate schedule on the quote they receive.
+
+**Why:** The quote PDF currently renders a "Rate Schedule" appendix built from the quote's rate card profile — every position/specialty rate. Connor wants that off the client-facing document.
+
+**How to apply:** In [components/shared/quote-pdf-view.tsx](components/shared/quote-pdf-view.tsx), drop the Rate Schedule appendix block (the `rateScheduleRows.length > 0 ? ...` section around line 412, plus its `rate_card_profiles` / `rate_card_profile_rows` fetch around line 149). The rate card stays in the app/editor; only the generated PDF changes. Confirm with Connor whether it should be gone entirely or gated behind a toggle for internal copies.
+
+## Revamp the printed timesheet PDF for legibility (added 2026-07-16)
+
+**Connor's note (2026-07-16):** The PDF timesheet needs to be revamped to be a little more legible.
+
+**Why:** The printed/exported timesheet (print mode of the Timekeeping page) is hard to read as-is. This is presentation-only — no data-model change.
+
+**How to apply:** Improve the print layout in [components/shared/timekeeping.tsx](components/shared/timekeeping.tsx) — the `@media print` styles and the day-grouped print rows (print mode forces all days expanded, ~line 259+). Likely wins: larger/clearer type, better column spacing and alignment, clearer day separators, avoid row cramping and awkward page breaks. Get a sample print from Connor to target the specific pain points before styling.
 
 ## ~~Shifts master tables + structured shift handling~~ — DECIDED: keep freeform
 
@@ -863,6 +927,45 @@ that surface from real use.
 - v2 (maybe): "import across multiple jobs" from a master scheduling sheet — needs a different entry point + a way to disambiguate jobs by job_no.
 
 Defer until after the V2 cutover stabilizes; not blocking any current workflow.
+
+## Bulk import: load ACTUAL timekeeping hours from a spreadsheet (one-shot, like the Rippling CSV) (added 2026-07-16)
+
+**Connor's note (2026-07-16):** At Country Concert we kept time in a spreadsheet. Want to take a sheet in that format and **upload it into Timekeeping in one shot**, the same way the Rippling CSV import works — so the hours we tracked in the field land as timesheet entries without re-keying every row.
+
+**Distinct from the two existing importers** — don't conflate:
+- [Bulk import: load crew assignments from a spreadsheet](#bulk-import-load-crew-assignments-from-a-spreadsheet) (SHIPPED) imports **planned crew assignments** (`job_request_assignments`), not hours worked.
+- The Rippling payroll export writes a CSV **out** of the app; this is the inverse — a spreadsheet of actual hours coming **in** to `timesheet_entries`.
+
+**Why:** Field crews (e.g. Country Concert) still track hours in a spreadsheet. Today those actuals have to be hand-entered row-by-row in Timekeeping. A one-shot upload mirroring the existing CSV-import UX would remove that re-keying and reduce transcription errors.
+
+**How to apply:**
+- Get the exact Country Concert sheet format from Connor and treat it as the canonical input shape (define the column mapping against it, like the Rippling export mapping).
+- "Import timekeeping" button on the Timekeeping page ([components/shared/timekeeping.tsx](components/shared/timekeeping.tsx)); accept .xlsx / CSV / paste-from-clipboard TSV.
+- Resolve each row to a job + day + employee + position/specialty, then to std/ot/dt hour buckets (respect the job's billing-rule thresholds — see [Timesheet std/ot/dt split should derive from the job's billing rule](#timesheet-stdotdt-split-should-derive-from-the-jobs-billing-rule)).
+- Preview screen with per-row resolution status (employee matched / date maps to a timesheet day / position resolved / hours parsed), inline errors, edit-or-skip before commit — same shape as the crew-roster import preview.
+- Commit into `timesheet_entries`; honor the existing freeze/invoice-bound guards so already-billed rows can't be silently overwritten.
+
+**Sample sheet analysis — `AES_26070312_CC26.xlsx` (received 2026-07-16).** Connor's actual Country Concert workbook. The key finding: **it is NOT a clean tabular export like the Rippling CSV — it's a hand-maintained planning/timecard workbook, and its format is not even consistent tab-to-tab.** Don't design as if "one format" exists.
+
+Structure:
+- **13 tabs:** 9 day tabs named `73, 75, 76, 77, 78, 79, 710, 711, 712` (= dates 7/3…7/12; note 7/4 is skipped), plus `2026 RosterSchedule`, `Hotel List`, `Day Schedule`, `Job Totals`.
+- **Per-worker-per-day time rows live on the day tabs.** Columns drift between tabs — there is no fixed schema:
+  - Most tabs: `Date | Role | (Full name?) | First Name | Last Name | IN | STOP | IN | STOP | Hrs On | Billing Rate | Billing AMT | Pay Rate | Pay AMT`. Two IN/STOP pairs = a split shift around a lunch break; `Hrs On` is the pre-computed daily total.
+  - But `73` has no "Full name" column and labels the hours col `STD HRS`; `75` inserts a "Full name" column C (shifting everything right one); `77` has a **single** IN/STOP pair plus separate `Hrs`/`Hrs On` cols; `78`/`712` differ again. Header row is sometimes row 7, sometimes duplicated at row 9; data starts at row 8 on some tabs, row 10 on others.
+- **Column B ("Role") is polluted with free text.** Alongside real roles (`Lead, Fork, Rigger, Audio, Video, Hand, Loader`) it contains schedule annotations and section headers used as spacers — e.g. `7:00 am CREW CALL:`, `ADD: 08) Stage Hands`, `CUT: 18 @ 1p`, `10) CREW: LEAD: 01 | RIG: 00 | HANDS: 08`, `MEAL BREAK`. A naive "ingest every row" would import garbage. Real data rows are the ones with a first/last name + at least one IN/STOP time.
+- **Edge cases seen in the data:** same person, two roles, one day (Michael Cupit = Video AM 5h + Rigger PM 5h → two rows); single-punch days (only an AM pair); `Hrs On` sometimes hand-overridden vs. what IN/STOP would compute. Role vocabulary (`Fork`, `Loader`, `Special Rigging`, `Hand`) must map to app positions/specialties; `Job Totals` groups them as Lead / Fork / Rigging / Hand / Special Rigging.
+
+**Design implication (decision needed with Connor).** Because his real sheet is freeform and inconsistent, "upload the sheet as-is like the Rippling CSV" is not realistically a clean one-shot — the Rippling CSV is a machine export, this is a living planning doc. Two viable paths:
+1. **Strict template (recommended):** ship a clean "Timekeeping Import" template (one tab, fixed columns: date, first, last, role, in/out pairs OR total hours) and have Connor paste/transcribe into it — same model as the crew-roster import template. Reliable; costs Connor a copy-paste step per job.
+2. **Tolerant parser for his layout:** build a parser tuned to this workbook (walk day tabs by name→date, skip non-name rows, tolerate the column drift) feeding a mandatory row-by-row review/confirm screen. More convenient for Connor, but will never be fully hands-off given the inconsistency, and breaks whenever the sheet's shape shifts.
+
+Recommend proposing **option 1** to Connor; keep option 2 as a possible v2. Either way the preview/confirm step and the resolution-status UI below still apply.
+
+**Direction (John, 2026-07-16): make it a round-trip — export out, then import back — like the crew-assignment export/import.** The app **exports** the timekeeping sheet (option 1's strict template, pre-populated with this job's day rows + assigned crew + roles), Connor fills in the times in the field, and re-imports the same file. Because the app authored the sheet, the import format is controlled and predictable — no guessing at his freeform layout, and the export doubles as the "Download template" mentioned below. This is the preferred build: it turns the messy-sheet parsing problem into a known-schema problem, exactly like the shipped crew-roster round-trip ([lib/storage/crew-roster-export.ts](../lib/storage/crew-roster-export.ts) + its importer). Mirror that module's structure. Connor's Country Concert workbook then becomes a *reference for which columns to include* (date, role, in/out pairs, hrs), not the thing we parse.
+
+Sample file: `~/Downloads/AES_26070312_CC26.xlsx` (get it into the repo's gitignored samples area if we build against it).
+
+**Open:** decide template-vs-parser with Connor (above); coordinate with the [planned-vs-actual redesign](timekeeping-planned-vs-actual-design.md) so an import targets the "actual" side.
 
 ---
 
@@ -1304,3 +1407,48 @@ people plausibly relevant to that job.
 - The Crew (slots) tab and import-matching path must still resolve any already-assigned employee
   even if they're outside the radius — only the *browse-the-whole-directory* Employees tab gets
   trimmed.
+
+**Note (2026-07-16):** Same issue, framed by who receives it — the roster export from the **Assigned Crew tab on the job profile** goes to **crew leaders**, and the **entire employee directory must not go out with it**. Crew leaders are exactly the untrusted-recipient case that makes this a priority, not just a nice-to-have. Whatever the trimming approach (radius filter above, or a leaner set of columns/rows), the full directory should never leave in a crew-leader-facing export. Confirm with Connor whether crew leaders should get a radius-trimmed list or only the already-assigned crew (no browse list at all).
+
+# Invoicing & timekeeping follow-ups (added 2026-07-14)
+
+Four items captured from John on 2026-07-14. Each starts on its own branch off `dev` (see [[branch-per-task]]) with a plan + OK before edits.
+
+## Pre-invoice client report: actual days timekeeping with billing amounts
+
+**Why:** Before an invoice is generated, we want a client-facing report that lays out the **actual** days worked (from the timesheet / actual side of timekeeping) with the billing amounts per day/line — so the numbers can be reviewed (and potentially sent to the client) before committing to an invoice. This is a review/preview artifact, not the invoice itself.
+
+**How to apply (to scope during design):**
+- Source from **actual** timekeeping (timesheet entries), not planned crew assignments — ties into the planned-vs-actual redesign and the timesheet↔invoice linking work ([`docs/timekeeping-planned-vs-actual-design.md`](timekeeping-planned-vs-actual-design.md), [`docs/timesheet-invoice-linking-redesign.md`](timesheet-invoice-linking-redesign.md)).
+- Compute bill amounts the same way the invoice pull does (`overwriteFromTimesheets`) so the report and the eventual invoice reconcile. Watch the 1000-row cache truncation + duplicate-row risk (§ "De-cache raw job data") — a report that double-counts dup entries would mislead before an invoice is even cut.
+- Likely overlaps with / extends the existing "Labor Summary — add daily breakdown for quotes + invoices" entry; decide whether this is the same daily-breakdown surface reused pre-invoice, or a separate report. Format: on-screen + printable/exportable (client-facing).
+- Open: does Connor want this per-job, per-date-range, and does it need to be shareable to the client directly (email) vs. printed?
+
+## Add discount amount / percent on an invoice
+
+**Why:** Invoices currently have no discount concept. Need the ability to apply a discount to an invoice as either a flat amount or a percentage, reflected in the invoice total and any client-facing output.
+
+**How to apply (to scope during design):**
+- Decide granularity: invoice-level discount vs. per-line. Invoice-level is the simpler v1.
+- Schema: add discount fields to `invoices` (e.g. `discount_kind text check in ('amount','percent')`, `discount_value numeric`) rather than baking it into a line item, so the audit trail is explicit. Confirm how it interacts with deposit vs. final invoices ([[invoice-quote-lines-position-id-bug]] area; see also "Add invoice_type column").
+- Recompute totals wherever the invoice total is derived; make sure the discount shows on the printed/emailed invoice and in any pre-invoice report (item above).
+- Tax interaction: N/A today if invoices aren't taxed — confirm before assuming.
+
+## Review the invoice void process (test further)
+
+**Why:** The void/void-status path needs more testing — confirm it behaves correctly end-to-end before relying on it. Related design is already captured under "Invoice corrections after send (workflow design)" and "Add invoice_type column" (the `void` status enum value).
+
+**How to apply (to scope during design):**
+- Exercise void end-to-end: what happens to linked timesheet entries' billed state when an invoice is voided? (This is exactly the silent-unbilling hazard in [[timesheet-invoice-linking-redesign]] — voiding must not silently strand or double-free records.)
+- Confirm a voided invoice is clearly distinguishable from `superseded` (revision chain) and can't be re-sent/edited by accident.
+- Verify numbering: voiding shouldn't reuse/corrupt `invoice_no` (we've seen `-DEP-DEP` style corruption before).
+- Write a repro/smoke checklist (extend [`docs/end-to-end-smoke-test.md`](end-to-end-smoke-test.md)) covering draft→sent→void and void→reissue.
+
+## Review process to reset and clean up timekeeping records
+
+**Why:** Need a defined, safe process to reset and clean up timekeeping records — both the existing duplicate/garbage rows and an ongoing "start clean" affordance. Ties directly into the de-cache dedup work (§ "De-cache raw job data" Work item 4: verify + clean duplicate `timesheet_entries`, add a dedup guard) and [[cache-1000-row-truncation]].
+
+**How to apply (to scope during design):**
+- Read-only keep/remove report first (never bulk-delete blind), then a guarded cleanup — respecting the freeze/lock rules (approved / invoice-bound / payroll-locked rows must not be deleted; see `deleteTimesheetEntries()` safety + the freeze-trigger denylist entry).
+- Add a dedup guard on `(employee_key, work_date, shift_id)` across all add paths so the mess doesn't recur.
+- Define what "reset" means operationally: per-job re-import? clear-and-reload from a signed sheet? Clarify with Connor. Coordinate with the planned-vs-actual redesign so a reset doesn't wipe planned crew assignments.
