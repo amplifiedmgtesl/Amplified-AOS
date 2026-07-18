@@ -26,6 +26,7 @@ import type {
   Position,
   Specialty,
 } from "@/lib/store/types";
+import { loadZipCentroids, distanceBetweenZips, zip5 } from "./zip-distance";
 import {
   SHEET,
   CREW_COL,
@@ -103,6 +104,8 @@ export type RosterData = {
   dateRange: string;
   slots: RosterSlotRow[];
   employees: RosterEmployeeRow[];
+  /** Human-readable description of how the Employees tab was trimmed. */
+  employeeFilterNote: string;
   roles: RosterRoleRow[];
   reconciliation: RosterReconcileRow[];
 };
@@ -118,6 +121,7 @@ function jobInfoRowToJobRequest(r: any): JobRequest {
     eventName: r.event_name ?? "",
     venue: r.venue ?? "",
     venueAddress: r.venue_address ?? "",
+    venueZip: r.venue_zip ?? undefined,
     city: r.city ?? "",
     state: r.state ?? "",
     cityState: r.city_state ?? "",
@@ -346,8 +350,16 @@ export async function gatherRoster(
     .filter((r) => r.specialtyName)
     .sort((a, b) => a.positionName.localeCompare(b.positionName) || a.specialtyName.localeCompare(b.specialtyName));
 
-  // ── Employees tab: full active roster ──
-  const employees = await loadActiveEmployeeRows();
+  // ── Employees tab: active roster trimmed to the venue radius ──
+  // The full directory is a proprietary asset; the workbook goes to outside
+  // crew leaders, so only people near the job (plus anyone already assigned)
+  // are included. Unknown locations are excluded — fail closed.
+  const assignedKeys = new Set(assignments.map((a) => a.employeeKey).filter(Boolean));
+  const { employees, employeeFilterNote } = await filterEmployeesForExport(
+    await loadActiveEmployeeRows(),
+    job.venueZip,
+    assignedKeys as Set<string>,
+  );
 
   const dateRange =
     job.endDate && job.endDate !== job.requestDate
@@ -366,8 +378,52 @@ export async function gatherRoster(
     dateRange,
     slots,
     employees,
+    employeeFilterNote,
     roles,
     reconciliation,
+  };
+}
+
+// ─── Employee radius filter ──────────────────────────────────────────────────
+
+/** Employees beyond this distance from the venue stay out of the workbook. */
+export const EXPORT_RADIUS_MILES = 100;
+
+/**
+ * Trim the roster to employees within EXPORT_RADIUS_MILES of the venue zip.
+ * Already-assigned employees always survive (the sheet must round-trip).
+ * No resolvable venue zip → assigned crew only, with a note telling the
+ * coordinator how to get the nearby list back.
+ */
+async function filterEmployeesForExport(
+  all: RosterEmployeeRow[],
+  venueZip: string | undefined,
+  assignedKeys: Set<string>,
+): Promise<{ employees: RosterEmployeeRow[]; employeeFilterNote: string }> {
+  const jobZip = zip5(venueZip);
+  const centroids = await loadZipCentroids();
+  const venueCentroid = jobZip ? centroids[jobZip] : undefined;
+
+  if (!venueCentroid) {
+    const employees = all.filter((e) => assignedKeys.has(e.employeeKey));
+    return {
+      employees,
+      employeeFilterNote: jobZip
+        ? `Assigned crew only (${employees.length}) — venue zip ${jobZip} has no map data, so the nearby-employee list was left out.`
+        : `Assigned crew only (${employees.length}) — set the venue zip on the job to include employees within ${EXPORT_RADIUS_MILES} miles.`,
+    };
+  }
+
+  const employees = all.filter((e) => {
+    if (assignedKeys.has(e.employeeKey)) return true;
+    const d = distanceBetweenZips(centroids, jobZip, e.zip);
+    return d !== null && d <= EXPORT_RADIUS_MILES;
+  });
+  return {
+    employees,
+    employeeFilterNote:
+      `Employees within ${EXPORT_RADIUS_MILES} miles of venue zip ${jobZip}` +
+      ` — ${employees.length} of ${all.length} active employees.`,
   };
 }
 
@@ -433,6 +489,7 @@ export async function writeRosterWorkbook(data: RosterData, exportedAtISO: strin
     ? `Quote ${data.quoteDisplayCode || data.job.jobNo || ""}`.trim()
     : "Job requirements");
   infoRow("Exported", exportedAtISO);
+  infoRow("Employee list", data.employeeFilterNote);
   info.addRow([]);
   const reconHdr = info.addRow(["Needed vs assigned (by role)"]);
   reconHdr.font = { bold: true };
