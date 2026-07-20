@@ -28,6 +28,7 @@ Working priority order for active/requested projects. The `#N` ids are stable la
 - **#15** — Review timekeeping reset/cleanup process — *ties to #7 dedup*
 - **#17** — Let the payroll role view the job screen (added 2026-07-18, John). Today the payroll role is confined to `/payroll/*` + `/employee-directory` by the route guard in [components/layout/app-shell.tsx](../components/layout/app-shell.tsx) (~line 92); jobs are out of reach. Open the jobs list/detail (`/jobs/*`) to payroll — decide view-only vs. edit, and whether the sidebar nav should show the Jobs link for payroll users.
 - **#18** — Dashboard metric-card drill-downs (added 2026-07-20, John). Click a top-level dashboard card → list of the entries behind the number → click through to the specific maintenance screen. Detail section below.
+- **#19** — Jobs screen calendar view toggle (added 2026-07-20, John). Button on the Jobs list to flip to a calendar display of the same rows, honoring whatever status filter + search is active. Detail section below.
 
 **ON HOLD (Later):**
 - **#1** — Rippling payroll export follow-ups (waiting on Connor: mapping review, W-2/1099, 5 rate mismatches, real test-import)
@@ -656,6 +657,20 @@ Invoices (2) — open each, pick the right Position/Specialty, save:
 **Why:** Invoices currently track `paidAmount` as a single scalar number. That's enough to compute balances but can't answer "what payments came in this month" or "which deposits match this bank statement line." Need individual payment records.
 
 **How to apply:** Add an `invoice_payments` table (id, invoice_id FK, amount, paid_date, method, reference/memo, notes). Replace the single `paidAmount` column reads with a sum from invoice_payments. Keep `paidAmount` on the invoice for now as a denormalized cache or drop it. Build a small UI on each invoice to add/edit/delete payments. Later: a Payments dashboard and bank-statement reconciliation (match payments to imported transactions).
+
+## #19 — Jobs screen: calendar view toggle (added 2026-07-20)
+
+**Why:** The Jobs screen ([components/shared/jobs-list.tsx](../components/shared/jobs-list.tsx)) is list-only. For scheduling questions ("what's on the books in May?", "which leads overlap that weekend?") a table sorted by start date is the wrong shape — the Master Calendar exists but shows everything, with its own filters, disconnected from the list the user has already narrowed down.
+
+**Requested flow (John, 2026-07-20):** a button on the Jobs list to "View in calendar mode" — renders the same jobs as a calendar, using **whatever filter is active at the time** (the status dropdown: Active / All / Lead / Quoted / Booked / Completed / Lost, plus the search box). Flip back to list mode the same way.
+
+**How to apply (sketch — design at build time):**
+- Add a view-mode toggle (List | Calendar) next to the status filter dropdown; persist choice in component state (optionally a URL param so it survives refresh/back).
+- Both views render from the same `filtered` rows already computed in the `useMemo` (statusFilter + search) — the calendar is a presentation swap, not a new query, so it always matches "N of M jobs".
+- Jobs render as spans from start date through end date (multi-day jobs cover their full range); color/badge by status matching the list's status chips.
+- Click a calendar entry → same navigation as clicking a row in the list (job detail screen).
+- Reuse/extract the month-grid rendering from [components/shared/master-calendar.tsx](../components/shared/master-calendar.tsx) rather than building a second calendar — a shared month-grid component fed different event arrays would serve both screens.
+- Master Calendar remains the everything-view (manual events, etc.); this is scoped to the Jobs screen's own rows.
 
 ## #18 — Dashboard metric cards → drill-down list screens (added 2026-07-20)
 
