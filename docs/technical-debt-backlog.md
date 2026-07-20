@@ -35,11 +35,9 @@ Working priority order for active/requested projects. The `#N` ids are stable la
 - **#23** — Invoice: pull unapproved timesheets + drift highlighting (numbered 2026-07-20; spec: [`docs/invoice-unapproved-timesheet-pull-spec.md`](invoice-unapproved-timesheet-pull-spec.md), revised 2026-06-02 — draft for discussion with Connor). Adjacent to #12 (pre-invoice client report) but distinct work; discuss with Connor before building.
 - **#24** — Staff app (amplified-staff): read-only crew mode (added 2026-07-20, John). The mobile app is used by coordinators today; the crew-facing side was never rolled out. Make the crew role **read-only**: crew can see what they're scheduled for and their submitted/approved times, but cannot add/update/delete timesheet records. **Do NOT remove the write functionality — gate it, don't delete it** (we may turn crew self-entry back on later). Hooks: role field already exists in `amplified-staff/lib/types.ts` (~line 33: `staff | admin | crew_leader | coordinator`); timesheet write surfaces are `app/timesheets/new` + edit paths in `app/timesheets/[id]`. Implementation: role/feature-flag gate that hides or disables the write UI for crew, keeping code paths intact. ⚠ **Client-side gating alone is cosmetic while #22-S2/S4 stand** (the anon key can write every table regardless of UI) — real enforcement of "crew can't write timesheets" needs the RLS/authz work; pair or sequence with #22. Related context: [[timeclock-kiosk-plan]] — the kiosk exists because per-worker logins weren't rolled out; this read-only mode is complementary (view-only account, kiosk still does capture).
 
-**ON HOLD (Later):**
-- **#1** — Rippling payroll export follow-ups (waiting on Connor: mapping review, W-2/1099, 5 rate mismatches, real test-import)
-
-**Closed 2026-07-16:**
-- **~~#8~~** — Full client→invoice system rewrite + Connor PDF recovery — ✅ DONE (see the ✅ DONE section below; bug class mechanically impossible + recovery executed).
+**Closed:**
+- **~~#8~~** — Full client→invoice system rewrite + Connor PDF recovery — ✅ DONE 2026-07-16 (see the ✅ DONE section below; bug class mechanically impossible + recovery executed).
+- **~~#1~~** — Rippling payroll export — ✅ CLOSED 2026-07-20 per John. Export shipped to prod 2026-07-10; the held follow-ups (Connor mapping review, W-2/1099 handling, rate mismatches, real test-import, rate-card pay seeding) are closed with it — reopen individually if any resurfaces.
 
 ---
 
