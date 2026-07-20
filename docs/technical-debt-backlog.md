@@ -27,6 +27,7 @@ Working priority order for active/requested projects. The `#N` ids are stable la
 - **#14** — Review invoice void process — *the void/reissue feature is BUILT; this is test/verify only*
 - **#15** — Review timekeeping reset/cleanup process — *ties to #7 dedup*
 - **#17** — Let the payroll role view the job screen (added 2026-07-18, John). Today the payroll role is confined to `/payroll/*` + `/employee-directory` by the route guard in [components/layout/app-shell.tsx](../components/layout/app-shell.tsx) (~line 92); jobs are out of reach. Open the jobs list/detail (`/jobs/*`) to payroll — decide view-only vs. edit, and whether the sidebar nav should show the Jobs link for payroll users.
+- **#18** — Dashboard metric-card drill-downs (added 2026-07-20, John). Click a top-level dashboard card → list of the entries behind the number → click through to the specific maintenance screen. Detail section below.
 
 **ON HOLD (Later):**
 - **#1** — Rippling payroll export follow-ups (waiting on Connor: mapping review, W-2/1099, 5 rate mismatches, real test-import)
@@ -655,6 +656,23 @@ Invoices (2) — open each, pick the right Position/Specialty, save:
 **Why:** Invoices currently track `paidAmount` as a single scalar number. That's enough to compute balances but can't answer "what payments came in this month" or "which deposits match this bank statement line." Need individual payment records.
 
 **How to apply:** Add an `invoice_payments` table (id, invoice_id FK, amount, paid_date, method, reference/memo, notes). Replace the single `paidAmount` column reads with a sum from invoice_payments. Keep `paidAmount` on the invoice for now as a denormalized cache or drop it. Build a small UI on each invoice to add/edit/delete payments. Later: a Payments dashboard and bank-statement reconciliation (match payments to imported transactions).
+
+## #18 — Dashboard metric cards → drill-down list screens (added 2026-07-20)
+
+**Why:** The four top-level metric cards on the dashboard ([components/shared/dashboard.tsx](../components/shared/dashboard.tsx) ~line 305: Revenue MTD, Outstanding, Awaiting Approval, Events Next 7 Days) show only a headline number. To act on any of them (e.g. "which invoices are outstanding?", "which timesheet rows need approval?") the user has to navigate to the relevant maintenance screen and re-derive the filter by hand.
+
+**Requested flow (John, 2026-07-20):** click a metric card → a drill-down screen listing the entries that make up that number → click a list entry → the specific maintenance screen for that record (invoice builder, Timekeeping for that job, job sheet, etc.).
+
+**How to apply (sketch — design at build time):**
+- Each card becomes clickable (whole card, with cursor/hover affordance).
+- Per card, the drill-down list is exactly the rows already computed for the metric, so the list always reconciles with the card's number:
+  - **Revenue MTD** → non-draft invoices issued this month (show gross/net/deposit distinction) → invoice screen for that invoice.
+  - **Outstanding** → invoices with balance > 0 and status sent/partial, with aging bucket → invoice screen.
+  - **Awaiting Approval** → timesheet rows with status='submitted', grouped by job/timesheet → Timekeeping loaded to that job.
+  - **Events Next 7 Days** → scheduled job sheets in the window → job sheet / job detail for that event.
+- Implementation options: a dedicated route per card, or one generic drill-down screen parameterized by metric — either way, extract the metric computations into shared selector functions so card and list can't drift.
+- Deep-linking into maintenance screens must set the target record explicitly rather than relying on the `aes_active_*` localStorage pointers (see "Active-pointer-in-localStorage pollution" — this is a chance to extend the explicit-load pattern).
+- Candidate to extend later to the smaller list cards (aging buckets, pending quotes, etc.); the top 4 metric cards are the requested scope.
 
 ## Smarter "understaffed" detection for dashboard
 
