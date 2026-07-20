@@ -15,7 +15,7 @@ Working priority order for active/requested projects. The `#N` ids are stable la
 4. **#16** — Trim the Timekeeping job dropdown (added 7/18, ranked 7/18) — detail: [`docs/timekeeping-job-list-filter-todo.md`](timekeeping-job-list-filter-todo.md)
 5. **#13** — Add invoice discount (amount/%) (7/14)
 6. **#2** — Timekeeping planned-vs-actual (Phase 0) — verify on dev preview → promote to prod ⎫
-7. **#3** — Time Clock kiosk (Phase 1) — client digital-sig sign-off → re-apply on Phase 0 → prod ⎬ **one workstream, + #4 folded in**
+7. **#3** — Time Clock kiosk (Phase 1) — WORKER signs at clock-in (no client signature anywhere — confirmed John 7/20; the old "client digital-sig sign-off" phrase meant *validating with the client that digital sigs are accepted*, not the client signing) → re-apply on Phase 0 → prod ⎬ **one workstream, + #4 folded in**
 8. **#11** — Bulk-import ACTUAL timekeeping hours (round-trip export/import) (Connor/John, 7/16) ⎭
 9. **#10** — Revamp printed timesheet PDF for legibility (Connor, 7/16)
 10. **#17** — Let the payroll role view the job screen (added 2026-07-18, ranked 7/20). Today the payroll role is confined to `/payroll/*` + `/employee-directory` by the route guard in [components/layout/app-shell.tsx](../components/layout/app-shell.tsx) (~line 92); jobs are out of reach. Open the jobs list/detail (`/jobs/*`) to payroll — decide view-only vs. edit, and whether the sidebar nav should show the Jobs link for payroll users.
