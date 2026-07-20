@@ -19,7 +19,7 @@ function formatSize(bytes?: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function JobRequestAttachmentsSection({ jobRequestId, hideHeader = false }: { jobRequestId: string; hideHeader?: boolean }) {
+export function JobRequestAttachmentsSection({ jobRequestId, hideHeader = false, readOnly = false }: { jobRequestId: string; hideHeader?: boolean; readOnly?: boolean }) {
   const [items, setItems] = useState<JobRequestAttachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -125,6 +125,7 @@ export function JobRequestAttachmentsSection({ jobRequestId, hideHeader = false 
             >
               <select
                 value={a.docType}
+                disabled={readOnly}
                 onChange={(e) => void patch(a.id, { docType: e.target.value as JobRequestAttachmentType })}
                 style={{ width: "100%", fontSize: 12, padding: "3px 4px" }}
               >
@@ -144,25 +145,29 @@ export function JobRequestAttachmentsSection({ jobRequestId, hideHeader = false 
               </a>
               <input
                 value={a.description ?? ""}
+                disabled={readOnly}
                 onChange={(e) => setItems((prev) => prev.map((x) => x.id === a.id ? { ...x, description: e.target.value } : x))}
                 onBlur={(e) => void patch(a.id, { description: e.target.value })}
-                placeholder="optional description"
+                placeholder={readOnly ? "" : "optional description"}
                 style={{ width: "100%", fontSize: 12, padding: "3px 6px" }}
               />
               <div style={{ color: "#555" }}>{formatSize(a.fileSize)}</div>
-              <button
-                className="secondary"
-                onClick={() => void handleRemove(a)}
-                title="Remove attachment"
-                style={{ fontSize: 11, padding: "3px 8px", color: "#c33", justifySelf: "end" }}
-              >
-                ×
-              </button>
+              {!readOnly && (
+                <button
+                  className="secondary"
+                  onClick={() => void handleRemove(a)}
+                  title="Remove attachment"
+                  style={{ fontSize: 11, padding: "3px 8px", color: "#c33", justifySelf: "end" }}
+                >
+                  ×
+                </button>
+              )}
             </div>
           ))
         )}
       </div>
 
+      {!readOnly && (
       <label
         style={{
           display: "inline-flex", alignItems: "center", gap: 6,
@@ -184,6 +189,7 @@ export function JobRequestAttachmentsSection({ jobRequestId, hideHeader = false 
           }}
         />
       </label>
+      )}
       {msg && (
         <span style={{
           marginLeft: 12, fontSize: 12,
