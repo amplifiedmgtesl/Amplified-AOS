@@ -26,7 +26,7 @@ Working priority order for active/requested projects. The `#N` ids are stable la
 
 **UNRANKED (Next) — awaiting John's slotting:**
 - **#6** — AOS Assistant in-app chat agent (spec'd)
-- **#7** — De-cache 1000-row truncation — broader audit (hot-fix shipped) *(ties to #15)*
+- **#7** — De-cache 1000-row truncation — broader audit (hot-fix shipped) *(ties to #15)*. **⚠ Re-verified 2026-07-20 against prod: now ACTIVELY truncating billing data** — `quote_lines` 1,265 and `invoice_lines` 1,002 are both over the cap (were 975/812 on 7/2); cached `timesheet_entries` subset 2,560; `rate_card_profile_rows` 771 approaching. `_loadAll` on dev still unpaginated for these tables. Next step: audit which screens still read quote/invoice lines from the startup cache (legacy invoice-builder path noted at db.ts ~337) → convert to live per-view queries or paginate the cache load. Candidate for promotion into the ranked list.
 - **#14** — Review invoice void process — *the void/reissue feature is BUILT; this is test/verify only*
 - **#15** — Review timekeeping reset/cleanup process — *ties to #7 dedup*
 - **#20** — Automated status transitions via pg_cron nightly sweep (added 2026-07-20, John). Auto-close/advance stale jobs past their event date, gated by an **inactivity timer** so operator re-opens aren't immediately re-flipped. Also the pattern-setter for future scheduled tasks. Detail section below.
