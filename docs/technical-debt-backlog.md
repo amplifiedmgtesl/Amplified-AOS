@@ -29,6 +29,7 @@ Working priority order for active/requested projects. The `#N` ids are stable la
 - **#17** — Let the payroll role view the job screen (added 2026-07-18, John). Today the payroll role is confined to `/payroll/*` + `/employee-directory` by the route guard in [components/layout/app-shell.tsx](../components/layout/app-shell.tsx) (~line 92); jobs are out of reach. Open the jobs list/detail (`/jobs/*`) to payroll — decide view-only vs. edit, and whether the sidebar nav should show the Jobs link for payroll users.
 - **#18** — Dashboard metric-card drill-downs (added 2026-07-20, John). Click a top-level dashboard card → list of the entries behind the number → click through to the specific maintenance screen. Detail section below.
 - **#19** — Jobs screen calendar view toggle (added 2026-07-20, John). Button on the Jobs list to flip to a calendar display of the same rows, honoring whatever status filter + search is active. Detail section below.
+- **#20** — Automated status transitions via pg_cron nightly sweep (added 2026-07-20, John). Auto-close/advance stale jobs past their event date, gated by an **inactivity timer** so operator re-opens aren't immediately re-flipped. Also the pattern-setter for future scheduled tasks. Detail section below.
 
 **ON HOLD (Later):**
 - **#1** — Rippling payroll export follow-ups (waiting on Connor: mapping review, W-2/1099, 5 rate mismatches, real test-import)
@@ -657,6 +658,22 @@ Invoices (2) — open each, pick the right Position/Specialty, save:
 **Why:** Invoices currently track `paidAmount` as a single scalar number. That's enough to compute balances but can't answer "what payments came in this month" or "which deposits match this bank statement line." Need individual payment records.
 
 **How to apply:** Add an `invoice_payments` table (id, invoice_id FK, amount, paid_date, method, reference/memo, notes). Replace the single `paidAmount` column reads with a sum from invoice_payments. Keep `paidAmount` on the invoice for now as a denormalized cache or drop it. Build a small UI on each invoice to add/edit/delete payments. Later: a Payments dashboard and bank-statement reconciliation (match payments to imported transactions).
+
+## #20 — Automated status transitions (pg_cron nightly sweep) + scheduled-task pattern (added 2026-07-20)
+
+**Why:** Jobs go stale by hand today — leads/quotes whose event date passed months ago still sit "active", and booked jobs past their end date linger until someone flips them. John wants automated status transitions (first examples: job more than X days old → closed; lead/quoted past the event date → status change). This entry is also the **pattern-setter for all future scheduled tasks** in the app.
+
+**Tool decision (settled 2026-07-20, verified against the dev project):** use **Supabase pg_cron** for deterministic data rules. It's already installed (v1.6.4) and already in use (`monitoring-capture-15m` job). Rules like these are pure SQL — no server, no HTTP, no dependency on Vercel plan or deployment. Reserve **Vercel Cron** (vercel.json `crons` → secured API route) for tasks needing app code (emails, PDFs, TS business logic); reserve **Claude agents/routines** for judgment tasks (weekly "these jobs look stalled" digest), never for deterministic rules. Rule of thumb: if the condition is a WHERE clause, it's pg_cron.
+
+**The re-flip problem + inactivity timer (John, 2026-07-20):** if the sweep closes a job past its timeline and an operator re-opens it to keep working, a naive sweep re-closes it the next night. Fix: gate every rule on an **inactivity window in conjunction with the date rule** — only act when nothing has happened on the job since N days. A re-opened job has fresh activity, so it's excluded; if it goes dormant again for the full window, re-closing it is then the *correct* behavior.
+
+**How to apply (sketch):**
+- Nightly `aos-status-sweep` job scheduled via `cron.schedule()` in a normal SQL migration (dev first, prod at promotion — cron schedules are per-database, so each env gets the migration like any other).
+- Every rule has the shape: `WHERE <status precondition> AND <date condition> AND <last_activity older than N days>`.
+- **Activity definition:** v1 = `job_requests.updated_at` where the update wasn't made by the sweep itself. Better = `greatest(job.updated_at, latest related-record activity)` (timesheet entries, quotes, invoices, assignments touching that job) — decide how deep to go at build time.
+- **Audit trail is mandatory:** sweep stamps a system actor (e.g. `updated_by = 'system-sweep'`) and logs old→new status + rule name + timestamp (small `status_sweep_log` table), so "why did this job close itself?" always has an answer. The system actor is also what lets the activity check exclude the sweep's own writes.
+- **Split rules by confidence:** unambiguous ones auto-flip (e.g. lead/quoted, event date 60+ days past, no activity 30 days → lost/closed). Ambiguous ones (booked past end date — may still need timekeeping approval + invoicing) go to a **"needs attention" surface instead of auto-flipping** — natural fit with the #18 dashboard drill-down work. Promote a rule from "surface" to "auto-flip" only after it's proven trustworthy.
+- Concrete rules + X/N day values: draft with John/Connor at build time.
 
 ## #19 — Jobs screen: calendar view toggle (added 2026-07-20)
 
