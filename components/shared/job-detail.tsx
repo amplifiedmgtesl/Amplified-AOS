@@ -177,6 +177,9 @@ export default function JobDetail({
   const healthCounts = useJobHealthCount(editingId ? form : null, refreshKey);
   const role = useUserRole();
   const isCrewLeader = role === "crew_leader";
+  // Payroll gets a read-only view: every field disabled, no save/delete/quote
+  // actions. Print buttons stay — that's the point of letting them in.
+  const isPayroll = role === "payroll";
   const timesheetHref = isCrewLeader ? "/lead/timekeeping" : "/timekeeping";
 
   const [openDraftId, setOpenDraftId] = useState<string | null>(null);
@@ -371,9 +374,10 @@ export default function JobDetail({
   }
 
   // Once a request leaves Lead status, lock everything except Status itself.
-  const isLocked = !isNew && form.status !== "lead";
+  // Payroll is locked regardless of status (read-only role).
+  const isLocked = (!isNew && form.status !== "lead") || isPayroll;
   // Crew assignments stay editable through Booked. Only lock once closed out.
-  const isCrewLocked = !isNew && (form.status === "completed" || form.status === "lost");
+  const isCrewLocked = (!isNew && (form.status === "completed" || form.status === "lost")) || isPayroll;
 
   const effectiveEventAbbr = form.eventAbbr || defaultEventAbbr(form.eventName);
 
@@ -393,6 +397,20 @@ export default function JobDetail({
       ← Back to jobs
     </Link>
   );
+
+  // Payroll can view existing jobs but never create one (the list hides the
+  // + New Job button; this covers direct /new links).
+  if (isPayroll && isNew) {
+    return (
+      <div className="card" style={{ textAlign: "center", padding: "48px 24px" }}>
+        <div style={{ fontSize: 16, marginBottom: 8 }}>Job access is view-only.</div>
+        <div className="muted" style={{ marginBottom: 20, fontSize: 13 }}>
+          The payroll role can review jobs but not create them.
+        </div>
+        {backLink}
+      </div>
+    );
+  }
 
   if (notFound) {
     return (
@@ -456,7 +474,14 @@ export default function JobDetail({
           </div>
         )}
 
-        {isLocked && (
+        {isPayroll ? (
+          <div style={{
+            background: "#eef5ff", border: "1px solid #b6cdf0", borderRadius: 8,
+            padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#1e3a8a",
+          }}>
+            🔒 View only. Payroll can review job details but not change them.
+          </div>
+        ) : isLocked && (
           <div style={{
             background: "#eef5ff", border: "1px solid #b6cdf0", borderRadius: 8,
             padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#1e3a8a",
@@ -502,7 +527,7 @@ export default function JobDetail({
           </div>
           <div><small>Venue Zip</small><input disabled={isLocked} value={form.venueZip ?? ""} onChange={(e)=>setForm({ ...form, venueZip:e.target.value })} placeholder="00000" /></div>
           <div><small>Status</small>
-            <select value={form.status} onChange={(e) => {
+            <select disabled={isPayroll} value={form.status} onChange={(e) => {
               const next = { ...form, status: e.target.value };
               setForm(next);
               if (form.id) {
@@ -655,11 +680,11 @@ export default function JobDetail({
         ) : null}
 
         <div className="action-row" style={{ marginTop: 12 }}>
-          <button onClick={save}>Save</button>
+          {!isPayroll && <button onClick={save}>Save</button>}
           {isNew && !isCrewLeader && (
             <button onClick={saveAndCreateQuoteNew}>Save + Create Quote</button>
           )}
-          {editingId && !isCrewLeader && (
+          {editingId && !isCrewLeader && !isPayroll && (
             <>
               {openDraftId ? (
                 <button onClick={() => { window.location.href = `/quotes/${encodeURIComponent(openDraftId)}/edit`; }}>
@@ -676,7 +701,7 @@ export default function JobDetail({
               ) : null}
             </>
           )}
-          {editingId && (
+          {editingId && !isPayroll && (
             <button
               className="secondary"
               onClick={() => { window.location.href = timesheetHref; }}
@@ -719,8 +744,8 @@ export default function JobDetail({
               Add to Google Calendar
             </button>
           )}
-          <button className="secondary" onClick={() => router.push(basePath)}>{editingId ? "Cancel" : "Clear"}</button>
-          {editingId && !isCrewLeader && (
+          <button className="secondary" onClick={() => router.push(basePath)}>{isPayroll ? "Back" : editingId ? "Cancel" : "Clear"}</button>
+          {editingId && !isCrewLeader && !isPayroll && (
             <button className="secondary" style={{ color: "#c00", marginLeft: "auto" }} onClick={requestDelete}>
               Delete
             </button>
@@ -799,7 +824,7 @@ export default function JobDetail({
 
           {sectionTab === "shifts" && (
             editingId
-              ? <JobRequestShiftsSection jobRequestId={editingId} hideHeader />
+              ? <JobRequestShiftsSection jobRequestId={editingId} hideHeader readOnly={isPayroll} />
               : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
                   Save the job first to start adding shifts.
                 </div>
@@ -807,7 +832,7 @@ export default function JobDetail({
 
           {sectionTab === "attachments" && (
             editingId
-              ? <JobRequestAttachmentsSection jobRequestId={editingId} hideHeader />
+              ? <JobRequestAttachmentsSection jobRequestId={editingId} hideHeader readOnly={isPayroll} />
               : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
                   Save the job first to start adding attachments.
                 </div>

@@ -440,7 +440,7 @@ export function JobRequestCrewSection({
         </div>
         <button
           type="button"
-          disabled={rosterBusy}
+          disabled={rosterBusy || disabled}
           onClick={() => fileInputRef.current?.click()}
           style={{ fontSize: 12, padding: "4px 10px" }}
           title="Upload a filled roster workbook to populate crew assignments"

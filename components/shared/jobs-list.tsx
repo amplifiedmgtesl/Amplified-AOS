@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { loadJobRequests } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
+import { useUserRole } from "@/lib/auth/use-user-role";
 import { JOB_REQUEST_STATUSES } from "@/lib/constants";
 import type { JobRequest, Client } from "@/lib/store/types";
 
@@ -44,6 +45,8 @@ export default function JobsList({ basePath = "/job-requests" }: { basePath?: st
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [redirecting, setRedirecting] = useState(false);
+  // Payroll views jobs read-only — no creating new ones.
+  const isPayroll = useUserRole() === "payroll";
 
   // Legacy deep-link redirect: /…?id=X[&tab=Y] → /…/X[?tab=Y];
   // /…?new=1&clientId=Z → /…/new?clientId=Z. Runs once on mount.
@@ -128,10 +131,12 @@ export default function JobsList({ basePath = "/job-requests" }: { basePath?: st
           onChange={(e) => setSearch(e.target.value)}
           style={{ minWidth: 260 }}
         />
-        <Link href={`${basePath}/new`} style={{
-          textDecoration: "none", padding: "8px 14px", borderRadius: 6,
-          background: "var(--accent, #2563eb)", color: "#fff", fontSize: 13, fontWeight: 600,
-        }}>+ New Job</Link>
+        {!isPayroll && (
+          <Link href={`${basePath}/new`} style={{
+            textDecoration: "none", padding: "8px 14px", borderRadius: 6,
+            background: "var(--accent, #2563eb)", color: "#fff", fontSize: 13, fontWeight: 600,
+          }}>+ New Job</Link>
+        )}
       </div>
 
       <div className="muted" style={{ marginBottom: 8 }}>

@@ -84,14 +84,17 @@ export function AppShell({
         return;
       }
 
-      // Payroll role: confined to /payroll/* and /employee-directory.
-      // Employee directory access is required for the Rippling Emp No
-      // field and for setting pay rates per employee/specialty —
-      // payroll owns both of those, so we let them through. Clients,
-      // jobs, pricing, etc. remain out of reach.
+      // Payroll role: confined to /payroll/*, /employee-directory, and
+      // /job-requests (read-only). Employee directory access is required
+      // for the Rippling Emp No field and for setting pay rates per
+      // employee/specialty — payroll owns both of those, so we let them
+      // through. Jobs are viewable so payroll can see event context for
+      // the hours they process (edit controls are role-gated in the job
+      // screens themselves). Clients, pricing, etc. remain out of reach.
       if (profile?.role === "payroll") {
         const allowed = pathname?.startsWith("/payroll")
-          || pathname?.startsWith("/employee-directory");
+          || pathname?.startsWith("/employee-directory")
+          || pathname?.startsWith("/job-requests");
         if (!allowed) {
           window.location.href = "/payroll";
           return;
@@ -161,7 +164,7 @@ export function AppShell({
   }
 
   const visibleNav = userRole === "payroll"
-    ? nav.filter(([href]) => href === "/payroll" || href === "/employee-directory")
+    ? nav.filter(([href]) => href === "/payroll" || href === "/employee-directory" || href === "/job-requests")
     : nav;
   const brandSub = userRole === "payroll" ? "Payroll" : "Operations Suite";
 
