@@ -24,9 +24,11 @@ import type { JobRequestShift } from "@/lib/store/types";
 export function JobRequestShiftsSection({
   jobRequestId,
   hideHeader = false,
+  readOnly = false,
 }: {
   jobRequestId: string;
   hideHeader?: boolean;
+  readOnly?: boolean;
 }) {
   const [items, setItems] = useState<JobRequestShift[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,17 +126,21 @@ export function JobRequestShiftsSection({
       </div>
 
       <div className="action-row" style={{ marginBottom: 12 }}>
-        <input
-          type="text"
-          value={newLabel}
-          onChange={(e) => setNewLabel(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleAdd(); } }}
-          placeholder="New shift label"
-          style={{ width: 240 }}
-        />
-        <button onClick={handleAdd} disabled={adding || !newLabel.trim()}>
-          {adding ? "Adding…" : "Add Shift"}
-        </button>
+        {!readOnly && (
+          <>
+            <input
+              type="text"
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleAdd(); } }}
+              placeholder="New shift label"
+              style={{ width: 240 }}
+            />
+            <button onClick={handleAdd} disabled={adding || !newLabel.trim()}>
+              {adding ? "Adding…" : "Add Shift"}
+            </button>
+          </>
+        )}
         {msg ? (
           <span className="badge" style={{
             marginLeft: 8,
@@ -158,7 +164,7 @@ export function JobRequestShiftsSection({
                 <th style={{ width: 60 }}>Sort</th>
                 <th>Label</th>
                 <th style={{ width: 100 }}>Status</th>
-                <th style={{ width: 180 }}>Actions</th>
+                {!readOnly && <th style={{ width: 180 }}>Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -166,32 +172,36 @@ export function JobRequestShiftsSection({
                 <tr key={s.id} style={{ opacity: s.isActive ? 1 : 0.55 }}>
                   <td style={{ fontVariantNumeric: "tabular-nums" }}>{s.sortOrder}</td>
                   <td>
-                    <input
-                      type="text"
-                      defaultValue={s.label}
-                      onBlur={(e) => void handleRename(s, e.target.value)}
-                      style={{ width: "100%", minWidth: 200 }}
-                    />
+                    {readOnly ? s.label : (
+                      <input
+                        type="text"
+                        defaultValue={s.label}
+                        onBlur={(e) => void handleRename(s, e.target.value)}
+                        style={{ width: "100%", minWidth: 200 }}
+                      />
+                    )}
                   </td>
                   <td>
                     <span className="badge">{s.isActive ? "Active" : "Inactive"}</span>
                   </td>
-                  <td>
-                    <button
-                      className="secondary"
-                      onClick={() => void handleToggleActive(s)}
-                      style={{ fontSize: 12, marginRight: 6 }}
-                    >
-                      {s.isActive ? "Deactivate" : "Reactivate"}
-                    </button>
-                    <button
-                      className="secondary"
-                      onClick={() => void handleDelete(s)}
-                      style={{ fontSize: 12, color: "#8a1c1c" }}
-                    >
-                      Delete
-                    </button>
-                  </td>
+                  {!readOnly && (
+                    <td>
+                      <button
+                        className="secondary"
+                        onClick={() => void handleToggleActive(s)}
+                        style={{ fontSize: 12, marginRight: 6 }}
+                      >
+                        {s.isActive ? "Deactivate" : "Reactivate"}
+                      </button>
+                      <button
+                        className="secondary"
+                        onClick={() => void handleDelete(s)}
+                        style={{ fontSize: 12, color: "#8a1c1c" }}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
