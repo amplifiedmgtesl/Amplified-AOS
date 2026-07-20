@@ -7,6 +7,7 @@ import { loadJobRequests } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { JOB_REQUEST_STATUSES } from "@/lib/constants";
+import JobsCalendar, { JOB_STATUS_PALETTE } from "./jobs-calendar";
 import type { JobRequest, Client } from "@/lib/store/types";
 
 type StatusFilter = "active" | "all" | "lead" | "quoted" | "booked" | "completed" | "lost";
@@ -20,13 +21,7 @@ function daysSince(iso?: string): number | null {
   return Math.floor((Date.now() - t) / 86400000);
 }
 
-const STATUS_PALETTE: Record<string, { bg: string; fg: string }> = {
-  lead:      { bg: "#fef9c3", fg: "#854d0e" },
-  quoted:    { bg: "#e0f2fe", fg: "#0369a1" },
-  booked:    { bg: "#dcfce7", fg: "#166534" },
-  completed: { bg: "#dcfce7", fg: "#166534" },
-  lost:      { bg: "#f3f4f6", fg: "#555" },
-};
+const STATUS_PALETTE = JOB_STATUS_PALETTE;
 
 /**
  * Jobs list — the full-width searchable list. Selecting a row opens the job on
@@ -47,6 +42,9 @@ export default function JobsList({ basePath = "/job-requests" }: { basePath?: st
   const [redirecting, setRedirecting] = useState(false);
   // Payroll views jobs read-only — no creating new ones.
   const isPayroll = useUserRole() === "payroll";
+  // List/Calendar toggle. Both views render the same filtered set
+  // (visibleRows), so status filter + search apply identically.
+  const [view, setView] = useState<"list" | "calendar">("list");
 
   // Legacy deep-link redirect: /…?id=X[&tab=Y] → /…/X[?tab=Y];
   // /…?new=1&clientId=Z → /…/new?clientId=Z. Runs once on mount.
@@ -115,6 +113,8 @@ export default function JobsList({ basePath = "/job-requests" }: { basePath?: st
     <div className="card">
       <div className="action-row" style={{ marginBottom: 12, gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
         <h2 className="section-title" style={{ margin: 0, flex: 1 }}>Jobs</h2>
+        <button className={view === "list" ? "" : "secondary"} onClick={() => setView("list")}>List</button>
+        <button className={view === "calendar" ? "" : "secondary"} onClick={() => setView("calendar")}>📅 Calendar</button>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}>
           <option value="active">Active (Lead + Quoted + Booked)</option>
           <option value="all">All statuses</option>
@@ -143,6 +143,9 @@ export default function JobsList({ basePath = "/job-requests" }: { basePath?: st
         {visibleRows.length} of {rows.length} job{rows.length !== 1 ? "s" : ""}
       </div>
 
+      {view === "calendar" ? (
+        <JobsCalendar jobs={visibleRows} clientById={clientById} detailHref={detailHref} />
+      ) : (
       <div style={{ overflowX: "auto" }}>
         <table>
           <thead>
@@ -200,6 +203,7 @@ export default function JobsList({ basePath = "/job-requests" }: { basePath?: st
           </tbody>
         </table>
       </div>
+      )}
     </div>
   );
 }
