@@ -29,7 +29,7 @@ export default function LoginPage() {
       .eq("id", data.user.id)
       .single();
 
-    if (!profileData || !["admin", "crew_leader", "payroll"].includes(profileData.role)) {
+    if (!profileData || !["admin", "crew_leader", "payroll", "coordinator"].includes(profileData.role)) {
       await supabase.auth.signOut();
       setError("Access denied. Staff members must use the Staff Portal.");
       setLoading(false);
@@ -39,6 +39,7 @@ export default function LoginPage() {
     window.location.href =
       profileData.role === "crew_leader" ? "/lead/timekeeping"
       : profileData.role === "payroll" ? "/payroll"
+      : profileData.role === "coordinator" ? "/job-requests"
       : "/dashboard";
   }
 
