@@ -205,7 +205,8 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
   const hasWarnings =
     report.warnings.noRateCard ||
     report.warnings.missingRates.length > 0 ||
-    report.warnings.skippedNoPosition.length > 0;
+    report.warnings.skippedNoPosition.length > 0 ||
+    report.warnings.zeroHourExcluded > 0;
 
   return (
     <div className="preinv-pdf">
@@ -221,6 +222,9 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
             {report.warnings.skippedNoPosition.map((w, i) => (
               <li key={`np-${i}`}>Entry excluded (no position set): {w.detail}</li>
             ))}
+            {report.warnings.zeroHourExcluded > 0 ? (
+              <li>{report.warnings.zeroHourExcluded} zero-hour timekeeping {report.warnings.zeroHourExcluded === 1 ? "entry" : "entries"} excluded (blank rows — nothing to bill).</li>
+            ) : null}
           </ul>
         </div>
       ) : null}
@@ -517,9 +521,11 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
         .lines-table th.num, .lines-table td.num {
           text-align: right;
           font-variant-numeric: tabular-nums;
-          /* Money and hour values must never wrap mid-number. */
-          white-space: nowrap;
         }
+        /* Money and hour VALUES must never wrap mid-number — but headers
+           ("ST Hrs") must stay free to wrap, or an 11-column DT report
+           overflows them into each other. */
+        .lines-table td.num { white-space: nowrap; }
         .time-cell { font-variant-numeric: tabular-nums; }
         .pending-mark { color: #a33; font-weight: 700; margin-left: 2px; }
         .lines-table tr.day-total-row td {

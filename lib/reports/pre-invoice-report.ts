@@ -77,6 +77,10 @@ export type PreInvoiceReport = {
     missingRates: string[];
     /** No rate card resolved at all — every line is $0. */
     noRateCard: boolean;
+    /** Entries with zero recorded hours — excluded from the report (a
+     *  billing preview has nothing to say about them; typically blank
+     *  placeholder rows left in the timekeeping grid). */
+    zeroHourExcluded: number;
   };
 };
 
@@ -167,7 +171,20 @@ export async function buildPreInvoiceReport(jobId: string): Promise<PreInvoiceRe
   // ─── 4. Group by the invoice 5-tuple + the time signature.
   const skippedNoPosition: PreInvoiceReport["warnings"]["skippedNoPosition"] = [];
   const groups = new Map<string, ReportGroup>();
+  let zeroHourExcluded = 0;
   for (const e of entries) {
+    // Zero-hour entries (blank placeholder rows in the grid) have nothing
+    // to bill — excluding them keeps phantom "(no date)" days and dash
+    // lines off the client-facing report. Counted for the on-screen warning.
+    const hasHours =
+      Number(e.total_hours ?? 0) !== 0 ||
+      Number(e.std_hours ?? 0) !== 0 ||
+      Number(e.ot_hours ?? 0) !== 0 ||
+      Number(e.dt_hours ?? 0) !== 0;
+    if (!hasHours) {
+      zeroHourExcluded++;
+      continue;
+    }
     if (!e.position_id) {
       // Same integrity rule as the invoice pull: no position FK → the line
       // can't resolve a rate card row or print a position name. Surface it
@@ -309,6 +326,7 @@ export async function buildPreInvoiceReport(jobId: string): Promise<PreInvoiceRe
       skippedNoPosition,
       missingRates,
       noRateCard: !rateCard,
+      zeroHourExcluded,
     },
   };
 }
