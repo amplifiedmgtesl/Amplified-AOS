@@ -4,6 +4,9 @@ What changed and when. Newest entries at the top.
 
 ## July 2026
 
+### July 21 — v2.1.1
+- Fixed sign-in for Coordinator accounts — the login screen was still turning them away even though the role now has its own access level. Coordinators land on the Jobs screen after signing in.
+
 ### July 21 — v2.1.0
 - Added this change log page, reachable from the version number at the bottom of the sidebar.
 - Coordinator accounts are now locked out of all money and admin screens: Quotes, Invoices, Rate Card, Job Costing, Payroll, Maintenance, and the Dashboard. They keep Calendar, Clients, Jobs, Timekeeping, Timesheet Review, and Employees — with billing amounts and pay rates hidden on those screens too.
