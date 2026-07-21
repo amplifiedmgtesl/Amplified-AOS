@@ -53,15 +53,23 @@ type LoadedClient = {
   email?: string | null;
 };
 
+function hasCents(n: number | null | undefined): boolean {
+  const v = n ?? 0;
+  return Math.abs(v - Math.round(v)) >= 0.005;
+}
+
 /** Billing rates are whole dollars, so cents print only when a computed
  *  total actually has them (day-rate overflow like 1.17hr × $33 = $368.61).
+ *  Pass `forceCents` to keep a whole COLUMN consistent: when any value in
+ *  the column has real cents, every value in it shows .XX so the numbers
+ *  line up (mixed $34,264 / $33,776.61 reads worse than all-cents).
  *  Thousands separators throughout — client-facing document. */
-function fmtMoney(n: number | null | undefined): string {
+function fmtMoney(n: number | null | undefined, forceCents?: boolean): string {
   const v = n ?? 0;
-  const isWhole = Math.abs(v - Math.round(v)) < 0.005;
+  const showCents = forceCents ?? hasCents(v);
   return `$${v.toLocaleString("en-US", {
-    minimumFractionDigits: isWhole ? 0 : 2,
-    maximumFractionDigits: isWhole ? 0 : 2,
+    minimumFractionDigits: showCents ? 2 : 0,
+    maximumFractionDigits: showCents ? 2 : 0,
   })}`;
 }
 function fmtDate(s: string | undefined | null): string {
@@ -168,6 +176,13 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
   const anyOt = report.days.some((d) => d.lines.some((l) => (l.line.otHours || 0) > 0));
   const anyDt = report.days.some((d) => d.lines.some((l) => (l.line.dtHours || 0) > 0));
 
+  // Column-consistent cents (John 2026-07-21): if any value in a money
+  // column has real cents, EVERY value in that column shows .XX so the
+  // figures line up; all-whole columns stay cent-free. Line totals and
+  // the day/grand-total figures are evaluated as separate columns.
+  const centsLineTotals = report.days.some((d) => d.lines.some((l) => hasCents(l.line.total)));
+  const centsDayTotals = report.days.some((d) => hasCents(d.subtotal)) || hasCents(report.grandTotal);
+
   // One shared column layout for EVERY day's table (table-layout: fixed +
   // this colgroup), so columns line up identically across days instead of
   // each table auto-sizing to its own content. Order must match the
@@ -231,7 +246,7 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
               <tr><td>Job #</td><td><strong>{job?.job_no || "—"}</strong></td></tr>
               <tr><td>Prepared</td><td>{today}</td></tr>
               {dateRange ? <tr><td>Event dates</td><td>{dateRange}</td></tr> : null}
-              <tr><td>Estimated total</td><td><strong>{fmtMoney(report.grandTotal)}</strong></td></tr>
+              <tr><td>Estimated total</td><td><strong>{fmtMoney(report.grandTotal, centsDayTotals)}</strong></td></tr>
             </tbody>
           </table>
         </div>
@@ -276,7 +291,7 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
                   </span>
                 )}
               </span>
-              <span className="day-subtotal">{fmtMoney(day.subtotal)}</span>
+              <span className="day-subtotal">{fmtMoney(day.subtotal, centsDayTotals)}</span>
             </div>
             <table className="lines-table">
               <colgroup>
@@ -327,13 +342,13 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
                       <td className="num">{rateDisplay}</td>
                       {anyOt ? <td className="num">{(line.otRate || 0) > 0 && (line.otHours || 0) > 0 ? fmtMoney(line.otRate) : ""}</td> : null}
                       {anyDt ? <td className="num">{(line.dtRate || 0) > 0 && (line.dtHours || 0) > 0 ? fmtMoney(line.dtRate) : ""}</td> : null}
-                      <td className="num">{fmtMoney(line.total)}</td>
+                      <td className="num">{fmtMoney(line.total, centsLineTotals)}</td>
                     </tr>
                   );
                 })}
                 <tr className="day-total-row">
                   <td colSpan={colCount - 1}>Day total</td>
-                  <td className="num">{fmtMoney(day.subtotal)}</td>
+                  <td className="num">{fmtMoney(day.subtotal, centsDayTotals)}</td>
                 </tr>
               </tbody>
             </table>
@@ -345,11 +360,11 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
                 <table>
                   <tbody>
                     {report.days.length > 1 ? report.days.map((d, i) => (
-                      <tr key={d.date}><td>Day {i + 1} — {fmtDate(d.date) || d.date}</td><td>{fmtMoney(d.subtotal)}</td></tr>
+                      <tr key={d.date}><td>Day {i + 1} — {fmtDate(d.date) || d.date}</td><td>{fmtMoney(d.subtotal, centsDayTotals)}</td></tr>
                     )) : null}
                     <tr className="balance-row">
                       <td>Estimated total{anyPending ? " *" : ""}</td>
-                      <td>{fmtMoney(report.grandTotal)}</td>
+                      <td>{fmtMoney(report.grandTotal, centsDayTotals)}</td>
                     </tr>
                   </tbody>
                 </table>
