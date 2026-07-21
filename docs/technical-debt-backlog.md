@@ -4,7 +4,7 @@ Full detail for every deferred cleanup task, design note, and open follow-up. Mo
 
 ---
 
-## 📌 CURRENT PRIORITY RANKING (set with John 2026-07-16, updated 2026-07-20)
+## 📌 CURRENT PRIORITY RANKING (set with John 2026-07-16, updated 2026-07-21)
 
 Working priority order for active/requested projects. The `#N` ids are stable labels from the 2026-07-16 triage (not positions) — reference them when discussing. Three buckets, mapping to a **Now / Next / Later** frame: **Ranked = Now**, **Unranked = Next**, **On hold = Later**.
 
@@ -18,9 +18,11 @@ Working priority order for active/requested projects. The `#N` ids are stable la
 7. **#3** — Time Clock kiosk (Phase 1) — WORKER signs at clock-in (no client signature anywhere — confirmed John 7/20; the old "client digital-sig sign-off" phrase meant *validating with the client that digital sigs are accepted*, not the client signing) → re-apply on Phase 0 → prod ⎬ **one workstream, + #4 folded in**
 8. **#11** — Bulk-import ACTUAL timekeeping hours (round-trip export/import) (Connor/John, 7/16) ⎭
 9. **#10** — Revamp printed timesheet PDF for legibility (Connor, 7/16)
-10. **#17** — Let the payroll role view the job screen (added 2026-07-18, ranked 7/20). Today the payroll role is confined to `/payroll/*` + `/employee-directory` by the route guard in [components/layout/app-shell.tsx](../components/layout/app-shell.tsx) (~line 92); jobs are out of reach. Open the jobs list/detail (`/jobs/*`) to payroll — decide view-only vs. edit, and whether the sidebar nav should show the Jobs link for payroll users.
+10. ~~**#17** — Let the payroll role view the job screen~~ — ✅ SHIPPED TO PROD 7/20 (read-only: fields disabled, no quote/save/delete actions, Jobs in payroll nav)
 11. **#18** — Dashboard metric-card drill-downs (added 2026-07-20, ranked 7/20). Detail section below.
-12. **#19** — Jobs screen calendar view toggle (added 2026-07-20, ranked 7/20). Detail section below.
+12. ~~**#19** — Jobs screen calendar view toggle~~ — ✅ SHIPPED TO PROD 7/20
+
+**Shipped 7/21 (unnumbered, same-day work — see CHANGELOG.md + v2.1.0 heading):** in-app change log page + version link under Sign out (`CHANGELOG.md`, `/changelog`, promote checklist `docs/promote-to-prod-checklist.md`); coordinator role lockdown (allowlist route guard + per-screen dollar hiding — see #27/#28 for the follow-on permission-matrix work). Prod deploy required a duplicate-commit trigger (see checklist gotcha).
 
 **#4 + freeze-trigger fold-in:** Timesheet↔invoice linking redesign is done *inside* the #2/#3 timekeeping/billing workstream — all touch `timesheet_entries` billing/lock state; rework that area once. **The `timesheet_entries_freeze_check()` denylist refactor is also merged into this workstream:** #4 deletes the `invoice_line_id` column that the freeze trigger's DELETE guard currently keys on, so the trigger must be rewritten when #4 lands anyway — do the allowlist→denylist flip (+ fix the stale delete comment in `timekeeping.tsx`) in that same rewrite. Also relates to #14 & #15.
 
