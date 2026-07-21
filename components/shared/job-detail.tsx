@@ -181,6 +181,9 @@ export default function JobDetail({
   // Payroll gets a read-only view: every field disabled, no save/delete/quote
   // actions. Print buttons stay — that's the point of letting them in.
   const isPayroll = role === "payroll";
+  // Coordinators can create/edit jobs but never touch quotes (the /quotes
+  // routes are also blocked in AppShell — this just hides the doorways).
+  const isCoordinator = role === "coordinator";
   const timesheetHref = isCrewLeader ? "/lead/timekeeping" : "/timekeeping";
 
   const [openDraftId, setOpenDraftId] = useState<string | null>(null);
@@ -682,10 +685,10 @@ export default function JobDetail({
 
         <div className="action-row" style={{ marginTop: 12 }}>
           {!isPayroll && <button onClick={save}>Save</button>}
-          {isNew && !isCrewLeader && (
+          {isNew && !isCrewLeader && !isCoordinator && (
             <button onClick={saveAndCreateQuoteNew}>Save + Create Quote</button>
           )}
-          {editingId && !isCrewLeader && !isPayroll && (
+          {editingId && !isCrewLeader && !isPayroll && !isCoordinator && (
             <>
               {openDraftId ? (
                 <button onClick={() => { window.location.href = `/quotes/${encodeURIComponent(openDraftId)}/edit`; }}>

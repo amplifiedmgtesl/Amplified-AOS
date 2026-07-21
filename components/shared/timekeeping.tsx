@@ -21,6 +21,7 @@ import type { EmployeeRecord, JobRequest, TimeEntry, Timesheet } from "@/lib/sto
 import { EqualizerLoader } from "@/components/shared/equalizer-loader";
 import { JobHealthBanner } from "@/components/shared/job-health-banner";
 import { EmployeePicker, LazyEmployeePicker, pushEmployeeIntoCache, type PickerEmployee } from "@/components/shared/employee-picker";
+import { useUserRole } from "@/lib/auth/use-user-role";
 
 // Picker selection — always anchored on job_requests ("job:<jobId>").
 // The pre-rewrite "legacy:<jobSheetId>" mode was retired 2026-06-11 after the
@@ -167,7 +168,11 @@ if (TK_PERF_ON && typeof window !== "undefined") {
   (window as any).__tkPerfDownload = tkPerfDownload;
 }
 
-export default function Timekeeping({ hideBillAlways = false }: { hideBillAlways?: boolean }) {
+export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false }: { hideBillAlways?: boolean }) {
+  // Coordinators use the admin timekeeping screen but must not see billing
+  // data — same treatment as the crew-leader portal's hideBillAlways.
+  const viewerRole = useUserRole();
+  const hideBillAlways = hideBillAlwaysProp || viewerRole === "coordinator";
   const POSITIONS = positionNames();
   // Phase 3: master tables for cascading Position → Specialty selects.
   // Loaded once and shared across rows.
