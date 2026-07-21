@@ -53,8 +53,16 @@ type LoadedClient = {
   email?: string | null;
 };
 
+/** Billing rates are whole dollars, so cents print only when a computed
+ *  total actually has them (day-rate overflow like 1.17hr × $33 = $368.61).
+ *  Thousands separators throughout — client-facing document. */
 function fmtMoney(n: number | null | undefined): string {
-  return `$${(n ?? 0).toFixed(2)}`;
+  const v = n ?? 0;
+  const isWhole = Math.abs(v - Math.round(v)) < 0.005;
+  return `$${v.toLocaleString("en-US", {
+    minimumFractionDigits: isWhole ? 0 : 2,
+    maximumFractionDigits: isWhole ? 0 : 2,
+  })}`;
 }
 function fmtDate(s: string | undefined | null): string {
   if (!s) return "";
@@ -165,18 +173,17 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
   // each table auto-sizing to its own content. Order must match the
   // thead/tbody cell order below.
   const colWidths: string[] = [
-    "13%",                       // Position
-    "12%",                       // Specialty
-    ...(anyShift ? ["8%"] : []), // Shift
+    "22%",                       // Position / Specialty (combined)
+    ...(anyShift ? ["7%"] : []), // Shift
     "24%",                       // Time
     "5%",                        // Crew
     "6%",                        // ST Hrs
     ...(anyOt ? ["6%"] : []),    // OT Hrs
     ...(anyDt ? ["6%"] : []),    // DT Hrs
-    "10%",                       // Rate
-    ...(anyOt ? ["7%"] : []),    // $/OT
-    ...(anyDt ? ["7%"] : []),    // $/DT
-    "9%",                        // Total
+    "9%",                        // Rate
+    ...(anyOt ? ["6%"] : []),    // $/OT
+    ...(anyDt ? ["6%"] : []),    // $/DT
+    "10%",                       // Total
   ];
   const colCount = colWidths.length;
 
@@ -277,8 +284,7 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
               </colgroup>
               <thead>
                 <tr>
-                  <th>Position</th>
-                  <th>Specialty</th>
+                  <th>Position / Specialty</th>
                   {anyShift ? <th>Shift</th> : null}
                   <th>Time</th>
                   <th className="num">Crew</th>
@@ -297,15 +303,19 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
                   const spc = line.specialtyId ? specialtiesById.get(line.specialtyId) : undefined;
                   const positionName = (spc ? positionsById.get(spc.positionId) : undefined)
                     ?? line.serviceKey ?? "—";
-                  const specialtyName = spc?.name ?? line.specialty ?? "—";
+                  const specialtyName = spc?.name ?? line.specialty ?? "";
+                  // Combined label; skip the specialty when it's missing or
+                  // just repeats the position (legacy fallback rows).
+                  const posSpecLabel = specialtyName && specialtyName !== positionName
+                    ? `${positionName} / ${specialtyName}`
+                    : positionName;
                   const dayMode = isDayModeLine(line);
                   const rateDisplay = dayMode
                     ? `${fmtMoney(line.baseDay)}/day`
                     : `${fmtMoney(line.baseHourly)}/hr`;
                   return (
                     <tr key={i}>
-                      <td>{positionName}{rl.hasPendingTime ? <span className="pending-mark">*</span> : null}</td>
-                      <td>{specialtyName}</td>
+                      <td>{posSpecLabel}{rl.hasPendingTime ? <span className="pending-mark">*</span> : null}</td>
                       {anyShift ? <td>{(line.shiftId ? shiftsById.get(line.shiftId) : "") || ""}</td> : null}
                       <td className="time-cell">
                         {fmtTimeSegs(rl).map((s, si) => <div key={si}>{s}</div>)}
@@ -492,6 +502,8 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
         .lines-table th.num, .lines-table td.num {
           text-align: right;
           font-variant-numeric: tabular-nums;
+          /* Money and hour values must never wrap mid-number. */
+          white-space: nowrap;
         }
         .time-cell { font-variant-numeric: tabular-nums; }
         .pending-mark { color: #a33; font-weight: 700; margin-left: 2px; }
