@@ -447,6 +447,9 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
           font-size: 11pt;
           line-height: 1.4;
           position: relative;
+          /* Opt into the named portrait page so it beats the app-wide
+             landscape @page in globals.css by specificity, not source order. */
+          page: preinv-portrait;
         }
         .preinv-pdf h1, .preinv-pdf h3 { color: #15110d; }
 
@@ -657,12 +660,17 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
         }
       `}</style>
       {/* @page can't live inside styled-jsx, so it goes in a plain <style>.
-          Without this, the app-wide `@page { size: landscape }` in
-          globals.css wins and the browser print dialog locks this portrait
-          report to landscape. Pin it to portrait letter. */}
+          globals.css sets an app-wide `@page { size: landscape }`; a bare
+          `@page` override only wins on source order, which bundling/hoisting
+          makes unreliable (that's why the first attempt didn't take). A NAMED
+          page has higher cascade specificity and wins regardless of order —
+          `.preinv-pdf` opts into it via `page: preinv-portrait`. The bare
+          rule is kept too as a belt-and-suspenders fallback; both say
+          portrait, so there's no conflict. */}
       <style>{`
-        @page {
-          size: letter portrait;
+        @page { size: portrait; }
+        @page preinv-portrait {
+          size: portrait;
           margin: 0.4in 0.5in;
         }
       `}</style>
