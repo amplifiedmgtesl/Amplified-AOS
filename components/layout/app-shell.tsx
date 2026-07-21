@@ -106,6 +106,27 @@ export function AppShell({
         }
       }
 
+      // Coordinator role: crew scheduling + time, no money and no admin.
+      // Allowed: Calendar, Clients, Jobs, Timekeeping (incl. Timesheet
+      // Review), Employees, and the change log. Everything else — Quotes,
+      // Invoices, Rate Card, Job Costing, Payroll, Maintenance, and the
+      // Dashboard (it shows revenue) — bounces to Jobs. Dollar figures on
+      // the allowed screens are hidden per-component (see useUserRole
+      // gates in timekeeping, timesheet-review, employee-profile,
+      // client-detail, job-detail).
+      if (profile?.role === "coordinator") {
+        const allowed = pathname?.startsWith("/master-calendar")
+          || pathname?.startsWith("/clients")
+          || pathname?.startsWith("/job-requests")
+          || pathname?.startsWith("/timekeeping")
+          || pathname?.startsWith("/employee-directory")
+          || pathname?.startsWith("/changelog");
+        if (!allowed) {
+          window.location.href = "/job-requests";
+          return;
+        }
+      }
+
       setUserRole(profile?.role ?? null);
       setAuthChecking(false);
     }
@@ -170,8 +191,12 @@ export function AppShell({
 
   const visibleNav = userRole === "payroll"
     ? nav.filter(([href]) => href === "/payroll" || href === "/employee-directory" || href === "/job-requests")
+    : userRole === "coordinator"
+    ? nav.filter(([href]) =>
+        href === "/master-calendar" || href === "/clients" || href === "/job-requests"
+        || href === "/timekeeping" || href === "/timekeeping/review" || href === "/employee-directory")
     : nav;
-  const brandSub = userRole === "payroll" ? "Payroll" : "Operations Suite";
+  const brandSub = userRole === "payroll" ? "Payroll" : userRole === "coordinator" ? "Coordination" : "Operations Suite";
 
   // The collapsed (icon-only) rail is a desktop affordance. On mobile the
   // sidebar is a full-width drawer, so always show labels/logo there even if

@@ -8,6 +8,7 @@ import { upsertClient } from "@/lib/store/app-store";
 import type { Client } from "@/lib/store/types";
 import { US_STATES } from "@/lib/constants";
 import { ClientContactsTab } from "./client-contacts-tab";
+import { useUserRole } from "@/lib/auth/use-user-role";
 
 const EMPTY_CLIENT: Omit<Client, "id"> = {
   name: "", code: "", contactName: "", billTo: "", email: "", phone: "",
@@ -34,6 +35,9 @@ async function fetchClients(): Promise<Client[]> {
  * redirects to /clients/{id} once saved.
  */
 export default function ClientDetail({ clientId }: { clientId?: string }) {
+  // Coordinators see clients for scheduling context only — the money tabs
+  // (Quotes, Rate Cards, Invoices) are hidden for them.
+  const hideMoneyTabs = useUserRole() === "coordinator";
   const router = useRouter();
   const isNew = !clientId;
 
@@ -491,7 +495,9 @@ export default function ClientDetail({ clientId }: { clientId?: string }) {
         <div className="card" style={{ marginTop: 16, padding: 0, overflow: "hidden" }}>
           {/* Tab bar */}
           <div style={{ display: "flex", borderBottom: "1px solid var(--border, #e5e7eb)" }}>
-            {(["contacts", "job_requests", "quotes", "rate_cards", "calendar_events", "invoices"] as const).map((tab) => {
+            {(["contacts", "job_requests", "quotes", "rate_cards", "calendar_events", "invoices"] as const)
+              .filter((tab) => !hideMoneyTabs || (tab !== "quotes" && tab !== "rate_cards" && tab !== "invoices"))
+              .map((tab) => {
               const labels: Record<string, string> = { contacts: "Contacts", job_requests: "Jobs", quotes: "Quotes", rate_cards: "Rate Cards", calendar_events: "Manual Calendar Entries", invoices: "Invoices" };
               const counts: Record<string, number> = { contacts: contactsCount, job_requests: tabData.jobRequests.length, quotes: tabData.quotes.length, rate_cards: tabData.rateCards.length, calendar_events: tabData.calendarEvents.length, invoices: tabData.invoices.length };
               const active = activeTab === tab;

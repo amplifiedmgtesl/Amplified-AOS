@@ -10,6 +10,7 @@ import {
   loadJobRequests,
 } from "@/lib/store/app-store";
 import type { StaffEntryReviewRow } from "@/lib/store/db";
+import { useUserRole } from "@/lib/auth/use-user-role";
 
 type StatusFilter = "pending" | "approved" | "rejected" | "all";
 
@@ -54,6 +55,9 @@ function payrollLockBadge(r: StaffEntryReviewRow) {
 }
 
 export default function TimesheetReview() {
+  // Coordinators review and approve time but never see billing dollars —
+  // the Bill column and bill totals are hidden for them.
+  const hideBill = useUserRole() === "coordinator";
   const [rows, setRows] = useState<StaffEntryReviewRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<StatusFilter>("pending");
@@ -282,8 +286,8 @@ export default function TimesheetReview() {
           {loading ? "Loading…" : (
             <>
               <strong>{totals.entries}</strong> entr{totals.entries === 1 ? "y" : "ies"} ·{" "}
-              <strong>{totals.hours.toFixed(1)}</strong> hrs ·{" "}
-              <strong>${totals.bill.toFixed(2)}</strong> bill
+              <strong>{totals.hours.toFixed(1)}</strong> hrs
+              {!hideBill && <> ·{" "}<strong>${totals.bill.toFixed(2)}</strong> bill</>}
             </>
           )}
         </div>
@@ -340,13 +344,13 @@ export default function TimesheetReview() {
               <th>OT</th>
               <th>DT</th>
               <th>Total</th>
-              <th title="Billing total — what AES bills the client. Pay totals live on the Payroll screen.">Bill</th>
+              {!hideBill && <th title="Billing total — what AES bills the client. Pay totals live on the Payroll screen.">Bill</th>}
               <th>Status</th>
             </tr>
           </thead>
           <tbody>
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan={12} className="muted" style={{ textAlign: "center", padding: "24px 0" }}>No entries match these filters.</td></tr>
+              <tr><td colSpan={hideBill ? 11 : 12} className="muted" style={{ textAlign: "center", padding: "24px 0" }}>No entries match these filters.</td></tr>
             )}
             {filtered.map((r) => {
               const checked = selectedIds.has(r.id);
@@ -380,7 +384,7 @@ export default function TimesheetReview() {
                 <td>{r.otHours > 0 ? r.otHours.toFixed(1) : "—"}</td>
                 <td>{r.dtHours > 0 ? r.dtHours.toFixed(1) : "—"}</td>
                 <td><strong>{r.totalHours.toFixed(1)}</strong></td>
-                <td>${r.billTotal.toFixed(2)}</td>
+                {!hideBill && <td>${r.billTotal.toFixed(2)}</td>}
                 <td>{statusBadge(r)}{payrollLockBadge(r)}</td>
               </tr>
               );

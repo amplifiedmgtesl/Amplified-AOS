@@ -6,6 +6,7 @@ What changed and when, in plain English. Newest entries at the top.
 
 ### July 21 — v2.1.0
 - Added this change log page, reachable from the version number at the bottom of the sidebar.
+- Coordinator accounts are now locked out of all money and admin screens: Quotes, Invoices, Rate Card, Job Costing, Payroll, Maintenance, and the Dashboard. They keep Calendar, Clients, Jobs, Timekeeping, Timesheet Review, and Employees — with billing amounts and pay rates hidden on those screens too.
 
 ### July 20
 - Payroll users can now view the Jobs screen (read-only — no billing or quote access).

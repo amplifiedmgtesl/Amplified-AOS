@@ -52,9 +52,9 @@ export default function EmployeeProfile({
 }) {
   const router = useRouter();
   // Belt + suspenders: even if this somehow renders inside an admin shell,
-  // force-hide pay if the viewer is a crew_leader.
+  // force-hide pay if the viewer is a crew_leader or coordinator.
   const viewerRole = useUserRole();
-  const hideBill = hideBillProp || viewerRole === "crew_leader";
+  const hideBill = hideBillProp || viewerRole === "crew_leader" || viewerRole === "coordinator";
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [historyModal, setHistoryModal] = useState<"jobs" | "timesheets" | null>(null);
