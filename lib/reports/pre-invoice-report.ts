@@ -51,6 +51,10 @@ export type PreInvoiceReportLine = {
   /** True when any entry on the line is submitted/rejected — i.e. time that
    *  could still change before invoicing. Drives the footnote marker. */
   hasPendingTime: boolean;
+  /** No rate-card row resolved for this line's specialty — it prices at $0.
+   *  The view renders "TBD" (not $0) and the total is flagged as excluding
+   *  it, so an admin fixes the rate card before this reaches a client. */
+  missingRate: boolean;
   entryIds: string[];
 };
 
@@ -66,6 +70,10 @@ export type PreInvoiceReport = {
   days: PreInvoiceReportDay[];
   grandTotal: number;
   totalEntries: number;
+  /** Job-wide labor totals for the at-a-glance summary near the grand total.
+   *  crewShifts = number of billable person-shifts (included entries);
+   *  totalHours = sum of actual hours worked across them. */
+  laborSummary: { crewShifts: number; totalHours: number };
   /** Quote used for day-vs-hourly rate hints (null = none; all lines hourly). */
   hintQuoteId: string | null;
   holidayMultiplier: number;
@@ -247,13 +255,20 @@ export async function buildPreInvoiceReport(jobId: string): Promise<PreInvoiceRe
   }
 
   // ─── 5. Price each group with the shared engine and assemble days.
-  //        Sort: date → shift → position → start time.
+  //        Sort: date → POSITION → specialty → shift → start time. Keyed on
+  //        position_id (not the free-text position) so rows that resolve to
+  //        the same position cluster together — e.g. entries typed "Crew"
+  //        and "Stagehand" both point at pos-01 and read "Stagehand" once
+  //        displayed, so they belong next to each other, not sorted apart
+  //        by their raw text (the scatter John saw 2026-07-21).
   const sorted = Array.from(groups.values()).sort((a, b) => {
     if (a.workDate !== b.workDate) return a.workDate.localeCompare(b.workDate);
-    const aShift = a.shiftId ?? ""; const bShift = b.shiftId ?? "";
-    if (aShift !== bShift) return aShift.localeCompare(bShift);
-    const pos = (a.positionText || "").localeCompare(b.positionText || "");
-    if (pos !== 0) return pos;
+    const posCmp = (a.positionId ?? "").localeCompare(b.positionId ?? "");
+    if (posCmp !== 0) return posCmp;
+    const specCmp = (a.specialtyId ?? "").localeCompare(b.specialtyId ?? "");
+    if (specCmp !== 0) return specCmp;
+    const shiftCmp = (a.shiftId ?? "").localeCompare(b.shiftId ?? "");
+    if (shiftCmp !== 0) return shiftCmp;
     return a.timeIn1.localeCompare(b.timeIn1);
   });
 
@@ -294,6 +309,7 @@ export async function buildPreInvoiceReport(jobId: string): Promise<PreInvoiceRe
       mealBreak2Minutes: g.mealBreak2Minutes,
       statusCounts: g.statusCounts,
       hasPendingTime,
+      missingRate,
       entryIds: g.entryIds,
     };
     const date = g.workDate || "(no date)";
@@ -315,11 +331,23 @@ export async function buildPreInvoiceReport(jobId: string): Promise<PreInvoiceRe
   const days = Array.from(dayByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
   const grandTotal = +days.reduce((s, d) => s + d.subtotal, 0).toFixed(2);
 
+  // Labor summary: person-shifts (one per included entry) and actual hours
+  // worked across them. Aggregate — distinct from the per-crew-member hours
+  // shown on each line.
+  let crewShifts = 0;
+  let totalHours = 0;
+  for (const g of sorted) {
+    crewShifts += g.entryIds.length;
+    g.workerTotalHours.forEach((hrs) => { totalHours += hrs; });
+  }
+  const laborSummary = { crewShifts, totalHours: +totalHours.toFixed(2) };
+
   return {
     jobId,
     days,
     grandTotal,
     totalEntries: entries.length,
+    laborSummary,
     hintQuoteId,
     holidayMultiplier,
     warnings: {

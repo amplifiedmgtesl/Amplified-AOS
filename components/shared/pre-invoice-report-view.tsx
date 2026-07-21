@@ -58,6 +58,22 @@ function hasCents(n: number | null | undefined): boolean {
   return Math.abs(v - Math.round(v)) >= 0.005;
 }
 
+/** Format an hours value for display: no trailing zeros ("7", "7.5", "1.17"),
+ *  blank for zero so empty buckets stay clean. */
+function fmtHrs(n: number): string {
+  if (!n) return "";
+  return String(+n.toFixed(2));
+}
+
+/** Per-crew-member hours. Because every worker on a report line worked the
+ *  identical time block (the line grouping requires it), the aggregate
+ *  person-hours divide evenly by crew — so this reads as each person's own
+ *  hours, which is what a client verifying the report expects to see. */
+function perEa(total: number, crew: number): string {
+  if (!crew) return fmtHrs(total);
+  return fmtHrs(total / crew);
+}
+
 /** Billing rates are whole dollars, so cents print only when a computed
  *  total actually has them (day-rate overflow like 1.17hr × $33 = $368.61).
  *  Pass `forceCents` to keep a whole COLUMN consistent: when any value in
@@ -202,6 +218,11 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
   ];
   const colCount = colWidths.length;
 
+  const unpricedCount = report.days.reduce(
+    (n, d) => n + d.lines.filter((l) => l.missingRate).length, 0,
+  );
+  const anyMultiCrew = report.days.some((d) => d.lines.some((l) => (l.line.crewCount ?? 0) > 1));
+
   const hasWarnings =
     report.warnings.noRateCard ||
     report.warnings.missingRates.length > 0 ||
@@ -277,6 +298,12 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
         </div>
       </section>
 
+      {anyMultiCrew ? (
+        <div className="hours-legend">
+          Hours are shown <strong>per crew member</strong>. Line total = crew × hours × rate.
+        </div>
+      ) : null}
+
       {/* Day-by-day summary — one printed page per day */}
       {report.days.length === 0 ? (
         <div className="no-lines">No timekeeping records for this job yet.</div>
@@ -329,24 +356,27 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
                     ? `${positionName} / ${specialtyName}`
                     : positionName;
                   const dayMode = isDayModeLine(line);
-                  const rateDisplay = dayMode
-                    ? `${fmtMoney(line.baseDay)}/day`
-                    : `${fmtMoney(line.baseHourly)}/hr`;
+                  const crew = line.crewCount ?? 0;
+                  const rateDisplay = rl.missingRate
+                    ? "Rate TBD"
+                    : dayMode
+                      ? `${fmtMoney(line.baseDay)}/day`
+                      : `${fmtMoney(line.baseHourly)}/hr`;
                   return (
-                    <tr key={i}>
+                    <tr key={i} className={rl.missingRate ? "line-tbd" : undefined}>
                       <td>{posSpecLabel}{rl.hasPendingTime ? <span className="pending-mark">*</span> : null}</td>
                       {anyShift ? <td>{(line.shiftId ? shiftsById.get(line.shiftId) : "") || ""}</td> : null}
                       <td className="time-cell">
                         {fmtTimeSegs(rl).map((s, si) => <div key={si}>{s}</div>)}
                       </td>
-                      <td className="num">{line.crewCount}</td>
-                      <td className="num">{dayMode ? "—" : (line.hours || "")}</td>
-                      {anyOt ? <td className="num">{line.otHours || ""}</td> : null}
-                      {anyDt ? <td className="num">{line.dtHours || ""}</td> : null}
+                      <td className="num">{crew}</td>
+                      <td className="num">{dayMode ? "—" : perEa(line.hours || 0, crew)}</td>
+                      {anyOt ? <td className="num">{perEa(line.otHours || 0, crew)}</td> : null}
+                      {anyDt ? <td className="num">{perEa(line.dtHours || 0, crew)}</td> : null}
                       <td className="num">{rateDisplay}</td>
                       {anyOt ? <td className="num">{(line.otRate || 0) > 0 && (line.otHours || 0) > 0 ? fmtMoney(line.otRate) : ""}</td> : null}
                       {anyDt ? <td className="num">{(line.dtRate || 0) > 0 && (line.dtHours || 0) > 0 ? fmtMoney(line.dtRate) : ""}</td> : null}
-                      <td className="num">{fmtMoney(line.total, centsLineTotals)}</td>
+                      <td className="num">{rl.missingRate ? "TBD" : fmtMoney(line.total, centsLineTotals)}</td>
                     </tr>
                   );
                 })}
@@ -361,6 +391,11 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
             ) : null}
             {isLast ? (
               <div className="grand-total">
+                <div className="labor-summary">
+                  <span>{report.laborSummary.crewShifts} crew {report.laborSummary.crewShifts === 1 ? "shift" : "shifts"}</span>
+                  <span className="dot">·</span>
+                  <span>{fmtHrs(report.laborSummary.totalHours) || "0"} total hours worked</span>
+                </div>
                 <table>
                   <tbody>
                     {report.days.length > 1 ? report.days.map((d, i) => (
@@ -372,6 +407,13 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
                     </tr>
                   </tbody>
                 </table>
+                {unpricedCount > 0 ? (
+                  <div className="unpriced-note">
+                    ⚠ Excludes {unpricedCount} line{unpricedCount === 1 ? "" : "s"} with no rate set (shown as “TBD”).
+                    The final total will be higher once {unpricedCount === 1 ? "it is" : "they are"} priced — add the missing
+                    rate{unpricedCount === 1 ? "" : "s"} to the rate card before sending this to a client.
+                  </div>
+                ) : null}
                 <div className="disclaimer">
                   This summary is provided for review prior to invoicing and is not an invoice.
                   Totals are estimates based on recorded time{anyPending ? ", including time pending approval," : ""} and
@@ -528,6 +570,15 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
         .lines-table td.num { white-space: nowrap; }
         .time-cell { font-variant-numeric: tabular-nums; }
         .pending-mark { color: #a33; font-weight: 700; margin-left: 2px; }
+        /* Unpriced (rate-TBD) lines: subtle amber tint so they read as
+           "needs attention" without looking like an error on print. */
+        .lines-table tr.line-tbd td { background: #fdf6e9; color: #8a6d1f; }
+        .hours-legend {
+          margin: 10px 0 0;
+          font-size: 9pt;
+          font-style: italic;
+          color: #6c6358;
+        }
         .lines-table tr.day-total-row td {
           border-top: 2px solid #15110d;
           border-bottom: none;
@@ -543,6 +594,25 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
         .no-lines { padding: 10px; color: #6c6358; font-style: italic; }
 
         .grand-total { margin-top: 22px; }
+        .labor-summary {
+          text-align: right;
+          font-size: 9.5pt;
+          color: #6c6358;
+          margin-bottom: 8px;
+          font-variant-numeric: tabular-nums;
+        }
+        .labor-summary .dot { margin: 0 6px; }
+        .unpriced-note {
+          margin-top: 10px;
+          margin-left: auto;
+          width: 55%;
+          font-size: 8.5pt;
+          color: #8a6d1f;
+          background: #fdf6e9;
+          border: 1px solid #e6d3a3;
+          border-radius: 4px;
+          padding: 6px 8px;
+        }
         .grand-total table {
           margin-left: auto;
           width: 55%;
@@ -576,6 +646,8 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
           .day-page.last { page-break-after: auto; }
           .day-header { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
           .holiday-badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .lines-table tr.line-tbd td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .unpriced-note { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
       `}</style>
     </div>
