@@ -656,6 +656,16 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
           .unpriced-note { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         }
       `}</style>
+      {/* @page can't live inside styled-jsx, so it goes in a plain <style>.
+          Without this, the app-wide `@page { size: landscape }` in
+          globals.css wins and the browser print dialog locks this portrait
+          report to landscape. Pin it to portrait letter. */}
+      <style>{`
+        @page {
+          size: letter portrait;
+          margin: 0.4in 0.5in;
+        }
+      `}</style>
     </div>
   );
 }
