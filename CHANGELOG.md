@@ -5,7 +5,7 @@ What changed and when. Newest entries at the top.
 ## July 2026
 
 ### July 21 — v2.1.1
-- Fixed sign-in for Coordinator accounts — the login screen was still turning them away even though the role now has its own access level. Coordinators land on the Jobs screen after signing in.
+- Coordinators can now sign in. The login screen used to reject the Coordinator role outright — which is why coordinator accounts were set to Crew Leader as a workaround. Those accounts can now be switched back to Coordinator (Maintenance → User Management) to get the new scheduling-focused access; they land on the Jobs screen after signing in.
 
 ### July 21 — v2.1.0
 - Added this change log page, reachable from the version number at the bottom of the sidebar.
