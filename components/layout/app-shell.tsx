@@ -5,6 +5,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import pkg from "../../package.json";
+
+// Short git hash of the deployed build, when Vercel exposes it. Shown next
+// to the version so "what build is live?" is answerable at a glance.
+const BUILD_SHA = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA?.slice(0, 7);
 
 // Order roughly follows the lifecycle: see what's happening (Dashboard,
 // Calendar) → who you're working with (Clients) → the work itself (Jobs) →
@@ -241,6 +246,13 @@ export function AppShell({
           >
             {railCollapsed ? "⎋" : "Sign out"}
           </button>
+          <Link
+            href="/changelog"
+            title="View change log"
+            style={{ display: "block", textAlign: "center", marginTop: 8, fontSize: 11, color: "#888", textDecoration: "none" }}
+          >
+            {railCollapsed || !BUILD_SHA ? `v${pkg.version}` : `v${pkg.version} · ${BUILD_SHA}`}
+          </Link>
         </div>
       </aside>
 
