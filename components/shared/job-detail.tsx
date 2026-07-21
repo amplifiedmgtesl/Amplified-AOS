@@ -714,6 +714,15 @@ export default function JobDetail({
               Timesheet
             </button>
           )}
+          {editingId && !isCrewLeader && !isPayroll && !isCoordinator && (
+            <button
+              className="secondary"
+              onClick={() => window.open(`/job-requests/${encodeURIComponent(editingId)}/pre-invoice-report`, "_blank")}
+              title="Client-facing timekeeping summary priced like the invoice — grouped by position, specialty, and matching times, one page per day"
+            >
+              Pre-Invoice Report
+            </button>
+          )}
           {editingId && (
             <button
               className="secondary"
