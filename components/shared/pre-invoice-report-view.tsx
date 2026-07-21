@@ -206,8 +206,8 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
   const colWidths: string[] = [
     "22%",                       // Position / Specialty (combined)
     ...(anyShift ? ["7%"] : []), // Shift
-    "24%",                       // Time
-    "5%",                        // Crew
+    "23%",                       // Time
+    "6%",                        // Crew
     "6%",                        // ST Hrs
     ...(anyOt ? ["6%"] : []),    // OT Hrs
     ...(anyDt ? ["6%"] : []),    // DT Hrs
@@ -552,21 +552,27 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
           padding: 3px 5px;
           border-bottom: 1px solid #ead7b8;
           vertical-align: top;
-          overflow-wrap: break-word;
         }
+        /* Only DATA cells may break inside a long token (position/time text).
+           Headers must NOT — break-word here split single-word labels like
+           "Crew" into "Cre"/"w" in their narrow columns. */
+        .lines-table td { overflow-wrap: break-word; }
         .lines-table th {
           text-align: left;
           font-weight: 600;
           color: #6c6358;
           background: #fff;
+          /* Wrap only at real spaces: two-word labels ("ST Hrs") stack onto
+             two lines; single-word labels ("Crew") stay whole. */
+          white-space: normal;
+          overflow-wrap: normal;
+          word-break: keep-all;
         }
         .lines-table th.num, .lines-table td.num {
           text-align: right;
           font-variant-numeric: tabular-nums;
         }
-        /* Money and hour VALUES must never wrap mid-number — but headers
-           ("ST Hrs") must stay free to wrap, or an 11-column DT report
-           overflows them into each other. */
+        /* Money and hour VALUES must never wrap mid-number. */
         .lines-table td.num { white-space: nowrap; }
         .time-cell { font-variant-numeric: tabular-nums; }
         .pending-mark { color: #a33; font-weight: 700; margin-left: 2px; }
