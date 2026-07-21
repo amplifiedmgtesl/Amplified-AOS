@@ -75,24 +75,25 @@ function fmtClock(t: string): string {
   return `${h12}:${mm} ${mer}`;
 }
 
-/** One display string per time block: "8:00 AM – 5:00 PM · 30m break",
- *  with a second segment when the entry used pair 2. */
-function fmtTimeBlock(l: {
+/** Display segments, one per time pair: "8:00 AM – 5:00 PM · 30m break".
+ *  Rendered stacked (one line per pair) so split shifts don't blow out the
+ *  Time column width. */
+function fmtTimeSegs(l: {
   timeIn1: string; timeOut1: string; timeIn2: string; timeOut2: string;
   mealBreak1Minutes: number; mealBreak2Minutes: number;
-}): string {
+}): string[] {
+  // Non-breaking spaces inside the range so a segment only ever wraps at
+  // the "· Nm break" suffix, never mid-range ("8:00 AM –" / "6:00 PM").
+  const nb = (s: string) => s.replace(/ /g, " ");
+  const seg = (tin: string, tout: string, breakMins: number): string => {
+    let s = nb(`${fmtClock(tin) || "—"} – ${fmtClock(tout) || "—"}`);
+    if (breakMins > 0) s += ` · ${nb(`${breakMins}m break`)}`;
+    return s;
+  };
   const segs: string[] = [];
-  if (l.timeIn1 || l.timeOut1) {
-    let s = `${fmtClock(l.timeIn1) || "—"} – ${fmtClock(l.timeOut1) || "—"}`;
-    if (l.mealBreak1Minutes > 0) s += ` · ${l.mealBreak1Minutes}m break`;
-    segs.push(s);
-  }
-  if (l.timeIn2 || l.timeOut2) {
-    let s = `${fmtClock(l.timeIn2) || "—"} – ${fmtClock(l.timeOut2) || "—"}`;
-    if (l.mealBreak2Minutes > 0) s += ` · ${l.mealBreak2Minutes}m break`;
-    segs.push(s);
-  }
-  return segs.join("  &  ") || "—";
+  if (l.timeIn1 || l.timeOut1) segs.push(seg(l.timeIn1, l.timeOut1, l.mealBreak1Minutes));
+  if (l.timeIn2 || l.timeOut2) segs.push(seg(l.timeIn2, l.timeOut2, l.mealBreak2Minutes));
+  return segs.length > 0 ? segs : ["—"];
 }
 
 export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
@@ -158,6 +159,26 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
   const anyShift = report.days.some((d) => d.lines.some((l) => !!l.line.shiftId));
   const anyOt = report.days.some((d) => d.lines.some((l) => (l.line.otHours || 0) > 0));
   const anyDt = report.days.some((d) => d.lines.some((l) => (l.line.dtHours || 0) > 0));
+
+  // One shared column layout for EVERY day's table (table-layout: fixed +
+  // this colgroup), so columns line up identically across days instead of
+  // each table auto-sizing to its own content. Order must match the
+  // thead/tbody cell order below.
+  const colWidths: string[] = [
+    "13%",                       // Position
+    "12%",                       // Specialty
+    ...(anyShift ? ["8%"] : []), // Shift
+    "24%",                       // Time
+    "5%",                        // Crew
+    "6%",                        // ST Hrs
+    ...(anyOt ? ["6%"] : []),    // OT Hrs
+    ...(anyDt ? ["6%"] : []),    // DT Hrs
+    "10%",                       // Rate
+    ...(anyOt ? ["7%"] : []),    // $/OT
+    ...(anyDt ? ["7%"] : []),    // $/DT
+    "9%",                        // Total
+  ];
+  const colCount = colWidths.length;
 
   const hasWarnings =
     report.warnings.noRateCard ||
@@ -251,6 +272,9 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
               <span className="day-subtotal">{fmtMoney(day.subtotal)}</span>
             </div>
             <table className="lines-table">
+              <colgroup>
+                {colWidths.map((w, ci) => <col key={ci} style={{ width: w }} />)}
+              </colgroup>
               <thead>
                 <tr>
                   <th>Position</th>
@@ -276,14 +300,16 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
                   const specialtyName = spc?.name ?? line.specialty ?? "—";
                   const dayMode = isDayModeLine(line);
                   const rateDisplay = dayMode
-                    ? `${fmtMoney(line.baseDay)} / day`
-                    : `${fmtMoney(line.baseHourly)} / hr`;
+                    ? `${fmtMoney(line.baseDay)}/day`
+                    : `${fmtMoney(line.baseHourly)}/hr`;
                   return (
                     <tr key={i}>
                       <td>{positionName}{rl.hasPendingTime ? <span className="pending-mark">*</span> : null}</td>
                       <td>{specialtyName}</td>
                       {anyShift ? <td>{(line.shiftId ? shiftsById.get(line.shiftId) : "") || ""}</td> : null}
-                      <td className="time-cell">{fmtTimeBlock(rl)}</td>
+                      <td className="time-cell">
+                        {fmtTimeSegs(rl).map((s, si) => <div key={si}>{s}</div>)}
+                      </td>
                       <td className="num">{line.crewCount}</td>
                       <td className="num">{dayMode ? "—" : (line.hours || "")}</td>
                       {anyOt ? <td className="num">{line.otHours || ""}</td> : null}
@@ -296,10 +322,7 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
                   );
                 })}
                 <tr className="day-total-row">
-                  <td colSpan={
-                    4 + (anyShift ? 1 : 0) + 1 /* crew */ + 1 /* ST */
-                    + (anyOt ? 2 : 0) + (anyDt ? 2 : 0) - 1
-                  }>Day total</td>
+                  <td colSpan={colCount - 1}>Day total</td>
                   <td className="num">{fmtMoney(day.subtotal)}</td>
                 </tr>
               </tbody>
@@ -450,12 +473,15 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
           border-collapse: collapse;
           font-size: 9.5pt;
           margin-top: 4px;
-          table-layout: auto;
+          /* Fixed layout + the shared colgroup = identical column positions
+             on every day's table, instead of each table auto-sizing. */
+          table-layout: fixed;
         }
         .lines-table th, .lines-table td {
           padding: 3px 5px;
           border-bottom: 1px solid #ead7b8;
           vertical-align: top;
+          overflow-wrap: break-word;
         }
         .lines-table th {
           text-align: left;
@@ -467,7 +493,7 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
           text-align: right;
           font-variant-numeric: tabular-nums;
         }
-        .time-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .time-cell { font-variant-numeric: tabular-nums; }
         .pending-mark { color: #a33; font-weight: 700; margin-left: 2px; }
         .lines-table tr.day-total-row td {
           border-top: 2px solid #15110d;
