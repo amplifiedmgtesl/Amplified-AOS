@@ -1,6 +1,6 @@
 # Amplified AOS — Change Log
 
-What changed and when, in plain English. Newest entries at the top.
+What changed and when. Newest entries at the top.
 
 ## July 2026
 
