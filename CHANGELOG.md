@@ -4,6 +4,10 @@ What changed and when. Newest entries at the top.
 
 ## July 2026
 
+### July 22 — v2.2.0
+- New Pre-Invoice Summary: from a job, open a client-ready PDF that previews what the invoice will charge — before you generate the actual invoice, so you have something to hand a client on-site for review. Crew is grouped by position, specialty, and matching shift times (everyone who worked the same hours lands on one line), with a separate page for each day and an estimated total. It's priced straight from the rate card, so the numbers match the eventual invoice. Reach it from the new "Pre-Invoice Report" button on a job. Any line missing a rate shows "Rate TBD" so it's easy to catch before sending.
+- Printed documents (quotes, invoices, reports) no longer show the app's on-screen status banners at the top of the page.
+
 ### July 21 — v2.1.1
 - Coordinators can now sign in. The login screen used to reject the Coordinator role outright — which is why coordinator accounts were set to Crew Leader as a workaround. Those accounts can now be switched back to Coordinator (Maintenance → User Management) to get the new scheduling-focused access; they land on the Jobs screen after signing in.
 
