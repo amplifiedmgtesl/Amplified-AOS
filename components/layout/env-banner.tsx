@@ -4,7 +4,7 @@ export function EnvBanner() {
   const label = env === "preview" ? "PREVIEW" : env.toUpperCase();
   return (
     <div
-      className="env-banner"
+      className="env-banner hide-print"
       style={{
         position: "sticky",
         top: 0,
