@@ -4,6 +4,9 @@ What changed and when. Newest entries at the top.
 
 ## July 2026
 
+### July 22 — v2.2.1
+- The Pre-Invoice Summary is now limited to admin roles, the same as Quotes and Invoices — coordinators, crew leaders, and payroll can no longer open it (the button was already hidden for them; this also blocks the direct link).
+
 ### July 22 — v2.2.0
 - New Pre-Invoice Summary: from a job, open a client-ready PDF that previews what the invoice will charge — before you generate the actual invoice, so you have something to hand a client on-site for review. Crew is grouped by position, specialty, and matching shift times (everyone who worked the same hours lands on one line), with a separate page for each day and an estimated total. It's priced straight from the rate card, so the numbers match the eventual invoice. Reach it from the new "Pre-Invoice Report" button on a job. Any line missing a rate shows "Rate TBD" so it's easy to catch before sending.
 - Printed documents (quotes, invoices, reports) no longer show the app's on-screen status banners at the top of the page.
