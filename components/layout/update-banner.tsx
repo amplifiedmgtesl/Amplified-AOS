@@ -44,6 +44,7 @@ export function UpdateBanner() {
 
   return (
     <div
+      className="hide-print"
       style={{
         position: "sticky",
         top: 0,
