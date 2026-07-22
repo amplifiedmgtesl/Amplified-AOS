@@ -11,7 +11,7 @@ Working priority order for active/requested projects. The `#N` ids are stable la
 **RANKED (Now):**
 1. ~~**#5** — Crew Assignment export radius filter (~100 mi)~~ — ✅ SHIPPED TO PROD 7/18
 2. ~~**#9** — Remove Rate Schedule from the quote PDF~~ — ✅ SHIPPED TO PROD 7/18 (as default-off "Include rate schedule" checkbox, John's call)
-3. **#12** — Pre-invoice client report (actual days + billing amounts) (7/14)
+3. ~~**#12** — Pre-invoice client report (actual days + billing amounts) (7/14)~~ — ✅ SHIPPED TO PROD 7/22 (v2.2.0 report + v2.2.1 admin-role lock) — ⏳ **pending Connor testing** (revisions expected)
 4. **#16** — Trim the Timekeeping job dropdown (added 7/18, ranked 7/18) — detail: [`docs/timekeeping-job-list-filter-todo.md`](timekeeping-job-list-filter-todo.md)
 5. **#13** — Add invoice discount (amount/%) (7/14)
 6. **#2** — Timekeeping planned-vs-actual (Phase 0) — verify on dev preview → promote to prod ⎫
