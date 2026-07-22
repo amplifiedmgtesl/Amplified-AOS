@@ -24,6 +24,14 @@ import type { JobRequestShift } from "@/lib/store/types";
 import { supabase } from "@/lib/supabase/client";
 import { isDayModeLine } from "@/lib/rates/line-calc";
 import { parseMinutes } from "@/lib/time-utils";
+import { useUserRole } from "@/lib/auth/use-user-role";
+
+// Roles blocked from all pricing surfaces (Quotes/Invoices/Rate Card/…).
+// This report shows bill rates + totals, so it gets the same block. The
+// route lives under /job-requests (which coordinators/payroll CAN reach) and
+// renders outside AppShell, so the AppShell route guard never runs here — the
+// gate has to live in the view. Mirrors the job-screen button gate.
+const PRICING_BLOCKED_ROLES = new Set(["crew_leader", "payroll", "coordinator"]);
 
 type LoadedJob = {
   id: string;
@@ -138,6 +146,8 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
   const [shiftsById, setShiftsById] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const role = useUserRole();
+  const roleBlocked = role != null && PRICING_BLOCKED_ROLES.has(role);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,6 +187,17 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
     return () => { cancelled = true; };
   }, [jobId]);
 
+  // Pricing block — checked first so a restricted role never sees rates or
+  // totals, even for the instant the report data is loading. Same roles the
+  // Quotes/Invoices route guard blocks.
+  if (roleBlocked) {
+    return (
+      <div style={{ padding: 40, maxWidth: 520, margin: "40px auto" }} className="muted">
+        <h2 style={{ marginTop: 0 }}>Not available for your role</h2>
+        <p>The Pre-Invoice Summary shows billing rates and amounts, so it’s limited to admin roles — the same as Quotes and Invoices.</p>
+      </div>
+    );
+  }
   if (loading) return <div style={{ padding: 40 }} className="muted">Building report…</div>;
   if (error) return <div style={{ padding: 40 }} className="muted">{error}</div>;
   if (!report) return null;
