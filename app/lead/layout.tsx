@@ -11,9 +11,20 @@ const nav = [
   ["/lead/employees", "👥", "Employees"],
 ] as const;
 
+// Matches the mobile breakpoint in globals.css. Below this the sidebar
+// becomes an off-canvas drawer toggled by the topbar hamburger. Mirrors
+// the admin AppShell — without this the crew-leader sidebar slides
+// off-screen on phones with no way to reopen it (the field crews work
+// almost entirely on phones).
+const MOBILE_QUERY = "(max-width: 960px)";
+
 export default function LeadLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [checking, setChecking] = useState(true);
+  // Mobile drawer state — same wiring as AppShell so the shared
+  // `.layout.nav-open` CSS slides the sidebar in on phones.
+  const [isMobile, setIsMobile] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
 
   useEffect(() => {
     async function guard() {
@@ -37,6 +48,20 @@ export default function LeadLayout({ children }: { children: ReactNode }) {
     guard();
   }, []);
 
+  // Track the mobile breakpoint so the drawer logic knows which mode we're in.
+  useEffect(() => {
+    const mq = window.matchMedia(MOBILE_QUERY);
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  // Close the drawer when the route changes (a nav link was followed) or
+  // when we grow back to desktop width.
+  useEffect(() => { setNavOpen(false); }, [pathname]);
+  useEffect(() => { if (!isMobile) setNavOpen(false); }, [isMobile]);
+
   async function handleSignOut() {
     await supabase.auth.signOut();
     window.location.href = "/login";
@@ -50,9 +75,21 @@ export default function LeadLayout({ children }: { children: ReactNode }) {
     );
   }
 
+  const title = nav.find(([href]) => pathname === href || pathname?.startsWith(href + "/"))?.[2] ?? "Crew Leader";
+
   return (
-    <div className="layout">
+    <div className={`layout${navOpen ? " nav-open" : ""}`}>
       <aside className="sidebar">
+        {/* Mobile drawer close button (hidden on desktop via CSS). */}
+        <button
+          type="button"
+          className="drawer-close"
+          onClick={() => setNavOpen(false)}
+          aria-label="Close menu"
+        >
+          ×
+        </button>
+
         <div style={{ textAlign: "center", marginBottom: 20 }}>
           <img src="/branding/client-logo.png" alt="Amplified Logo" className="sidebar-logo" />
           <div className="brand-sub">Crew Leader</div>
@@ -65,6 +102,7 @@ export default function LeadLayout({ children }: { children: ReactNode }) {
             key={href}
             href={href}
             className={`nav-link${pathname === href ? " active" : ""}`}
+            onClick={() => setNavOpen(false)}
           >
             <span style={{ fontSize: 18, marginRight: 10 }}>{icon}</span>
             {label}
@@ -81,7 +119,27 @@ export default function LeadLayout({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
+      {/* Dark backdrop behind the open drawer; tap to dismiss. */}
+      {navOpen ? <div className="nav-backdrop" onClick={() => setNavOpen(false)} /> : null}
+
       <main className="main">
+        <div className="topbar">
+          {/* Hamburger — mobile only (hidden on desktop via CSS). */}
+          <button
+            type="button"
+            className="mobile-menu-btn"
+            onClick={() => setNavOpen(true)}
+            aria-label="Open menu"
+            aria-expanded={navOpen}
+          >
+            ☰
+          </button>
+          <img src="/branding/client-logo.png" alt="Logo" className="header-logo" />
+          <div>
+            <h1 className="page-title">{title}</h1>
+          </div>
+        </div>
+
         {children}
       </main>
     </div>
