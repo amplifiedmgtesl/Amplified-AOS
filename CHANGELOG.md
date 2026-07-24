@@ -4,6 +4,9 @@ What changed and when. Newest entries at the top.
 
 ## July 2026
 
+### July 24 — v2.2.2
+- Fixed: crew leaders on a phone had no navigation menu. The recent phone-usability update turned the side menu into a slide-in drawer opened by a ☰ button, but that button was missing from the crew-leader view — so the Jobs / Timekeeping / Employees menu was off-screen with no way to open it. The ☰ menu button is now back at the top of every crew-leader screen.
+
 ### July 22 — v2.2.1
 - The Pre-Invoice Summary is now limited to admin roles, the same as Quotes and Invoices — coordinators, crew leaders, and payroll can no longer open it (the button was already hidden for them; this also blocks the direct link).
 
