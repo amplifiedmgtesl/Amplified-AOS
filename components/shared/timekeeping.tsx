@@ -169,10 +169,14 @@ if (TK_PERF_ON && typeof window !== "undefined") {
 }
 
 export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false }: { hideBillAlways?: boolean }) {
-  // Coordinators use the admin timekeeping screen but must not see billing
-  // data — same treatment as the crew-leader portal's hideBillAlways.
+  // Coordinators and payroll use the admin timekeeping screen but must not
+  // see billing data — same treatment as the crew-leader portal's
+  // hideBillAlways. Payroll works the pay side; client bill rates are not
+  // theirs to see (they're also walled off from Quotes/Invoices/Rate Card).
   const viewerRole = useUserRole();
-  const hideBillAlways = hideBillAlwaysProp || viewerRole === "coordinator";
+  const hideBillAlways = hideBillAlwaysProp
+    || viewerRole === "coordinator"
+    || viewerRole === "payroll";
   const POSITIONS = positionNames();
   // Phase 3: master tables for cascading Position → Specialty selects.
   // Loaded once and shared across rows.
