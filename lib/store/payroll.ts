@@ -136,6 +136,11 @@ export type PayrollCandidateRow = {
   // real pay-rate source, candidate enrichment swaps in here.
   isHoliday: boolean;
   holidayMultiplier: number | null;
+  /** Effective daily-rules exemption: the parent job's flag OR the entry's
+   *  own. When true this row's shift group skips BOTH daily rules (5hr
+   *  minimum and round-up) and pays the exact hours worked. See migration
+   *  20260804a. */
+  dailyRulesExempt: boolean;
 };
 
 /** Approved, unpaid timesheet entries that are eligible for a new payroll run.
@@ -152,7 +157,8 @@ export async function getPayrollCandidates(filters: PayrollCandidateFilters): Pr
       id, work_date, position, specialty_id, shift_id, first_name, last_name, email, employee_key,
       job_id, job_sheet_id,
       std_hours, ot_hours, dt_hours, total_hours,
-      is_holiday, holiday_multiplier, status
+      is_holiday, holiday_multiplier, status,
+      payroll_daily_rules_exempt
     `)
     .eq("status", "approved");
 
@@ -204,18 +210,24 @@ export async function getPayrollCandidates(filters: PayrollCandidateFilters): Pr
     for (const s of specs ?? []) specialtyNameById.set((s as any).id, (s as any).name);
   }
 
-  // Look up job header info (job_no, client, event_name).
+  // Look up job header info (job_no, client, event_name) + the job-level
+  // payroll exemption, which every entry against the job inherits.
   const jobIds = Array.from(new Set(available.map((r: any) => r.job_id).filter(Boolean)));
-  const jobByid = new Map<string, { jobNo: string | null; client: string; eventName: string }>();
+  const jobByid = new Map<string, { jobNo: string | null; client: string; eventName: string; dailyRulesExempt: boolean }>();
   if (jobIds.length > 0) {
     const { data: jobs, error: jobsErr } = await supabase
       .from("job_requests")
-      .select("id, job_no, client, event_name")
+      .select("id, job_no, client, event_name, payroll_daily_rules_exempt")
       .in("id", jobIds);
     if (jobsErr) { console.error("[payroll] getPayrollCandidates jobs:", jobsErr); }
     for (const j of jobs ?? []) {
       const r = j as any;
-      jobByid.set(r.id, { jobNo: r.job_no ?? null, client: r.client ?? "", eventName: r.event_name ?? "" });
+      jobByid.set(r.id, {
+        jobNo: r.job_no ?? null,
+        client: r.client ?? "",
+        eventName: r.event_name ?? "",
+        dailyRulesExempt: !!r.payroll_daily_rules_exempt,
+      });
     }
   }
 
@@ -243,6 +255,9 @@ export async function getPayrollCandidates(filters: PayrollCandidateFilters): Pr
       totalHours: Number(r.total_hours ?? 0),
       isHoliday: !!r.is_holiday,
       holidayMultiplier: r.holiday_multiplier == null ? null : Number(r.holiday_multiplier),
+      // Job-level exemption (internal/generic job) OR entry-level (late
+      // arrival forfeits the minimum). Either one exempts the row.
+      dailyRulesExempt: !!(job?.dailyRulesExempt) || !!r.payroll_daily_rules_exempt,
     };
   });
 
@@ -385,6 +400,7 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
     stdHours: e.stdHours,
     otHours: e.otHours,
     dtHours: e.dtHours,
+    dailyRulesExempt: e.dailyRulesExempt,
   })), ratesByRowId);
   const rows = input.entries.map((e, i) => {
     const resolved = resolutions[i];
@@ -428,6 +444,9 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
       dt_rate:  calc.dtRate,
       is_holiday: e.isHoliday,
       holiday_multiplier: e.holidayMultiplier,
+      // Snapshot the effective exemption so the run explains its own hours
+      // and recomputeDailyRulesForRun doesn't have to re-derive it.
+      payroll_daily_rules_exempt: e.dailyRulesExempt,
       total_pay: calc.totalPay,
     };
   });
@@ -493,6 +512,7 @@ export async function addEntriesToPayrollRun(
     stdHours: e.stdHours,
     otHours: e.otHours,
     dtHours: e.dtHours,
+    dailyRulesExempt: e.dailyRulesExempt,
   })), ratesByRowId);
 
   // Adding entries to an existing run can cross a daily-group boundary
@@ -545,6 +565,8 @@ export async function addEntriesToPayrollRun(
     dt_rate:  calc.dtRate,
     is_holiday: e.isHoliday,
     holiday_multiplier: e.holidayMultiplier,
+    // Snapshot the effective exemption alongside the hours it produced.
+    payroll_daily_rules_exempt: e.dailyRulesExempt,
     total_pay: calc.totalPay,
     };
   });
@@ -632,11 +654,17 @@ export type DayPayBuckets = {
  *  whole-hour round-up applied. The daily OT/DT split coming in from the
  *  timesheet is preserved verbatim (rule 3) — we only inflate pay_std to
  *  satisfy the minimum, then ceil the total. The extra hours always land
- *  in pay_std (never pay_ot or pay_dt). */
+ *  in pay_std (never pay_ot or pay_dt).
+ *
+ *  `dailyRulesExempt` skips BOTH rules and pays the exact hours worked —
+ *  used by the internal/generic job and by late arrivals who forfeit the
+ *  minimum (migration 20260804a). Connor confirmed 2026-08-04 that the
+ *  round-up is waived alongside the minimum, not just the minimum. */
 export function applyDailyPayrollRules(input: {
   stdHours: number;
   otHours: number;
   dtHours: number;
+  dailyRulesExempt?: boolean;
 }): DayPayBuckets {
   const std = Math.max(0, input.stdHours || 0);
   const ot  = Math.max(0, input.otHours  || 0);
@@ -647,6 +675,18 @@ export function applyDailyPayrollRules(input: {
   // Neither the daily minimum nor the round-up applies. Pay = 0.
   if (billedTotal === 0) {
     return { payStdHours: 0, payOtHours: 0, payDtHours: 0, payTotalHours: 0, reasons: [] };
+  }
+
+  // Exempt: pay exactly what was worked, buckets untouched.
+  if (input.dailyRulesExempt) {
+    const r0 = (n: number) => Math.round(n * 100) / 100;
+    return {
+      payStdHours: r0(std),
+      payOtHours:  r0(ot),
+      payDtHours:  r0(dt),
+      payTotalHours: r0(std + ot + dt),
+      reasons: ["daily rules waived (exempt)"],
+    };
   }
 
   let payStd = std;
@@ -804,11 +844,21 @@ export function applyWeeklySpill(rows: WeekHourRow[]): WeeklySpillResult {
  *  daily rule still bumps to 5 (per Connor's "5hr minimum"). The whole
  *  5hr goes to the highest-rate row, or split equally if all rates are
  *  unknown.
+ *
+ *  Exemptions (migration 20260804a): a row carrying `dailyRulesExempt`
+ *  makes its WHOLE shift group exempt — both the 5hr floor and the
+ *  round-up are skipped and every row in the group pays its exact hours.
+ *  Group-level rather than row-level because the rules themselves are
+ *  group-level: the floor applies to the shift's summed hours, so there is
+ *  no coherent way to waive it for one row and not another. In practice a
+ *  group is one person on one shift, so the flags agree; when they don't,
+ *  exempt wins (the late arrival forfeited that shift's minimum).
  */
 export function applyDailyRulesToCandidates(
   rows: { timesheetEntryId: string; employeeKey: string | null; workDate: string | null;
           shiftId?: string | null; position?: string | null;
-          stdHours: number; otHours: number; dtHours: number; }[],
+          stdHours: number; otHours: number; dtHours: number;
+          dailyRulesExempt?: boolean; }[],
   ratesByRowId?: Map<string, number>,
 ): Map<string, { payStdHours: number; payOtHours: number; payDtHours: number;
                   payTotalHours: number; payAdjustmentReason: string | null; }> {
@@ -840,6 +890,23 @@ export function applyDailyRulesToCandidates(
         out.set(r.timesheetEntryId, {
           payStdHours: 0, payOtHours: 0, payDtHours: 0,
           payTotalHours: 0, payAdjustmentReason: null,
+        });
+      }
+      continue;
+    }
+
+    // Exempt shift group: pay exactly what was worked. No floor, no
+    // round-up, so there's no bump to allocate and the absorber logic
+    // below is skipped entirely. The reason string is still stamped so
+    // the run detail page explains why these hours look "unrounded".
+    if (list.some((r) => r.dailyRulesExempt)) {
+      for (const r of list) {
+        out.set(r.timesheetEntryId, {
+          payStdHours: round2(r.stdHours),
+          payOtHours:  round2(r.otHours),
+          payDtHours:  round2(r.dtHours),
+          payTotalHours: round2(r.stdHours + r.otHours + r.dtHours),
+          payAdjustmentReason: "5hr min + round-up waived (exempt)",
         });
       }
       continue;
@@ -1162,7 +1229,8 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
     .select(`
       id, timesheet_entry_id, employee_key, work_date, position,
       std_hours, ot_hours, dt_hours,
-      std_rate, is_holiday, holiday_multiplier, pay_adjustment_reason
+      std_rate, is_holiday, holiday_multiplier, pay_adjustment_reason,
+      payroll_daily_rules_exempt
     `)
     .eq("payroll_run_id", runId);
   if (error) throw error;
@@ -1193,6 +1261,10 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
     stdHours: Number(r.std_hours ?? 0),
     otHours:  Number(r.ot_hours  ?? 0),
     dtHours:  Number(r.dt_hours  ?? 0),
+    // Use the run's own snapshot, not the live job/entry flags. A recompute
+    // must reproduce what this run was built from; re-deriving would let a
+    // flag flipped after the snapshot silently change a draft's hours.
+    dailyRulesExempt: !!r.payroll_daily_rules_exempt,
   }));
   const ratesByRowId = new Map<string, number>();
   for (const r of data as any[]) {

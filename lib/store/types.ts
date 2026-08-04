@@ -165,6 +165,16 @@ export type TimeEntry = {
   // gate approval). NULL/false on planned + admin-created rows.
   staffFinalized?: boolean;
   staffFinalizedAt?: string | null;
+  // Payroll daily-rules exemption (migration 20260804a). Set by anyone with
+  // timekeeping access when a worker arrives late and forfeits the 5-hour
+  // minimum for that shift. ORed with the parent job's flag at payroll
+  // snapshot time; an exempt row pays exact hours (no floor, no round-up).
+  // Written through setEntryPayrollExempt — NOT through the timesheet
+  // autosave, which skips staff-submitted rows.
+  payrollDailyRulesExempt?: boolean;
+  /** Set while the entry is in a non-voided payroll run. Read-only here;
+   *  used to disable the exemption checkbox once the hours are snapshotted. */
+  payrollRunId?: string | null;
 };
 
 export type Timesheet = {
@@ -488,6 +498,11 @@ export type JobRequest = {
   // Override of which rate card the quote-create flow will use. NULL = auto
   // (effective-date-aware lookup keyed off client_id + request_date).
   rateCardProfileId?: string;
+  /** Payroll daily-rules exemption (migration 20260804a). When true, every
+   *  timesheet entry against this job skips the 5-hour minimum AND the
+   *  round-up to a whole hour — it pays exact hours worked. Set on the
+   *  internal/generic job coordinators log their own time against. */
+  payrollDailyRulesExempt?: boolean;
 };
 
 // Per-day breakdown of a multi-day job request. The legacy flat columns on

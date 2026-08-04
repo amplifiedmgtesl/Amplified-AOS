@@ -13,6 +13,7 @@ import {
   upsertEmployee,
   getPendingStaffEntriesByJobId,
   approveStaffEntry, rejectStaffEntry, setEntryApproved, setEntrySubmitted,
+  setEntryPayrollExempt,
 } from "@/lib/store/app-store";
 import { loadJobCrewSlots } from "@/lib/storage/job-request-assignments";
 import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
@@ -441,6 +442,28 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
     if (!timesheet) return;
     const nextRows = timesheet.rows.map((r) => r.id === id ? computeTimeEntry({ ...r, ...patch }) : r);
     persist({ ...timesheet, rows: nextRows });
+  }
+
+  // Payroll 5hr-minimum exemption. Bypasses persist()/updateRow on purpose:
+  // that path re-upserts the whole timesheet and skips staff-submitted rows
+  // entirely (see syncTimesheet), so the flag would silently vanish on
+  // exactly the rows that need it. Local state is updated directly and the
+  // single column is written on its own.
+  const [exemptSavingIds, setExemptSavingIds] = useState<Set<string>>(new Set());
+  function setRowPayrollExempt(id: string, exempt: boolean) {
+    if (!timesheet) return;
+    const applyLocal = (value: boolean) => setTimesheet((ts) => ts
+      ? { ...ts, rows: ts.rows.map((r) => r.id === id ? { ...r, payrollDailyRulesExempt: value } : r) }
+      : ts);
+    applyLocal(exempt);
+    setExemptSavingIds((s) => new Set(s).add(id));
+    void setEntryPayrollExempt(id, exempt).then((failure) => {
+      setExemptSavingIds((s) => { const n = new Set(s); n.delete(id); return n; });
+      if (failure) {
+        applyLocal(!exempt);
+        alert(`Could not set the 5-hour-minimum exemption.\n\n${failure}`);
+      }
+    });
   }
 
   // True while the "+ Add Crew Member" modal is open. We use a modal-first
@@ -1776,7 +1799,39 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                               🎄 Holiday {Number(effectiveHolidayMultiplier)}×
                             </span>
                           )}
-                          {/* 4. Per-row Delete (escape hatch — bulk Delete is in
+                          {/* 4. Payroll 5-hour-minimum exemption (migration
+                              20260804a). Ticked when the worker showed up late
+                              and forfeits the minimum for this shift. Stays
+                              editable while approved — the flag is usually set
+                              AFTER the fact, and it's a pay-side field the
+                              freeze trigger deliberately doesn't protect. Locks
+                              once the entry is snapshotted into a payroll run,
+                              where the hours are already computed.
+                              Writes immediately via its own targeted update:
+                              the grid's autosave skips staff-submitted rows
+                              (user_id set), which is exactly the population
+                              late arrivals land in. */}
+                          <label
+                            style={{
+                              display: "flex", alignItems: "flex-start", gap: 6,
+                              fontSize: 11,
+                              color: row.payrollRunId ? "#999" : "#666",
+                              cursor: row.payrollRunId ? "not-allowed" : "pointer",
+                            }}
+                            title={row.payrollRunId
+                              ? `Locked by payroll run ${row.payrollRunId} — its hours are already calculated. Void the run to change this.`
+                              : "Worker arrived late and forfeits the 5-hour minimum for this shift. Pays exact hours worked — no minimum, no round-up."}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!row.payrollDailyRulesExempt}
+                              disabled={!!row.payrollRunId || exemptSavingIds.has(row.id)}
+                              onChange={(e) => setRowPayrollExempt(row.id, e.target.checked)}
+                              style={{ marginTop: 1 }}
+                            />
+                            <span>No 5hr min</span>
+                          </label>
+                          {/* 5. Per-row Delete (escape hatch — bulk Delete is in
                               the batch action bar). Pushed to the bottom of the
                               cell. Disabled while approved — the DB freeze
                               trigger would reject the delete anyway. */}
