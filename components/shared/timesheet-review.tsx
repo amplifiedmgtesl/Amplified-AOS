@@ -55,9 +55,10 @@ function payrollLockBadge(r: StaffEntryReviewRow) {
 }
 
 export default function TimesheetReview() {
-  // Coordinators review and approve time but never see billing dollars —
-  // the Bill column and bill totals are hidden for them.
-  const hideBill = useUserRole() === "coordinator";
+  // Coordinators and payroll review and approve time but never see billing
+  // dollars — the Bill column and bill totals are hidden for them.
+  const viewerRole = useUserRole();
+  const hideBill = viewerRole === "coordinator" || viewerRole === "payroll";
   const [rows, setRows] = useState<StaffEntryReviewRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<StatusFilter>("pending");
