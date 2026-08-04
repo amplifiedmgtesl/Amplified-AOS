@@ -104,6 +104,18 @@ export function loadTimesheetForJobLive(jobId: string): Promise<Timesheet | null
 export function deleteTimesheetEntries(ids: string[]): Promise<db.DeleteEntriesResult> {
   return db.deleteTimesheetEntries(ids);
 }
+// Payroll daily-rules exemption on a whole job (the internal/generic job
+// coordinators log time against). Targeted update — the job form is disabled
+// for non-'lead' jobs, so this can't ride the form's save.
+export function setJobPayrollExempt(jobId: string, exempt: boolean): Promise<string | null> {
+  return db.setJobPayrollExempt(jobId, exempt);
+}
+// Payroll daily-rules exemption on a single entry (late arrival forfeits the
+// 5hr minimum). Targeted update — works on staff-submitted rows too. Resolves
+// to null on success, or a reason string when refused.
+export function setEntryPayrollExempt(entryId: string, exempt: boolean): Promise<string | null> {
+  return db.setEntryPayrollExempt(entryId, exempt);
+}
 export async function getPendingStaffEntriesByJobId(jobId: string) {
   return db.getPendingStaffEntriesByJobId(jobId);
 }

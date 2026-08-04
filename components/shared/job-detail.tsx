@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { upsertJobRequest, deleteJobRequest, loadJobRequests } from "@/lib/store/app-store";
+import { upsertJobRequest, deleteJobRequest, loadJobRequests, setJobPayrollExempt } from "@/lib/store/app-store";
 import { createDraftFromJob, pickRateCardForJob, loadJobQuoteState } from "@/lib/store/quotes";
 import { googleCalendarLink } from "@/lib/store/calendar";
 import { timeOptions } from "@/lib/store/timekeeping";
@@ -186,6 +186,8 @@ export default function JobDetail({
   const isCoordinator = role === "coordinator";
   const timesheetHref = isCrewLeader ? "/lead/timekeeping" : "/timekeeping";
 
+  const [exemptSaving, setExemptSaving] = useState(false);
+  const [exemptMsg, setExemptMsg] = useState<string>("");
   const [openDraftId, setOpenDraftId] = useState<string | null>(null);
   const [latestIssuedId, setLatestIssuedId] = useState<string | null>(null);
   const [applicableRateCardLabel, setApplicableRateCardLabel] = useState<string>("");
@@ -347,6 +349,26 @@ export default function JobDetail({
       router.replace(`${basePath}/${encodeURIComponent(row.id)}`);
     } else {
       setMsg("Saved.");
+    }
+  }
+
+  // Payroll exemption writes immediately on click rather than waiting for
+  // the form's Save, which isn't reachable on a locked (non-'lead') job.
+  // Optimistic: flip locally, revert if the write is refused.
+  async function savePayrollExempt(next: boolean) {
+    if (!form.id) return;
+    const previous = !!form.payrollDailyRulesExempt;
+    setForm((f) => ({ ...f, payrollDailyRulesExempt: next }));
+    setExemptSaving(true);
+    setExemptMsg("");
+    const failure = await setJobPayrollExempt(form.id, next);
+    setExemptSaving(false);
+    if (failure) {
+      setForm((f) => ({ ...f, payrollDailyRulesExempt: previous }));
+      setExemptMsg(failure);
+    } else {
+      setExemptMsg("Saved.");
+      setTimeout(() => setExemptMsg(""), 2500);
     }
   }
 
@@ -626,6 +648,34 @@ export default function JobDetail({
                 );
               })}
           </select>
+        </div>
+        )}
+
+        {/* Payroll daily-rules exemption (migration 20260804a). Saves on
+            click via its own targeted update — deliberately NOT part of the
+            form's save, because every form field is disabled once the job
+            leaves 'lead' status and the job this exists for (the standing
+            internal job coordinators book their own time to) is long past
+            that. Hidden from crew leaders and coordinators; read-only for
+            payroll, whose whole job view is read-only. */}
+        {editingId && !isCrewLeader && !isCoordinator && (
+        <div style={{ marginTop: 12, fontSize: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <input
+              type="checkbox"
+              disabled={isPayroll || exemptSaving}
+              checked={!!form.payrollDailyRulesExempt}
+              onChange={(e) => savePayrollExempt(e.target.checked)}
+            />
+            <span>Exempt from the 5-hour payroll minimum</span>
+          </label>
+          <span className="muted" style={{ fontSize: 11 }}>
+            Time booked to this job pays the exact hours worked — no 5-hour
+            floor and no round-up to a whole hour. For internal/office jobs.
+          </span>
+          {exemptMsg && (
+            <span className="badge" style={{ fontSize: 11 }}>{exemptMsg}</span>
+          )}
         </div>
         )}
 

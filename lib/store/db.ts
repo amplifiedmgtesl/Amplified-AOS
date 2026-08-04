@@ -791,6 +791,86 @@ export async function deleteTimesheetEntries(ids: string[]): Promise<DeleteEntri
   return { deleted: deletable, skipped, error: null };
 }
 
+/** Flip the payroll daily-rules exemption on one job.
+ *
+ *  A targeted UPDATE rather than a field on the job form, because the form
+ *  disables every input once the job leaves 'lead' status
+ *  (`isLocked` in job-detail.tsx) — and the job this exists for, Connor's
+ *  standing internal/generic job, is long past 'lead'. Routing it through
+ *  the form would render a checkbox that can never be ticked.
+ *
+ *  Returns null on success, or a human-readable reason it failed. */
+export async function setJobPayrollExempt(
+  jobId: string,
+  exempt: boolean,
+): Promise<string | null> {
+  const { error } = await supabase
+    .from("job_requests")
+    .update({ payroll_daily_rules_exempt: exempt })
+    .eq("id", jobId);
+  if (error) {
+    console.error("[db] setJobPayrollExempt:", error);
+    return "Could not save the change — try again.";
+  }
+  _cache.jobRequests = _cache.jobRequests.map((j) =>
+    j.id === jobId ? { ...j, payrollDailyRulesExempt: exempt } : j
+  );
+  return null;
+}
+
+/** Flip the payroll daily-rules exemption on one timesheet entry.
+ *
+ *  Deliberately a targeted UPDATE rather than a field on the grid's
+ *  autosave path. syncTimesheet only upserts AOS-managed rows
+ *  (`user_id IS NULL`), so routing this through it would silently drop the
+ *  change on every staff-submitted entry — and late arrivals, which are
+ *  exactly what this flag is for, are frequently staff-submitted. A
+ *  single-column update also avoids re-writing hours on an invoice-bound
+ *  row, which the freeze trigger would reject.
+ *
+ *  Refuses entries already snapshotted into a payroll run: the run carries
+ *  its own copy of the flag and its pay hours are already computed, so a
+ *  late flip here would disagree with what's being paid. Void the run (or
+ *  remove the entry from it) to change it.
+ *
+ *  Returns null on success, or a human-readable reason it was refused. */
+export async function setEntryPayrollExempt(
+  entryId: string,
+  exempt: boolean,
+): Promise<string | null> {
+  const { data: existing, error: readErr } = await supabase
+    .from("timesheet_entries")
+    .select("id, payroll_run_id")
+    .eq("id", entryId)
+    .maybeSingle();
+  if (readErr) {
+    console.error("[db] setEntryPayrollExempt read:", readErr);
+    return "Could not read the entry — try again.";
+  }
+  if (!existing) return "That entry no longer exists — reload the page.";
+  if ((existing as any).payroll_run_id) {
+    return `Locked by payroll run ${(existing as any).payroll_run_id}. Void the run to change this.`;
+  }
+
+  const { error } = await supabase
+    .from("timesheet_entries")
+    .update({ payroll_daily_rules_exempt: exempt })
+    .eq("id", entryId);
+  if (error) {
+    console.error("[db] setEntryPayrollExempt update:", error);
+    return "Could not save the change — try again.";
+  }
+
+  // Keep the shared cache in step so other screens reading getTimesheets()
+  // don't show a stale value until the next full load.
+  _cache.timesheets = _cache.timesheets.map((t) =>
+    t.rows.some((r) => r.id === entryId)
+      ? { ...t, rows: t.rows.map((r) => r.id === entryId ? { ...r, payrollDailyRulesExempt: exempt } : r) }
+      : t
+  );
+  return null;
+}
+
 function syncTimesheet(t: Timesheet) {
   // Upsert header (no rows column). job_sheet_id is no longer written —
   // legacy timesheets keep their stored value (upsert only touches the
@@ -1136,6 +1216,7 @@ function rowToJobRequest(r: any): JobRequest {
     jobNo: r.job_no ?? undefined,
     eventAbbr: r.event_abbr ?? undefined,
     rateCardProfileId: r.rate_card_profile_id ?? undefined,
+    payrollDailyRulesExempt: !!r.payroll_daily_rules_exempt,
   };
 }
 
@@ -1234,6 +1315,12 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     // AOS never clobbers it — timesheetEntryToRow omits the column).
     staffFinalized: !!r.staff_finalized,
     staffFinalizedAt: r.staff_finalized_at ?? null,
+    // Payroll daily-rules exemption. Like staff_finalized, this is read here
+    // but NOT written by timesheetEntryToRow — it has its own targeted write
+    // (setEntryPayrollExempt) so it also works on staff-submitted rows, which
+    // syncTimesheet deliberately skips.
+    payrollDailyRulesExempt: !!r.payroll_daily_rules_exempt,
+    payrollRunId: r.payroll_run_id ?? null,
   };
 }
 
@@ -1606,6 +1693,7 @@ function jobRequestToRow(j: JobRequest) {
     job_no: j.jobNo ?? null,
     event_abbr: j.eventAbbr ?? null,
     rate_card_profile_id: j.rateCardProfileId ?? null,
+    payroll_daily_rules_exempt: !!j.payrollDailyRulesExempt,
   };
 }
 

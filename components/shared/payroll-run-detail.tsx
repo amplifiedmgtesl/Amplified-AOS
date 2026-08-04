@@ -508,7 +508,8 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
       `Re-apply Connor's daily payroll rules to every entry?\n\n` +
       `• ${PAYROLL_DAILY_MINIMUM_HOURS}-hour daily minimum per (employee, work date)\n` +
       `• Round up to next whole hour\n` +
-      `• Extras land in pay_std (OT/DT classifications preserved)\n\n` +
+      `• Extras land in pay_std (OT/DT classifications preserved)\n` +
+      `• Entries flagged exempt skip BOTH rules and keep their exact hours\n\n` +
       `Use this when entries were added before the rules were live or via a data fix. ` +
       `Total pay recomputes from the existing rates. The weekly OT calc resets.`
     )) return;
