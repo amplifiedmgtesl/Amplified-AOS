@@ -1817,8 +1817,9 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                               late arrivals land in. */}
                           <label
                             style={{
-                              display: "flex", alignItems: "flex-start", gap: 6,
+                              display: "flex", alignItems: "center", gap: 6,
                               fontSize: 11,
+                              whiteSpace: "nowrap",
                               color: row.payrollRunId ? "#999" : "#666",
                               cursor: row.payrollRunId ? "not-allowed" : "pointer",
                             }}
@@ -1831,7 +1832,6 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                               checked={!!row.payrollDailyRulesExempt}
                               disabled={!!row.payrollRunId || exemptSavingIds.has(row.id)}
                               onChange={(e) => setRowPayrollExempt(row.id, e.target.checked)}
-                              style={{ marginTop: 1 }}
                             />
                             <span>No 5hr min</span>
                           </label>
