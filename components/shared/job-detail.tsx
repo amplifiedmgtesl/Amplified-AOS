@@ -412,6 +412,24 @@ export default function JobDetail({
     clientCode: form.clientId ? clientById.get(form.clientId)?.code : undefined,
     eventAbbr: effectiveEventAbbr,
   }), [form.requestDate, form.endDate, form.clientId, effectiveEventAbbr, clientById]);
+  // What's actually blocking the job number? computeJobNo needs FOUR inputs,
+  // and the one the old hint never mentioned — the client's 3-character Code —
+  // is the one that silently blocks numbering: a client can be selected and
+  // still have no code, which is the common case (most client records don't
+  // have one). Name the specific gap rather than reciting the requirements.
+  const jobNoMissing = useMemo(() => {
+    if (liveJobNo) return [];
+    const gaps: string[] = [];
+    const client = form.clientId ? clientById.get(form.clientId) : undefined;
+    if (!form.clientId) gaps.push("Client");
+    else if (!client?.code) {
+      gaps.push(`a 3-character Code on client “${client?.name || form.client || "—"}” — set it on the Clients screen`);
+    }
+    if (!effectiveEventAbbr) gaps.push("Event Name");
+    if (!form.requestDate)   gaps.push("Event Start Date");
+    return gaps;
+  }, [liveJobNo, form.clientId, form.client, effectiveEventAbbr, form.requestDate, clientById]);
+
   const statusLabel = JOB_REQUEST_STATUSES.find((s) => s.value === form.status)?.label ?? form.status;
 
   const backLink = (
@@ -473,8 +491,10 @@ export default function JobDetail({
         }}>
           <small style={{ opacity: 0.7 }}>Job #</small>
           <strong style={{ fontFamily: "monospace", fontSize: 15, letterSpacing: 0.4 }}>
-            {liveJobNo ?? <span style={{ opacity: 0.5, fontWeight: 400, fontStyle: "italic" }}>
-              will be assigned once Client + Event Name + Start Date are set
+            {liveJobNo ?? <span style={{ opacity: 0.6, fontWeight: 400, fontStyle: "italic", fontFamily: "inherit", fontSize: 13 }}>
+              {jobNoMissing.length > 0
+                ? <>waiting on {jobNoMissing.join(" · ")}</>
+                : <>will be assigned once Client (with a 3-character Code), Event Name and Event Start Date are set</>}
             </span>}
           </strong>
           {isLocked && liveJobNo && (
