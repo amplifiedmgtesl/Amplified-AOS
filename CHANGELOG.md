@@ -2,6 +2,17 @@
 
 What changed and when. Newest entries at the top.
 
+## August 2026
+
+### August 4 — v2.3.1
+- Timekeeping: the Status column on the right of the grid is more compact. The "No 5hr min" label was wrapping onto three lines, which added height to every crew row. Checkboxes across that grid were being stretched to a fixed width, which also left the "Select" tick box sitting a gap away from its own label — both are fixed.
+- The Job # message now tells you exactly what it's waiting for instead of listing everything. In particular it now names the client's 3-character Code, which is required for a job number but was never mentioned — so a job could have a client, an event name and a start date and still show no number with no explanation. Client codes are set on the Clients screen.
+
+### August 4 — v2.3.0
+- Payroll users can now open Timekeeping and Timesheet Review, and approve or reject submitted time. Billing amounts stay hidden on both screens, the same as for coordinators and crew leaders.
+- Jobs can now be marked exempt from the 5-hour payroll minimum, using a checkbox on the job screen. Time booked to an exempt job pays the exact hours worked — no 5-hour minimum and no rounding up to the next whole hour. This is for internal or office jobs, like the one coordinators log their own time against.
+- Individual timesheet entries can also be marked exempt, using the "No 5hr min" checkbox on each row in Timekeeping. Use it when someone shows up late for a call: they still get paid for the time they worked, but forfeit the 5-hour minimum for that shift. Anyone with Timekeeping access can set it, including crew leaders. The checkbox locks once the entry has been pulled into a payroll run.
+
 ## July 2026
 
 ### July 24 — v2.2.2
