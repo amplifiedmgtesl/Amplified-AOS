@@ -22,6 +22,18 @@ Currently covered:
 | `rates/ot-trigger.test.ts` | `computeDayHourSplit` and the trigger parsers |
 | `rates/timesheet-group-pricing.test.ts` | `buildBillRateMap`, `priceTimesheetGroup` — timesheet group → invoice line, day-rate floor and overflow |
 | `store/invoice-math.test.ts` | subtotals, deposit amount, deposit credit, amount due, balance due |
+| `store/invoice-display.test.ts` | `invoiceHolidayLookup` (drives the holiday multiplier), quote + invoice `displayStatus` |
+
+That is the complete set of pure functions on the invoicing path. What remains
+untested in `lib/store/invoices.ts`, `lib/storage/invoice-days.ts`,
+`lib/store/invoice-payments.ts` and `lib/reports/pre-invoice-report.ts` is
+`async` and database-bound — see below.
+
+**Not yet covered, but testable:** the payroll rules in `lib/store/payroll.ts`
+(`applyDailyPayrollRules`, `applyWeeklySpill`, `applyDailyRulesToCandidates`,
+`recomputePayFromBase`, `payWeekStartFor`), plus `lib/time-utils.ts` and
+`lib/jobs/job-no.ts`. All pure, all worth doing; deferred only because
+invoicing was scoped first.
 
 ## What is deliberately NOT covered
 
