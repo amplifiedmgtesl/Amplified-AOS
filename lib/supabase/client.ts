@@ -1,7 +1,12 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { assertNotProdInDev } from "./env-guard";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+
+// Refuse to run a local dev server against the production database. No-op in
+// production and preview builds (both run with NODE_ENV === "production").
+assertNotProdInDev(supabaseUrl, "supabase (browser client)");
 
 // Simple in-process mutex per lock name. Used in place of the default
 // navigator-locks–based coordination that gotrue-js uses.
