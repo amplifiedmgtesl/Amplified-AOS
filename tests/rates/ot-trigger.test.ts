@@ -78,11 +78,13 @@ describe("computeDayHourSplit", () => {
   });
 
   // ── The hardcoded DT boundary ────────────────────────────────────────────
-  // These tests document current behavior; they are NOT an endorsement of it.
+  // These tests document current behavior, not desired behavior.
   // computeDayHourSplit fixes double-time at 15 hours regardless of the rate
   // card's dt_after column. The live billing path (lib/store/timekeeping.ts)
-  // honors billDtAfter instead, so the two can disagree. This function is
-  // reached only from components/shared/job-costing.tsx (margin analysis).
+  // honors billDtAfter instead, so the two disagree — but this function is
+  // reached ONLY from components/shared/job-costing.tsx, and job costing is a
+  // known-outdated module slated for a full rework (backlog #25). Not a live
+  // billing issue; do not "fix" it here ahead of that rework.
   it("starts DT at a hardcoded 15 hours, ignoring any configured dt_after", () => {
     expect(computeDayHourSplit(17, { kind: "daily", hours: 10 }))
       .toEqual({ st: 10, ot: 5, dt: 2 });

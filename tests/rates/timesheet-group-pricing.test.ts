@@ -190,8 +190,9 @@ describe("priceTimesheetGroup — day mode", () => {
   // For Connor's CCMF card every position divides evenly (350/35, 380/38,
   // 500/50) so the floor is exactly 10. These tests pin what happens when a
   // rate card does not divide evenly — the floor becomes a rounded value
-  // nobody explicitly chose. Flagged for a business decision; behavior here
-  // is documented, not endorsed.
+  // nobody explicitly chose. Tracked as backlog #36 (store the floor vs. warn
+  // on non-integer ratios) pending John's decision; behavior here is
+  // documented, not endorsed.
   it("derives the floor from the day/hourly ratio", () => {
     const { line } = priceTimesheetGroup(
       group({ stdHours: 12, crewCount: 1, workerTotalHours: new Map([["w1", 12]]) }),
