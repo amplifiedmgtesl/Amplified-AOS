@@ -57,6 +57,30 @@ git commit --allow-empty -m "chore: trigger production deploy of <sha>"
 - The version under the Sign out button shows the new number.
 - The /changelog page's top entry matches it and describes what just shipped.
 
+## 6. Sync `dev` back up to `main`
+
+Merge `main` into `dev` immediately after the promotion, so the two agree on
+`CHANGELOG.md` and `package.json`.
+
+```
+git checkout dev && git merge main
+```
+
+**Why this step exists.** When a promotion is made by merging a feature branch
+straight to `main` — which is the normal path for anything that has to ship
+independently of work parked on `dev` — the changelog entry and version bump
+land on `main` only. Nothing carries them back. `dev` then reports an older
+version than production and its changelog is missing the entries that shipped.
+
+Skipped after v2.2.0, v2.2.1 and v2.2.2; caught 2026-08-04, when `dev` was
+still declaring v2.1.1 with a changelog stopping at July 21. Two costs when it
+drifts: the dev preview lies about which version it is, and the next
+`dev`→`main` merge tries to *delete* shipped changelog entries from prod,
+which surfaces as a conflict someone has to resolve correctly under pressure.
+
+Verify with `git diff main dev -- CHANGELOG.md package.json` — it should come
+back empty. Anything else in a `main`-vs-`dev` diff is genuine parked work.
+
 ## Why entries are written at promotion time
 
 The /changelog page renders the CHANGELOG.md **baked into the deployed
