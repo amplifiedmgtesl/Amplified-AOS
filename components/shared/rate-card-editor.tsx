@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { printWithTitle } from "@/lib/print-with-title";
 import { DEFAULT_RATE_ROWS, type TriggerOption, type RateRow } from "@/lib/rates/defaults";
 import { triggerLabel } from "@/lib/rates/ot-trigger";
+import { deriveDayFloor, dayFloorIsExact, suggestedDayRate } from "@/lib/rates/day-floor";
 import { positionNames } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
 import type { Client } from "@/lib/store/types";
@@ -492,7 +493,19 @@ export default function RateCardEditor() {
                         dtRate: Number((h * 2).toFixed(2)),
                       });
                     }} /></td>
-                    <td><input type="number" disabled={mode === "none"} value={row.day} onChange={(e) => updateRow(index, { day: Number(e.target.value || 0) })} /></td>
+                    {/* Day rate. The hours a day rate covers per worker is
+                        NOT stored — it's derived as round(day / hourly)
+                        (see lib/rates/day-floor.ts). When those don't divide
+                        evenly the floor is a rounded number nobody chose, so
+                        flag it here while the rates are still editable.
+                        Backlog #36; storing the floor is the real fix. */}
+                    <td style={dayFloorIsExact(row.day, row.hourly) ? undefined : { background: "#fff4d6" }}>
+                      <input type="number" disabled={mode === "none"} value={row.day}
+                        title={dayFloorIsExact(row.day, row.hourly)
+                          ? "Day rate. Divided by the hourly rate to determine how many hours the day rate covers before overflow bills hourly."
+                          : `⚠ ${row.day} ÷ ${row.hourly} = ${(row.day / row.hourly).toFixed(2)} hrs, so this day rate is treated as covering ${deriveDayFloor(row.day, row.hourly)} hrs per worker. Overflow starts there. For an even split use a day rate of ${suggestedDayRate(row.day, row.hourly).toFixed(2)}.`}
+                        onChange={(e) => updateRow(index, { day: Number(e.target.value || 0) })} />
+                    </td>
                     <td><input type="number" disabled={mode === "none"} value={row.otRate} onChange={(e) => updateRow(index, { otRate: Number(e.target.value || 0) })} /></td>
                     <td><input type="number" disabled={mode === "none"} value={row.dtRate} onChange={(e) => updateRow(index, { dtRate: Number(e.target.value || 0) })} /></td>
                     {/* ── Pay rates (admin-only, never client-facing) ──

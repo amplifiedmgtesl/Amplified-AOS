@@ -29,11 +29,11 @@ untested in `lib/store/invoices.ts`, `lib/storage/invoice-days.ts`,
 `lib/store/invoice-payments.ts` and `lib/reports/pre-invoice-report.ts` is
 `async` and database-bound — see below.
 
-**Not yet covered, but testable:** the payroll rules in `lib/store/payroll.ts`
-(`applyDailyPayrollRules`, `applyWeeklySpill`, `applyDailyRulesToCandidates`,
-`recomputePayFromBase`, `payWeekStartFor`), plus `lib/time-utils.ts` and
-`lib/jobs/job-no.ts`. All pure, all worth doing; deferred only because
-invoicing was scoped first.
+| `rates/day-floor.test.ts` | `deriveDayFloor`, `dayFloorIsExact`, `suggestedDayRate` |
+| `store/payroll-rules.test.ts` | the 5-hour daily minimum, whole-hour round-up, exemptions, weekly 40-hr OT spill, shift grouping and bump allocation, pay-rate recompute |
+
+**Not yet covered, but testable:** `lib/time-utils.ts` (overnight shifts,
+midnight rollover) and `lib/jobs/job-no.ts`. Both pure.
 
 ## What is deliberately NOT covered
 
