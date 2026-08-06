@@ -11,6 +11,13 @@
  */
 
 import { supabase } from "@/lib/supabase/client";
+import {
+  sumLineTotals,
+  computeAmountDue,
+  computeDepositAmount,
+  computeDepositCredit,
+  computeBalanceDue,
+} from "./invoice-math";
 import type { InvoiceDraft, QuoteLine, QuoteDraft } from "./types";
 import {
   snapshotInvoiceDaysFromQuote,
@@ -279,8 +286,9 @@ export async function getAlreadyBilledTimesheetEntryIds(jobRequestId: string): P
  */
 /** Default deposit fraction when the caller doesn't specify and the quote
  *  itself doesn't carry a deposit_pct. Connor's rule: 50% deposit on
- *  every new event unless the operator overrides at generation time. */
-export const DEFAULT_DEPOSIT_PCT = 50;
+ *  every new event unless the operator overrides at generation time.
+ *  Defined in ./invoice-math and re-exported here for existing importers. */
+export { DEFAULT_DEPOSIT_PCT } from "./invoice-math";
 
 /** Look up the currently-active (non-draft, non-superseded, non-void) deposit
  *  invoice for a job, if any. Returned shape mirrors what the caller needs
@@ -360,21 +368,14 @@ export async function createDepositDraftFromQuote(
     .eq("is_draft", true);
   if (clearErr) throw clearErr;
 
-  // Deposit amount precedence:
-  //   1. Explicit override from the caller (operator typed a value in the
-  //      Generate Deposit modal) — wins, always rounded to cents.
-  //   2. The quote's stored deposit_pct, if non-zero.
-  //   3. Default 50% of quote total.
-  // All paths round to cents.
-  const quoteTotal = Number(q.total ?? 0);
-  let depositAmount: number;
-  if (opts.amount != null) {
-    depositAmount = Math.round(opts.amount * 100) / 100;
-  } else if (q.deposit_pct != null && Number(q.deposit_pct) > 0) {
-    depositAmount = Math.round((quoteTotal * (Number(q.deposit_pct) / 100)) * 100) / 100;
-  } else {
-    depositAmount = Math.round((quoteTotal * (DEFAULT_DEPOSIT_PCT / 100)) * 100) / 100;
-  }
+  // Precedence (explicit override > quote deposit_pct > 50% default) and the
+  // cent rounding live in computeDepositAmount. `opts.amount` is the value the
+  // operator typed in the Generate Deposit modal.
+  const depositAmount = computeDepositAmount({
+    quoteTotal: Number(q.total ?? 0),
+    explicitAmount: opts.amount,
+    quoteDepositPct: q.deposit_pct,
+  });
   if (depositAmount <= 0) {
     throw new Error("Deposit amount must be greater than zero.");
   }
@@ -477,24 +478,17 @@ export async function createFinalDraftFromQuote(
   const alreadyBilled = await getAlreadyBilledQuoteLineIds(q.job_request_id);
   quoteLines = quoteLines.filter((l: any) => !alreadyBilled.has(l.id));
 
-  const subtotal = Math.round(quoteLines.reduce((s: number, l: any) => s + (l.total || 0), 0) * 100) / 100;
+  const subtotal = sumLineTotals(quoteLines);
 
-  // Compute deposit credit available for this job.
-  //
-  // Deposit credit = deposit invoice's subtotal (the BILLED amount), not its
-  // paid_amount. The deposit and final are separate invoices for the same
-  // engagement; the customer owes (deposit) + (final − deposit applied) =
-  // (full job total) regardless of when they pay either one. Tying credit
-  // to paid_amount would mis-state the final's balance due whenever the
-  // customer hasn't paid the deposit yet — they'd appear to owe the full
-  // job total on the final, double-counting the deposit invoice.
+  // Compute deposit credit available for this job. The arithmetic (and the
+  // reasoning for crediting billed-not-paid) lives in computeDepositCredit
+  // in ./invoice-math; here we just gather the active rows it needs.
   const depositInvRes = await supabase
     .from("invoices")
     .select("subtotal, paid_amount")
     .eq("job_request_id", q.job_request_id)
     .eq("invoice_type", "deposit")
     .or("status.is.null,and(status.neq.superseded,status.neq.void)");
-  const depositBilled = (depositInvRes.data ?? []).reduce((s: number, r: any) => s + (r.subtotal ?? 0), 0);
 
   const finalsAppliedRes = await supabase
     .from("invoices")
@@ -502,10 +496,12 @@ export async function createFinalDraftFromQuote(
     .eq("job_request_id", q.job_request_id)
     .eq("invoice_type", "final")
     .or("status.is.null,and(status.neq.superseded,status.neq.void)");
-  const alreadyApplied = (finalsAppliedRes.data ?? []).reduce((s: number, r: any) => s + (r.deposit_applied ?? 0), 0);
 
-  const depositCreditAvailable = Math.max(0, depositBilled - alreadyApplied);
-  const depositApplied = Math.min(depositCreditAvailable, subtotal);
+  const { depositApplied } = computeDepositCredit({
+    depositRows: depositInvRes.data ?? [],
+    finalRows: finalsAppliedRes.data ?? [],
+    subtotal,
+  });
 
   const draftId = newInvoiceId();
   const draft: InvoiceDraft = {
@@ -547,7 +543,7 @@ export async function createFinalDraftFromQuote(
     })),
     subtotal,
     deposit: 0,
-    amountDue: subtotal - depositApplied,
+    amountDue: computeAmountDue(subtotal, depositApplied, 0),
     terms: q.terms ?? "",
     notes: "",
     status: null,
@@ -1059,10 +1055,10 @@ export async function overwriteFromTimesheets(
   const finalLinesRes = await supabase
     .from("invoice_lines").select("total").eq("invoice_id", invoiceId);
   if (finalLinesRes.error) throw finalLinesRes.error;
-  const finalSubtotal = +((finalLinesRes.data ?? []).reduce(
-    (s: number, r: any) => s + Number(r.total ?? 0), 0,
-  )).toFixed(2);
-  const newAmountDue = +(finalSubtotal - (inv.depositApplied ?? 0) - (inv.creditsApplied ?? 0)).toFixed(2);
+  const finalSubtotal = sumLineTotals(finalLinesRes.data ?? []);
+  const newAmountDue = computeAmountDue(
+    finalSubtotal, inv.depositApplied ?? 0, inv.creditsApplied ?? 0,
+  );
   const { error: hdrErr } = await supabase
     .from("invoices")
     .update({ subtotal: finalSubtotal, amount_due: newAmountDue, updated_at: new Date().toISOString() })
@@ -1266,5 +1262,5 @@ export function displayStatus(inv: InvoiceDraft): string {
 
 /** Compute balance due (subtotal − deposit_applied − credits_applied − amount_paid). */
 export function balanceDue(inv: InvoiceDraft): number {
-  return Math.round(((inv.subtotal ?? 0) - (inv.depositApplied ?? 0) - (inv.creditsApplied ?? 0) - (inv.paidAmount ?? 0)) * 100) / 100;
+  return computeBalanceDue(inv);
 }
