@@ -77,6 +77,29 @@ presentation around Phase 0 — not to the planned/actual model.
 **Blockers before Phase 0 promotion:** #38, #39, #43, #46 (schedule report at minimum).
 **Blockers before kiosk rollout:** #44, #56, plus the #49–#53 screen redesign.
 
+> **🎯 ROUND-2 FIX LIST (John, 2026-08-11) — fix these BEFORE the next test round:**
+> **#38, #39, #40, #41, #42, #43, #47, #49, #50, #51, #52, #53, #54.**
+>
+> **Deferred to after round 2 — and deliberately SKIPPED during that testing, since we know they're
+> outstanding:** #44, #45, #46, #48, #55, #56, #57, #58. Do not re-report them as new findings.
+>
+> Practical consequences of that split, for whoever runs round 2:
+> - **#56 deferred → round 2 stays on desktop.** No phone testing; the signature pad still overflows.
+> - **#44/#45 deferred → round 2 stays AOS + kiosk only.** Keep the staff app out of it entirely; #44
+>   cannot fire while every row's `user_id` is NULL, so avoid touching those rows from the staff app.
+> - **#46 deferred → skip all printing in round 2.** The three-artifact split hasn't been built, so the
+>   sign-in sheet is still the wrong document.
+> - **#57 deferred → rates will still be wrong unless the test job has a quote.** Either seed a quote
+>   against the intended rate card so downstream numbers are meaningful, or accept `$35` everywhere and
+>   don't evaluate anything billing-related. Decide before seeding, not after.
+>
+> **#57 scoping note (John, 2026-08-11): "seems like it might need its own project, and only is an issue
+> if a quote does not exist."** Agreed on it being its own project. ⚠ But it is **not** strictly
+> quote-only: `lib/store/db.ts:1296` does `Number(r.bill_std_rate) || 35` on every read, so a stored rate
+> of 0/NULL becomes $35 even when a quote exists — reachable whenever a specialty is missing from the
+> resolved rate card (e.g. the Rhino card has no "Lead" row, so Lead lines legitimately have no rate).
+> Scope the project as "rate resolution + no invented literals", not "handle the no-quote case".
+
 - **#38 — Day rows can exist with no time window; every planned surface silently blanks** (2026-08-11).
   Days are already mandatory for crew (`job-request-crew-section.tsx:464` blocks the tab at zero days, and
   assignments are FK'd to `job_request_day_id`). But a day with NULL `start_time`/`end_time` is allowed and
