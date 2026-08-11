@@ -113,7 +113,43 @@ export const jobCompletenessChecks: CheckFn[] = [
     return findings;
   },
 
-  // 6. Job requirements / packet notes — the user-specified example
+  // 6. Every day has a time window (#38)
+  //
+  // Days are already mandatory for crew — the Assigned Crew tab blocks at zero
+  // days and assignments are FK'd to job_request_day_id — but a day with NULL
+  // start_time/end_time is allowed, and it degrades silently rather than
+  // loudly: the Assigned Crew window renders empty, per-worker planned times
+  // have nothing to fall back to, "Copy planned → actual" copies nothing, and
+  // the printed sign-in sheet's Expected column goes blank. That last one is
+  // the real harm — a sheet goes on-site with no expected times on it.
+  //
+  // Deliberately a WARNING, not a blocker (John's call): jobs legitimately
+  // exist as leads before the schedule is known, and a hard requirement would
+  // just push people to type fake times to get past it.
+  (ctx) => {
+    const findings: Finding[] = [];
+    const assignedDayIds = new Set(ctx.assignments.map((a) => a.jobRequestDayId));
+    for (const d of ctx.days) {
+      if (d.startTime || d.endTime || d.startTime2 || d.endTime2) continue;
+      const hasCrew = assignedDayIds.has(d.id);
+      findings.push({
+        id: `job.day_no_time_window:${d.id}`,
+        severity: "warning",
+        category: "job",
+        title: `No time window on ${d.eventDate}`,
+        detail: hasCrew
+          ? "The day has crew assigned but no start/end times, so there is no schedule for them to fall back to."
+          : "The day has no start/end times set.",
+        downstream:
+          "The printed sign-in sheet's Expected column prints blank for anyone without their own planned times, " +
+          "and \"Copy planned → actual\" has nothing to copy.",
+        fixLabel: "Set start/end times on the Daily Requirements tab",
+      });
+    }
+    return findings;
+  },
+
+  // 7. Job requirements / packet notes — the user-specified example
   (ctx) => {
     const hasNotes = (ctx.jobRequest.notes ?? "").trim().length > 0;
     const hasPacket = (ctx.jobRequest.packetNotes ?? "").trim().length > 0;

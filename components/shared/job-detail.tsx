@@ -20,6 +20,7 @@ import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { computeJobNo, defaultEventAbbr, sanitizeEventAbbr } from "@/lib/jobs/job-no";
 import { printWithTitle } from "@/lib/print-with-title";
+import { confirmSignInSheetPrint } from "@/lib/jobs/confirm-sign-in-sheet-print";
 import type { JobRequest, Client } from "@/lib/store/types";
 
 const TIMES = timeOptions();
@@ -805,7 +806,10 @@ export default function JobDetail({
           {editingId && (
             <button
               className="secondary"
-              onClick={() => {
+              onClick={async () => {
+                // #38: warn if this sheet would go on-site with an empty
+                // Expected column. Warns only — never blocks the print.
+                if (!(await confirmSignInSheetPrint(editingId))) return;
                 // Reveal the sign-in sheet (and hide the summary sheet) for this
                 // one print, then clean the body class up on afterprint.
                 document.body.classList.add("printing-signin");

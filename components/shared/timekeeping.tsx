@@ -18,6 +18,7 @@ import {
 import { loadJobCrewSlots } from "@/lib/storage/job-request-assignments";
 import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
 import { parseMinutes } from "@/lib/time-utils";
+import { resolvePlannedTimes } from "@/lib/jobs/planned-times";
 import type { EmployeeRecord, JobRequest, TimeEntry, Timesheet } from "@/lib/store/types";
 import { EqualizerLoader } from "@/components/shared/equalizer-loader";
 import { JobHealthBanner } from "@/components/shared/job-health-banner";
@@ -715,11 +716,17 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
         if (!s) return r;
         // Each pair falls back to the matching day window block (pair 1 →
         // start/end, pair 2 → start2/end2). Per-assignment planned times win.
-        const in1  = s.plannedIn1  ?? s.startTime  ?? "";
-        const out1 = s.plannedOut1 ?? s.endTime    ?? "";
-        const in2  = s.plannedIn2  ?? s.startTime2 ?? "";
-        const out2 = s.plannedOut2 ?? s.endTime2   ?? "";
-        if (!in1 && !out1 && !in2 && !out2) { noPlan++; return r; }
+        // Shared with the printed sign-in sheet and the kiosk — all three have
+        // to resolve "expected" identically or a worker signs against one
+        // schedule while the office bills from another. The slot row carries
+        // both the assignment's planned_* and its day's window, so it satisfies
+        // both sides of the resolver.
+        const { pair1, pair2, isEmpty } = resolvePlannedTimes(s, s);
+        if (isEmpty) { noPlan++; return r; }
+        const in1  = pair1.in  ?? "";
+        const out1 = pair1.out ?? "";
+        const in2  = pair2.in  ?? "";
+        const out2 = pair2.out ?? "";
         filled++;
         return computeTimeEntry({ ...r, timeIn1: in1, timeOut1: out1, timeIn2: in2, timeOut2: out2 });
       });

@@ -20,6 +20,7 @@ import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { loadAssignmentsForRequest } from "@/lib/storage/job-request-assignments";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { formatClock, formatClockRange } from "@/lib/time-utils";
+import { formatPlannedTimes } from "@/lib/jobs/planned-times";
 import type {
   JobRequest,
   JobRequestDay,
@@ -34,15 +35,6 @@ type Employee = {
   fullName: string;
   phone?: string;
 };
-
-// Planned window text for one assignment. Each pair falls back to the matching
-// day block (pair 1 → start/end, pair 2 → start2/end2). Mirrors copyPlannedToActual.
-// Rendered 12h for the printed page; storage stays 24h (see formatClock).
-function expectedTimes(a: JobRequestAssignment, day: JobRequestDay): string {
-  const pair1 = formatClockRange(a.plannedIn1 || day.startTime, a.plannedOut1 || day.endTime);
-  const pair2 = formatClockRange(a.plannedIn2 || day.startTime2, a.plannedOut2 || day.endTime2);
-  return [pair1, pair2].filter(Boolean).join(" · ");
-}
 
 // The day's scheduled window, BOTH blocks. Printing pair 1 alone made a
 // two-block day contradict its own rows — the header read "Window 08:00–13:00"
@@ -172,7 +164,7 @@ export function CrewSignInSheet({ form }: { form: JobRequest }) {
                           <td>{emp?.fullName || " "}</td>
                           <td>{spc ? `${pos} · ${spc}` : pos}</td>
                           {anyShift && <td>{a.shiftId ? (shiftsById.get(a.shiftId)?.label || "") : ""}</td>}
-                          <td>{expectedTimes(a, d) || " "}</td>
+                          <td>{formatPlannedTimes(a, d) || " "}</td>
                           <td className="csis-blank">&nbsp;</td>
                           <td className="csis-blank">&nbsp;</td>
                           <td className="csis-blank">&nbsp;</td>
