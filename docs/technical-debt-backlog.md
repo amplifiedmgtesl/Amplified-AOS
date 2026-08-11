@@ -80,6 +80,18 @@ presentation around Phase 0 — not to the planned/actual model.
 > **🎯 ROUND-2 FIX LIST (John, 2026-08-11) — fix these BEFORE the next test round:**
 > **#38, #39, #40, #41, #42, #43, #47, #49, #50, #51, #52, #53, #54.**
 >
+> ✅ **ALL THIRTEEN FIXED 2026-08-11** on branch `fix/timekeeping-round-2`
+> (off `dev`, pushed, **not yet merged**). Typecheck + `next build` clean; no
+> local browser verification was possible (`.env.local` points at prod and the
+> env-guard refuses `next dev` against it), so the Vercel preview built from
+> that branch is the test surface. **Decisions made unattended are logged in
+> [`docs/round-2-review-with-john.md`](round-2-review-with-john.md) — read that
+> before re-testing.** Two gotchas from it that affect the re-test directly:
+> **(a)** the seeded test job's ten rows still carry the OLD `status =
+> 'submitted'` and will NOT retroactively become `planned` — **re-seed the job
+> or #54 will look unfixed**; **(b)** #57 is still deferred, so seed a quote or
+> every rate stays $35.
+>
 > **Deferred to after round 2 — and deliberately SKIPPED during that testing, since we know they're
 > outstanding:** #44, #45, #46, #48, #55, #56, #57, #58. Do not re-report them as new findings.
 >
