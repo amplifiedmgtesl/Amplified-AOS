@@ -61,6 +61,239 @@ Working priority order for active/requested projects. The `#N` ids are stable la
 
 - **#37 — AI agent to verify Connor's free-text quote terms against what the system can actually do** (added 2026-08-06, John). **The problem, in John's words:** Connor buries a "rule" in the text of a quote — a promise to the client that the system cannot honor — and it isn't discovered until billing time, when it becomes a scramble to find a workaround. This has happened multiple times. **Goal:** an agent that reads the free-text on a quote, extracts any operational rule it contains, and checks each one against (a) what the app can structurally represent and (b) what this specific quote's structured fields actually say — surfacing contradictions *before* the quote is issued. **Where the text lives** (verified in PROD 2026-08-06): `quotes.terms` (130 of 135 quotes non-empty, 27 distinct values, longest 13,605 chars), `quotes.notes` (10 quotes), and per-line `quote_lines.rule`. The terms field is mostly two families of boilerplate T&C (~13.5k and ~5.8k chars) — so the agent should **diff against the standard boilerplate and reason only about the deviations**, not re-read 13k characters of legal text every time. **Real examples already in prod terms text**, each of which maps onto a structured field the system has: *"Day rates are based on ten (10) hour shifts"* → the derived day floor (**#36**); *"OT may be triggered after ten (10)"* → `rate_card_profile_rows.ot_after`; *"Overtime is billed at 1.5 times the regular hourly rate after 40 worked hours in a contiguous work week"* → `PAYROLL_WEEKLY_OT_THRESHOLD` + `PAYROLL_OT_MULTIPLIER` in [lib/store/payroll.ts](../lib/store/payroll.ts); *"The standard work week runs Sun[day]…"* → `payWeekStartFor(workDate, "sun" | "mon")`. Each is checkable: parse the claim, read the corresponding field on this quote's resolved rate card, flag a mismatch. **Two distinct failure modes to report differently:** (1) *contradiction* — the text says something the structured data disagrees with (terms say OT after 10, the rate card says `ot_after = 'none'`); (2) *unrepresentable* — the text promises a rule with no structural home at all (tiered discounts, per-client rounding, "first 4 hours free", conditional travel), which is the class that causes the billing-time scramble. **Design notes:** run it as a **check, not a blocker** — surface findings on the quote screen and/or as a job-health check (the [lib/job-health/](../lib/job-health/) registry + runner is the natural host, and its `Finding` shape with `severity`/`downstream`/`fixHref` already fits); fire on quote issue rather than on every keystroke. **Relationship to #6** (AOS Assistant in-app chat agent, spec: [docs/aos-agent-spec.md](aos-agent-spec.md)): different shape — #6 is an interactive chat with fixed tools; this is an unattended validator over one document. But they share the plumbing (Claude API access from the app, a typed tool/context layer over the same business logic), so **whichever is built first should lay that groundwork for the other**. Scope with John before starting; the highest-value slice is probably just the deviation-diff plus the four rules listed above, since those are the ones already appearing in real quotes.
 
+### 🧪 Findings from the Time Clock + Phase 0 test run, 2026-08-11 (#38–#58)
+
+Full session log: driven by John against the dev preview at `aa000d9` (kiosk merged onto Phase 0), using a
+purpose-seeded job `jobreq-1786821000000` — **AES_26081112_RHI_KIOSK**, Rhino Staging, 2026-08-11 (two
+blocks, 7 crew) + 2026-08-12 (single block, 3 crew), two crew carrying per-worker planned overrides.
+**The run stopped at kiosk sign-out by agreement — everything below gets fixed, then the whole sequence is
+re-tested from the start before continuing past this point.**
+
+**Headline result: Phase 0 itself passed.** The import left every actual time blank on all 10 rows,
+including the two crew with planned overrides — the planned/actual separation works, and no-show billing
+is genuinely fixed. Every serious finding below belongs to the kiosk, to the app at large, or to
+presentation around Phase 0 — not to the planned/actual model.
+
+**Blockers before Phase 0 promotion:** #38, #39, #43, #46 (schedule report at minimum).
+**Blockers before kiosk rollout:** #44, #56, plus the #49–#53 screen redesign.
+
+- **#38 — Day rows can exist with no time window; every planned surface silently blanks** (2026-08-11).
+  Days are already mandatory for crew (`job-request-crew-section.tsx:464` blocks the tab at zero days, and
+  assignments are FK'd to `job_request_day_id`). But a day with NULL `start_time`/`end_time` is allowed and
+  silently degrades: the Assigned Crew window renders empty (`:511`), planned-time placeholders vanish
+  (`:711`–`:742`), the printed sign-in sheet's Expected column prints blank
+  (`crew-sign-in-sheet.tsx:40`), and Copy planned → actual copies nothing. The kiosk is unaffected —
+  `slotStates` reads only `timeIn1..out2` and never consults the day window. Real harm is a sign-in sheet
+  going on-site with an empty Expected column. **Fix: warn, don't hard-block** — jobs legitimately exist as
+  leads before the schedule is known, and a hard requirement would push people to type fake times. Add a
+  `lib/job-health/` check ("day <date> has no time window", with `fixHref`), an inline hint on Assigned
+  Crew, and a confirm-before-print when Expected would be blank.
+
+- **#39 — Planned-time placeholders never render; Safari shows a plausible fake time** (2026-08-11).
+  `job-request-crew-section.tsx` lines 711/721/732/742 pass `placeholder={d.startTime || ""}` to
+  `<input type="time">`. **`placeholder` is not supported on time inputs in any browser**, so the
+  "day window falls through as a grey placeholder" design has never worked. Chrome renders `--:-- --`
+  (honest); **Safari renders `12:30 PM`** on every unset field — including pair-2 fields on a single-block
+  day where no pair-2 window exists. An unset row therefore displays what looks like a real planned time.
+  This is the exact override-vs-fallback conflation Phase 0 exists to prevent, arriving via the display
+  layer. **Fix:** drop the dead `placeholder` props; render the fallback as adjacent muted text, formatted
+  through the #41 helper.
+
+- **#40 — "override only" is a static label on every planned row** (2026-08-11).
+  `job-request-crew-section.tsx:746` renders it unconditionally, including on rows that *do* carry
+  overrides, where it reads as a false status. Reword to an instruction true everywhere ("leave blank to
+  use the day window"), or show an "override" chip only on rows with planned values set.
+
+- **#41 — 24-hour vs 12-hour time display is inconsistent on the same screen** (2026-08-11).
+  Daily Requirements and the day banner print stored values raw (`08:00–13:00`, 24h from the text columns);
+  the per-worker planned inputs are native `type="time"` and render in the OS locale (`07:00 AM`). Storage
+  should **not** change — 24h `HH:MM` is deliberate and documented in the `20260708a`/`20260708c` migration
+  comments. There is no shared display formatter today (`lib/timeclock/time.ts` only *produces* storage
+  strings; `pre-invoice-report-view.tsx:121` has a local one). **Recommendation: 12h AM/PM for display, 24h
+  in storage** — a native time input follows the OS and can't be forced to 24h, so it's the fixed point.
+  Add one `formatClock(hhmm)` and apply it to the day banner, day header, sign-in sheet Window + Expected,
+  and any timekeeping/job-header display; audit for the full call-site list.
+
+- **#42 — Confirmed column renders a checkbox AND a redundant static ✓** (2026-08-11).
+  `job-request-crew-section.tsx:670-678`. Confirmed rows show both; unconfirmed rows show only the (see
+  #43) squashed empty box, so the cell reads as having no control. A print-only ✓ would be defensible —
+  the codebase uses that pattern via `.print-time` — but this one has no print class and the crew section
+  isn't the printed artifact. **DECIDED (John): delete the ✓, keep the box.** Confirmation must be settable
+  in the app; it can't depend on the import seeding it.
+
+- **#43 — GLOBAL: every checkbox outside `.timesheet-grid` is squashed by the base input rule**
+  (2026-08-11). `app/globals.css:55` styles all inputs — `width:100%;padding:10px 12px` — including
+  checkboxes. In an `inline-flex` label in a table cell the control collapses to a sliver. **Observed: John
+  could not focus the Confirmed checkbox to tick it; the new crew row saved `confirmed=false` because the
+  control was effectively unclickable.** v2.3.1 already fixed this bug but scoped it to one table
+  (`globals.css:216`). **20 checkbox inputs across 14 components are still affected**, including
+  `job-detail.tsx` (the v2.3.0 job-level 5hr-exempt checkbox), `quote-pdf-view.tsx` (the v2.2.0 rate-schedule
+  toggle), `invoice-draft-editor.tsx`, both rate-card editors, `payroll-new-run.tsx`, `payroll-run-detail.tsx`.
+  **Fix: promote the scoped rule to global** — `input[type="checkbox"],input[type="radio"]{width:auto;min-width:0;padding:0}`
+  — then delete the `.timesheet-grid` special case. ⚠ Worth checking whether this contributes to #34's
+  observation that the 5hr exemption has never actually been used in prod.
+
+- **#44 — A kiosk punch on a staff-owned row fails silently, and the signed capture record lies**
+  (2026-08-11). **Most serious finding of the run.** AOS-seeded rows start `user_id` NULL. The staff app
+  can see them (`amplified-staff/lib/db.ts:104` matches `user_id.eq.<me> OR employee_key.eq.<my key>`) and
+  **stamps ownership permanently on first edit** (`amplified-staff/app/timesheets/[id]/edit/page.tsx:136`,
+  `userId: userId ?? entry.userId`). No path in either repo clears it back. From then on `syncTimesheet`
+  skips the row — `t.rows.filter((r) => !r.userId)` (`lib/store/db.ts:894`) — which governs both the
+  Timekeeping grid autosave and the kiosk. The kiosk's `applyPunch` calls `upsertTimesheet` un-awaited
+  (`app/timeclock/page.tsx:196`) while everything around it succeeds: signature uploads, `upsertCapture`
+  writes the audit row **with that signature** via its own targeted write, the screen updates, the toast
+  reports success. Net: a signed attestation to a punch that never reached `timesheet_entries`.
+  Not symmetric — kiosk-only and staff-only both work; any mixed order breaks after the first staff edit.
+  Practical case: worker logs shift 1 in the app, signs out shift 2 at the kiosk → lost silently.
+  **Fixes (ascending):** (1) kiosk filters staff-owned rows out of its roster and labels them
+  "submitted via app" — do this first regardless so nothing lies; (2) kiosk uses a targeted write like the
+  payroll-exemption flag (`db.ts:821`), accepting last-write-wins; (3) ownership decided **per job**, not
+  per row — which is where **#24** lands, reframing it from tidiness to a correctness fix.
+  ⚠ The same silent skip affects a crew leader editing a staff-owned row in the Timekeeping grid —
+  pre-existing, same root cause, fix once.
+
+- **#45 — PLANNED: second full test cycle including the staff app** (2026-08-11, John). The staff app will
+  likely need its own changes from #44, so a later cycle should drive AOS + kiosk + staff app together.
+  **Confirmed feasible:** the staff dev preview serves the **same dev database** (`ovtbvnfhteqxnyirzctt`)
+  as the AOS dev preview — verified by finding the dev ref in its client bundle — so both apps see the same
+  seeded job and the collision can be reproduced for real. **Prerequisite:** the staff app matches rows by
+  `user_id` OR `employee_key`, so the cycle needs a staff login whose profile links to a seeded employee
+  (e.g. `AES-01326`). Confirm how that link is established first.
+
+- **#46 — PRINT ARTIFACT SET: three documents, three moments** (2026-08-11, John's design call).
+  **John's verdict: the current crew sign-in sheet is "worthless in its current form as a fill-in
+  timesheet"** — right data, wrong format. **Why this is urgent:** before Phase 0 the import copied the
+  scheduled window into actual columns, so **two surfaces accidentally doubled as the schedule** — the
+  Timekeeping screen and its printed timesheet. Phase 0 correctly blanks actuals and silently removes both.
+  Nothing was deleted (verified: Phase 0 has no file deletions); the schedule view was a side effect of the
+  bug. Something must backfill it before Phase 0 ships.
+
+  | Artifact | Moment | Source | Format |
+  |---|---|---|---|
+  | **Schedule report** | BEFORE — crew leader's pocket reference | assignments + planned | text only, no signature block, no blank time slots |
+  | **Crew sign-in sheet** | DURING — on-site capture | assignments + planned | fill-in: blank Time In / Out / Signature |
+  | **Printed timesheet of actuals** | AFTER — record, possibly client-facing | `timesheet_entries` | no blank signature blocks; render REAL captured kiosk signatures |
+
+  Moves John called: (1) derive the **schedule report** from today's `crew-sign-in-sheet.tsx` by stripping
+  the Signature and blank Time In/Out columns; (2) rebuild the **fill-in sign-in sheet** on the *existing
+  Timekeeping printed timesheet format*, made more legible — **backlog #10 folds into this**; (3) build the
+  **actuals document** rendering real signatures from `timesheet_captures` (private bucket, signed URLs) —
+  **overlaps the kiosk spec's Phase 2 "PDF of the timesheet with signatures", reconcile rather than build
+  twice**. Open: where the schedule report lives (job screen vs Timekeeping — Claude's instinct is
+  Timekeeping, where the need surfaces; Connor question), and **write down what each document is for**, or
+  three overlapping artifacts ship with no stated purpose.
+
+- **#47 — Sign-in sheet day header prints pair 1 only** (2026-08-11). `crew-sign-in-sheet.tsx:140` renders
+  `Window {d.startTime}–{d.endTime}`; the per-row Expected column handles pair 2 correctly, so a two-block
+  day reads `Window 08:00–13:00` above rows saying `08:00–13:00 · 14:00–19:00`. Carry pair 2 into the
+  header or drop the header window entirely.
+
+- **#48 — Crew added directly in Timekeeping never reach any printed capture sheet** (2026-08-11, John).
+  Printed sheets read from crew **assignments**; Timekeeping's "+ Add Crew Member" writes a
+  `timesheet_entries` row and creates no assignment. A walk-up or last-minute replacement — exactly the
+  person most likely to be added that way — is invisible on every sheet carried on site. **John's proposed
+  fix:** when someone is added in Timekeeping and has no matching assignment, **create the assignment**, so
+  a later-printed sheet includes them. Feasible — the row already carries `employeeKey`, `workDate`,
+  `shiftId`, `positionId`, `specialtyId`. Questions to answer first: does deleting from Timekeeping delete
+  the assignment; what `confirmed` state does a back-filled assignment get (probably false); what happens
+  when the row's `work_date` has no matching `job_request_days` row. **Alternative:** have printed sheets
+  *union* assignments with unmatched Timekeeping rows — same output, no write-back, no delete semantics,
+  but the two lists stay divergent. Either way, **marking "scheduled" vs "added on the day" has real value
+  on paper** — don't silently merge them.
+
+- **#49–#53 — KIOSK PUNCH SCREEN: consolidated redesign** (2026-08-11). Five findings on one screen,
+  one root cause, fix as one pass.
+  **#49 the two sign-in slots are indistinguishable** — with nothing punched, `slotStates`
+  (`app/timeclock/page.tsx:46`) marks both `in1` and `in2` available (deliberate, for second-shift-only
+  workers), but they render as two identical primary-blue buttons both reading "Tap to sign in". A mis-tap
+  puts time in `time_in2`, leaves block 1 empty, computes hours wrong — and the worker signed for it.
+  **#50 no context** — no planned/expected time and no named shift on the roster or detail panel, though
+  the 7 crew on 8/11 span Load In and Show. **#51 the signature modal omits the date**
+  (`page.tsx:355-358`) though the kiosk spec lists showing it as a guard; matters on jobs crossing
+  midnight. **#52 quoted vs recorded time can diverge** — the modal builds its text with
+  `roundInstantToTimeString(new Date())` at render and `applyPunch` recomputes at confirm, so slow signing
+  across a 5-minute boundary means signing "3:45 PM" while 3:50 PM is stored (*not triggered in this run*).
+  **#53 "Shift" means two different things** — the kiosk's "Shift 1/2" are the two TIME PAIRS on one row;
+  `job_request_shifts` are the job's NAMED shifts (Load In, Show). Dickens is on Load In and works two
+  blocks. The kiosk uses the word for the thing that isn't the shift and never displays the thing that is.
+  **John's direction:** rename slots to **Time In 1 / Time Out 1** and **Time In 2 / Time Out 2**; show the
+  **named shift** and the **planned times** beside them; put the **live date AND time** prominently on
+  screen (date explicitly, **because many jobs cross midnight**) — which also closes #51; carry across more
+  of the normal timekeeping sheet data where appropriate; and **design for a phone** (see #56).
+  Note that wiring planned times in is what makes #49 *safe* rather than merely relabelled — the kiosk
+  could then open only the block whose window contains now.
+
+- **#54 — Imported rows enter the approval queue blank** (2026-08-11, needs verification). All 10 imported
+  rows carry `status = 'submitted'`, set by the import, not the punch (9 untouched rows share it). Before
+  Phase 0 the import pre-filled the scheduled window so "submitted" was coherent; now rows arrive blank
+  AND submitted, so ten empty zero-hour rows likely sit in Timesheet Review awaiting approval and could be
+  approved as-is. Confirm what Review displays before deciding whether the import should seed a different
+  status.
+
+- **#55 — DECIDE: is a quote required to run a job?** (2026-08-11, John). Surfaced by #57. Timekeeping
+  resolves the rate card **only** from the job's most recent quote (`components/shared/timekeeping.tsx:576`).
+  **John's business case: there may never be a quote** — e.g. a verbal agreement with a repeat client that
+  this year's job is priced about like last year's, with no new quote ever generated. **So either the app
+  must run a job end-to-end without a quote, or a quote must become a documented, enforced prerequisite
+  checked before the steps that depend on it** — not left as an unstated assumption that silently degrades.
+  **Both paths must be covered in testing: with a quote and without.** Note the resolution chain already
+  exists elsewhere (see #57) and handles this correctly, so "no quote" is likely a solved problem
+  everywhere except timekeeping.
+
+- **#56 — The kiosk has never been tested on a phone and is not built for one** (2026-08-11).
+  Blocker for rollout. **Signature pad is fixed-size** — `components/shared/signature-pad.tsx` defaults
+  `width = 600, height = 220` and applies them as literal px (lines 102-103) with no `maxWidth`; on a
+  ~390px phone the canvas overflows its modal. It's the critical interaction on the screen. Good news: it
+  already handles `devicePixelRatio`, sets `touchAction: "none"`, and maps coordinates off the rendered
+  rect (line 47), so drawing works correctly once it simply fits — a sizing fix, not a rewrite.
+  **Slot grid is a hardcoded `gridTemplateColumns: "1fr 1fr"`** (`page.tsx:320`) with no breakpoint.
+  ⚠ **Structural trap: the kiosk has its OWN layout** (`app/timeclock/layout.tsx`), like `/lead` — so every
+  mobile fix in `globals.css` `@media` blocks never reaches it, and the page is styled almost entirely with
+  inline styles carrying no breakpoints. This is the shape of the v2.2.2 production bug where crew leaders
+  on a phone had no navigation. Verify mobile work **in this layout**, never by inference from the main app.
+
+- **#57 — Timekeeping invents a $35 rate instead of using the rate-card resolution chain** (2026-08-11).
+  **John's rule: no hardcoded amounts anywhere, for anything.** Timekeeping resolves the rate card *only*
+  from the job's most recent quote (`timekeeping.tsx:576`); with no quote it sets an empty map and every
+  row falls back to literals in `blankTimeEntry` — `billStdRate: 35, billOtRate: 52, billDtRate: 70`
+  (`lib/store/timekeeping.ts:199-201`). The DB read layer independently does `Number(r.bill_std_rate) || 35`
+  (`lib/store/db.ts:1296`), so a null/zero rate coming *out* of the database also becomes 35. **Observed:
+  all 10 seeded rows got $35/hr against true rates of $38–$65** — a plausible-looking number nobody chose,
+  with no warning anywhere. **It never consults `job_requests.rate_card_profile_id`** (which WAS set on the
+  test job) and never reaches `ratecard-master-default` (which exists, client-less, with all 29 rows
+  priced). **The correct chain already exists and is proven** — `payroll.ts:1001-1012`: employee override →
+  job's pinned card (`resolveRateCardForJob`, honoring the job_request pinned profile, else client+date) →
+  master default → **and if nothing answers, returns 0 with a visible "needs rates" banner**, tagging the
+  answering layer in a `source` field for UI badges. Quotes fall back to master default the same way
+  (`quotes.ts:339/351/374`); job health already computes a `rateCardSource`. **Fix: make timekeeping use
+  that chain, and surface an unresolved rate as zero-plus-warning (like payroll's banner and the
+  pre-invoice report's "Rate TBD") rather than inventing one.** ⚠ The resolution is **mirrored in the staff
+  app** at `amplified-staff/lib/calc/rate-resolution.ts` (see the SYNCED COPY comment at
+  `timekeeping.tsx:572`) — audit there too. **Follow-on sweep:** hunt every remaining numeric literal
+  standing in for a rate or threshold; the legacy hardcoded `8/12` OT/DT default was already found and
+  fixed for this same reason in June, which suggests more remain. **Open questions, not yet answered:**
+  whether entries re-snapshot when a quote lands *after* import, and whether invoicing re-prices
+  independently at invoice time via `lib/rates/timesheet-group-pricing.ts` (which would limit blast
+  radius considerably).
+
+- **#58 — Default 30-minute meal break is invisible at the kiosk** (2026-08-11). `blankTimeEntry` sets
+  `mealBreak1Minutes: 30` (`lib/store/timekeeping.ts:192`), applied to every imported row whether or not a
+  break was taken. Confirmed harmless-but-confusing in test: an 18:00→18:05 punch computed **0 hours**
+  (5 min − 30 min, clamped at `timekeeping.ts:71`) — the math is correct, the deduction is just invisible.
+  The kiosk has no meal-break control and no hours display, so a worker who works straight through still
+  loses 30 minutes and only the Timekeeping grid can correct it. May well be the company rule — but the
+  kiosk's premise is "records identical to hand-entered ones," and this is a deduction nobody at the kiosk
+  can see. Decide whether the default belongs on kiosk-captured rows.
+
+**Verified working in this run:** Phase 0 import leaves all actuals blank (10/10 rows, including the two
+with planned overrides); manual planned-time entry persists (`planned_in1` NULL → `10:00`, stored 24h,
+survived navigate-away); crew add persists; kiosk punch round-trips correctly —
+`timesheet_entries.time_in1 = 18:00` (rounded), `timesheet_captures.actual_in1 = 17:58:58 America/New_York`
+(raw instant preserved), `captured_employee_key = AES-00465`, signature 30 KB PNG in the private bucket;
+sign-out enables and records correctly; rounding is nearest-5 as designed.
+
+**Test job left in place on dev** (`jobreq-1786821000000`) for the re-test; delete or re-seed as needed.
+
 **Closed:**
 - **~~#8~~** — Full client→invoice system rewrite + Connor PDF recovery — ✅ DONE 2026-07-16 (see the ✅ DONE section below; bug class mechanically impossible + recovery executed).
 - **~~#1~~** — Rippling payroll export — ✅ CLOSED 2026-07-20 per John. Export shipped to prod 2026-07-10; the held follow-ups (Connor mapping review, W-2/1099 handling, rate mismatches, real test-import, rate-card pay seeding) are closed with it — reopen individually if any resurfaces.
