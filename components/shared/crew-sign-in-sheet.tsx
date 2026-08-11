@@ -19,6 +19,7 @@ import { supabase } from "@/lib/supabase/client";
 import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { loadAssignmentsForRequest } from "@/lib/storage/job-request-assignments";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
+import { formatClock, formatClockRange } from "@/lib/time-utils";
 import type {
   JobRequest,
   JobRequestDay,
@@ -36,13 +37,19 @@ type Employee = {
 
 // Planned window text for one assignment. Each pair falls back to the matching
 // day block (pair 1 → start/end, pair 2 → start2/end2). Mirrors copyPlannedToActual.
+// Rendered 12h for the printed page; storage stays 24h (see formatClock).
 function expectedTimes(a: JobRequestAssignment, day: JobRequestDay): string {
-  const in1 = a.plannedIn1 || day.startTime || "";
-  const out1 = a.plannedOut1 || day.endTime || "";
-  const pair1 = in1 || out1 ? `${in1 || "?"}–${out1 || "?"}` : "";
-  const in2 = a.plannedIn2 || day.startTime2 || "";
-  const out2 = a.plannedOut2 || day.endTime2 || "";
-  const pair2 = in2 || out2 ? `${in2 || "?"}–${out2 || "?"}` : "";
+  const pair1 = formatClockRange(a.plannedIn1 || day.startTime, a.plannedOut1 || day.endTime);
+  const pair2 = formatClockRange(a.plannedIn2 || day.startTime2, a.plannedOut2 || day.endTime2);
+  return [pair1, pair2].filter(Boolean).join(" · ");
+}
+
+// The day's scheduled window, BOTH blocks. Printing pair 1 alone made a
+// two-block day contradict its own rows — the header read "Window 08:00–13:00"
+// above rows saying "08:00–13:00 · 14:00–19:00".
+function dayWindowText(d: JobRequestDay): string {
+  const pair1 = formatClockRange(d.startTime, d.endTime);
+  const pair2 = formatClockRange(d.startTime2, d.endTime2);
   return [pair1, pair2].filter(Boolean).join(" · ");
 }
 
@@ -136,8 +143,8 @@ export function CrewSignInSheet({ form }: { form: JobRequest }) {
               <div className="csis-day-header">
                 <h2>{formatDay(d.eventDate)}</h2>
                 <div className="csis-day-meta">
-                  {d.callTime && <span>Call {d.callTime}</span>}
-                  {(d.startTime || d.endTime) && <span> · Window {d.startTime || "?"}–{d.endTime || "?"}</span>}
+                  {d.callTime && <span>Call {formatClock(d.callTime)}</span>}
+                  {dayWindowText(d) && <span> · Window {dayWindowText(d)}</span>}
                 </div>
               </div>
               {dayAsg.length === 0 ? (

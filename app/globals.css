@@ -53,6 +53,15 @@ button,input,textarea,select{font:inherit}
 .metric-label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.12em}
 .metric-value{font-size:30px;font-weight:800;margin-top:10px;color:var(--gold-dark)}
 input,textarea,select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--ink)}
+/* …but never checkboxes or radios. The rule above sizes text/date/time inputs;
+   applied to a 13px toggle it stretches the control to fill its container and
+   pads it into a sliver — inside an inline-flex label in a table cell the box
+   became effectively unclickable (the Confirmed column on Assigned Crew could
+   not be ticked at all). This was fixed in v2.3.1 but scoped to .timesheet-grid,
+   leaving 20 checkboxes across 14 components still squashed: the job-level 5hr
+   exemption, the quote PDF rate-schedule toggle, both rate-card editors, the
+   invoice draft editor and both payroll screens. Global is the correct scope. */
+input[type="checkbox"],input[type="radio"]{width:auto;min-width:0;padding:0}
 textarea{min-height:90px;resize:vertical}
 .terms-box{min-height:420px}
 button{padding:10px 14px;border:0;border-radius:12px;background:linear-gradient(180deg,var(--gold) 0%,var(--copper) 100%);color:#fff;font-weight:700;cursor:pointer}
@@ -208,12 +217,14 @@ small,.muted{color:var(--muted)}
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:3000;display:flex;align-items:center;justify-content:center;padding:24px}
 .modal-panel{width:min(980px,95vw);max-height:90vh;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,.28)}
 
-.timesheet-grid select,.timesheet-grid input{min-width:100px}
-/* …but not checkboxes. The rule above exists to give the time/date inputs a
-   usable width; applied to a checkbox it makes a 13px control claim 100px,
-   which squeezed the labels in the Status column ("No 5hr min" wrapped onto
-   three lines, and "Select" sat a gap away from its box). */
-.timesheet-grid input[type="checkbox"]{min-width:0;width:auto}
+/* Time/date inputs in the grid need a usable minimum width — toggles do not,
+   and are excluded at the source. Applied to a 13px checkbox this made the
+   control claim 100px, squeezing the Status column labels ("No 5hr min"
+   wrapped onto three lines). The old v2.3.1 override that undid it here is
+   gone; the global input[type="checkbox"] rule near the top now covers every
+   checkbox in the app, including these. */
+.timesheet-grid select,
+.timesheet-grid input:not([type="checkbox"]):not([type="radio"]){min-width:100px}
 
 
 /* Print-only spans showing select values as plain text on the sign-in sheet. */

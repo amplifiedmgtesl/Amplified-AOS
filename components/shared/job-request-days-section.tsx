@@ -12,6 +12,7 @@ import {
 } from "@/lib/storage/job-request-days";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { timeOptions } from "@/lib/store/timekeeping";
+import { formatClock, formatClockRange } from "@/lib/time-utils";
 import { pickRateCardForJob } from "@/lib/store/quotes";
 import type {
   JobRequestDay,
@@ -247,8 +248,12 @@ export function JobRequestDaysSection({
   function daySummary(d: JobRequestDay, crewCount: number): string {
     const bits: string[] = [];
     if (d.isHoliday) bits.push("🎄 Holiday (2×)");
-    if (d.callTime) bits.push(`call ${d.callTime}`);
-    if (d.startTime || d.endTime) bits.push(`${d.startTime || "?"}–${d.endTime || "?"}`);
+    if (d.callTime) bits.push(`call ${formatClock(d.callTime)}`);
+    // Both blocks — a summary showing pair 1 alone misrepresents a two-block day.
+    const pair1 = formatClockRange(d.startTime, d.endTime);
+    const pair2 = formatClockRange(d.startTime2, d.endTime2);
+    if (pair1) bits.push(pair1);
+    if (pair2) bits.push(pair2);
     if (d.expectedHours) bits.push(`${d.expectedHours}h`);
     bits.push(`${crewCount} crew`);
     if (d.notes) bits.push(d.notes);

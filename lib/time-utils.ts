@@ -24,6 +24,46 @@ export function parseMinutes(value: string): number | null {
   return h * 60 + mins;
 }
 
+/**
+ * The app's one DISPLAY formatter for a stored clock time: "08:00" → "8:00 AM".
+ *
+ * Storage stays 24h "HH:MM" everywhere — that is deliberate and documented in
+ * the 20260708a/20260708c migration comments. Display is 12h AM/PM because a
+ * native <input type="time"> renders in the OS locale and cannot be forced to
+ * 24h, so it is the fixed point every other surface has to agree with.
+ * Before this existed, the same screen showed a day window as "08:00–13:00"
+ * and the per-worker planned inputs beside it as "7:00 AM".
+ *
+ * Accepts either notation (parseMinutes handles both) so it is safe to apply
+ * to a value of unknown provenance. Returns "" for blank/unparseable input —
+ * callers render their own placeholder for a missing time.
+ */
+export function formatClock(value: string | null | undefined): string {
+  const mins = parseMinutes(value ?? "");
+  if (mins == null) return "";
+  const h24 = Math.floor(mins / 60) % 24;
+  const mm = String(mins % 60).padStart(2, "0");
+  const mer = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${mm} ${mer}`;
+}
+
+/**
+ * A time RANGE for display: "08:00", "13:00" → "8:00 AM – 1:00 PM".
+ * Either side may be blank; `missing` fills the gap so a half-set window still
+ * reads honestly. Returns "" when both sides are empty.
+ */
+export function formatClockRange(
+  start: string | null | undefined,
+  end: string | null | undefined,
+  missing = "?",
+): string {
+  const a = formatClock(start);
+  const b = formatClock(end);
+  if (!a && !b) return "";
+  return `${a || missing} – ${b || missing}`;
+}
+
 function toMoment(date: string, timeText: string): number {
   const m = parseMinutes(timeText);
   if (!date || m == null) return NaN;

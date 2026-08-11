@@ -37,6 +37,13 @@ import {
   type ApprovedUpdate,
 } from "@/lib/storage/crew-roster-import";
 import type { RosterSource } from "@/lib/storage/crew-roster-schema";
+import { formatClockRange } from "@/lib/time-utils";
+
+/** True when this assignment carries any planned time of its own — i.e. it is
+ *  a real override rather than a row riding the day window. */
+function hasOverride(a: JobRequestAssignment): boolean {
+  return !!(a.plannedIn1 || a.plannedOut1 || a.plannedIn2 || a.plannedOut2);
+}
 
 // Global CSS sets input{width:100%}; checkboxes/radios must opt out or they
 // stretch the row and shove the label to the far edge.
@@ -508,9 +515,14 @@ export function JobRequestCrewSection({
             // Read-only day window (both blocks), from Daily Requirements. Shown
             // in the header + panel because <input type="time"> ignores
             // placeholder, so the per-worker defaults aren't otherwise visible.
-            const dwin1 = (d.startTime || d.endTime) ? `${d.startTime || "?"}–${d.endTime || "?"}` : "";
-            const dwin2 = (d.startTime2 || d.endTime2) ? `${d.startTime2 || "?"}–${d.endTime2 || "?"}` : "";
+            const dwin1 = formatClockRange(d.startTime, d.endTime);
+            const dwin2 = formatClockRange(d.startTime2, d.endTime2);
             const dayWindow = [dwin1, dwin2].filter(Boolean).join(" · ");
+            // #38: a day with no window at all silently blanks every planned
+            // surface downstream (Expected on the printed sheet, the fallback
+            // below, copy planned → actual). Warn here; don't block — jobs
+            // legitimately exist as leads before the schedule is known.
+            const noDayWindow = !dayWindow;
             return (
               <div key={d.id} style={{
                 border: "1px solid var(--border, #e5e7eb)", borderRadius: 8,
@@ -566,14 +578,21 @@ export function JobRequestCrewSection({
                   <div style={{ padding: 10 }}>
                     <div style={{
                       fontSize: 11, marginBottom: 8, padding: "5px 9px",
-                      background: "#f7f4ee", border: "1px solid var(--border, #e5e7eb)",
+                      background: noDayWindow ? "#fef3e8" : "#f7f4ee",
+                      border: `1px solid ${noDayWindow ? "#f0b27a" : "var(--border, #e5e7eb)"}`,
                       borderRadius: 6, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap",
                     }}>
                       <strong style={{ opacity: 0.7 }}>Planned day window:</strong>
                       {dayWindow
-                        ? <span>{dayWindow}</span>
-                        : <span className="muted"><em>none set</em> — add it on the Daily Requirements tab</span>}
-                      <span className="muted">· blank crew times below default to this. Set a crew member&apos;s time only to override.</span>
+                        ? <>
+                            <span>{dayWindow}</span>
+                            <span className="muted">· blank crew times below default to this. Set a crew member&apos;s time only to override.</span>
+                          </>
+                        : <span style={{ color: "#9a3412" }}>
+                            <strong>none set.</strong> Add start/end times on the Daily Requirements tab —
+                            without them the printed sign-in sheet&apos;s Expected column prints blank,
+                            and &quot;Copy planned → actual&quot; copies nothing for anyone left on the default.
+                          </span>}
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                       <div className="muted" style={{ fontSize: 11 }}>
@@ -667,6 +686,11 @@ export function JobRequestCrewSection({
                                   </td>
                                 )}
                                 <td>
+                                  {/* The box is the only control — a static ✓
+                                      beside it read as the status and made an
+                                      unconfirmed row look like it had no
+                                      control at all. Confirmation must be
+                                      settable here, not seeded by the import. */}
                                   <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                                     <input
                                       type="checkbox"
@@ -674,7 +698,6 @@ export function JobRequestCrewSection({
                                       checked={a.confirmed}
                                       onChange={(e) => patchAssignment(d.id, a, { confirmed: e.target.checked })}
                                     />
-                                    {a.confirmed ? "✓" : ""}
                                   </label>
                                 </td>
                                 <td>
@@ -696,9 +719,20 @@ export function JobRequestCrewSection({
                                 </td>
                               </tr>
                               {/* Planned times — the "planned" side of Planned-vs-Actual.
-                                  Optional per-worker schedule; blank pair-1 falls back to
-                                  the day window shown as placeholder. Pair 2 = meal-break
-                                  return or a second shift. */}
+                                  Optional per-worker schedule; a blank pair falls back to
+                                  the matching day block. Pair 2 = meal-break return or a
+                                  second shift.
+
+                                  #39: these inputs used to carry placeholder={d.startTime}.
+                                  `placeholder` is NOT supported on <input type="time"> in any
+                                  browser, so the "day window shows through as grey text"
+                                  design never worked: Chrome renders --:-- --, but SAFARI
+                                  renders a plausible 12:30 PM on every unset field —
+                                  including pair-2 fields on a single-block day where no
+                                  pair-2 window exists. An unset row therefore displayed what
+                                  looked like a real planned time, which is exactly the
+                                  override-vs-fallback conflation Phase 0 exists to prevent.
+                                  The fallback is now adjacent muted text instead. */}
                               <tr>
                                 <td colSpan={plannedColSpan} style={{ paddingTop: 0, paddingBottom: 8 }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 11, color: "#666" }}>
@@ -708,7 +742,6 @@ export function JobRequestCrewSection({
                                       aria-label="Planned in (pair 1)"
                                       disabled={disabled}
                                       value={a.plannedIn1 ?? ""}
-                                      placeholder={d.startTime || ""}
                                       onChange={(e) => patchAssignment(d.id, a, { plannedIn1: e.target.value || undefined })}
                                       style={{ width: 92, flex: "0 0 auto" }}
                                     />
@@ -718,7 +751,6 @@ export function JobRequestCrewSection({
                                       aria-label="Planned out (pair 1)"
                                       disabled={disabled}
                                       value={a.plannedOut1 ?? ""}
-                                      placeholder={d.endTime || ""}
                                       onChange={(e) => patchAssignment(d.id, a, { plannedOut1: e.target.value || undefined })}
                                       style={{ width: 92, flex: "0 0 auto" }}
                                     />
@@ -729,7 +761,6 @@ export function JobRequestCrewSection({
                                       aria-label="Planned in (pair 2)"
                                       disabled={disabled}
                                       value={a.plannedIn2 ?? ""}
-                                      placeholder={d.startTime2 || ""}
                                       onChange={(e) => patchAssignment(d.id, a, { plannedIn2: e.target.value || undefined })}
                                       style={{ width: 92, flex: "0 0 auto" }}
                                     />
@@ -739,11 +770,28 @@ export function JobRequestCrewSection({
                                       aria-label="Planned out (pair 2)"
                                       disabled={disabled}
                                       value={a.plannedOut2 ?? ""}
-                                      placeholder={d.endTime2 || ""}
                                       onChange={(e) => patchAssignment(d.id, a, { plannedOut2: e.target.value || undefined })}
                                       style={{ width: 92, flex: "0 0 auto" }}
                                     />
-                                    <span style={{ opacity: 0.6 }}>· override only</span>
+                                    {/* #39/#40: what an empty field actually means, stated
+                                        once per row. "override only" was a static label on
+                                        every row including ones that DID carry overrides,
+                                        where it read as a false status. */}
+                                    {hasOverride(a) ? (
+                                      <span
+                                        title="This crew member has planned times of their own; blank fields still use the day window."
+                                        style={{
+                                          background: "#eef5ff", color: "#1e3a8a", borderRadius: 999,
+                                          padding: "1px 8px", fontWeight: 700, fontSize: 10,
+                                        }}
+                                      >override</span>
+                                    ) : noDayWindow ? (
+                                      <span style={{ color: "#9a3412" }}>
+                                        · no day window set — blank fields have nothing to fall back to
+                                      </span>
+                                    ) : (
+                                      <span style={{ opacity: 0.6 }}>· leave blank to use {dayWindow}</span>
+                                    )}
                                   </div>
                                 </td>
                               </tr>

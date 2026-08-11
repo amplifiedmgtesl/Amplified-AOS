@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { loadJobRequestDays, loadCrewNeedsForRequest } from "@/lib/storage/job-request-days";
 import { loadAssignmentsForRequest } from "@/lib/storage/job-request-assignments";
+import { formatClock, formatClockRange } from "@/lib/time-utils";
 import type {
   JobRequest,
   JobRequestDay,
@@ -121,8 +122,9 @@ export function JobPrintSheet({ form }: { form: JobRequest }) {
                 <div className="jps-day-header">
                   <h3>{formatDay(d.eventDate)}</h3>
                   <div className="jps-day-meta">
-                    {d.callTime && <span>Call {d.callTime}</span>}
-                    {(d.startTime || d.endTime) && <span> · {d.startTime || "?"}–{d.endTime || "?"}</span>}
+                    {d.callTime && <span>Call {formatClock(d.callTime)}</span>}
+                    {formatClockRange(d.startTime, d.endTime) && <span> · {formatClockRange(d.startTime, d.endTime)}</span>}
+                    {formatClockRange(d.startTime2, d.endTime2) && <span> · {formatClockRange(d.startTime2, d.endTime2)}</span>}
                     {d.expectedHours && <span> · {d.expectedHours} hrs</span>}
                   </div>
                 </div>

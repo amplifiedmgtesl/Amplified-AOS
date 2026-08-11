@@ -6,6 +6,7 @@ import { combinedCalendarEvents, googleCalendarLink, parseHour } from "@/lib/sto
 import { deleteEventById, loadEventProfiles, saveEventProfile, upsertManualEvent } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
 import type { CalendarEvent } from "@/lib/store/types";
+import { formatClock } from "@/lib/time-utils";
 
 const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 function pad(n: number) { return String(n).padStart(2, "0"); }
@@ -100,7 +101,7 @@ function HoverCard({ e, onOpen, onDelete }: { e: CalendarEvent; onOpen: () => vo
       <div className="muted" style={{ marginTop: 6 }}>{e.venue || "-"}</div>
       <div className="muted">{e.venueAddress || "-"}</div>
       <div className="muted">{e.cityState || "-"}</div>
-      <div className="muted">{e.startDate} {e.startTime ? `· ${e.startTime}` : ""} {e.endTime ? `to ${e.endTime}` : ""}</div>
+      <div className="muted">{e.startDate} {e.startTime ? `· ${formatClock(e.startTime)}` : ""} {e.endTime ? `to ${formatClock(e.endTime)}` : ""}</div>
       {e.googleMapsLink ? <div className="muted" style={{ marginTop: 6, wordBreak: "break-all" }}>{e.googleMapsLink}</div> : null}
       <div className="action-row" style={{ marginTop: 10 }}>
         <button className="secondary" onClick={onOpen}>Open Job Profile</button>
@@ -313,7 +314,7 @@ export default function MasterCalendar() {
                     >
                       <div><strong>{e.client || "Client"}</strong> — {e.eventName || "Event"}</div>
                       <div className="tiny">{e.venue || ""} {e.cityState ? `— ${e.cityState}` : ""}</div>
-                      <div className="tiny">{e.startTime || ""} {e.endTime ? `to ${e.endTime}` : ""}</div>
+                      <div className="tiny">{formatClock(e.startTime)} {e.endTime ? `to ${formatClock(e.endTime)}` : ""}</div>
                       {hoveredEventId === e.id ? <HoverCard e={e} onOpen={() => openJobProfile(e)} onDelete={() => handleDelete(e.id)} /> : null}
                     </div>
                   );
@@ -372,7 +373,7 @@ export default function MasterCalendar() {
             <div className="grid3" style={{ marginTop: 12 }}>
               <div className="list-card"><strong>Venue Address</strong><div className="muted">{selectedEvent.venueAddress || "-"}</div></div>
               <div className="list-card"><strong>City / State</strong><div className="muted">{selectedEvent.cityState || "-"}</div></div>
-              <div className="list-card"><strong>Time</strong><div className="muted">{selectedEvent.startDate} {selectedEvent.startTime ? `· ${selectedEvent.startTime}` : ""} {selectedEvent.endTime ? `to ${selectedEvent.endTime}` : ""}</div></div>
+              <div className="list-card"><strong>Time</strong><div className="muted">{selectedEvent.startDate} {selectedEvent.startTime ? `· ${formatClock(selectedEvent.startTime)}` : ""} {selectedEvent.endTime ? `to ${formatClock(selectedEvent.endTime)}` : ""}</div></div>
             </div>
 
             <div style={{ marginTop: 16 }}>
