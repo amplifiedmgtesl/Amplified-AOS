@@ -25,6 +25,31 @@ export function lunchOptions() {
 export function mealBreakOptions() {
   return [0, 30, 60];
 }
+/**
+ * Promote a `planned` row to `submitted` once it actually carries time (#54).
+ *
+ * Rows seeded from crew assignments start `planned` — nobody has worked them,
+ * their actual times are blank by design, and they have no business sitting in
+ * the approval queue as ten empty zero-hour rows that can be approved as-is.
+ * The moment any of the four time fields is filled — by a kiosk punch, a crew
+ * leader typing in the grid, or Copy planned → actual — the row becomes a real
+ * submission and rejoins the normal lifecycle.
+ *
+ * Deliberately NOT folded into computeTimeEntry: that function is a synced
+ * copy mirrored in the staff app (see below), and this promotion is AOS-side
+ * lifecycle policy, not shared hours math. Keeping it separate lets the mirror
+ * stay byte-identical. Call it alongside computeTimeEntry on any path that
+ * writes times.
+ *
+ * Only ever moves planned → submitted. Approved/rejected/submitted rows and
+ * legacy NULL-status rows are returned untouched.
+ */
+export function promoteWorkedStatus(entry: TimeEntry): TimeEntry {
+  if (entry.status !== "planned") return entry;
+  const worked = !!(entry.timeIn1 || entry.timeOut1 || entry.timeIn2 || entry.timeOut2);
+  return worked ? { ...entry, status: "submitted" } : entry;
+}
+
 // ⚠ SYNCED COPY: computeTimeEntry + inferPairDatesLocal are mirrored in the
 // staff app at amplified-staff/lib/calc/timekeeping.ts so staff-submitted
 // timesheets price identically. If you change the hours / OT-DT / holiday math

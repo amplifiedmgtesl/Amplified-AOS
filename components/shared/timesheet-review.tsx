@@ -12,7 +12,7 @@ import {
 import type { StaffEntryReviewRow } from "@/lib/store/db";
 import { useUserRole } from "@/lib/auth/use-user-role";
 
-type StatusFilter = "pending" | "approved" | "rejected" | "all";
+type StatusFilter = "pending" | "planned" | "approved" | "rejected" | "all";
 
 function fullName(r: StaffEntryReviewRow) {
   return `${r.firstName} ${r.lastName}`.trim() || r.email || "—";
@@ -30,7 +30,12 @@ function jobLabel(r: StaffEntryReviewRow, jobNoById: Map<string, string>): strin
   return parts.join(" — ") || "(untitled job)";
 }
 
+// 'planned' rows are NOT pending: they were seeded from crew assignments and
+// nobody has worked them yet, so there is nothing to approve (#54). They
+// become pending the moment any time lands on them. They remain visible under
+// the "Planned" and "All" filters so they are never silently invisible.
 function isPending(r: StaffEntryReviewRow) {
+  if (r.status === "planned") return false;
   return r.status === "submitted" || r.status === null || r.status === "";
 }
 
@@ -38,6 +43,7 @@ function statusBadge(r: StaffEntryReviewRow) {
   if (r.status === "approved")  return <span className="badge" style={{ background: "#e8f7e8", color: "#1a5a1a" }}>Approved</span>;
   if (r.status === "rejected")  return <span className="badge" style={{ background: "#fbeaea", color: "#8a1a1a" }}>Rejected</span>;
   if (r.status === "submitted") return <span className="badge" style={{ background: "#eaf2fb", color: "#1a4a7a" }}>Submitted</span>;
+  if (r.status === "planned")   return <span className="badge" style={{ background: "#f1eefb", color: "#4a3a8a" }} title="Scheduled from crew assignments — not yet worked. Becomes Submitted once any time is recorded.">Planned</span>;
   return <span className="badge" style={{ background: "#fff4d6", color: "#7a5a1a" }}>Pending</span>;
 }
 
@@ -115,6 +121,7 @@ export default function TimesheetReview() {
   const filtered = useMemo(() => {
     return rows.filter((r) => {
       if (status === "pending"  && !isPending(r)) return false;
+      if (status === "planned"  && r.status !== "planned") return false;
       if (status === "approved" && r.status !== "approved") return false;
       if (status === "rejected" && r.status !== "rejected") return false;
       if (employeeEmail && (r.email || "") !== employeeEmail) return false;
@@ -146,7 +153,22 @@ export default function TimesheetReview() {
   // bind the entry to it, mark approved). Errors on individual rows are
   // surfaced but don't abort the batch.
   async function handleApproveSelected() {
-    const targets = filtered.filter((r) => selectedIds.has(r.id) && r.status !== "approved");
+    const selected = filtered.filter((r) => selectedIds.has(r.id) && r.status !== "approved");
+    // #54: never approve a 'planned' row. Nobody has worked it — approving it
+    // would bless a zero-hour record as a reviewed fact. Reachable from the
+    // Planned/All filters, so guard here rather than relying on the filter.
+    const planned = selected.filter((r) => r.status === "planned");
+    const targets = selected.filter((r) => r.status !== "planned");
+    if (planned.length > 0) {
+      const msg =
+        `${planned.length} of the selected row${planned.length === 1 ? " is" : "s are"} still Planned — ` +
+        `scheduled but with no time recorded, so there is nothing to approve.\n\n` +
+        (targets.length === 0
+          ? `Nothing else is selected. Record time on those rows first (kiosk or the Timekeeping grid).`
+          : `Approve the other ${targets.length} row${targets.length === 1 ? "" : "s"} and skip these?`);
+      if (targets.length === 0) { alert(msg); return; }
+      if (!confirm(msg)) return;
+    }
     if (targets.length === 0) return;
     setBusyBatch("approve");
     try {
@@ -252,6 +274,7 @@ export default function TimesheetReview() {
           <small>Status</small>
           <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
             <option value="pending">Pending (needs approval)</option>
+            <option value="planned">Planned (not yet worked)</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
             <option value="all">All</option>

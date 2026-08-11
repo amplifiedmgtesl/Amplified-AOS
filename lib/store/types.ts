@@ -126,7 +126,17 @@ export type TimeEntry = {
   billTotal: number;
   employeeKey?: string | null; // links to employees table
   userId?: string | null;      // set for staff-submitted entries
-  status?: string | null;      // null=admin-created, submitted|approved|rejected for staff entries
+  /** Lifecycle. null = legacy admin-created.
+   *  planned   — seeded from a crew assignment; NOBODY HAS WORKED IT YET.
+   *              Actual times are blank by design (Planned-vs-Actual §5.3).
+   *              Excluded from the approval queue and the pending counts —
+   *              there is nothing to approve. Promoted to `submitted` by
+   *              promoteWorkedStatus() the moment any time lands on the row,
+   *              whether from the kiosk or the timekeeping grid.
+   *  submitted — has time on it and is awaiting review.
+   *  approved / rejected — reviewed.
+   *  No CHECK constraint backs this column; it is application-enforced. */
+  status?: string | null;
   sortOrder?: number;
   createdAt?: string;
   // Phase 1 (2026-05-25): canonical link to the "Job" (job_requests row).

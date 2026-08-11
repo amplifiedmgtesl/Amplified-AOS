@@ -290,6 +290,11 @@ export default function InvoiceDraftEditor({ id }: { id: string }) {
             for (const r of tsRes.data ?? []) {
               const status = (r as any).status ?? null;
               if (status === "rejected") continue;
+              // #54: 'planned' rows are scheduled-but-not-worked and carry zero
+              // hours. Counting them as "pending" put a heads-up panel on screen
+              // reading N workers / 0 hours, which reads as time waiting to be
+              // approved rather than time nobody has worked yet.
+              if (status === "planned") continue;
               const target = status === "approved" ? approved : pending;
               const workDate = (r.work_date as string) || "(no date)";
               const pos = (r.position as string) || "Unknown";

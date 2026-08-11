@@ -16,7 +16,7 @@ import {
   setEntryPayrollExempt,
 } from "@/lib/store/app-store";
 import { loadJobCrewSlots } from "@/lib/storage/job-request-assignments";
-import { blankTimeEntry, computeTimeEntry, mealBreakOptions, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
+import { blankTimeEntry, computeTimeEntry, mealBreakOptions, promoteWorkedStatus, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
 import { parseMinutes } from "@/lib/time-utils";
 import { resolvePlannedTimes } from "@/lib/jobs/planned-times";
 import type { EmployeeRecord, JobRequest, TimeEntry, Timesheet } from "@/lib/store/types";
@@ -445,7 +445,10 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
 
   function updateRow(id: string, patch: Partial<TimeEntry>) {
     if (!timesheet) return;
-    const nextRows = timesheet.rows.map((r) => r.id === id ? computeTimeEntry({ ...r, ...patch }) : r);
+    // promoteWorkedStatus: a 'planned' row becomes a real 'submitted' one as
+    // soon as a crew leader types any time into it (#54).
+    const nextRows = timesheet.rows.map((r) =>
+      r.id === id ? promoteWorkedStatus(computeTimeEntry({ ...r, ...patch })) : r);
     persist({ ...timesheet, rows: nextRows });
   }
 
@@ -667,7 +670,14 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
           shiftId: slot.shiftId,
           isHoliday: isHol,
           holidayMultiplier: isHol ? effectiveHolidayMultiplier : null,
-          status: "submitted",
+          // #54: 'planned', not 'submitted'. Nobody has worked this row — it
+          // was seeded from a crew assignment and its actual times are blank
+          // by design. Marking it submitted put ten empty zero-hour rows into
+          // Timesheet Review awaiting approval, where they could be approved
+          // as-is. Before Phase 0 the import pre-filled the scheduled window,
+          // so 'submitted' was at least coherent; now it is simply false.
+          // promoteWorkedStatus() flips it the instant any time lands.
+          status: "planned",
           ...(rc ? {
             billStdRate: rc.hourly,
             billOtRate:  rc.otRate,
@@ -728,7 +738,8 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
         const in2  = pair2.in  ?? "";
         const out2 = pair2.out ?? "";
         filled++;
-        return computeTimeEntry({ ...r, timeIn1: in1, timeOut1: out1, timeIn2: in2, timeOut2: out2 });
+        return promoteWorkedStatus(
+          computeTimeEntry({ ...r, timeIn1: in1, timeOut1: out1, timeIn2: in2, timeOut2: out2 }));
       });
       if (filled === 0) {
         const bits = [
@@ -924,12 +935,25 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
     // if the job has shifts defined.
     const missingSpec  = eligible.filter((r) => requiresSpecialty(r.positionId) && !r.specialtyId);
     const missingShift = eligible.filter((r) => jobHasShifts && !r.shiftId);
+    // #54: a 'planned' row has no time recorded — there is nothing to approve.
+    // promoteWorkedStatus() clears this the moment anyone punches or types.
+    const stillPlanned = eligible.filter((r) => r.status === "planned");
     const targets      = eligible.filter((r) =>
       !(requiresSpecialty(r.positionId) && !r.specialtyId)
       && !(jobHasShifts && !r.shiftId)
+      && r.status !== "planned"
     );
-    if (missingSpec.length > 0 || missingShift.length > 0) {
+    if (missingSpec.length > 0 || missingShift.length > 0 || stillPlanned.length > 0) {
       const reasons: string[] = [];
+      if (stillPlanned.length > 0) {
+        const list = stillPlanned.slice(0, 5)
+          .map((r) => `  • ${r.firstName ?? ""} ${r.lastName ?? ""} ${r.workDate ?? ""}`)
+          .join("\n");
+        reasons.push(
+          `${stillPlanned.length} row${stillPlanned.length === 1 ? " is" : "s are"} still Planned ` +
+          `(scheduled, no time recorded yet):\n${list}${stillPlanned.length > 5 ? "\n  ..." : ""}`
+        );
+      }
       if (missingSpec.length > 0) {
         const list = missingSpec.slice(0, 5)
           .map((r) => `  • ${r.firstName ?? ""} ${r.lastName ?? ""} ${r.workDate ?? ""} (${r.position ?? "?"})`)
@@ -952,7 +976,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
         `These entries won't be approved:\n\n${reasons.join("\n\n")}\n\n` +
         (targets.length > 0
           ? `Approve the remaining ${targets.length} entr${targets.length === 1 ? "y" : "ies"}?`
-          : `Fill in the missing fields first, then approve.`);
+          : `Record the time and fill in the missing fields first, then approve.`);
       if (targets.length === 0) { alert(msg); return; }
       if (!confirm(msg)) return;
     }

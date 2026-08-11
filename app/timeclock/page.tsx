@@ -21,7 +21,7 @@ import {
   loadTimesheetForJobLive,
   upsertTimesheet,
 } from "@/lib/store/app-store";
-import { computeTimeEntry } from "@/lib/store/timekeeping";
+import { computeTimeEntry, promoteWorkedStatus } from "@/lib/store/timekeeping";
 import type { JobRequest, TimeEntry, Timesheet } from "@/lib/store/types";
 import { SignaturePad, type SignaturePadHandle } from "@/components/shared/signature-pad";
 import { deviceLocalDate, deviceTimeZone, roundInstantToTimeString } from "@/lib/timeclock/time";
@@ -191,7 +191,10 @@ export default function TimeClockPage() {
         : slot === "in2" ? { timeIn2: timeStr }
         : { timeOut2: timeStr };
 
-      const nextRows = fresh.rows.map((r) => (r.id === entry.id ? computeTimeEntry({ ...r, ...patch }) : r));
+      // promoteWorkedStatus: a punch turns a 'planned' row into a real
+      // 'submitted' one — it now has time on it and belongs in review (#54).
+      const nextRows = fresh.rows.map((r) =>
+        (r.id === entry.id ? promoteWorkedStatus(computeTimeEntry({ ...r, ...patch })) : r));
       const nextTs: Timesheet = { ...fresh, rows: nextRows };
       upsertTimesheet(nextTs); // updates shared cache + syncs to DB in background
 
