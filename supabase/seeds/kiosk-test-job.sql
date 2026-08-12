@@ -5,10 +5,11 @@
 --
 -- ⚠ DEV ONLY (project ref ovtbvnfhteqxnyirzctt). Never run against prod.
 --
--- Idempotent: deletes and recreates the job's days, assignments, timesheet and
--- quote every time, so it can be re-run before each test round. The job_requests
--- header row itself is UPDATED, not recreated, so the id stays stable and the
--- references in docs/technical-debt-backlog.md keep working.
+-- Re-runnable: deletes and recreates the job's days, assignments and timesheet
+-- every time. The job_requests header is UPDATED, not recreated, so the id stays
+-- stable and the references in docs/technical-debt-backlog.md keep working.
+-- The ISSUED quote is created once and then left alone — see the note in step 1;
+-- it is frozen at the database level and cannot be deleted or edited.
 --
 -- ⚠ SET THE TWO DATES BELOW BEFORE RUNNING. Day 1 must be TODAY, or the kiosk
 --   opens on a day nobody can punch and half the test is dead on arrival.
@@ -49,7 +50,16 @@ END $$;
 
 DELETE FROM timesheet_entries WHERE job_id = 'jobreq-1786821000000';
 DELETE FROM timesheets        WHERE job_id = 'jobreq-1786821000000';
-DELETE FROM quotes            WHERE job_request_id = 'jobreq-1786821000000';
+
+-- Quotes: DRAFTS only. An issued quote is frozen — quotes_freeze_check() blocks
+-- both DELETE and any content change, by design ("Frozen quotes are permanent —
+-- supersede via Revise instead"). So the seed cannot recreate one, and must not
+-- try: the first version of this script did, and failed on its second run.
+-- The insert below is ON CONFLICT DO NOTHING, so an issued quote from an earlier
+-- run simply survives — which is the correct outcome, since its content is
+-- identical every time. ⚠ Consequence: if the rate card this points at ever
+-- changes, this script will NOT repoint it. Supersede it in the app instead.
+DELETE FROM quotes WHERE job_request_id = 'jobreq-1786821000000' AND is_draft = true;
 DELETE FROM job_request_assignments
   WHERE job_request_day_id IN (SELECT id FROM job_request_days WHERE job_request_id = 'jobreq-1786821000000');
 DELETE FROM job_request_days  WHERE job_request_id = 'jobreq-1786821000000';
@@ -66,26 +76,42 @@ ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.sor
 -- Day 1 is a TWO-BLOCK day (work → meal → work); day 2 is single-block. The
 -- two-block day is what exercises pair 2 everywhere: the kiosk's Block 2, the
 -- sign-in sheet header (#47) and the planned-times fallback (#39).
+--
+-- ⚠ DAY 1 BLOCK 2 CROSSES MIDNIGHT (20:00 → 02:00), on purpose. John, 2026-08-12:
+-- "a large percentage of jobs fall into that category," and round 1 never tested
+-- one. Block 2 is on day 1 (= today) specifically so it can be PUNCHED at the
+-- kiosk and rolled past midnight for real, rather than only looked at.
+-- What this exercises, none of which round 1 touched:
+--   · computeTimeEntry/inferPairDatesLocal bumping out2 onto the next date
+--   · end_date advancing to day+1 while work_date stays day 1
+--   · formatClockRange printing "8:00 PM – 2:00 AM" with no next-day marker
+--   · the kiosk's work-day selector once the device clock is past midnight
+--     (see the ⚠ note in docs/round-2-review-with-john.md — expected to
+--      mis-default on a multi-day job; that is the point of testing it)
+--
 -- A trigger (sync_job_request_from_days_trg) pushes these dates up onto the
 -- job_requests header, so request_date/end_date need no manual update.
 INSERT INTO job_request_days
   (id, job_request_id, event_date, start_time, end_time, start_time2, end_time2, sort_order, is_holiday)
-SELECT 'jrd-kiosktest-1', 'jobreq-1786821000000', p.day1, '08:00', '13:00', '14:00', '19:00', 0, false FROM seed_params p
+SELECT 'jrd-kiosktest-1', 'jobreq-1786821000000', p.day1, '08:00', '13:00', '20:00', '02:00', 0, false FROM seed_params p
 UNION ALL
 SELECT 'jrd-kiosktest-2', 'jobreq-1786821000000', p.day2, '09:00', '17:00', NULL,    NULL,    1, false FROM seed_params p;
 
 -- ─── 3. Crew assignments — 7 on day 1 (both shifts), 3 on day 2 ─────────────
 -- Deliberate variety, each row earning its place in the test:
---   ...-01  full override on both pairs      → "override" chip (#40)
+--   ...-01  full override, block 2 CROSSES MIDNIGHT (21:00→03:00) — a
+--           per-worker override that rolls over, not just the day window
 --   ...-02  PARTIAL override (in1 only)      → the rest must fall back (#39)
---   ...-04  pair-1-only override             → pair 2 falls back to the day
+--   ...-04  pair-1-only override             → pair 2 falls back to the day,
+--           which now means falling back INTO a midnight-crossing window
 --   ...-07  UNCONFIRMED                      → the checkbox John couldn't tick (#42/#43)
---   others  no override                      → pure day-window fallback
+--   others  no override                      → pure day-window fallback (also
+--           crossing midnight on block 2, so most of the roster rolls over)
 INSERT INTO job_request_assignments
   (id, job_request_day_id, employee_key, position_id, specialty_id, shift_id, confirmed,
    planned_in1, planned_out1, planned_in2, planned_out2, sort_order)
 VALUES
-  ('jra-kiosktest-d1-01','jrd-kiosktest-1','AES-00465','pos-04','spc-04-01','shift-kiosktest-loadin',true, '07:00','13:00','14:00','19:00',0),
+  ('jra-kiosktest-d1-01','jrd-kiosktest-1','AES-00465','pos-04','spc-04-01','shift-kiosktest-loadin',true, '07:00','13:00','21:00','03:00',0),
   ('jra-kiosktest-d1-02','jrd-kiosktest-1','AES-01326','pos-01','spc-01-01','shift-kiosktest-loadin',true, '10:00',NULL,   NULL,   NULL,   1),
   ('jra-kiosktest-d1-03','jrd-kiosktest-1','AES-00734','pos-01','spc-01-02','shift-kiosktest-loadin',true, NULL,   NULL,   NULL,   NULL,   2),
   ('jra-kiosktest-d1-04','jrd-kiosktest-1','AES-01241','pos-05','spc-05-01','shift-kiosktest-show',  true, '09:00','13:00',NULL,   NULL,   3),
@@ -114,7 +140,8 @@ INSERT INTO quotes (id, job_request_id, client_id, rate_card_profile_id,
                     holiday_multiplier, is_draft, status, revision_no, total, deposit)
 SELECT 'quote-kiosktest-round2', 'jobreq-1786821000000', jr.client_id,
        'ratecard-1776287259366', 2.0, false, 'issued', 1, 0, 0
-FROM job_requests jr WHERE jr.id = 'jobreq-1786821000000';
+FROM job_requests jr WHERE jr.id = 'jobreq-1786821000000'
+ON CONFLICT (id) DO NOTHING;
 
 -- ─── 5. Header: job_no carries the dates, so keep it honest ─────────────────
 UPDATE job_requests jr
