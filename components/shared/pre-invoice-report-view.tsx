@@ -248,7 +248,8 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
     report.warnings.noRateCard ||
     report.warnings.missingRates.length > 0 ||
     report.warnings.skippedNoPosition.length > 0 ||
-    report.warnings.zeroHourExcluded > 0;
+    report.warnings.zeroHourExcluded > 0 ||
+    report.warnings.plannedExcluded > 0;
 
   return (
     <div className="preinv-pdf">
@@ -266,6 +267,14 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
             ))}
             {report.warnings.zeroHourExcluded > 0 ? (
               <li>{report.warnings.zeroHourExcluded} zero-hour timekeeping {report.warnings.zeroHourExcluded === 1 ? "entry" : "entries"} excluded (blank rows — nothing to bill).</li>
+            ) : null}
+            {/* Not a warning about a mistake — stated so the crew count on the
+                job and the line count here don't look inconsistent. */}
+            {report.warnings.plannedExcluded > 0 ? (
+              <li>
+                {report.warnings.plannedExcluded} scheduled {report.warnings.plannedExcluded === 1 ? "crew member has" : "crew members have"} no
+                recorded time yet — excluded, nothing to bill until they&apos;re worked.
+              </li>
             ) : null}
           </ul>
         </div>

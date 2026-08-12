@@ -89,6 +89,12 @@ export type PreInvoiceReport = {
      *  billing preview has nothing to say about them; typically blank
      *  placeholder rows left in the timekeeping grid). */
     zeroHourExcluded: number;
+    /** Scheduled-but-not-yet-worked rows (status='planned', #54) — also
+     *  excluded, but counted separately because they are EXPECTED, not an
+     *  anomaly. Lumped in with zeroHourExcluded they read as "N blank rows
+     *  left lying around" when they are simply the crew schedule for a job
+     *  nobody has worked yet. */
+    plannedExcluded: number;
   };
 };
 
@@ -180,6 +186,7 @@ export async function buildPreInvoiceReport(jobId: string): Promise<PreInvoiceRe
   const skippedNoPosition: PreInvoiceReport["warnings"]["skippedNoPosition"] = [];
   const groups = new Map<string, ReportGroup>();
   let zeroHourExcluded = 0;
+  let plannedExcluded = 0;
   for (const e of entries) {
     // Zero-hour entries (blank placeholder rows in the grid) have nothing
     // to bill — excluding them keeps phantom "(no date)" days and dash
@@ -190,7 +197,13 @@ export async function buildPreInvoiceReport(jobId: string): Promise<PreInvoiceRe
       Number(e.ot_hours ?? 0) !== 0 ||
       Number(e.dt_hours ?? 0) !== 0;
     if (!hasHours) {
-      zeroHourExcluded++;
+      // Both are excluded — a billing preview has nothing to say about a row
+      // with no hours either way — but they are counted apart. A 'planned' row
+      // is the schedule doing its job; a zero-hour 'submitted' row is someone
+      // leaving a blank behind. Reporting ten of the former as the latter
+      // invites a hunt for a problem that isn't there.
+      if (e.status === "planned") plannedExcluded++;
+      else zeroHourExcluded++;
       continue;
     }
     if (!e.position_id) {
@@ -355,6 +368,7 @@ export async function buildPreInvoiceReport(jobId: string): Promise<PreInvoiceRe
       missingRates,
       noRateCard: !rateCard,
       zeroHourExcluded,
+      plannedExcluded,
     },
   };
 }
