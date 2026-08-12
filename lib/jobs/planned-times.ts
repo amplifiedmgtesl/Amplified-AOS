@@ -19,7 +19,7 @@
 // expressed as a data rule.
 
 import type { JobRequestAssignment, JobRequestDay } from "@/lib/store/types";
-import { formatClockRange } from "@/lib/time-utils";
+import { formatClockRange, parseMinutes } from "@/lib/time-utils";
 
 /** One resolved time pair. `source` says who answered, for UI badging. */
 export type PlannedPair = {
@@ -70,6 +70,43 @@ export function formatPlannedTimes(
     formatClockRange(pair1.in, pair1.out),
     formatClockRange(pair2.in, pair2.out),
   ].filter(Boolean).join(" · ");
+}
+
+/**
+ * Does a day's scheduled window still contain `now`, counting blocks that run
+ * past midnight?
+ *
+ * A day row's times are wall-clock strings anchored to its event_date, so a
+ * block like 20:00–02:00 on Aug 12 actually ends at 02:00 on Aug 13. Comparing
+ * "is it between start and end" without accounting for that answers no for the
+ * entire second half of the block — the half where people are still working.
+ *
+ * `graceMinutes` extends each block at both ends: shifts start late and run
+ * long, and someone signing out 20 minutes after the scheduled end still
+ * belongs to that day. Generous by design — the alternative is telling a
+ * worker at 02:15 that their shift isn't happening.
+ */
+export function dayWindowContains(
+  day: Pick<JobRequestDay, "eventDate" | "startTime" | "endTime" | "startTime2" | "endTime2">,
+  now: Date,
+  graceMinutes = 120,
+): boolean {
+  if (!day.eventDate) return false;
+  const anchor = new Date(day.eventDate + "T00:00:00").getTime();
+  if (Number.isNaN(anchor)) return false;
+  const t = now.getTime();
+
+  const check = (start?: string, end?: string): boolean => {
+    const s = parseMinutes(start ?? "");
+    let e = parseMinutes(end ?? "");
+    if (s == null || e == null) return false;
+    if (e <= s) e += 1440;          // block runs past midnight onto the next date
+    const from = anchor + (s - graceMinutes) * 60_000;
+    const to   = anchor + (e + graceMinutes) * 60_000;
+    return t >= from && t <= to;
+  };
+
+  return check(day.startTime, day.endTime) || check(day.startTime2, day.endTime2);
 }
 
 /** True when this assignment would print a blank Expected column. */

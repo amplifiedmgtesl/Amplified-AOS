@@ -49,12 +49,13 @@ import {
   upsertTimesheet,
 } from "@/lib/store/app-store";
 import { computeTimeEntry, promoteWorkedStatus } from "@/lib/store/timekeeping";
-import type { JobRequest, TimeEntry, Timesheet } from "@/lib/store/types";
+import type { JobRequest, JobRequestDay, TimeEntry, Timesheet } from "@/lib/store/types";
 import { SignaturePad, type SignaturePadHandle } from "@/components/shared/signature-pad";
 import { deviceLocalDate, deviceTimeZone, roundInstantToTimeString } from "@/lib/timeclock/time";
 import { uploadSignature, upsertCapture } from "@/lib/storage/timesheet-captures";
 import { loadJobCrewSlots, type JobCrewSlot } from "@/lib/storage/job-request-assignments";
-import { resolvePlannedTimes } from "@/lib/jobs/planned-times";
+import { loadJobRequestDays } from "@/lib/storage/job-request-days";
+import { dayWindowContains, resolvePlannedTimes } from "@/lib/jobs/planned-times";
 import { formatClock, formatClockRange } from "@/lib/time-utils";
 
 type Slot = "in1" | "out1" | "in2" | "out2";
@@ -168,18 +169,42 @@ export default function TimeClockPage() {
     try {
       // Roster and schedule together — the schedule is what makes the punch
       // buttons meaningful, so don't render the roster without it.
-      const [ts, slots] = await Promise.all([
+      const [ts, slots, dayRows] = await Promise.all([
         loadTimesheetForJobLive(id),
         loadJobCrewSlots(id).catch((e) => {
           console.error("[timeclock] loadJobCrewSlots failed:", e);
           return [] as JobCrewSlot[];
         }),
+        loadJobRequestDays(id).catch((e) => {
+          console.error("[timeclock] loadJobRequestDays failed:", e);
+          return [] as JobRequestDay[];
+        }),
       ]);
       setTimesheet(ts);
       setCrewSlots(new Map(slots.map((s) => [slotKey(s.employeeKey, s.eventDate, s.shiftId), s])));
+
+      // Which work day should the kiosk open on?
+      //
+      // Naively "the device's today", which is wrong for the whole second half
+      // of any shift running past midnight — and a large share of these jobs do.
+      // At 00:30 on Aug 13, a crew signing out of Aug 12's 20:00–02:00 block
+      // would be shown Aug 13's roster, where their row is a DIFFERENT timesheet
+      // entry with four empty slots. Tapping there opens tomorrow's shift while
+      // last night's stays open, so both days end up wrong. The old "today"
+      // rule hid this completely: the selected day genuinely IS today, so
+      // nothing looked amiss.
+      //
+      // Prefer the day whose scheduled window still contains this instant
+      // (rollover-aware, with grace at both ends), then today, then the first.
       const days = distinctDays(ts);
       const today = deviceLocalDate();
-      setDay(days.includes(today) ? today : days[0] ?? "");
+      const nowAt = new Date();
+      const dayRowByDate = new Map(dayRows.map((d) => [d.eventDate, d]));
+      const live = days.find((d) => {
+        const row = dayRowByDate.get(d);
+        return row ? dayWindowContains(row, nowAt) : false;
+      });
+      setDay(live ?? (days.includes(today) ? today : days[0] ?? ""));
     } finally {
       setLoading(false);
     }
@@ -201,6 +226,25 @@ export default function TimeClockPage() {
   }, [timesheet, day]);
 
   const selectedRow = rows.find((r) => r.id === selectedRowId) || null;
+
+  // Anyone signed in on a DIFFERENT work day and not yet signed out. The
+  // window-aware default above should make this rare, but a shift that runs
+  // far past its scheduled end still lands here — and an unclosed punch is
+  // exactly the failure that costs someone their hours, so say it out loud
+  // rather than leaving them to notice the day picker.
+  const openOnOtherDays = useMemo(() => {
+    if (!timesheet) return [];
+    const out: { day: string; name: string }[] = [];
+    for (const r of timesheet.rows) {
+      const d = r.workDate || "no-date";
+      if (d === day) continue;
+      const st = slotStates(r);
+      if (st.out1 === "available" || st.out2 === "available") {
+        out.push({ day: d, name: rowName(r) });
+      }
+    }
+    return out.sort((a, b) => a.day.localeCompare(b.day) || a.name.localeCompare(b.name));
+  }, [timesheet, day]);
 
   /** The crew assignment behind a timesheet row, if one matches. */
   const slotFor = useCallback((r: TimeEntry): JobCrewSlot | null =>
@@ -377,6 +421,24 @@ export default function TimeClockPage() {
               ⚠ Not today
             </span>
           )}
+        </div>
+      )}
+
+      {/* Open punches on another work day — the midnight-crossing failure mode. */}
+      {timesheet && openOnOtherDays.length > 0 && (
+        <div style={{ ...card, padding: "12px 16px", marginBottom: 16, borderColor: "#b45309", background: "#3b2410" }}>
+          <div style={{ color: "#fde68a", fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
+            ⚠ {openOnOtherDays.length} open sign-in on another day
+          </div>
+          <div style={{ color: "#fcd9a8", fontSize: 13, lineHeight: 1.5 }}>
+            {openOnOtherDays.slice(0, 4).map((o) => (
+              <div key={`${o.day}-${o.name}`}>{o.name} — signed in on {formatWorkDate(o.day)}, not signed out</div>
+            ))}
+            {openOnOtherDays.length > 4 && <div>…and {openOnOtherDays.length - 4} more</div>}
+            <div style={{ marginTop: 6, opacity: 0.85 }}>
+              Switch the work day above to sign them out — signing in here starts a second, separate shift.
+            </div>
+          </div>
         </div>
       )}
 
