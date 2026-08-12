@@ -121,6 +121,36 @@ date + time). Judgement calls:
 
 ---
 
+## Midnight-crossing shifts (John, 2026-08-12)
+
+**"A large percentage of jobs fall into that category," and round 1 never
+tested one.** Now built into the seed rather than left as a note to remember:
+day 1 (= today) block 2 runs **20:00 → 02:00**, and one crew member carries a
+per-worker override that also rolls over (21:00 → 03:00), so both the
+day-window and override paths get exercised. It sits on day 1 deliberately so
+it can be *punched* through midnight, not just looked at.
+
+Walking the existing code through that scenario predicted a failure, now fixed
+(`71f01be`): the kiosk defaulted to `deviceLocalDate()`, so at 00:30 a crew
+member signing out of the previous day's block was shown the *next* day's
+roster — a different timesheet row with four empty slots. Tapping there would
+open tomorrow's shift while last night's stayed open. Pre-existing, but the
+"⚠ Not today" chip added earlier in round 2 stayed **silent** in exactly that
+case, because the selected day genuinely was today. It now prefers the day
+whose scheduled window still contains the current instant (rollover-aware, 2h
+grace), and warns about open punches on other days.
+
+**Still worth watching during the test, not fixed:**
+- `formatClockRange` prints `8:00 PM – 2:00 AM` with **no next-day marker**.
+  On the sign-in sheet's Expected column that is ambiguous — is 2:00 AM the
+  same morning or the next? Deliberately left alone: adding "+1" everywhere is
+  a display decision worth making with the printed page in front of you.
+- `inferPairDatesLocal`'s `bump()` builds a local date then reads it back via
+  `toISOString()`. Correct for negative UTC offsets (America/New_York), **off
+  by one for positive offsets**. Not reachable for this US-only company, and
+  it is a synced copy shared with the staff app, so it was not touched — but
+  it is a real latent bug if the app ever runs anywhere east of Greenwich.
+
 ## Not addressed — still deferred, as agreed
 
 #44, #45, #46, #48, #55, #56, #57, #58. Untouched, per the round-2 split.
