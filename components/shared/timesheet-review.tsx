@@ -11,6 +11,7 @@ import {
 } from "@/lib/store/app-store";
 import type { StaffEntryReviewRow } from "@/lib/store/db";
 import { useUserRole } from "@/lib/auth/use-user-role";
+import { formatClock } from "@/lib/time-utils";
 
 type StatusFilter = "pending" | "planned" | "approved" | "rejected" | "all";
 
@@ -401,8 +402,8 @@ export default function TimesheetReview() {
                 </td>
                 <td>{r.position || "—"}</td>
                 <td style={{ fontSize: 12 }}>
-                  {r.timeIn1 || "—"} – {r.timeOut1 || "—"}
-                  {r.timeIn2 && <><br/>{r.timeIn2} – {r.timeOut2}</>}
+                  {formatClock(r.timeIn1) || "—"} – {formatClock(r.timeOut1) || "—"}
+                  {r.timeIn2 && <><br/>{formatClock(r.timeIn2)} – {formatClock(r.timeOut2)}</>}
                 </td>
                 <td>{r.stdHours.toFixed(1)}</td>
                 <td>{r.otHours > 0 ? r.otHours.toFixed(1) : "—"}</td>

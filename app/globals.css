@@ -302,6 +302,9 @@ small,.muted{color:var(--muted)}
     display:inline !important;
     font-size:11px !important;
     font-weight:500;
+    /* 12h times carry a space ("10:45 PM") and the time columns are a fixed
+       9% under table-layout:fixed — don't let one break across two lines. */
+    white-space:nowrap;
   }
   /* Repeating headers across pages with high-contrast text. The default
      gold-on-cream styling printed as ghost text. */

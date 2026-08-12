@@ -17,7 +17,7 @@ import {
 } from "@/lib/store/app-store";
 import { loadJobCrewSlots } from "@/lib/storage/job-request-assignments";
 import { blankTimeEntry, computeTimeEntry, mealBreakOptions, promoteWorkedStatus, rateOptions, summarizeTimesheet, timeOptions } from "@/lib/store/timekeeping";
-import { parseMinutes } from "@/lib/time-utils";
+import { formatClock, parseMinutes } from "@/lib/time-utils";
 import { resolvePlannedTimes } from "@/lib/jobs/planned-times";
 import type { EmployeeRecord, JobRequest, TimeEntry, Timesheet } from "@/lib/store/types";
 import { EqualizerLoader } from "@/components/shared/equalizer-loader";
@@ -87,7 +87,10 @@ function LazyTimeSelect({
         onBlur={() => setActive(false)}
         style={{ minWidth: 80 }}
       >
-        {options.map((t) => <option key={t} value={t}>{t === "" ? "— clear —" : t}</option>)}
+        {/* Labels are 12h for reading; the VALUE stays 24h "HH:MM", which is
+            what onChange writes and what storage holds. #41 — display and
+            storage are deliberately different here. */}
+        {options.map((t) => <option key={t} value={t}>{t === "" ? "— clear —" : formatClock(t)}</option>)}
       </select>
     );
   }
@@ -102,13 +105,15 @@ function LazyTimeSelect({
         borderRadius: 4,
         background: "#fff",
         fontSize: 12,
-        minWidth: 60,
+        // 76, not 60: "10:45 PM" is wider than "22:45" and was wrapping.
+        minWidth: 76,
+        whiteSpace: "nowrap",
         textAlign: "center",
       }}
       aria-label={ariaLabel}
       title={disabled ? "" : "Click to set time"}
     >
-      {value || <span style={{ color: "#bbb" }}>—</span>}
+      {value ? formatClock(value) : <span style={{ color: "#bbb" }}>—</span>}
     </div>
   );
 }
@@ -1963,24 +1968,24 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                       <td>
                         <LazyTimeSelect ariaLabel="Time In 1" value={row.timeIn1} options={TIMES} disabled={isLocked}
                           onChange={(v) => updateRow(row.id, { timeIn1: v })} />
-                        <span className="print-time">{row.timeIn1 || ""}</span>
+                        <span className="print-time">{formatClock(row.timeIn1)}</span>
                       </td>
                       <td>
                         <LazyTimeSelect ariaLabel="Time Out 1" value={row.timeOut1} options={TIMES} disabled={isLocked}
                           onChange={(v) => updateRow(row.id, { timeOut1: v })} />
-                        <span className="print-time">{row.timeOut1 || ""}</span>
+                        <span className="print-time">{formatClock(row.timeOut1)}</span>
                       </td>
                       <td><select className="input-tight" disabled={isLocked} value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak1Minutes ?? row.lunchMinutes ?? 0}</span></td>
                       <td className="sig-box"></td>
                       <td>
                         <LazyTimeSelect ariaLabel="Time In 2" value={row.timeIn2} options={TIMES} disabled={isLocked}
                           onChange={(v) => updateRow(row.id, { timeIn2: v })} />
-                        <span className="print-time">{row.timeIn2 || ""}</span>
+                        <span className="print-time">{formatClock(row.timeIn2)}</span>
                       </td>
                       <td>
                         <LazyTimeSelect ariaLabel="Time Out 2" value={row.timeOut2} options={TIMES} disabled={isLocked}
                           onChange={(v) => updateRow(row.id, { timeOut2: v })} />
-                        <span className="print-time">{row.timeOut2 || ""}</span>
+                        <span className="print-time">{formatClock(row.timeOut2)}</span>
                       </td>
                       <td><select className="input-tight" disabled={isLocked} value={row.mealBreak2Minutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak2Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak2Minutes ?? 0}</span></td>
                       <td className="hide-print">{row.stdHours.toFixed(2)}</td>
@@ -2115,8 +2120,8 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                     <td>{entry.firstName} {entry.lastName}</td>
                     <td>{entry.position}</td>
                     <td>{(entry as any).workDate || "—"}</td>
-                    <td>{entry.timeIn1 || "—"}{entry.timeIn2 ? <div style={{ fontSize: 11, opacity: 0.7 }}>{entry.timeIn2}</div> : null}</td>
-                    <td>{entry.timeOut1 || "—"}{entry.timeOut2 ? <div style={{ fontSize: 11, opacity: 0.7 }}>{entry.timeOut2}</div> : null}</td>
+                    <td>{formatClock(entry.timeIn1) || "—"}{entry.timeIn2 ? <div style={{ fontSize: 11, opacity: 0.7 }}>{formatClock(entry.timeIn2)}</div> : null}</td>
+                    <td>{formatClock(entry.timeOut1) || "—"}{entry.timeOut2 ? <div style={{ fontSize: 11, opacity: 0.7 }}>{formatClock(entry.timeOut2)}</div> : null}</td>
                     <td>{((entry.mealBreak1Minutes ?? entry.lunchMinutes ?? 0) + (entry.mealBreak2Minutes ?? 0))}m</td>
                     <td>{entry.stdHours.toFixed(2)}</td>
                     <td>{entry.otHours.toFixed(2)}</td>
