@@ -321,8 +321,9 @@ presentation around Phase 0 — not to the planned/actual model.
   can see. Decide whether the default belongs on kiosk-captured rows.
 
 - **#59 — The second time block stops at `job_request_days`; everything downstream sees only pair 1**
-  (added 2026-08-12, found while auditing #47's fix). **Not currently reachable — but one two-block
-  final day away from being wrong, and midnight-crossing jobs are exactly that shape.**
+  (added 2026-08-12, found while auditing #47's fix). ⚠ **PROMOTION-GATED: harmless until `20260708c`
+  is applied to prod, wrong the moment it is.** Not a someday-backlog item — it activates on the very
+  promotion this work is preparing for, and midnight-crossing jobs are exactly the shape that trips it.
   `job_request_days` is the **only** table in the database carrying `start_time2`/`end_time2`; verified
   against `information_schema` on dev. Every other table with block times has a single pair:
   `job_requests`, `quotes`, `quote_lines`, `invoice_lines`, `calendar_events`.
@@ -333,8 +334,19 @@ presentation around Phase 0 — not to the planned/actual model.
   **and its ICS export** (`master-calendar.tsx` `formatIcsDate(e.endDate, e.endTime …)`), so the exported
   calendar event ends at 1pm for a crew working past midnight. `start_time` has the mirror-image issue
   for a job whose FIRST day starts with a pair-2-only shape, though that is rarer.
-  **Why it isn't firing today:** dev has 2 days with a pair 2 and **neither is the last day of its job**
-  (verified). Nothing in the data is currently wrong.
+  **Why it isn't firing today — and when it will (verified against PROD 2026-08-12, at John's prompting;
+  the original write-up checked only dev, which was the wrong database to reason from):**
+  **PROD has no `start_time2`/`end_time2` columns at all** — it cannot represent a second block, so no
+  prod job can be wrong today. Dev has 2 such days and neither is the last day of its job. But this is
+  **not permanently latent: it activates on the Phase 0 promotion.** `20260708c` adds the two columns and
+  **does not touch `sync_job_request_from_days()`**, so the moment that migration lands in prod and a
+  coordinator sets a second block on a final day, the header end_time and the ICS export are wrong.
+  **⚠ Decide this BEFORE applying `20260708c` to prod, not after.**
+  **Prod schema gap measured while checking** (prod has no `supabase_migrations` tracking table — these
+  were probed directly against `information_schema`). Missing from prod, all three Phase 0 / kiosk:
+  `20260708a` (assignment planned times), `20260708c` (day second block), `20260708d` (timeclock
+  captures). Already in prod from the same era: `20260708b` (banking), `20260710a` (rippling earning
+  type), `20260804a` (payroll daily-rules exempt). That is the migration list the promotion needs.
   **Not a display fix** — unlike #47, which was three surfaces printing pair 1 only and is now fixed.
   This needs a migration plus a genuine modelling decision: does a second block belong on quotes and
   invoices at all, or is a two-block day always billed as one span? Answer that before patching the
