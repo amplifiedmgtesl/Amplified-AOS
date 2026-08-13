@@ -1,11 +1,22 @@
 // Resolving a crew member's PLANNED (scheduled) times — the "planned" side of
 // the Planned-vs-Actual model.
 //
-// One rule, in one place, because three surfaces have to agree on it: the
+// One rule, in one place, because four surfaces have to agree on it: the
 // printed crew sign-in sheet's Expected column, the Time Clock kiosk's
-// expected-time display, and "Copy planned → actual" on the timekeeping grid.
+// expected-time display, "Copy planned → actual" on the timekeeping grid, and
+// the pre-flight that warns before printing a sheet with a blank Expected.
 // If they disagree, a worker signs against one schedule while the office bills
 // from another.
+//
+// ⚠ Honest record, since the commit that created this file overstated the case:
+// the surfaces had NOT actually diverged in any reachable way. Copy planned →
+// actual used `??` where the others used `||`, which differs only on an empty
+// string — and assignmentToRow() is the single writer of these columns and
+// coerces every one with `|| null`, so an empty string cannot be stored. The
+// real justification is forward-looking and has already paid off twice: the
+// kiosk arrived after this extraction and needed exactly this rule (it would
+// otherwise have been a fourth hand-written copy), and dayWindowContains below
+// fixed a genuine midnight bug from here rather than inline in one screen.
 //
 // The rule: each PAIR falls back independently to the matching day block —
 // pair 1 → day.startTime/endTime, pair 2 → day.startTime2/endTime2. A worker
@@ -21,11 +32,10 @@
 import type { JobRequestAssignment, JobRequestDay } from "@/lib/store/types";
 import { formatClockRange, parseMinutes } from "@/lib/time-utils";
 
-/** One resolved time pair. `source` says who answered, for UI badging. */
+/** One resolved time pair. Either side may be absent when nothing answers. */
 export type PlannedPair = {
   in?: string;
   out?: string;
-  source: "override" | "day" | "none";
 };
 
 export type PlannedTimes = {
@@ -41,9 +51,19 @@ function resolvePair(
   dayIn: string | undefined,
   dayOut: string | undefined,
 ): PlannedPair {
-  if (ovIn || ovOut) return { in: ovIn || dayIn, out: ovOut || dayOut, source: "override" };
-  if (dayIn || dayOut) return { in: dayIn, out: dayOut, source: "day" };
-  return { source: "none" };
+  // Each SIDE falls back independently, so a worker who overrides only their
+  // start time still finishes at the day's end time.
+  //
+  // `|| undefined` normalizes an empty string to absent. Every consumer today
+  // treats "" and undefined the same (both falsy, both format to ""), but
+  // "unset" should have ONE representation coming out of here rather than two
+  // that happen to behave alike.
+  return { in: ovIn || dayIn || undefined, out: ovOut || dayOut || undefined };
+}
+
+/** True when this pair resolved to nothing at all. */
+function pairIsEmpty(p: PlannedPair): boolean {
+  return !p.in && !p.out;
 }
 
 /** Resolve both planned pairs for one assignment on its day. */
@@ -53,7 +73,7 @@ export function resolvePlannedTimes(
 ): PlannedTimes {
   const pair1 = resolvePair(a.plannedIn1, a.plannedOut1, day?.startTime, day?.endTime);
   const pair2 = resolvePair(a.plannedIn2, a.plannedOut2, day?.startTime2, day?.endTime2);
-  return { pair1, pair2, isEmpty: pair1.source === "none" && pair2.source === "none" };
+  return { pair1, pair2, isEmpty: pairIsEmpty(pair1) && pairIsEmpty(pair2) };
 }
 
 /**
