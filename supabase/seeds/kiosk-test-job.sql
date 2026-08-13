@@ -11,8 +11,10 @@
 -- The ISSUED quote is created once and then left alone — see the note in step 1;
 -- it is frozen at the database level and cannot be deleted or edited.
 --
--- ⚠ SET THE TWO DATES BELOW BEFORE RUNNING. Day 1 must be TODAY, or the kiosk
---   opens on a day nobody can punch and half the test is dead on arrival.
+-- Day 1 is always TODAY and day 2 tomorrow, computed at run time — nothing to
+-- edit. Re-run it on the morning of any test day; the fixture goes stale the
+-- moment the clock rolls past midnight, because the kiosk can only punch a day
+-- whose window contains now.
 --
 -- What it deliberately does NOT create: the timesheet. Round 2 has to exercise
 -- the import itself — that is what proves Phase 0 still leaves actuals blank and
@@ -26,10 +28,20 @@
 
 BEGIN;
 
--- ⬇⬇ EDIT THESE TWO DATES ⬇⬇  day1 MUST be today for the kiosk to be testable.
+-- Dates are DERIVED, not hardcoded: day 1 is always today, day 2 tomorrow.
+--
+-- They used to be two literals with a "remember to edit these" warning, and the
+-- warning did not work — the job was seeded on 2026-08-12 and by the next
+-- morning day 1 was YESTERDAY, so the midnight-crossing block could no longer
+-- be punched at all. A test fixture that silently expires overnight is worse
+-- than one that is obviously wrong.
+--
+-- America/New_York, not CURRENT_DATE: the DB server is UTC, so re-seeding after
+-- 8pm Eastern would roll CURRENT_DATE onto tomorrow and reintroduce the same
+-- off-by-one. This matches the zone the kiosk reads from the device clock.
 CREATE OR REPLACE TEMP VIEW seed_params AS
-  SELECT DATE '2026-08-12' AS day1,
-         DATE '2026-08-13' AS day2;
+  SELECT (now() AT TIME ZONE 'America/New_York')::date       AS day1,
+         (now() AT TIME ZONE 'America/New_York')::date + 1   AS day2;
 
 -- ─── 1. Tear down everything derived ────────────────────────────────────────
 -- timesheet_captures cascades off timesheet_entries (FK ON DELETE CASCADE).
