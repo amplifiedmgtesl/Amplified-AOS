@@ -807,6 +807,78 @@ td, th {
 }
 
 
+/* ===== CREW SCHEDULE REPORT (Jobs editor → Crew Schedule) ===== */
+/* The BEFORE document of the #46 set: reference only, no capture cells.
+   Same hide/reveal pattern as the sign-in sheet — `printing-schedule` on
+   <body> for one print run, which also hides the other two sheets so exactly
+   one prints. Styled deliberately CLOSE to the sign-in sheet (same family)
+   but with a banner and no bordered blanks, so the two are never confused in
+   a stack of paper — that confusion is the whole reason #46 exists. */
+.crew-schedule-report { display: none; }
+
+@media print {
+  body.printing-schedule .job-print-sheet,
+  body.printing-schedule .crew-sign-in-sheet { display: none !important; }
+  body.printing-schedule .crew-schedule-report {
+    display: block;
+    font-family: Arial, Helvetica, sans-serif;
+    color: #1a1a1a;
+    font-size: 11pt;
+    line-height: 1.4;
+  }
+  .crew-schedule-report .csr-header {
+    display: flex; align-items: center; gap: 16px;
+    padding-bottom: 10px; border-bottom: 2px solid #8a6f3a; margin-bottom: 10px;
+  }
+  .crew-schedule-report .csr-logo { max-height: 50px; width: auto; object-fit: contain; }
+  .crew-schedule-report .csr-title-block { flex: 1; }
+  .crew-schedule-report .csr-job-no {
+    font-family: monospace; font-size: 11pt; color: #666; letter-spacing: 0.5px;
+  }
+  .crew-schedule-report .csr-event-name {
+    font-size: 17pt; margin: 2px 0 4px; color: #1a1a1a; font-weight: 700;
+  }
+  .crew-schedule-report .csr-meta { font-size: 10pt; color: #444; }
+  /* Repeats on every page — a crew leader reading page 3 must still know this
+     is not the sheet to write on. */
+  .crew-schedule-report .csr-banner {
+    border: 1px solid #8a6f3a; background: #f4ece0; color: #5a4520;
+    padding: 5px 8px; font-size: 9pt; margin-bottom: 12px; border-radius: 3px;
+  }
+  .crew-schedule-report .csr-day { page-break-inside: avoid; margin-top: 14px; }
+  .crew-schedule-report .csr-day-header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 6px; border-bottom: 1px solid #d7c6aa; padding-bottom: 3px;
+  }
+  .crew-schedule-report .csr-day-header h2 {
+    font-size: 12pt; margin: 0; color: #8a6f3a;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .crew-schedule-report .csr-day-meta { font-size: 9pt; color: #555; }
+  .crew-schedule-report .csr-table {
+    width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: 4px;
+  }
+  .crew-schedule-report .csr-table th {
+    background: #e0e0e0; color: #000; text-align: left;
+    padding: 4px 6px; border: 1px solid #888; font-weight: 700;
+  }
+  /* Tighter than the sign-in sheet and top-aligned: nothing here is written
+     into, so rows do not need handwriting height. */
+  .crew-schedule-report .csr-table td {
+    padding: 3px 6px; border: 1px solid #999; background: #fff; vertical-align: top;
+  }
+  .crew-schedule-report .csr-unfilled { color: #999; font-style: italic; }
+  .crew-schedule-report .csr-unconfirmed { color: #9a3412; font-size: 8.5pt; }
+  .crew-schedule-report .csr-empty {
+    font-size: 10pt; font-style: italic; color: #777; padding: 4px 0;
+  }
+  .crew-schedule-report .csr-footer {
+    margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc;
+    font-size: 8pt; color: #888; text-align: center;
+  }
+}
+
+
 /* ===== QUOTE COVER PAGE ===== */
 .quote-cover-page {
   display: none;
