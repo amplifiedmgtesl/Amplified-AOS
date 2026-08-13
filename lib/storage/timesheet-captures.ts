@@ -104,3 +104,35 @@ export async function loadCaptures(entryIds: string[]): Promise<Map<string, Time
   }
   return map;
 }
+
+/**
+ * Short-lived signed URLs for signature images, keyed by storage path.
+ *
+ * The bucket is PRIVATE, so a signature can only be rendered through a signed
+ * URL — there is no public link to fall back on. Used by the printed actuals
+ * document (#46c) and, later, the client-facing PDF (kiosk spec Phase 2).
+ *
+ * Failures are swallowed to a missing entry rather than thrown: a signature
+ * that will not load must not take the whole timesheet down, and the document
+ * already has to render honestly for rows that were hand-entered and never had
+ * a signature at all.
+ */
+export async function signSignatureUrls(
+  paths: string[],
+  expiresInSeconds = 3600,
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const unique = Array.from(new Set(paths.filter(Boolean)));
+  if (unique.length === 0) return map;
+  const { data, error } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrls(unique, expiresInSeconds);
+  if (error) {
+    console.error("[timesheet-captures] signSignatureUrls:", error);
+    return map;
+  }
+  for (const r of data ?? []) {
+    if (r.signedUrl && r.path) map.set(r.path, r.signedUrl);
+  }
+  return map;
+}

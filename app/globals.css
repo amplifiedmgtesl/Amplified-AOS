@@ -1064,3 +1064,78 @@ body.show-ids .record-id::before { content: "🆔 "; }
   .print-preview-page { background: #fff; padding: 0; }
   .print-preview-paper { max-width: none; margin: 0; padding: 0; box-shadow: none; }
 }
+
+/* ===== TIMESHEET OF ACTUALS (#46c) ===== */
+/* Same visual family as the sign-in sheet — deliberately, since it is the same
+   document at a later stage — but with NO blank capture cells. */
+.timesheet-actuals-sheet {
+  font-family: Arial, Helvetica, sans-serif; color: #1a1a1a;
+  font-size: 11pt; line-height: 1.4;
+}
+.timesheet-actuals-sheet .tas-header {
+  display: flex; align-items: center; gap: 16px;
+  padding-bottom: 10px; border-bottom: 2px solid #8a6f3a; margin-bottom: 10px;
+}
+.timesheet-actuals-sheet .tas-logo { max-height: 50px; width: auto; object-fit: contain; }
+.timesheet-actuals-sheet .tas-title-block { flex: 1; }
+.timesheet-actuals-sheet .tas-job-no {
+  font-family: monospace; font-size: 11pt; color: #666; letter-spacing: 0.5px;
+}
+.timesheet-actuals-sheet .tas-event-name {
+  font-size: 17pt; margin: 2px 0 4px; color: #1a1a1a; font-weight: 700;
+}
+.timesheet-actuals-sheet .tas-meta { font-size: 10pt; color: #444; }
+.timesheet-actuals-sheet .tas-banner {
+  border: 1px solid #8a6f3a; background: #f4ece0; color: #5a4520;
+  padding: 5px 8px; font-size: 9pt; margin-bottom: 12px; border-radius: 3px;
+}
+.timesheet-actuals-sheet .tas-day { margin-top: 14px; }
+.timesheet-actuals-sheet .tas-day-header {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 6px; border-bottom: 1px solid #d7c6aa; padding-bottom: 3px;
+}
+.timesheet-actuals-sheet .tas-day-header h2 {
+  font-size: 12pt; margin: 0; color: #8a6f3a;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.timesheet-actuals-sheet .tas-day-meta { font-size: 9pt; color: #555; }
+.timesheet-actuals-sheet .tas-table {
+  width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: 4px;
+}
+.timesheet-actuals-sheet .tas-table th {
+  background: #e0e0e0; color: #000; text-align: left;
+  padding: 4px 6px; border: 1px solid #888; font-weight: 700;
+}
+.timesheet-actuals-sheet .tas-table th.tas-sig-th {
+  font-size: 10px; text-align: center; font-style: italic; color: #444;
+}
+.timesheet-actuals-sheet .tas-table td {
+  padding: 4px 6px; border: 1px solid #999; background: #fff; vertical-align: middle;
+}
+.timesheet-actuals-sheet .tas-identity > td {
+  background: #f4f4f4; border-top: 2px solid #888;
+}
+.timesheet-actuals-sheet .tas-identity, .timesheet-actuals-sheet .tas-capture {
+  page-break-inside: avoid;
+}
+.timesheet-actuals-sheet .tas-name { font-weight: 700; }
+.timesheet-actuals-sheet .tas-hours { text-align: right; font-weight: 700; }
+.timesheet-actuals-sheet td.tas-sig { text-align: center; padding: 2px; }
+/* The captured signature, scaled to the cell. Height is capped so one tall
+   scrawl cannot stretch a whole row out of the page grid. */
+.timesheet-actuals-sheet .tas-sig-img {
+  max-width: 100%; max-height: 34px; width: auto; object-fit: contain;
+  display: block; margin: 0 auto;
+}
+.timesheet-actuals-sheet .tas-nosig { font-size: 8pt; color: #999; font-style: italic; }
+.timesheet-actuals-sheet .tas-total {
+  margin-top: 12px; text-align: right; font-size: 11pt;
+  border-top: 2px solid #8a6f3a; padding-top: 6px;
+}
+.timesheet-actuals-sheet .tas-empty {
+  font-size: 10pt; font-style: italic; color: #777; padding: 8px 0;
+}
+.timesheet-actuals-sheet .tas-footer {
+  margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc;
+  font-size: 8pt; color: #888; text-align: center;
+}

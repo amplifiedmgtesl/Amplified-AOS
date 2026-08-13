@@ -27,13 +27,15 @@ import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { CrewScheduleReport } from "./crew-schedule-report";
 import { CrewSignInSheet } from "./crew-sign-in-sheet";
 import { JobPrintSheet } from "./job-print-sheet";
+import { TimesheetActualsSheet } from "./timesheet-actuals-sheet";
 import type { JobRequest, JobRequestDay } from "@/lib/store/types";
 
-export type PrintDoc = "schedule" | "signin" | "summary";
+export type PrintDoc = "schedule" | "signin" | "actuals" | "summary";
 
 const DOC_LABEL: Record<PrintDoc, string> = {
   schedule: "Crew Schedule",
   signin: "Crew Sign-In Sheet",
+  actuals: "Timesheet (Actuals)",
   summary: "Job Summary",
 };
 
@@ -42,6 +44,7 @@ const DOC_LABEL: Record<PrintDoc, string> = {
 const DOC_PURPOSE: Record<PrintDoc, string> = {
   schedule: "BEFORE the job — the crew leader's reference. Reading only; nothing is written on it.",
   signin: "DURING the job — the capture form crew sign. Blank time and signature boxes.",
+  actuals: "AFTER the job — the record of hours actually worked, with the signatures captured at the Time Clock. No blank boxes.",
   summary: "The job record — venue, daily requirements, assigned crew, notes.",
 };
 
@@ -138,6 +141,7 @@ export default function JobPrintPreview({ id }: { id: string }) {
             <select value={doc} onChange={(e) => setParam("doc", e.target.value)}>
               <option value="schedule">Crew Schedule (before)</option>
               <option value="signin">Crew Sign-In Sheet (during)</option>
+              <option value="actuals">Timesheet — Actuals (after)</option>
               <option value="summary">Job Summary</option>
             </select>
           </label>
@@ -152,7 +156,7 @@ export default function JobPrintPreview({ id }: { id: string }) {
             </label>
           )}
 
-          {doc !== "summary" && (
+          {(doc === "schedule" || doc === "signin") && (
             <label className="ppa-check" title="Off hides rows with no employee picked and rows not yet confirmed. Default on — a sheet that silently omits people is worse than a noisy one.">
               <input
                 type="checkbox"
@@ -187,6 +191,7 @@ export default function JobPrintPreview({ id }: { id: string }) {
         {doc === "signin" && (
           <CrewSignInSheet form={job} dayFilter={day} includeUnassigned={includeUnassigned} blankRows={blankRows} />
         )}
+        {doc === "actuals" && <TimesheetActualsSheet form={job} dayFilter={day} />}
         {doc === "summary" && <JobPrintSheet form={job} />}
       </div>
     </div>
