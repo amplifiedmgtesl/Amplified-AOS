@@ -61,7 +61,7 @@ Working priority order for active/requested projects. The `#N` ids are stable la
 
 - **#37 — AI agent to verify Connor's free-text quote terms against what the system can actually do** (added 2026-08-06, John). **The problem, in John's words:** Connor buries a "rule" in the text of a quote — a promise to the client that the system cannot honor — and it isn't discovered until billing time, when it becomes a scramble to find a workaround. This has happened multiple times. **Goal:** an agent that reads the free-text on a quote, extracts any operational rule it contains, and checks each one against (a) what the app can structurally represent and (b) what this specific quote's structured fields actually say — surfacing contradictions *before* the quote is issued. **Where the text lives** (verified in PROD 2026-08-06): `quotes.terms` (130 of 135 quotes non-empty, 27 distinct values, longest 13,605 chars), `quotes.notes` (10 quotes), and per-line `quote_lines.rule`. The terms field is mostly two families of boilerplate T&C (~13.5k and ~5.8k chars) — so the agent should **diff against the standard boilerplate and reason only about the deviations**, not re-read 13k characters of legal text every time. **Real examples already in prod terms text**, each of which maps onto a structured field the system has: *"Day rates are based on ten (10) hour shifts"* → the derived day floor (**#36**); *"OT may be triggered after ten (10)"* → `rate_card_profile_rows.ot_after`; *"Overtime is billed at 1.5 times the regular hourly rate after 40 worked hours in a contiguous work week"* → `PAYROLL_WEEKLY_OT_THRESHOLD` + `PAYROLL_OT_MULTIPLIER` in [lib/store/payroll.ts](../lib/store/payroll.ts); *"The standard work week runs Sun[day]…"* → `payWeekStartFor(workDate, "sun" | "mon")`. Each is checkable: parse the claim, read the corresponding field on this quote's resolved rate card, flag a mismatch. **Two distinct failure modes to report differently:** (1) *contradiction* — the text says something the structured data disagrees with (terms say OT after 10, the rate card says `ot_after = 'none'`); (2) *unrepresentable* — the text promises a rule with no structural home at all (tiered discounts, per-client rounding, "first 4 hours free", conditional travel), which is the class that causes the billing-time scramble. **Design notes:** run it as a **check, not a blocker** — surface findings on the quote screen and/or as a job-health check (the [lib/job-health/](../lib/job-health/) registry + runner is the natural host, and its `Finding` shape with `severity`/`downstream`/`fixHref` already fits); fire on quote issue rather than on every keystroke. **Relationship to #6** (AOS Assistant in-app chat agent, spec: [docs/aos-agent-spec.md](aos-agent-spec.md)): different shape — #6 is an interactive chat with fixed tools; this is an unattended validator over one document. But they share the plumbing (Claude API access from the app, a typed tool/context layer over the same business logic), so **whichever is built first should lay that groundwork for the other**. Scope with John before starting; the highest-value slice is probably just the deviation-diff plus the four rules listed above, since those are the ones already appearing in real quotes.
 
-### 🧪 Findings from the Time Clock + Phase 0 test run, 2026-08-11 (#38–#58)
+### 🧪 Findings from the Time Clock + Phase 0 test run, 2026-08-11 (#38–#58, plus #59 added 2026-08-12)
 
 Full session log: driven by John against the dev preview at `aa000d9` (kiosk merged onto Phase 0), using a
 purpose-seeded job `jobreq-1786821000000` — **AES_26081112_RHI_KIOSK**, Rhino Staging, 2026-08-11 (two
@@ -319,6 +319,28 @@ presentation around Phase 0 — not to the planned/actual model.
   loses 30 minutes and only the Timekeeping grid can correct it. May well be the company rule — but the
   kiosk's premise is "records identical to hand-entered ones," and this is a deduction nobody at the kiosk
   can see. Decide whether the default belongs on kiosk-captured rows.
+
+- **#59 — The second time block stops at `job_request_days`; everything downstream sees only pair 1**
+  (added 2026-08-12, found while auditing #47's fix). **Not currently reachable — but one two-block
+  final day away from being wrong, and midnight-crossing jobs are exactly that shape.**
+  `job_request_days` is the **only** table in the database carrying `start_time2`/`end_time2`; verified
+  against `information_schema` on dev. Every other table with block times has a single pair:
+  `job_requests`, `quotes`, `quote_lines`, `invoice_lines`, `calendar_events`.
+  **The concrete failure** is the day→header sync trigger `sync_job_request_from_days()`, which sets
+  `end_time = (SELECT end_time FROM job_request_days ORDER BY event_date DESC LIMIT 1)` — the last day's
+  **pair-1** end, ignoring `end_time2`. A job whose final day runs `08:00–13:00` then `20:00–02:00`
+  therefore records a header `end_time` of **13:00**. That header drives the master calendar's display
+  **and its ICS export** (`master-calendar.tsx` `formatIcsDate(e.endDate, e.endTime …)`), so the exported
+  calendar event ends at 1pm for a crew working past midnight. `start_time` has the mirror-image issue
+  for a job whose FIRST day starts with a pair-2-only shape, though that is rarer.
+  **Why it isn't firing today:** dev has 2 days with a pair 2 and **neither is the last day of its job**
+  (verified). Nothing in the data is currently wrong.
+  **Not a display fix** — unlike #47, which was three surfaces printing pair 1 only and is now fixed.
+  This needs a migration plus a genuine modelling decision: does a second block belong on quotes and
+  invoices at all, or is a two-block day always billed as one span? Answer that before patching the
+  trigger, or the trigger gets fixed while quoting stays blind. Cheapest correct first step is probably
+  `end_time = GREATEST(end_time, end_time2)` on the last day, which fixes the calendar without touching
+  the billing model — but confirm the modelling question first.
 
 **Verified working in this run:** Phase 0 import leaves all actuals blank (10/10 rows, including the two
 with planned overrides); manual planned-time entry persists (`planned_in1` NULL → `10:00`, stored 24h,
