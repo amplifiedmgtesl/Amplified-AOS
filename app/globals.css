@@ -611,133 +611,131 @@ td, th {
 
 /* ===== JOB PRINT SHEET (Jobs editor → Download / Print PDF) ===== */
 /* Hidden on screen; @media print reveals it as a single-column layout. */
-.job-print-sheet { display: none; }
 
-@media print {
-  .job-print-sheet {
-    display: block;
-    font-family: Arial, Helvetica, sans-serif;
-    color: #1a1a1a;
-    font-size: 11pt;
-    line-height: 1.4;
-  }
-  .job-print-sheet .jps-header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid #8a6f3a;
-    margin-bottom: 14px;
-  }
-  .job-print-sheet .jps-logo {
-    max-height: 50px;
-    width: auto;
-    object-fit: contain;
-  }
-  .job-print-sheet .jps-title-block { flex: 1; }
-  .job-print-sheet .jps-job-no {
-    font-family: monospace;
-    font-size: 11pt;
-    color: #666;
-    letter-spacing: 0.5px;
-  }
-  .job-print-sheet .jps-event-name {
-    font-size: 18pt;
-    margin: 2px 0 4px;
-    color: #1a1a1a;
-    font-weight: 700;
-  }
-  .job-print-sheet .jps-meta {
-    font-size: 10pt;
-    color: #444;
-  }
-  .job-print-sheet .jps-section {
-    page-break-inside: avoid;
-    margin-top: 14px;
-  }
-  .job-print-sheet .jps-section h2 {
-    font-size: 12pt;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #8a6f3a;
-    border-bottom: 1px solid #d7c6aa;
-    padding-bottom: 3px;
-    margin: 0 0 8px;
-  }
-  .job-print-sheet .jps-kv { font-size: 10pt; }
-  .job-print-sheet .jps-day {
-    page-break-inside: avoid;
-    margin-bottom: 10px;
-    padding: 8px 10px;
-    background: #f8f5ee;
-    border: 1px solid #d7c6aa;
-    border-radius: 4px;
-  }
-  .job-print-sheet .jps-day-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin-bottom: 6px;
-  }
-  .job-print-sheet .jps-day-header h3 {
-    font-size: 11pt;
-    margin: 0;
-    color: #1a1a1a;
-  }
-  .job-print-sheet .jps-day-meta {
-    font-size: 9pt;
-    color: #555;
-  }
-  .job-print-sheet .jps-day-notes {
-    font-size: 9pt;
-    color: #555;
-    font-style: italic;
-    margin-top: 4px;
-  }
-  .job-print-sheet .jps-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 9.5pt;
-    margin-top: 4px;
-  }
-  .job-print-sheet .jps-table th {
-    background: #e0e0e0;
-    color: #000;
-    text-align: left;
-    padding: 4px 6px;
-    border: 1px solid #888;
-    font-weight: 700;
-  }
-  .job-print-sheet .jps-table td {
-    padding: 4px 6px;
-    border: 1px solid #c0c0c0;
-    background: #fff;
-  }
-  .job-print-sheet .jps-total-row td {
-    background: #efe8d6 !important;
-    font-weight: 700;
-  }
-  .job-print-sheet .jps-empty {
-    font-size: 10pt;
-    font-style: italic;
-    color: #777;
-    padding: 4px 0;
-  }
-  .job-print-sheet .jps-notes {
-    font-size: 10pt;
-    white-space: pre-wrap;
-    background: #fafafa;
-    border-left: 3px solid #d7c6aa;
-    padding: 8px 12px;
-  }
-  .job-print-sheet .jps-footer {
-    margin-top: 16px;
-    padding-top: 8px;
-    border-top: 1px solid #ccc;
-    font-size: 8pt;
-    color: #888;
-    text-align: center;
-  }
+
+.job-print-sheet {
+  display: block;
+  font-family: Arial, Helvetica, sans-serif;
+  color: #1a1a1a;
+  font-size: 11pt;
+  line-height: 1.4;
+}
+.job-print-sheet .jps-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #8a6f3a;
+  margin-bottom: 14px;
+}
+.job-print-sheet .jps-logo {
+  max-height: 50px;
+  width: auto;
+  object-fit: contain;
+}
+.job-print-sheet .jps-title-block { flex: 1; }
+.job-print-sheet .jps-job-no {
+  font-family: monospace;
+  font-size: 11pt;
+  color: #666;
+  letter-spacing: 0.5px;
+}
+.job-print-sheet .jps-event-name {
+  font-size: 18pt;
+  margin: 2px 0 4px;
+  color: #1a1a1a;
+  font-weight: 700;
+}
+.job-print-sheet .jps-meta {
+  font-size: 10pt;
+  color: #444;
+}
+.job-print-sheet .jps-section {
+  page-break-inside: avoid;
+  margin-top: 14px;
+}
+.job-print-sheet .jps-section h2 {
+  font-size: 12pt;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8a6f3a;
+  border-bottom: 1px solid #d7c6aa;
+  padding-bottom: 3px;
+  margin: 0 0 8px;
+}
+.job-print-sheet .jps-kv { font-size: 10pt; }
+.job-print-sheet .jps-day {
+  page-break-inside: avoid;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: #f8f5ee;
+  border: 1px solid #d7c6aa;
+  border-radius: 4px;
+}
+.job-print-sheet .jps-day-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+.job-print-sheet .jps-day-header h3 {
+  font-size: 11pt;
+  margin: 0;
+  color: #1a1a1a;
+}
+.job-print-sheet .jps-day-meta {
+  font-size: 9pt;
+  color: #555;
+}
+.job-print-sheet .jps-day-notes {
+  font-size: 9pt;
+  color: #555;
+  font-style: italic;
+  margin-top: 4px;
+}
+.job-print-sheet .jps-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9.5pt;
+  margin-top: 4px;
+}
+.job-print-sheet .jps-table th {
+  background: #e0e0e0;
+  color: #000;
+  text-align: left;
+  padding: 4px 6px;
+  border: 1px solid #888;
+  font-weight: 700;
+}
+.job-print-sheet .jps-table td {
+  padding: 4px 6px;
+  border: 1px solid #c0c0c0;
+  background: #fff;
+}
+.job-print-sheet .jps-total-row td {
+  background: #efe8d6 !important;
+  font-weight: 700;
+}
+.job-print-sheet .jps-empty {
+  font-size: 10pt;
+  font-style: italic;
+  color: #777;
+  padding: 4px 0;
+}
+.job-print-sheet .jps-notes {
+  font-size: 10pt;
+  white-space: pre-wrap;
+  background: #fafafa;
+  border-left: 3px solid #d7c6aa;
+  padding: 8px 12px;
+}
+.job-print-sheet .jps-footer {
+  margin-top: 16px;
+  padding-top: 8px;
+  border-top: 1px solid #ccc;
+  font-size: 8pt;
+  color: #888;
+  text-align: center;
 }
 
 
@@ -745,82 +743,79 @@ td, th {
 /* Hidden on screen AND in ordinary print. Revealed only when <body> carries
    `printing-signin`, which the Sign-In Sheet button sets for one print run —
    the same class hides the summary sheet so exactly one prints. */
-.crew-sign-in-sheet { display: none; }
 
-@media print {
-  body.printing-signin .job-print-sheet { display: none !important; }
-  body.printing-signin .crew-sign-in-sheet {
-    display: block;
-    font-family: Arial, Helvetica, sans-serif;
-    color: #1a1a1a;
-    font-size: 11pt;
-    line-height: 1.4;
-  }
-  .crew-sign-in-sheet .csis-header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding-bottom: 10px;
-    border-bottom: 2px solid #8a6f3a;
-    margin-bottom: 14px;
-  }
-  .crew-sign-in-sheet .csis-logo { max-height: 50px; width: auto; object-fit: contain; }
-  .crew-sign-in-sheet .csis-title-block { flex: 1; }
-  .crew-sign-in-sheet .csis-job-no {
-    font-family: monospace; font-size: 11pt; color: #666; letter-spacing: 0.5px;
-  }
-  .crew-sign-in-sheet .csis-event-name {
-    font-size: 17pt; margin: 2px 0 4px; color: #1a1a1a; font-weight: 700;
-  }
-  .crew-sign-in-sheet .csis-meta { font-size: 10pt; color: #444; }
-  .crew-sign-in-sheet .csis-day {
-    page-break-inside: avoid; margin-top: 14px;
-  }
-  .crew-sign-in-sheet .csis-day-header {
-    display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: 6px; border-bottom: 1px solid #d7c6aa; padding-bottom: 3px;
-  }
-  .crew-sign-in-sheet .csis-day-header h2 {
-    font-size: 12pt; margin: 0; color: #8a6f3a;
-    text-transform: uppercase; letter-spacing: 0.05em;
-  }
-  .crew-sign-in-sheet .csis-day-meta { font-size: 9pt; color: #555; }
-  .crew-sign-in-sheet .csis-table {
-    width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: 4px;
-  }
-  .crew-sign-in-sheet .csis-table th {
-    background: #e0e0e0; color: #000; text-align: left;
-    padding: 4px 6px; border: 1px solid #888; font-weight: 700;
-  }
-  .crew-sign-in-sheet .csis-table td {
-    padding: 6px; border: 1px solid #999; background: #fff; vertical-align: bottom;
-  }
-  /* Two rows per person, matching the printed timesheet: identity above,
-     capture below. Keep a person's pair together across a page break. */
-  .crew-sign-in-sheet .csis-identity > td {
-    background: #f4f4f4; border-top: 2px solid #888; padding: 3px 6px;
-    vertical-align: middle;
-  }
-  .crew-sign-in-sheet .csis-identity { page-break-inside: avoid; }
-  .crew-sign-in-sheet .csis-capture  { page-break-inside: avoid; }
-  /* Blank capture cells need room for handwriting. */
-  .crew-sign-in-sheet .csis-table td.csis-blank { height: 26px; }
-  /* Signature boxes — same treatment as the production printed timesheet's
-     .sig-box so the on-site paper and the office document read the same. */
-  .crew-sign-in-sheet .csis-table td.csis-sig {
-    border: 1px solid #888; background: #fff; padding: 10px 4px; min-width: 60px;
-  }
-  .crew-sign-in-sheet .csis-table th.csis-sig-th {
-    background: #e0e0e0; border: 1px solid #888;
-    font-size: 10px; text-align: center; font-style: italic; color: #444;
-  }
-  .crew-sign-in-sheet .csis-empty {
-    font-size: 10pt; font-style: italic; color: #777; padding: 4px 0;
-  }
-  .crew-sign-in-sheet .csis-footer {
-    margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc;
-    font-size: 8pt; color: #888; text-align: center;
-  }
+
+.crew-sign-in-sheet {
+  display: block;
+  font-family: Arial, Helvetica, sans-serif;
+  color: #1a1a1a;
+  font-size: 11pt;
+  line-height: 1.4;
+}
+.crew-sign-in-sheet .csis-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #8a6f3a;
+  margin-bottom: 14px;
+}
+.crew-sign-in-sheet .csis-logo { max-height: 50px; width: auto; object-fit: contain; }
+.crew-sign-in-sheet .csis-title-block { flex: 1; }
+.crew-sign-in-sheet .csis-job-no {
+  font-family: monospace; font-size: 11pt; color: #666; letter-spacing: 0.5px;
+}
+.crew-sign-in-sheet .csis-event-name {
+  font-size: 17pt; margin: 2px 0 4px; color: #1a1a1a; font-weight: 700;
+}
+.crew-sign-in-sheet .csis-meta { font-size: 10pt; color: #444; }
+.crew-sign-in-sheet .csis-day {
+  page-break-inside: avoid; margin-top: 14px;
+}
+.crew-sign-in-sheet .csis-day-header {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 6px; border-bottom: 1px solid #d7c6aa; padding-bottom: 3px;
+}
+.crew-sign-in-sheet .csis-day-header h2 {
+  font-size: 12pt; margin: 0; color: #8a6f3a;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.crew-sign-in-sheet .csis-day-meta { font-size: 9pt; color: #555; }
+.crew-sign-in-sheet .csis-table {
+  width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: 4px;
+}
+.crew-sign-in-sheet .csis-table th {
+  background: #e0e0e0; color: #000; text-align: left;
+  padding: 4px 6px; border: 1px solid #888; font-weight: 700;
+}
+.crew-sign-in-sheet .csis-table td {
+  padding: 6px; border: 1px solid #999; background: #fff; vertical-align: bottom;
+}
+/* Two rows per person, matching the printed timesheet: identity above,
+   capture below. Keep a person's pair together across a page break. */
+.crew-sign-in-sheet .csis-identity > td {
+  background: #f4f4f4; border-top: 2px solid #888; padding: 3px 6px;
+  vertical-align: middle;
+}
+.crew-sign-in-sheet .csis-identity { page-break-inside: avoid; }
+.crew-sign-in-sheet .csis-capture  { page-break-inside: avoid; }
+/* Blank capture cells need room for handwriting. */
+.crew-sign-in-sheet .csis-table td.csis-blank { height: 26px; }
+/* Signature boxes — same treatment as the production printed timesheet's
+   .sig-box so the on-site paper and the office document read the same. */
+.crew-sign-in-sheet .csis-table td.csis-sig {
+  border: 1px solid #888; background: #fff; padding: 10px 4px; min-width: 60px;
+}
+.crew-sign-in-sheet .csis-table th.csis-sig-th {
+  background: #e0e0e0; border: 1px solid #888;
+  font-size: 10px; text-align: center; font-style: italic; color: #444;
+}
+.crew-sign-in-sheet .csis-empty {
+  font-size: 10pt; font-style: italic; color: #777; padding: 4px 0;
+}
+.crew-sign-in-sheet .csis-footer {
+  margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc;
+  font-size: 8pt; color: #888; text-align: center;
 }
 
 
@@ -831,68 +826,64 @@ td, th {
    one prints. Styled deliberately CLOSE to the sign-in sheet (same family)
    but with a banner and no bordered blanks, so the two are never confused in
    a stack of paper — that confusion is the whole reason #46 exists. */
-.crew-schedule-report { display: none; }
 
-@media print {
-  body.printing-schedule .job-print-sheet,
-  body.printing-schedule .crew-sign-in-sheet { display: none !important; }
-  body.printing-schedule .crew-schedule-report {
-    display: block;
-    font-family: Arial, Helvetica, sans-serif;
-    color: #1a1a1a;
-    font-size: 11pt;
-    line-height: 1.4;
-  }
-  .crew-schedule-report .csr-header {
-    display: flex; align-items: center; gap: 16px;
-    padding-bottom: 10px; border-bottom: 2px solid #8a6f3a; margin-bottom: 10px;
-  }
-  .crew-schedule-report .csr-logo { max-height: 50px; width: auto; object-fit: contain; }
-  .crew-schedule-report .csr-title-block { flex: 1; }
-  .crew-schedule-report .csr-job-no {
-    font-family: monospace; font-size: 11pt; color: #666; letter-spacing: 0.5px;
-  }
-  .crew-schedule-report .csr-event-name {
-    font-size: 17pt; margin: 2px 0 4px; color: #1a1a1a; font-weight: 700;
-  }
-  .crew-schedule-report .csr-meta { font-size: 10pt; color: #444; }
-  /* Repeats on every page — a crew leader reading page 3 must still know this
-     is not the sheet to write on. */
-  .crew-schedule-report .csr-banner {
-    border: 1px solid #8a6f3a; background: #f4ece0; color: #5a4520;
-    padding: 5px 8px; font-size: 9pt; margin-bottom: 12px; border-radius: 3px;
-  }
-  .crew-schedule-report .csr-day { page-break-inside: avoid; margin-top: 14px; }
-  .crew-schedule-report .csr-day-header {
-    display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: 6px; border-bottom: 1px solid #d7c6aa; padding-bottom: 3px;
-  }
-  .crew-schedule-report .csr-day-header h2 {
-    font-size: 12pt; margin: 0; color: #8a6f3a;
-    text-transform: uppercase; letter-spacing: 0.05em;
-  }
-  .crew-schedule-report .csr-day-meta { font-size: 9pt; color: #555; }
-  .crew-schedule-report .csr-table {
-    width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: 4px;
-  }
-  .crew-schedule-report .csr-table th {
-    background: #e0e0e0; color: #000; text-align: left;
-    padding: 4px 6px; border: 1px solid #888; font-weight: 700;
-  }
-  /* Tighter than the sign-in sheet and top-aligned: nothing here is written
-     into, so rows do not need handwriting height. */
-  .crew-schedule-report .csr-table td {
-    padding: 3px 6px; border: 1px solid #999; background: #fff; vertical-align: top;
-  }
-  .crew-schedule-report .csr-unfilled { color: #999; font-style: italic; }
-  .crew-schedule-report .csr-unconfirmed { color: #9a3412; font-size: 8.5pt; }
-  .crew-schedule-report .csr-empty {
-    font-size: 10pt; font-style: italic; color: #777; padding: 4px 0;
-  }
-  .crew-schedule-report .csr-footer {
-    margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc;
-    font-size: 8pt; color: #888; text-align: center;
-  }
+
+.crew-schedule-report {
+  display: block;
+  font-family: Arial, Helvetica, sans-serif;
+  color: #1a1a1a;
+  font-size: 11pt;
+  line-height: 1.4;
+}
+.crew-schedule-report .csr-header {
+  display: flex; align-items: center; gap: 16px;
+  padding-bottom: 10px; border-bottom: 2px solid #8a6f3a; margin-bottom: 10px;
+}
+.crew-schedule-report .csr-logo { max-height: 50px; width: auto; object-fit: contain; }
+.crew-schedule-report .csr-title-block { flex: 1; }
+.crew-schedule-report .csr-job-no {
+  font-family: monospace; font-size: 11pt; color: #666; letter-spacing: 0.5px;
+}
+.crew-schedule-report .csr-event-name {
+  font-size: 17pt; margin: 2px 0 4px; color: #1a1a1a; font-weight: 700;
+}
+.crew-schedule-report .csr-meta { font-size: 10pt; color: #444; }
+/* Repeats on every page — a crew leader reading page 3 must still know this
+   is not the sheet to write on. */
+.crew-schedule-report .csr-banner {
+  border: 1px solid #8a6f3a; background: #f4ece0; color: #5a4520;
+  padding: 5px 8px; font-size: 9pt; margin-bottom: 12px; border-radius: 3px;
+}
+.crew-schedule-report .csr-day { page-break-inside: avoid; margin-top: 14px; }
+.crew-schedule-report .csr-day-header {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 6px; border-bottom: 1px solid #d7c6aa; padding-bottom: 3px;
+}
+.crew-schedule-report .csr-day-header h2 {
+  font-size: 12pt; margin: 0; color: #8a6f3a;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.crew-schedule-report .csr-day-meta { font-size: 9pt; color: #555; }
+.crew-schedule-report .csr-table {
+  width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-top: 4px;
+}
+.crew-schedule-report .csr-table th {
+  background: #e0e0e0; color: #000; text-align: left;
+  padding: 4px 6px; border: 1px solid #888; font-weight: 700;
+}
+/* Tighter than the sign-in sheet and top-aligned: nothing here is written
+   into, so rows do not need handwriting height. */
+.crew-schedule-report .csr-table td {
+  padding: 3px 6px; border: 1px solid #999; background: #fff; vertical-align: top;
+}
+.crew-schedule-report .csr-unfilled { color: #999; font-style: italic; }
+.crew-schedule-report .csr-unconfirmed { color: #9a3412; font-size: 8.5pt; }
+.crew-schedule-report .csr-empty {
+  font-size: 10pt; font-style: italic; color: #777; padding: 4px 0;
+}
+.crew-schedule-report .csr-footer {
+  margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc;
+  font-size: 8pt; color: #888; text-align: center;
 }
 
 
@@ -1038,4 +1029,38 @@ body.show-ids .record-id::before { content: "🆔 "; }
 /* Print: never show IDs on PDFs / printouts regardless of toggle. */
 @media print {
   .record-id { display: none !important; }
+}
+
+/* ===== PRINT PREVIEW SHELL (/job-requests/[id]/print) ===== */
+/* The document styles above now apply on SCREEN as well as in print — that is
+   the point of a preview. This shell frames them like paper and carries the
+   toolbar, which is the only thing @media print needs to remove. */
+.print-preview-page { background: #6b6b6b; min-height: 100vh; padding: 0 0 40px; }
+.print-preview-paper {
+  background: #fff; max-width: 8.5in; margin: 0 auto; padding: 0.5in;
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+}
+.print-actions {
+  position: sticky; top: 0; z-index: 20;
+  background: #1e293b; color: #e2e8f0; padding: 10px 16px; margin-bottom: 18px;
+  font-family: system-ui, sans-serif; font-size: 13px;
+}
+.print-actions .ppa-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.print-actions .ppa-back { color: #94a3b8; text-decoration: none; }
+.print-actions .ppa-title { font-weight: 700; color: #f1f5f9; font-size: 15px; }
+.print-actions .ppa-print {
+  background: #2563eb; color: #fff; border: none; border-radius: 8px;
+  padding: 8px 16px; font-weight: 700; cursor: pointer;
+}
+.print-actions label { display: inline-flex; align-items: center; gap: 5px; color: #cbd5e1; }
+.print-actions select { width: auto; padding: 4px 8px; border-radius: 6px; font-size: 13px; }
+.print-actions .ppa-check input { margin: 0; }
+.print-actions .ppa-purpose { color: #fcd9a8; font-size: 12px; }
+.print-actions .ppa-tip { color: #94a3b8; font-size: 11px; margin-top: 2px; }
+
+@media print {
+  /* The paper IS the page when printing — drop the shell's framing entirely so
+     nothing shifts between what was previewed and what comes out. */
+  .print-preview-page { background: #fff; padding: 0; }
+  .print-preview-paper { max-width: none; margin: 0; padding: 0; box-shadow: none; }
 }

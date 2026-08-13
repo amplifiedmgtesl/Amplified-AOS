@@ -45,7 +45,20 @@ function dayWindowText(d: JobRequestDay): string {
   return [pair1, pair2].filter(Boolean).join(" · ");
 }
 
-export function CrewSignInSheet({ form }: { form: JobRequest }) {
+export function CrewSignInSheet({
+  form,
+  dayFilter = "all",
+  includeUnassigned = true,
+  blankRows = 0,
+}: {
+  form: JobRequest;
+  /** "all", or a single YYYY-MM-DD to print one day. */
+  dayFilter?: string;
+  /** False hides rows with no employee picked and rows not yet confirmed. */
+  includeUnassigned?: boolean;
+  /** Extra empty rows for walk-ups and last-minute replacements (#48). */
+  blankRows?: number;
+}) {
   const [days, setDays] = useState<JobRequestDay[]>([]);
   const [assignments, setAssignments] = useState<JobRequestAssignment[]>([]);
   const [shifts, setShifts] = useState<JobRequestShift[]>([]);
@@ -126,9 +139,10 @@ export function CrewSignInSheet({ form }: { form: JobRequest }) {
       {days.length === 0 ? (
         <div className="csis-empty">No days defined for this job yet.</div>
       ) : (
-        days.map((d) => {
+        days.filter((d) => dayFilter === "all" || d.eventDate === dayFilter).map((d) => {
           const dayAsg = assignments
             .filter((a) => a.jobRequestDayId === d.id)
+            .filter((a) => includeUnassigned || (a.employeeKey && a.confirmed))
             .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
           return (
             <section key={d.id} className="csis-day">
@@ -199,6 +213,31 @@ export function CrewSignInSheet({ form }: { form: JobRequest }) {
                         </Fragment>
                       );
                     })}
+                    {/* Walk-ups and last-minute replacements. Printed sheets read
+                        from ASSIGNMENTS, so someone added on the day appears on
+                        no sheet at all (#48) — these give them somewhere to go.
+                        Deliberately marked, not blank: "scheduled" vs "added on
+                        the day" is worth telling apart on paper. */}
+                    {Array.from({ length: blankRows }).map((_, i) => (
+                      <Fragment key={`blank-${i}`}>
+                        <tr className="csis-identity csis-walkup">
+                          <td colSpan={2}></td>
+                          <td colSpan={2}></td>
+                          <td colSpan={1}></td>
+                          <td colSpan={3}>added on the day</td>
+                        </tr>
+                        <tr className="csis-capture">
+                          <td className="csis-sig"></td>
+                          <td className="csis-blank"></td>
+                          <td className="csis-blank"></td>
+                          <td className="csis-blank"></td>
+                          <td className="csis-sig"></td>
+                          <td className="csis-blank"></td>
+                          <td className="csis-blank"></td>
+                          <td className="csis-blank"></td>
+                        </tr>
+                      </Fragment>
+                    ))}
                   </tbody>
                 </table>
               )}

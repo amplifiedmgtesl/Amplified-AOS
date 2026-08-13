@@ -58,7 +58,17 @@ function dayWindowText(d: JobRequestDay): string {
   return [pair1, pair2].filter(Boolean).join(" · ");
 }
 
-export function CrewScheduleReport({ form }: { form: JobRequest }) {
+export function CrewScheduleReport({
+  form,
+  dayFilter = "all",
+  includeUnassigned = true,
+}: {
+  form: JobRequest;
+  /** "all", or a single YYYY-MM-DD to print one day. */
+  dayFilter?: string;
+  /** False hides rows with no employee picked and rows not yet confirmed. */
+  includeUnassigned?: boolean;
+}) {
   const [days, setDays] = useState<JobRequestDay[]>([]);
   const [assignments, setAssignments] = useState<JobRequestAssignment[]>([]);
   const [shifts, setShifts] = useState<JobRequestShift[]>([]);
@@ -145,9 +155,10 @@ export function CrewScheduleReport({ form }: { form: JobRequest }) {
       {days.length === 0 ? (
         <div className="csr-empty">No days defined for this job yet.</div>
       ) : (
-        days.map((d) => {
+        days.filter((d) => dayFilter === "all" || d.eventDate === dayFilter).map((d) => {
           const dayAsg = assignments
             .filter((a) => a.jobRequestDayId === d.id)
+            .filter((a) => includeUnassigned || (a.employeeKey && a.confirmed))
             .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
           const window = dayWindowText(d);
           return (

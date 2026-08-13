@@ -14,15 +14,11 @@ import { JobRequestDaysSection } from "./job-request-days-section";
 import { JobRequestCrewSection } from "./job-request-crew-section";
 import { JobRequestShiftsSection } from "./job-request-shifts-section";
 import { JobHealthSection, useJobHealthCount } from "./job-health-section";
-import { JobPrintSheet } from "./job-print-sheet";
-import { CrewSignInSheet } from "./crew-sign-in-sheet";
-import { CrewScheduleReport } from "./crew-schedule-report";
 import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { computeJobNo, defaultEventAbbr, sanitizeEventAbbr } from "@/lib/jobs/job-no";
 import { printWithTitle } from "@/lib/print-with-title";
 import { formatClock } from "@/lib/time-utils";
-import { confirmSignInSheetPrint } from "@/lib/jobs/confirm-sign-in-sheet-print";
 import type { JobRequest, Client } from "@/lib/store/types";
 
 const TIMES = timeOptions();
@@ -797,58 +793,34 @@ export default function JobDetail({
             </button>
           )}
           {editingId && (
-            <button
+            <a
               className="secondary"
-              onClick={() => printWithTitle(["Job", form.jobNo || form.eventName, form.client])}
-              title="Print a one-page summary of this job"
+              href={`/job-requests/${encodeURIComponent(editingId)}/print?doc=summary`}
+              style={{ display: "inline-block", padding: "10px 14px", border: "1px solid var(--line)", borderRadius: 12, background: "#fff", fontWeight: 700 }}
+              title="Preview and print the job summary"
             >
               Print PDF
-            </button>
+            </a>
           )}
           {editingId && (
-            <button
+            <a
               className="secondary"
-              onClick={async () => {
-                // #38: warn if this sheet would go on-site with an empty
-                // Expected column. Warns only — never blocks the print.
-                if (!(await confirmSignInSheetPrint(editingId))) return;
-                // Reveal the sign-in sheet (and hide the summary sheet) for this
-                // one print, then clean the body class up on afterprint.
-                document.body.classList.add("printing-signin");
-                const cleanup = () => {
-                  document.body.classList.remove("printing-signin");
-                  window.removeEventListener("afterprint", cleanup);
-                };
-                window.addEventListener("afterprint", cleanup);
-                setTimeout(cleanup, 60_000);
-                printWithTitle(["Sign-In Sheet", form.jobNo || form.eventName, form.client]);
-              }}
-              title="Print a crew sign-in sheet (planned times + blank time/signature lines) from the assigned crew"
+              href={`/job-requests/${encodeURIComponent(editingId)}/print?doc=signin`}
+              style={{ display: "inline-block", padding: "10px 14px", border: "1px solid var(--line)", borderRadius: 12, background: "#fff", fontWeight: 700 }}
+              title="Preview and print the crew sign-in sheet — blank time and signature boxes"
             >
               Sign-In Sheet
-            </button>
+            </a>
           )}
           {editingId && (
-            <button
+            <a
               className="secondary"
-              onClick={() => {
-                // The BEFORE document (#46). No blank-Expected pre-flight here:
-                // unlike the sign-in sheet this one is never written on, so a
-                // missing time is information ("no time set"), not a defect
-                // that sends someone on site with an unusable form.
-                document.body.classList.add("printing-schedule");
-                const cleanup = () => {
-                  document.body.classList.remove("printing-schedule");
-                  window.removeEventListener("afterprint", cleanup);
-                };
-                window.addEventListener("afterprint", cleanup);
-                setTimeout(cleanup, 60_000);
-                printWithTitle(["Crew Schedule", form.jobNo || form.eventName, form.client]);
-              }}
-              title="Print the crew schedule — who works when, reference only. No signature or blank time columns."
+              href={`/job-requests/${encodeURIComponent(editingId)}/print?doc=schedule`}
+              style={{ display: "inline-block", padding: "10px 14px", border: "1px solid var(--line)", borderRadius: 12, background: "#fff", fontWeight: 700 }}
+              title="Preview and print the crew schedule — reference only, no signature or blank time columns"
             >
               Crew Schedule
-            </button>
+            </a>
           )}
           {editingId && form.addToCalendar && (
             <button
@@ -980,9 +952,6 @@ export default function JobDetail({
       </div>
 
       {/* Print-only summary; rendered hidden on screen, fully laid out in print. */}
-      {editingId && <JobPrintSheet form={form} />}
-      {editingId && <CrewSignInSheet form={form} />}
-      {editingId && <CrewScheduleReport form={form} />}
     </div>
   );
 }
