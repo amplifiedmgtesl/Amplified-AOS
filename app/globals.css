@@ -795,8 +795,25 @@ td, th {
   .crew-sign-in-sheet .csis-table td {
     padding: 6px; border: 1px solid #999; background: #fff; vertical-align: bottom;
   }
+  /* Two rows per person, matching the printed timesheet: identity above,
+     capture below. Keep a person's pair together across a page break. */
+  .crew-sign-in-sheet .csis-identity > td {
+    background: #f4f4f4; border-top: 2px solid #888; padding: 3px 6px;
+    vertical-align: middle;
+  }
+  .crew-sign-in-sheet .csis-identity { page-break-inside: avoid; }
+  .crew-sign-in-sheet .csis-capture  { page-break-inside: avoid; }
   /* Blank capture cells need room for handwriting. */
   .crew-sign-in-sheet .csis-table td.csis-blank { height: 26px; }
+  /* Signature boxes — same treatment as the production printed timesheet's
+     .sig-box so the on-site paper and the office document read the same. */
+  .crew-sign-in-sheet .csis-table td.csis-sig {
+    border: 1px solid #888; background: #fff; padding: 10px 4px; min-width: 60px;
+  }
+  .crew-sign-in-sheet .csis-table th.csis-sig-th {
+    background: #e0e0e0; border: 1px solid #888;
+    font-size: 10px; text-align: center; font-style: italic; color: #444;
+  }
   .crew-sign-in-sheet .csis-empty {
     font-size: 10pt; font-style: italic; color: #777; padding: 4px 0;
   }

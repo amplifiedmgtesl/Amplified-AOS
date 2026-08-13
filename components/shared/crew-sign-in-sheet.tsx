@@ -14,7 +14,7 @@
 // <body> carries `printing-signin` (set by the Jobs editor's "Sign-In Sheet"
 // button, which also hides the summary sheet). See app/globals.css.
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { loadAssignmentsForRequest } from "@/lib/storage/job-request-assignments";
@@ -143,32 +143,60 @@ export function CrewSignInSheet({ form }: { form: JobRequest }) {
                 <div className="csis-empty">No crew assigned for this day.</div>
               ) : (
                 <table className="csis-table">
+                  {/* Column widths copied from the PRODUCTION printed timesheet
+                      (main: timekeeping.tsx colgroup) so the paper a crew leader
+                      fills in on site lines up with the document the office
+                      reads back in the app. */}
+                  <colgroup>
+                    <col style={{ width: "18%" }} />{/* Sign IN 1  */}
+                    <col style={{ width: "9%"  }} />{/* Time IN 1  */}
+                    <col style={{ width: "9%"  }} />{/* Time OUT 1 */}
+                    <col style={{ width: "7%"  }} />{/* Meal 1     */}
+                    <col style={{ width: "18%" }} />{/* Sign IN 2  */}
+                    <col style={{ width: "9%"  }} />{/* Time IN 2  */}
+                    <col style={{ width: "9%"  }} />{/* Time OUT 2 */}
+                    <col style={{ width: "21%" }} />{/* Meal 2     */}
+                  </colgroup>
                   <thead>
                     <tr>
-                      <th style={{ width: "20%" }}>Name</th>
-                      <th style={{ width: "14%" }}>Position</th>
-                      {anyShift && <th style={{ width: "10%" }}>Shift</th>}
-                      <th style={{ width: "16%" }}>Expected</th>
-                      <th style={{ width: "13%" }}>Time In</th>
-                      <th style={{ width: "13%" }}>Time Out</th>
-                      <th>Signature</th>
+                      <th colSpan={2}>Name</th>
+                      <th colSpan={2}>Position</th>
+                      <th colSpan={1}>{anyShift ? "Shift" : ""}</th>
+                      <th colSpan={3}>Scheduled</th>
+                    </tr>
+                    <tr>
+                      <th className="csis-sig-th">Sign IN 1</th>
+                      <th>Time IN 1</th><th>Time OUT 1</th><th>Meal 1</th>
+                      <th className="csis-sig-th">Sign IN 2</th>
+                      <th>Time IN 2</th><th>Time OUT 2</th><th>Meal 2</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dayAsg.map((a) => {
                       const emp = a.employeeKey ? employeesByKey.get(a.employeeKey) : null;
-                      const pos = positionsById.get(a.positionId || "")?.name || "—";
+                      const pos = positionsById.get(a.positionId || "")?.name || "\u2014";
                       const spc = specialtiesById.get(a.specialtyId || "")?.name || "";
                       return (
-                        <tr key={a.id}>
-                          <td>{emp?.fullName || " "}</td>
-                          <td>{spc ? `${pos} · ${spc}` : pos}</td>
-                          {anyShift && <td>{a.shiftId ? (shiftsById.get(a.shiftId)?.label || "") : ""}</td>}
-                          <td>{formatPlannedTimes(a, d) || " "}</td>
-                          <td className="csis-blank">&nbsp;</td>
-                          <td className="csis-blank">&nbsp;</td>
-                          <td className="csis-blank">&nbsp;</td>
-                        </tr>
+                        // Two rows per person, exactly as the printed timesheet
+                        // does it: identity above, capture below.
+                        <Fragment key={a.id}>
+                          <tr className="csis-identity">
+                            <td colSpan={2}>{emp?.fullName || ""}</td>
+                            <td colSpan={2}>{spc ? pos + " \u00b7 " + spc : pos}</td>
+                            <td colSpan={1}>{anyShift && a.shiftId ? (shiftsById.get(a.shiftId)?.label || "") : ""}</td>
+                            <td colSpan={3}>{formatPlannedTimes(a, d) || ""}</td>
+                          </tr>
+                          <tr className="csis-capture">
+                            <td className="csis-sig"></td>
+                            <td className="csis-blank"></td>
+                            <td className="csis-blank"></td>
+                            <td className="csis-blank"></td>
+                            <td className="csis-sig"></td>
+                            <td className="csis-blank"></td>
+                            <td className="csis-blank"></td>
+                            <td className="csis-blank"></td>
+                          </tr>
+                        </Fragment>
                       );
                     })}
                   </tbody>
