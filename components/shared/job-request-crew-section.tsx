@@ -790,7 +790,15 @@ export function JobRequestCrewSection({
                                         · no day window set — blank fields have nothing to fall back to
                                       </span>
                                     ) : (
-                                      <span style={{ opacity: 0.6 }}>· leave blank to use {dayWindow}</span>
+                                      // Deliberately does NOT name the times. The panel banner
+                                      // above already shows the window and states the rule, and
+                                      // on a two-block day naming it here repeated a long string
+                                      // on every crew row — with its own "·" separator colliding
+                                      // with the "·" between the two blocks. The row only has to
+                                      // say which way an empty field falls.
+                                      <span style={{ opacity: 0.6 }} title={`Day window: ${dayWindow}`}>
+                                        · leave blank to use the day window
+                                      </span>
                                     )}
                                   </div>
                                 </td>
