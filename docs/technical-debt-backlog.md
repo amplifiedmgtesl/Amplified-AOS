@@ -257,6 +257,19 @@ presentation around Phase 0 — not to the planned/actual model.
   of the normal timekeeping sheet data where appropriate; and **design for a phone** (see #56).
   Note that wiring planned times in is what makes #49 *safe* rather than merely relabelled — the kiosk
   could then open only the block whose window contains now.
+  **✅ FIXED 2026-08-12 on `fix/timekeeping-round-2`, except the window gate. DECIDED (John,
+  2026-08-13): leave block 2 open all day — the labels are enough for now.** Both sign-ins remain
+  available with nothing punched (second-shift-only workers need that), but they now sit under labelled
+  `BLOCK 1` / `BLOCK 2` headings each naming its scheduled window, instead of two identical
+  "Tap to sign in" buttons. Verified live at 10:50 AM against a block 2 scheduled 9:00 PM–3:00 AM.
+  ⚠ **The residual risk is real and knowingly accepted:** a mis-tap is less likely, not prevented — it
+  still writes `time_in2`, leaves block 1 empty, and the worker signs for it. **Watch for this in round 2
+  with real crew; if it happens, record who and when.** Both candidate fixes were designed and rejected
+  for now: (a) render block 2 secondary outside its window + confirm on tap, (b) hard-gate on the window
+  (rejected as trading a silent failure for a louder one — anyone whose call moves earlier is locked out).
+  The machinery is already in place if either is wanted: `dayWindowContains()` in
+  `lib/jobs/planned-times.ts` (built for the midnight-crossing fix) and the per-worker resolved pair —
+  use the latter, since Dickens' block 2 is 9:00 PM–3:00 AM where the day window is 8:00 PM–2:00 AM.
 
 - **#54 — Imported rows enter the approval queue blank** (2026-08-11, needs verification). All 10 imported
   rows carry `status = 'submitted'`, set by the import, not the punch (9 untouched rows share it). Before

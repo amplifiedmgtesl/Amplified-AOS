@@ -1,15 +1,37 @@
-# Round-2 fixes — decisions to review with John
+# Round-2 fixes — decisions reviewed with John
 
 Branch: `fix/timekeeping-round-2` (off `dev`, pushed, **not merged**).
-Written 2026-08-11 while working the round-2 list unattended.
+Written 2026-08-11 unattended; **all six items reviewed with John 2026-08-12/13.**
 
 Everything on the round-2 list is **done**: #38, #39, #40, #41, #42, #43, #47,
 #49, #50, #51, #52, #53, #54. Typecheck and `next build` are clean. Nothing was
 skipped as a stopper.
 
-Below is every place I made a judgement call rather than following an explicit
-instruction. **Each one is implemented as described** — this is a review list,
-not a question list. Disagree with any of them and it's a small change.
+## ✅ Review outcomes — all six settled, do not re-litigate
+
+| # | Item | Decision | Result |
+|---|---|---|---|
+| 1 | `planned` status fallout | keep app-enforced, **no CHECK constraint**; exclude planned from the pre-invoice report | corrected: they were already excluded by the zero-hour filter — only the warning **count** needed splitting |
+| 2 | how far 12h display goes | **finish the audit (all 12)**; keep `master-calendar` | found 7 MORE raw labels afterwards (job header + day pickers); `grep TIMES.map` is now clean |
+| 3 | shared planned-times resolver | **keep**, **drop** `PlannedPair.source` | the "surfaces had diverged" justification was overstated — the divergence was unreachable; header corrected |
+| 4 | #47 fixed in 3 places | fine; **log** the deeper gap | became backlog **#59** — and re-checking against PROD showed it is **promotion-gated**, not latent |
+| 5 | #40 wording | **short hint**, no times; keep chip + amber warning | verified live: 4 short hints, 3 override chips, 0 long-form |
+| 6 | kiosk block 2 open all day | **leave as-is — labels are enough** | no code change; see below |
+
+**Item 6 in full (John, 2026-08-13).** With nothing punched, both `Time In 1`
+and `Time In 2` are available and render as primary-blue buttons — confirmed
+live at 10:50 AM, seven hours before block 2's 9:00 PM start. Both now sit
+under labelled `BLOCK 1` / `BLOCK 2` headings naming their scheduled windows,
+which is a large improvement on two identical "Tap to sign in" buttons, but a
+mis-tap is made *less likely*, not prevented: it still lands time in
+`time_in2`, leaves block 1 empty, and the worker signs for it.
+**Considered and deliberately NOT built:** de-emphasising block 2 outside its
+window plus a confirm, and a hard window gate. The machinery exists —
+`dayWindowContains` (built for the midnight fix) and the per-worker resolved
+pair, which matters because Dickens' block 2 is 9:00 PM–3:00 AM where the day's
+is 8:00 PM–2:00 AM. **Ship the labels, watch it in round 2 with real crew, and
+only add gating if a mis-tap actually happens.** ⚠ If one does, note WHO and
+WHEN — that is the evidence for which of the two designs to build.
 
 ---
 
