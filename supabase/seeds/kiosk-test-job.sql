@@ -74,6 +74,8 @@ DELETE FROM timesheets        WHERE job_id = 'jobreq-1786821000000';
 DELETE FROM quotes WHERE job_request_id = 'jobreq-1786821000000' AND is_draft = true;
 DELETE FROM job_request_assignments
   WHERE job_request_day_id IN (SELECT id FROM job_request_days WHERE job_request_id = 'jobreq-1786821000000');
+DELETE FROM job_request_crew_needs
+  WHERE job_request_day_id IN (SELECT id FROM job_request_days WHERE job_request_id = 'jobreq-1786821000000');
 DELETE FROM job_request_days  WHERE job_request_id = 'jobreq-1786821000000';
 
 -- Shifts are date-independent, so they are left in place:
@@ -133,6 +135,30 @@ VALUES
   ('jra-kiosktest-d2-01','jrd-kiosktest-2','AES-00465','pos-04','spc-04-01','shift-kiosktest-show',  true, NULL,   NULL,   NULL,   NULL,   0),
   ('jra-kiosktest-d2-02','jrd-kiosktest-2','AES-01326','pos-01','spc-01-01','shift-kiosktest-show',  true, NULL,   NULL,   NULL,   NULL,   1),
   ('jra-kiosktest-d2-03','jrd-kiosktest-2','AES-01755','pos-10','spc-10-05','shift-kiosktest-show',  true, NULL,   NULL,   NULL,   NULL,   2);
+
+-- ─── 3b. Crew NEEDS — the spec the assignments are measured against ─────────
+-- Without these the job-health check fires "No crew needs on <date>" for every
+-- day, and the Assigned Crew header degrades to "7 assigned (no spec set) ·
+-- +6 extra" because there is no spec to compare against — so the short/extra
+-- badges show noise instead of signal. The first version of this seed omitted
+-- them and both symptoms showed up in testing.
+--
+-- Quantities match the roster exactly, so a clean re-seed reads "7/7 spec
+-- filled" with no short/extra badge. To exercise those badges, delete a need
+-- (→ "+1 extra") or bump a quantity (→ "−1 short").
+INSERT INTO job_request_crew_needs
+  (id, job_request_day_id, position_id, specialty_id, shift_id, quantity, sort_order)
+VALUES
+  ('jrcn-kiosktest-d1-01','jrd-kiosktest-1','pos-04','spc-04-01','shift-kiosktest-loadin',1,0),
+  ('jrcn-kiosktest-d1-02','jrd-kiosktest-1','pos-01','spc-01-01','shift-kiosktest-loadin',1,1),
+  ('jrcn-kiosktest-d1-03','jrd-kiosktest-1','pos-01','spc-01-02','shift-kiosktest-loadin',1,2),
+  ('jrcn-kiosktest-d1-04','jrd-kiosktest-1','pos-03','spc-03-03','shift-kiosktest-loadin',1,3),
+  ('jrcn-kiosktest-d1-05','jrd-kiosktest-1','pos-05','spc-05-01','shift-kiosktest-show',  1,4),
+  ('jrcn-kiosktest-d1-06','jrd-kiosktest-1','pos-08','spc-08-01','shift-kiosktest-show',  1,5),
+  ('jrcn-kiosktest-d1-07','jrd-kiosktest-1','pos-10','spc-10-05','shift-kiosktest-show',  1,6),
+  ('jrcn-kiosktest-d2-01','jrd-kiosktest-2','pos-04','spc-04-01','shift-kiosktest-show',  1,0),
+  ('jrcn-kiosktest-d2-02','jrd-kiosktest-2','pos-01','spc-01-01','shift-kiosktest-show',  1,1),
+  ('jrcn-kiosktest-d2-03','jrd-kiosktest-2','pos-10','spc-10-05','shift-kiosktest-show',  1,2);
 
 -- ─── 4. An ISSUED quote, so rates resolve ───────────────────────────────────
 -- Round 1 ran with NO quote, which is exactly how #57 was found: timekeeping
