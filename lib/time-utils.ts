@@ -35,12 +35,25 @@ export function parseMinutes(value: string): number | null {
  * and the per-worker planned inputs beside it as "7:00 AM".
  *
  * Accepts either notation (parseMinutes handles both) so it is safe to apply
- * to a value of unknown provenance. Returns "" for blank/unparseable input —
- * callers render their own placeholder for a missing time.
+ * to a value of unknown provenance. Blank in, blank out.
+ *
+ * ⚠ UNPARSEABLE INPUT IS PASSED THROUGH UNCHANGED, not swallowed. These are
+ * text columns, and production has 87 values in them that are not clock times
+ * at all: `calendar_events` carries "TBD" (49 rows), "tbd" (9), "9am-6pm",
+ * "5-8pm", "6:00p", "out by 1:00am"; two `job_request_days` fields hold a DATE
+ * ("8/10/2026") that someone typed into a time box. An earlier version of this
+ * returned "" for all of them, which would have silently blanked every one of
+ * those on screen the moment these formatters were adopted — deleting a messy
+ * but meaningful "TBD" from the calendar, and hiding the date-in-a-time-field
+ * typo instead of leaving it visible to be fixed. Showing a human what they
+ * actually typed always beats showing them nothing.
+ * (Timesheet times are clean — 0 of 5,312 prod values fail to parse — so the
+ * timekeeping grid was never exposed to this. The display surfaces were.)
  */
 export function formatClock(value: string | null | undefined): string {
-  const mins = parseMinutes(value ?? "");
-  if (mins == null) return "";
+  const raw = value ?? "";
+  const mins = parseMinutes(raw);
+  if (mins == null) return raw.trim();
   const h24 = Math.floor(mins / 60) % 24;
   const mm = String(mins % 60).padStart(2, "0");
   const mer = h24 >= 12 ? "PM" : "AM";
@@ -52,6 +65,11 @@ export function formatClock(value: string | null | undefined): string {
  * A time RANGE for display: "08:00", "13:00" → "8:00 AM – 1:00 PM".
  * Either side may be blank; `missing` fills the gap so a half-set window still
  * reads honestly. Returns "" when both sides are empty.
+ *
+ * Inherits formatClock's pass-through, so a day whose start_time holds junk
+ * still shows it rather than going blank — prod has two day rows carrying a
+ * date in the time field, and those render as "8/10/2026 – 8/5/2026", which is
+ * ugly, correct, and fixable precisely because it is visible.
  */
 export function formatClockRange(
   start: string | null | undefined,

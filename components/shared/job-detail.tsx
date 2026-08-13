@@ -20,6 +20,7 @@ import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { computeJobNo, defaultEventAbbr, sanitizeEventAbbr } from "@/lib/jobs/job-no";
 import { printWithTitle } from "@/lib/print-with-title";
+import { formatClock } from "@/lib/time-utils";
 import { confirmSignInSheetPrint } from "@/lib/jobs/confirm-sign-in-sheet-print";
 import type { JobRequest, Client } from "@/lib/store/types";
 
@@ -599,12 +600,12 @@ export default function JobDetail({
           </div>
           <div><small>Start Time</small>
             <select disabled={isLocked} value={form.startTime} onChange={(e)=>setForm({ ...form, startTime:e.target.value })}>
-              {TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}
+              {TIMES.map((t)=><option key={t} value={t}>{t ? formatClock(t) : "— Select —"}</option>)}
             </select>
           </div>
           <div><small>End Time</small>
             <select disabled={isLocked} value={form.endTime} onChange={(e)=>setForm({ ...form, endTime:e.target.value })}>
-              {TIMES.map((t)=><option key={t} value={t}>{t || "— Select —"}</option>)}
+              {TIMES.map((t)=><option key={t} value={t}>{t ? formatClock(t) : "— Select —"}</option>)}
             </select>
           </div>
           <div><small>Expected Hours / Day</small><input type="number" disabled={isLocked} value={form.expectedHours || 10} onChange={(e)=>setForm({ ...form, expectedHours:Number(e.target.value || 0) })} /></div>

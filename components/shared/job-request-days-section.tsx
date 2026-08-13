@@ -439,19 +439,19 @@ export function JobRequestDaysSection({
                   <div>
                     <small>Call Time</small>
                     <select disabled={disabled} value={d.callTime ?? ""} onChange={(e) => patchDay(d, { callTime: e.target.value })}>
-                      {TIMES.map((t) => <option key={t} value={t}>{t || "—"}</option>)}
+                      {TIMES.map((t) => <option key={t} value={t}>{t ? formatClock(t) : "—"}</option>)}
                     </select>
                   </div>
                   <div>
                     <small>Start Time</small>
                     <select disabled={disabled} value={d.startTime ?? ""} onChange={(e) => patchDay(d, { startTime: e.target.value })}>
-                      {TIMES.map((t) => <option key={t} value={t}>{t || "—"}</option>)}
+                      {TIMES.map((t) => <option key={t} value={t}>{t ? formatClock(t) : "—"}</option>)}
                     </select>
                   </div>
                   <div>
                     <small>End Time</small>
                     <select disabled={disabled} value={d.endTime ?? ""} onChange={(e) => patchDay(d, { endTime: e.target.value })}>
-                      {TIMES.map((t) => <option key={t} value={t}>{t || "—"}</option>)}
+                      {TIMES.map((t) => <option key={t} value={t}>{t ? formatClock(t) : "—"}</option>)}
                     </select>
                   </div>
                   <div>
@@ -520,13 +520,13 @@ export function JobRequestDaysSection({
                   <div>
                     <small>2nd Start</small>
                     <select disabled={disabled} value={d.startTime2 ?? ""} onChange={(e) => patchDay(d, { startTime2: e.target.value })}>
-                      {TIMES.map((t) => <option key={t} value={t}>{t || "—"}</option>)}
+                      {TIMES.map((t) => <option key={t} value={t}>{t ? formatClock(t) : "—"}</option>)}
                     </select>
                   </div>
                   <div>
                     <small>2nd End</small>
                     <select disabled={disabled} value={d.endTime2 ?? ""} onChange={(e) => patchDay(d, { endTime2: e.target.value })}>
-                      {TIMES.map((t) => <option key={t} value={t}>{t || "—"}</option>)}
+                      {TIMES.map((t) => <option key={t} value={t}>{t ? formatClock(t) : "—"}</option>)}
                     </select>
                   </div>
                   <div style={{ gridColumn: "5 / -1", alignSelf: "center" }}>

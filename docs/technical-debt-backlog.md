@@ -354,6 +354,39 @@ presentation around Phase 0 — not to the planned/actual model.
   `end_time = GREATEST(end_time, end_time2)` on the last day, which fixes the calendar without touching
   the billing model — but confirm the modelling question first.
 
+- **#60 — Time columns are unvalidated free text; a date is sitting in one in PROD** (added 2026-08-12,
+  John: *"how was someone able to enter a date into a time field? We need to add a tech debt to fix that
+  so a user can't do that."*).
+  **Answer: they can't — not through today's UI.** Every time control in the app is a `<select>` bound to
+  `timeOptions()` (job header `job-detail.tsx:601/606`, day windows + both second-block fields
+  `job-request-days-section.tsx:442-454/523-529`, the timekeeping grid via `LazyTimeSelect`). There is
+  **no free-text time input anywhere** — verified, `type="time"` count is 0 across all three files. So
+  this is not an open hole in the UI; it is unvalidated *storage* plus historic import.
+  **The actual prod data** (read-only check): one job, `AES_260331_FEP_PROFOOTB` — "Pro Football Hall of
+  Fame 2026 Enshrinement Week", `jobreq-1774997460467`. Its day row `..._d20260331` holds
+  `start_time = '8/5/2026'`, `end_time = '8/10/2026'` — the event's real August dates, in the TIME
+  columns, on a day dated 2026-03-31. Job created 2026-03-31; the day row created 2026-05-30, i.e. by the
+  multi-day backfill, which carried the already-bad header values down rather than introducing them.
+  Origin is the original data migration, not a user.
+  **Also unvalidated and far messier:** `calendar_events` holds 83 non-time values from the uploaded
+  master-calendar import — `TBD` (49), `tbd` (9), `9am-6pm`, `5-8pm`, `6:00p`, `6::00pm`, `12a`, `9:30p`,
+  `out by 1:00am`, `???`, `Varies`. That is human spreadsheet text, and arguably legitimate for a
+  calendar note — which is exactly why the fix has to decide *per column* rather than globally.
+  **Why it matters now:** these are `text` columns with no CHECK, no trigger, and no normalization on
+  write. `scripts/seed-from-export.mjs` copies `start_time` straight through (`e.startTime ?? ""`) with
+  no validation, so any future import can reintroduce it. It also nearly caused a live regression:
+  `formatClock` originally returned `""` for unparseable input, which would have **blanked all 87 values
+  on screen** the moment the 12h display work shipped. Fixed by making `formatClock` pass junk through
+  unchanged — but that is a display-layer band-aid over a storage problem.
+  **Proposed fix, in order:** (1) correct the one real job's day row (its true window is unknown — ask
+  Connor, don't guess); (2) normalize-on-write in `assignmentToRow`-style mappers for
+  `job_request_days`/`job_requests`, rejecting or coercing anything that isn't `HH:MM`; (3) add a CHECK
+  constraint on `job_request_days.start_time/end_time/start_time2/end_time2` and
+  `job_requests.start_time/end_time` — `NULL OR ~ '^[0-9]{2}:[0-9]{2}$'` — once (1) is clean, so the
+  constraint can actually be added; (4) validate in the importer. **Leave `calendar_events` alone** or
+  give it a separate free-text-is-allowed decision; constraining it would reject `TBD`, which is
+  meaningful to whoever typed it. ⚠ Do (1) before (3) or the migration fails on existing data.
+
 **Verified working in this run:** Phase 0 import leaves all actuals blank (10/10 rows, including the two
 with planned overrides); manual planned-time entry persists (`planned_in1` NULL → `10:00`, stored 24h,
 survived navigate-away); crew add persists; kiosk punch round-trips correctly —
