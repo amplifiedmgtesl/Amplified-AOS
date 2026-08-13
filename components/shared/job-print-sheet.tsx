@@ -1,8 +1,9 @@
 "use client";
 
 // Print-only summary of a Job: venue, daily requirements, assigned crew,
-// notes, attachments. Renders display:none on screen, full layout in print.
-// Triggered by the Jobs editor's "Download / Print PDF" button.
+// notes, attachments. Rendered inside the print PREVIEW route
+// (/job-requests/[id]/print?doc=summary), which shows it on screen exactly as
+// it will print.
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";

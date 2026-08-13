@@ -10,9 +10,10 @@
 // SCHEDULING time — before any timekeeping entry exists — which was the real
 // reason the old flow copied the schedule into the timesheet early.
 //
-// Rendered display:none on screen and in ordinary print; revealed only when
-// <body> carries `printing-signin` (set by the Jobs editor's "Sign-In Sheet"
-// button, which also hides the summary sheet). See app/globals.css.
+// Rendered inside the print PREVIEW route (/job-requests/[id]/print?doc=signin),
+// which shows it on screen exactly as it will print. Column widths and the
+// two-row-per-person shape are copied from the PRODUCTION printed timesheet, so
+// the paper crews fill in matches the document the office reads back.
 
 import { Fragment, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";

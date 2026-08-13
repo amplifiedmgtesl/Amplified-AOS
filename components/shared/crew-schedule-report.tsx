@@ -18,16 +18,18 @@
 // This backfills it deliberately.
 //
 // ── The set ────────────────────────────────────────────────────────────────
-//   BEFORE  this file          — schedule, text only, no blanks       (job screen)
-//   DURING  crew-sign-in-sheet — fill-in capture form                  (job screen)
-//   AFTER   timesheet actuals  — the record, with real signatures      (Timekeeping)
+//   BEFORE  this file                  — schedule, text only, no blanks
+//   DURING  crew-sign-in-sheet         — fill-in capture form
+//   AFTER   timesheet-actuals-sheet    — the record, with real signatures
+// All three are reached from the same preview route on the job screen.
 //
 // Sourced from crew ASSIGNMENTS (not the timesheet), so it can be printed at
 // scheduling time, before any timekeeping row exists. That is the same reason
 // the old flow copied the schedule into the timesheet early.
 //
-// Rendered display:none on screen and in ordinary print; revealed only when
-// <body> carries `printing-schedule`. See app/globals.css.
+// Rendered inside the print PREVIEW route (/job-requests/[id]/print?doc=schedule),
+// which shows it on screen exactly as it will print. Its styles are ordinary
+// rules, not @media print — that is what makes the preview truthful.
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
