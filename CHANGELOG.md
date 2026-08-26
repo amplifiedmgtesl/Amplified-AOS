@@ -4,6 +4,10 @@ What changed and when. Newest entries at the top.
 
 ## August 2026
 
+### August 25 — v2.3.3
+- "Add Crew from Job" now asks before adding crew to a day that already has time entered, and lists exactly who it is about to add to that day. It could previously append to a finished, approved day with no warning at all — which is how five extra names turned up on a Neon Nights day that had already been entered and emailed out. Four of them were people already on that day under a second, duplicate employee record, which the button had no way of noticing.
+- "Add Crew from Job" also no longer creates a blank, nameless row for a crew slot that has nobody assigned to it yet. Those rows looked like real time once approved. It now skips them and tells you how many it skipped, so you can fill them in on the job's Assigned Crew tab.
+
 ### August 25 — v2.3.2
 - Fixed: crew added with "+ Add Crew Member" never picked up the job's rate card. Those rows kept a fixed default rate and had no overtime rule at all, so on a job where some crew came from the job's assigned crew and others were added by hand, the same 14-hour shift could show as 10 hours plus 4 overtime on one row and 14 straight hours on the row below it. Hand-added rows now take their rates and their overtime and doubletime rules from the rate card as soon as a specialty is picked.
 
