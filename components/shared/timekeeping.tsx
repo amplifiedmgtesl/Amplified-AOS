@@ -444,7 +444,36 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
 
   function updateRow(id: string, patch: Partial<TimeEntry>) {
     if (!timesheet) return;
-    const nextRows = timesheet.rows.map((r) => r.id === id ? computeTimeEntry({ ...r, ...patch }) : r);
+    const nextRows = timesheet.rows.map((r) => {
+      if (r.id !== id) return r;
+      const merged = { ...r, ...patch };
+      // Re-snapshot bill rates + OT/DT thresholds whenever the specialty
+      // changes (migration 20260606a's per-entry snapshot).
+      //
+      // addCrewFromJob snapshots at creation because a crew assignment
+      // already carries a specialty. "+ Add Crew Member" rows do NOT — the
+      // operator picks the specialty afterwards in the grid, so this is the
+      // only moment such a row can ever be priced. Without it the row keeps
+      // blankTimeEntry()'s 35/52/70 and NULL thresholds forever, and
+      // computeTimeEntry reads NULL as "no OT bucket" — silently billing a
+      // 14-hour day as 14 straight hours while an identical crew-seeded row
+      // on the same day splits 10 ST + 4 OT. (Connor, MYCHEMIC 2026-08-24.)
+      //
+      // Only fires when the specialty actually changes, so re-snapshotting
+      // never clobbers a deliberate rate on an unrelated edit. Approved rows
+      // can't reach here — the specialty select is disabled when isLocked.
+      if ("specialtyId" in patch && patch.specialtyId !== r.specialtyId) {
+        const rc = merged.specialtyId ? rateCardBySpecialty.get(merged.specialtyId) : undefined;
+        if (rc) {
+          merged.billStdRate = rc.hourly;
+          merged.billOtRate  = rc.otRate;
+          merged.billDtRate  = rc.dtRate;
+          merged.billOtAfter = rc.otAfter;
+          merged.billDtAfter = rc.dtAfter;
+        }
+      }
+      return computeTimeEntry(merged);
+    });
     persist({ ...timesheet, rows: nextRows });
   }
 

@@ -4,6 +4,9 @@ What changed and when. Newest entries at the top.
 
 ## August 2026
 
+### August 25 — v2.3.2
+- Fixed: crew added with "+ Add Crew Member" never picked up the job's rate card. Those rows kept a fixed default rate and had no overtime rule at all, so on a job where some crew came from the job's assigned crew and others were added by hand, the same 14-hour shift could show as 10 hours plus 4 overtime on one row and 14 straight hours on the row below it. Hand-added rows now take their rates and their overtime and doubletime rules from the rate card as soon as a specialty is picked.
+
 ### August 4 — v2.3.1
 - Timekeeping: the Status column on the right of the grid is more compact. The "No 5hr min" label was wrapping onto three lines, which added height to every crew row. Checkboxes across that grid were being stretched to a fixed width, which also left the "Select" tick box sitting a gap away from its own label — both are fixed.
 - The Job # message now tells you exactly what it's waiting for instead of listing everything. In particular it now names the client's 3-character Code, which is required for a job number but was never mentioned — so a job could have a client, an event name and a start date and still show no number with no explanation. Client codes are set on the Clients screen.
