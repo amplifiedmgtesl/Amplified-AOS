@@ -656,14 +656,31 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
         return;
       }
       // Dedupe key — same employee on same day + same shift counts as one row.
+      //
+      // ⚠ This key can only see employee_key, so it cannot tell that two
+      // `employees` rows are the same human — and prod has duplicates
+      // (Shelby Bowman is both AES-00639 and emp-1784912488774; Chris vs
+      // Christopher Travis; Abby vs Abbey Davis). On Neon Nights
+      // 2026-08-12 that let one click silently append four people who
+      // were already on the day under their other record to a day Sean
+      // Brown had finished, entered and approved. The key can't be made
+      // correct until `employees` is de-duplicated, so instead of
+      // pretending it's safe we show the operator what's about to land.
       const seen = new Set(timesheet.rows.map((r) =>
         `${r.employeeKey || ""}|${r.workDate || ""}|${r.shiftId || ""}`
       ));
       const positions = loadPositions();
       const employees = loadEmployees();
-      const nextRows = [...timesheet.rows];
+      // Unfilled crew slots carry no employee. They used to become a
+      // nameless row that reads as real time once approved — and because
+      // the dedupe key treats "no employee" as just another key, only the
+      // FIRST unfilled slot per day/shift ever landed, so even the count
+      // was arbitrary. Skip them and say how many were skipped.
+      const unfilled = slots.filter((s) => !s.employeeKey).length;
+      const additions: TimeEntry[] = [];
       slots.forEach((slot, idx) => {
-        const key = `${slot.employeeKey || ""}|${slot.eventDate}|${slot.shiftId || ""}`;
+        if (!slot.employeeKey) return;
+        const key = `${slot.employeeKey}|${slot.eventDate}|${slot.shiftId || ""}`;
         if (seen.has(key)) return;
         const emp = slot.employeeKey ? employees.find((e) => e.employeeKey === slot.employeeKey) : null;
         const posName = positions.find((p) => p.id === slot.positionId)?.name || "Stagehand";
@@ -673,7 +690,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
         // defaults when missing. Thresholds left null fall through to the
         // legacy 8/12 default in computeTimeEntry.
         const rc = slot.specialtyId ? rateCardBySpecialty.get(slot.specialtyId) : undefined;
-        nextRows.push(computeTimeEntry({
+        additions.push(computeTimeEntry({
           ...blankTimeEntry(`crew-${Date.now()}-${idx}`),
           position: posName,
           positionId: slot.positionId,
@@ -701,11 +718,44 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
         }));
         seen.add(key);
       });
-      if (nextRows.length === timesheet.rows.length) {
-        alert(`All ${slots.length} crew assignments are already on this timesheet.`);
+      if (additions.length === 0) {
+        alert(unfilled > 0
+          ? `Nothing to add. ${unfilled} crew assignment${unfilled === 1 ? " has" : "s have"} no employee picked yet — set those on the Job Request → Assigned Crew tab. Everyone else is already on this timesheet.`
+          : `All ${slots.length} crew assignments are already on this timesheet.`);
         return;
       }
-      persist({ ...timesheet, rows: nextRows });
+      // The guard that was missing. This button appends silently, so on a
+      // day that already has time it is the one click that can quietly
+      // double a finished day. Name every row landing on such a day so a
+      // duplicate under a second employee record is visible before it's
+      // written, not a week later on review.
+      const datesWithRows = new Set(
+        timesheet.rows.map((r) => r.workDate).filter(Boolean) as string[]
+      );
+      const ontoUsedDays = additions.filter((a) => a.workDate && datesWithRows.has(a.workDate));
+      if (ontoUsedDays.length > 0) {
+        const byDate = new Map<string, string[]>();
+        for (const a of ontoUsedDays) {
+          const name = `${a.firstName} ${a.lastName}`.trim() || "(no name)";
+          byDate.set(a.workDate!, [...(byDate.get(a.workDate!) ?? []), name]);
+        }
+        const summary = [...byDate.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([d, names]) => `${d} (already has time entered)\n    ${names.join("\n    ")}`)
+          .join("\n\n");
+        const ok = window.confirm(
+          `Add ${additions.length} row${additions.length === 1 ? "" : "s"} from this job's crew assignments?\n\n`
+          + `${ontoUsedDays.length} would go onto days that already have entries:\n\n${summary}\n\n`
+          + `Check these people aren't already on those days under a different employee record.`
+          + (unfilled > 0
+            ? `\n\n${unfilled} assignment${unfilled === 1 ? "" : "s"} with no employee picked will be skipped.`
+            : "")
+        );
+        if (!ok) return;
+      } else if (unfilled > 0) {
+        alert(`Skipping ${unfilled} crew assignment${unfilled === 1 ? "" : "s"} with no employee picked yet — set those on the Job Request → Assigned Crew tab.`);
+      }
+      persist({ ...timesheet, rows: [...timesheet.rows, ...additions] });
     } catch (e) {
       console.error("[timekeeping] addCrewFromJob failed:", e);
       alert("Couldn't load crew assignments — see console for details.");
