@@ -89,21 +89,20 @@ export function AppShell({
         return;
       }
 
-      // Payroll role: confined to /payroll/*, /timekeeping (incl. the
-      // /timekeeping/review approval screen), /employee-directory, and
+      // Payroll role: confined to /payroll/*, /employee-directory, and
       // /job-requests (read-only). Employee directory access is required
       // for the Rippling Emp No field and for setting pay rates per
       // employee/specialty — payroll owns both of those, so we let them
       // through. Jobs are viewable so payroll can see event context for
       // the hours they process (edit controls are role-gated in the job
-      // screens themselves). Timekeeping + Timesheet Review are the hours
-      // they process, so they can enter and approve time; bill-rate
-      // columns are hidden on both (see the hideBill gates in
-      // timekeeping.tsx / timesheet-review.tsx). Clients, pricing, etc.
-      // remain out of reach.
+      // screens themselves). Timekeeping and Timesheet Review are NOT
+      // theirs: entering and approving hours is an ops responsibility,
+      // so payroll consumes already-approved time via /payroll only
+      // (grant reverted 2026-08-29; the hideBill gates left in
+      // timekeeping.tsx / timesheet-review.tsx are now belt-and-braces).
+      // Clients, pricing, etc. remain out of reach.
       if (profile?.role === "payroll") {
         const allowed = pathname?.startsWith("/payroll")
-          || pathname?.startsWith("/timekeeping")
           || pathname?.startsWith("/employee-directory")
           || pathname?.startsWith("/job-requests");
         if (!allowed) {
@@ -197,8 +196,7 @@ export function AppShell({
 
   const visibleNav = userRole === "payroll"
     ? nav.filter(([href]) =>
-        href === "/payroll" || href === "/timekeeping" || href === "/timekeeping/review"
-        || href === "/employee-directory" || href === "/job-requests")
+        href === "/payroll" || href === "/employee-directory" || href === "/job-requests")
     : userRole === "coordinator"
     ? nav.filter(([href]) =>
         href === "/master-calendar" || href === "/clients" || href === "/job-requests"
