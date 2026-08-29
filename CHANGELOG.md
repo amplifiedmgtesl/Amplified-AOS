@@ -4,6 +4,9 @@ What changed and when. Newest entries at the top.
 
 ## August 2026
 
+### August 29 — v2.3.4
+- Payroll accounts no longer have Timekeeping or Timesheet Review. Both are gone from the payroll sidebar, and the direct links are blocked as well. Entering and approving hours stays with operations; payroll works from already-approved time on the Payroll screen. This reverses the access granted on August 4 in v2.3.0. Payroll accounts keep Payroll, Employees, and read-only Jobs.
+
 ### August 25 — v2.3.3
 - "Add Crew from Job" now asks before adding crew to a day that already has time entered, and lists exactly who it is about to add to that day. It could previously append to a finished, approved day with no warning at all — which is how five extra names turned up on a Neon Nights day that had already been entered and emailed out. Four of them were people already on that day under a second, duplicate employee record, which the button had no way of noticing.
 - "Add Crew from Job" also no longer creates a blank, nameless row for a crew slot that has nobody assigned to it yet. Those rows looked like real time once approved. It now skips them and tells you how many it skipped, so you can fill them in on the job's Assigned Crew tab.
