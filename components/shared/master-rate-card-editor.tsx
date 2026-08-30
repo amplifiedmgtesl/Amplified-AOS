@@ -8,6 +8,7 @@ import {
   upsertRateCardProfile,
 } from "@/lib/rates/storage";
 import { DEFAULT_RATE_ROWS, type RateRow, type TriggerOption } from "@/lib/rates/defaults";
+import { deriveDayFloor, dayFloorIsExact, suggestedDayRate } from "@/lib/rates/day-floor";
 import type { Position, Specialty } from "@/lib/store/types";
 
 const MASTER_PROFILE_ID = "ratecard-master-default";
@@ -234,7 +235,15 @@ export default function MasterRateCardEditor() {
                         dtRate: Number((h * 2).toFixed(2)),
                       });
                     }} /></td>
-                    <td><input type="number" value={row.day} onChange={(e) => updateRow(index, { day: Number(e.target.value || 0) })} /></td>
+                    {/* Same derived-floor warning as rate-card-editor.tsx —
+                        see lib/rates/day-floor.ts and backlog #36. */}
+                    <td style={dayFloorIsExact(row.day, row.hourly) ? undefined : { background: "#fff4d6" }}>
+                      <input type="number" value={row.day}
+                        title={dayFloorIsExact(row.day, row.hourly)
+                          ? "Day rate. Divided by the hourly rate to determine how many hours the day rate covers before overflow bills hourly."
+                          : `⚠ ${row.day} ÷ ${row.hourly} = ${(row.day / row.hourly).toFixed(2)} hrs, so this day rate is treated as covering ${deriveDayFloor(row.day, row.hourly)} hrs per worker. Overflow starts there. For an even split use a day rate of ${suggestedDayRate(row.day, row.hourly).toFixed(2)}.`}
+                        onChange={(e) => updateRow(index, { day: Number(e.target.value || 0) })} />
+                    </td>
                     <td><input type="number" value={row.otRate} onChange={(e) => updateRow(index, { otRate: Number(e.target.value || 0) })} /></td>
                     <td><input type="number" value={row.dtRate} onChange={(e) => updateRow(index, { dtRate: Number(e.target.value || 0) })} /></td>
                     {/* ── Pay rates (admin-only, never client-facing) ── */}

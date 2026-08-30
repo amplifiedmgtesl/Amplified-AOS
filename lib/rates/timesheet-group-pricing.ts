@@ -17,8 +17,8 @@
 import { supabase } from "@/lib/supabase/client";
 import type { QuoteLine } from "@/lib/store/types";
 import { computeLineTotal } from "@/lib/rates/line-calc";
+import { deriveDayFloor } from "@/lib/rates/day-floor";
 
-import { dayRateCoveredHours } from "./day-rate";
 
 /** The operator's billing-structure intent per (date, specialty), read from
  *  the source quote's lines. Build days quoted at day-rate produce day-mode
@@ -139,9 +139,11 @@ export function priceTimesheetGroup(
   if (useDayMode) {
     const baseDay = hint!.baseDay;
     const hourlyForOverflow = hint!.baseHourly > 0 ? hint!.baseHourly : baseHourly;
-    // Floor = how many hours the day rate "covers" per worker.
-    // Derived from quote's day/hourly ratio. For CCMF: 350/35 = 10.
-    const floor = dayRateCoveredHours(baseDay, hourlyForOverflow);
+    // Floor = how many hours the day rate "covers" per worker, derived from
+    // the quote's day/hourly ratio (CCMF: 350/35 = 10). See lib/rates/
+    // day-floor.ts — same arithmetic, shared with the job-health check, the
+    // rate-card editor warning and day-rate PAYROLL so they can't drift.
+    const floor = deriveDayFloor(baseDay, hourlyForOverflow);
     // Per-worker overflow = hours past the floor, summed across workers.
     let overflow = 0;
     g.workerTotalHours.forEach((hrs) => {

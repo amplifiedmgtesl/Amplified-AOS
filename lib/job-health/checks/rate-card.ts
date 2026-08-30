@@ -2,6 +2,7 @@
 // pipelines — most quote/invoice generation failures trace back here.
 
 import type { CheckFn, Finding } from "../types";
+import { deriveDayFloor, dayFloorIsExact } from "@/lib/rates/day-floor";
 
 export const rateCardChecks: CheckFn[] = [
   // 1. A rate card resolves at all
@@ -127,7 +128,51 @@ export const rateCardChecks: CheckFn[] = [
     return findings;
   },
 
-  // 6. Holiday multiplier
+  // 6. Day-rate floor is derived, not stored — flag rows where the division
+  //    doesn't come out even.
+  //
+  //    priceTimesheetGroup decides how many hours a day rate "covers" per
+  //    worker as round(day / hourly); hours past that bill hourly as
+  //    overflow. When the ratio is a whole number (350/35, 500/50) the floor
+  //    is exactly what the contract says. When it isn't, the floor is a
+  //    rounded value nobody chose — 440/43 = 10.23 rounds to 10, and
+  //    400/37.50 = 10.67 rounds to 11, shifting where overflow starts.
+  //
+  //    Storing the floor explicitly is the real fix (backlog #36 option A);
+  //    this check is option B — surface the ambiguity at the point someone
+  //    can still correct the rate card.
+  (ctx) => {
+    if (!ctx.rateCard) return [];
+    const findings: Finding[] = [];
+    const neededIds = new Set(ctx.crewNeeds.map((n) => n.specialtyId).filter(Boolean) as string[]);
+    for (const row of ctx.rateCard.rows) {
+      if (row.specialtyId && !neededIds.has(row.specialtyId)) continue;
+      const day = Number(row.day || 0);
+      const hourly = Number(row.hourly || 0);
+      if (day <= 0 || hourly <= 0) continue;          // not a day-rate row
+      if (dayFloorIsExact(day, hourly)) continue;     // divides evenly — fine
+      const ratio = day / hourly;
+      const floor = deriveDayFloor(day, hourly);
+      findings.push({
+        id: `rate_card.derived_day_floor:${row.specialtyId ?? row.specialty}`,
+        severity: "info",
+        category: "rate_card",
+        title: `Uneven day/hourly ratio: ${row.position} / ${row.specialty}`,
+        detail:
+          `Day $${day.toFixed(2)} ÷ hourly $${hourly.toFixed(2)} = ${ratio.toFixed(2)} hrs, `
+          + `so the day rate is treated as covering ${floor} hr${floor === 1 ? "" : "s"} per worker.`,
+        downstream:
+          `On day-rate timesheet billing, overflow hours start after ${floor} hrs — not `
+          + `${ratio.toFixed(2)}. If the contract says a different number, the rates need to `
+          + `divide evenly (e.g. ${(hourly * floor).toFixed(2)} day at $${hourly.toFixed(2)}/hr).`,
+        fixHref: "/rate-card",
+        fixLabel: "Review row",
+      });
+    }
+    return findings;
+  },
+
+  // 7. Holiday multiplier
   (ctx) => {
     if (!ctx.rateCard) return [];
     if (ctx.rateCard.holidayMultiplier && ctx.rateCard.holidayMultiplier > 0) return [];

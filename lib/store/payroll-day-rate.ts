@@ -1,11 +1,11 @@
 import { supabase } from "@/lib/supabase/client";
 import { loadQuoteRateHints } from "@/lib/rates/timesheet-group-pricing";
-import { dayRateCoveredHours, isDayRateHoursDerivable } from "@/lib/rates/day-rate";
+import { deriveDayFloor, dayFloorIsExact } from "@/lib/rates/day-floor";
 
 /** Day-rate context for one (job, date, specialty): how many hours the
  *  quoted day rate covers, and whether that number was derived from real
  *  figures or fell back to a guess. */
-export type DayRateInfo = { coveredHours: number; derivable: boolean };
+export type DayRateInfo = { coveredHours: number; exact: boolean };
 
 /** Key: `${jobId}|${workDate}|${specialtyId}`. */
 export type DayRateMap = Map<string, DayRateInfo>;
@@ -60,11 +60,20 @@ export async function loadDayRateMapForJobs(jobIds: (string | null | undefined)[
       const hints = await loadQuoteRateHints(quoteId);
       hints.forEach((hint, key) => {
         if (hint.rateMode !== "day") return;
+        // Same derivation billing uses (lib/rates/day-floor.ts) so pay and
+        // bill cannot disagree about how many hours a day rate covers.
+        const coveredHours = deriveDayFloor(hint.baseDay, hint.baseHourly);
+        // A floor of 0 means the day rate is worth less than one hour at the
+        // hourly rate (see backlog #36, the BUYOUT row). On the bill side
+        // that means everything overflows to hourly; on the PAY side it
+        // would pay someone nothing for a day they worked. Refuse it and
+        // leave the row hourly rather than paying zero.
+        if (!(coveredHours > 0)) return;
         // key is `${quote_date}|${specialty_id}`
         const [quoteDate, specialtyId] = key.split("|");
         out.set(dayRateKey(jobId, quoteDate, specialtyId), {
-          coveredHours: dayRateCoveredHours(hint.baseDay, hint.baseHourly),
-          derivable: isDayRateHoursDerivable(hint.baseDay, hint.baseHourly),
+          coveredHours,
+          exact: dayFloorIsExact(hint.baseDay, hint.baseHourly),
         });
       });
     } catch (e) {
