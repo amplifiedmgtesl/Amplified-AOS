@@ -14,7 +14,7 @@
 import { supabase } from "@/lib/supabase/client";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "./types";
 import { resolveRateCardForJob, pickRateCardForJob } from "./quotes";
-import { loadDayRateResolver } from "./payroll-day-rate";
+import { loadDayRateResolver, dayRateProblemError } from "./payroll-day-rate";
 
 function newRunId(): string {
   return `prr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -396,7 +396,7 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
   // per-specialty override. Anyone working a specialty that was never
   // quoted still gets the day's basis — see payroll-day-rate.ts.
   const dayRates = await loadDayRateResolver(input.entries.map((e) => e.jobId));
-  const dailyAdjustments = applyDailyRulesToCandidates(input.entries.map(e => ({
+  const dayRateCandidates = input.entries.map(e => ({
     timesheetEntryId: e.timesheetEntryId,
     employeeKey: e.employeeKey,
     workDate: e.workDate,
@@ -407,7 +407,11 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
     dtHours: e.dtHours,
     dailyRulesExempt: e.dailyRulesExempt,
     dayRateHours: dayRates.hoursFor(e.jobId, e.workDate, e.specialtyId),
-  })), ratesByRowId);
+  }));
+  // Refuse to snapshot rather than silently paying clock time on a day the
+  // job says is a day rate. There is no fallback by design.
+  if (dayRates.problems.length > 0) throw dayRateProblemError(dayRates.problems);
+  const dailyAdjustments = applyDailyRulesToCandidates(dayRateCandidates, ratesByRowId);
   const rows = input.entries.map((e, i) => {
     const resolved = resolutions[i];
     const pay = dailyAdjustments.get(e.timesheetEntryId) ?? {
@@ -513,7 +517,7 @@ export async function addEntriesToPayrollRun(
   // per-specialty override. Anyone working a specialty that was never
   // quoted still gets the day's basis — see payroll-day-rate.ts.
   const dayRates = await loadDayRateResolver(entries.map((e) => e.jobId));
-  const dailyAdjustments = applyDailyRulesToCandidates(entries.map(e => ({
+  const dayRateCandidates = entries.map(e => ({
     timesheetEntryId: e.timesheetEntryId,
     employeeKey: e.employeeKey,
     workDate: e.workDate,
@@ -524,7 +528,11 @@ export async function addEntriesToPayrollRun(
     dtHours: e.dtHours,
     dailyRulesExempt: e.dailyRulesExempt,
     dayRateHours: dayRates.hoursFor(e.jobId, e.workDate, e.specialtyId),
-  })), ratesByRowId);
+  }));
+  // Refuse to snapshot rather than silently paying clock time on a day the
+  // job says is a day rate. There is no fallback by design.
+  if (dayRates.problems.length > 0) throw dayRateProblemError(dayRates.problems);
+  const dailyAdjustments = applyDailyRulesToCandidates(dayRateCandidates, ratesByRowId);
 
   // Adding entries to an existing run can cross a daily-group boundary
   // (e.g. another shift for an employee already on the run for that day).
@@ -1334,6 +1342,7 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
   for (const r of data as any[]) {
     ratesByRowId.set(r.id, Number(r.std_rate ?? 0));
   }
+  if (recomputeDayRates.problems.length > 0) throw dayRateProblemError(recomputeDayRates.problems);
   const dailyAdjustments = applyDailyRulesToCandidates(candidateShape, ratesByRowId);
 
   let updated = 0;
