@@ -14,6 +14,7 @@
 import { supabase } from "@/lib/supabase/client";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "./types";
 import { resolveRateCardForJob, pickRateCardForJob } from "./quotes";
+import { loadDayRateMapForJobs, dayRateKey } from "./payroll-day-rate";
 
 function newRunId(): string {
   return `prr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -391,6 +392,10 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
   for (let i = 0; i < input.entries.length; i++) {
     ratesByRowId.set(input.entries[i].timesheetEntryId, resolutions[i].stdRate);
   }
+  // Day-rate context from the job's issued quote. Same lookup the invoice
+  // pricing path uses, so pay and bill agree on which (date, specialty)
+  // combinations are day rate and how many hours the block covers.
+  const dayRateMap = await loadDayRateMapForJobs(input.entries.map((e) => e.jobId));
   const dailyAdjustments = applyDailyRulesToCandidates(input.entries.map(e => ({
     timesheetEntryId: e.timesheetEntryId,
     employeeKey: e.employeeKey,
@@ -401,6 +406,7 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
     otHours: e.otHours,
     dtHours: e.dtHours,
     dailyRulesExempt: e.dailyRulesExempt,
+    dayRateHours: dayRateMap.get(dayRateKey(e.jobId, e.workDate, e.specialtyId))?.coveredHours ?? null,
   })), ratesByRowId);
   const rows = input.entries.map((e, i) => {
     const resolved = resolutions[i];
@@ -503,6 +509,10 @@ export async function addEntriesToPayrollRun(
   for (let i = 0; i < entries.length; i++) {
     ratesByRowId.set(entries[i].timesheetEntryId, resolutions[i].stdRate);
   }
+  // Day-rate context from the job's issued quote. Same lookup the invoice
+  // pricing path uses, so pay and bill agree on which (date, specialty)
+  // combinations are day rate and how many hours the block covers.
+  const dayRateMap = await loadDayRateMapForJobs(entries.map((e) => e.jobId));
   const dailyAdjustments = applyDailyRulesToCandidates(entries.map(e => ({
     timesheetEntryId: e.timesheetEntryId,
     employeeKey: e.employeeKey,
@@ -513,6 +523,7 @@ export async function addEntriesToPayrollRun(
     otHours: e.otHours,
     dtHours: e.dtHours,
     dailyRulesExempt: e.dailyRulesExempt,
+    dayRateHours: dayRateMap.get(dayRateKey(e.jobId, e.workDate, e.specialtyId))?.coveredHours ?? null,
   })), ratesByRowId);
 
   // Adding entries to an existing run can cross a daily-group boundary
@@ -858,7 +869,10 @@ export function applyDailyRulesToCandidates(
   rows: { timesheetEntryId: string; employeeKey: string | null; workDate: string | null;
           shiftId?: string | null; position?: string | null;
           stdHours: number; otHours: number; dtHours: number;
-          dailyRulesExempt?: boolean; }[],
+          dailyRulesExempt?: boolean;
+          /** Hours the quoted day rate covers for this row's (job, date,
+           *  specialty). Null/absent = hourly, normal rules apply. */
+          dayRateHours?: number | null; }[],
   ratesByRowId?: Map<string, number>,
 ): Map<string, { payStdHours: number; payOtHours: number; payDtHours: number;
                   payTotalHours: number; payAdjustmentReason: string | null; }> {
@@ -907,6 +921,49 @@ export function applyDailyRulesToCandidates(
           payDtHours:  round2(r.dtHours),
           payTotalHours: round2(r.stdHours + r.otHours + r.dtHours),
           payAdjustmentReason: "5hr min + round-up waived (exempt)",
+        });
+      }
+      continue;
+    }
+
+    // Day-rate group: the quoted day rate covers a fixed block of hours,
+    // and that block IS the pay. Actual clock time is not the input —
+    // crew on a day-rate job check in and stay on call across the span,
+    // used sporadically rather than worked continuously. Set the block
+    // and skip the 5hr minimum and round-up entirely; the day rate
+    // supersedes both (it is already a floor, and already whole hours).
+    //
+    // Deliberately AFTER the exempt check: `dailyRulesExempt` is an
+    // explicit "pay exactly what was worked" override (late arrivals,
+    // internal jobs) and stays the stronger signal.
+    //
+    // One day rate per group. Where a day has several rows for the same
+    // person and shift (split shifts), the block lands on the
+    // highest-paid worked row and the rest go to zero — paying each row
+    // a full day would bill one day twice.
+    const groupDayRateHours = list.reduce(
+      (max, r) => (r.dayRateHours != null && r.dayRateHours > max ? r.dayRateHours : max),
+      0,
+    );
+    if (groupDayRateHours > 0) {
+      let dayAbsorberId: string | null = null;
+      let dayMaxRate = -Infinity;
+      for (const r of list) {
+        if (r.stdHours + r.otHours + r.dtHours <= 0) continue;
+        const rate = ratesByRowId?.get(r.timesheetEntryId) ?? 0;
+        if (rate > dayMaxRate) { dayMaxRate = rate; dayAbsorberId = r.timesheetEntryId; }
+      }
+      if (dayAbsorberId == null) dayAbsorberId = list[0]?.timesheetEntryId ?? null;
+      for (const r of list) {
+        const isAbsorber = r.timesheetEntryId === dayAbsorberId;
+        out.set(r.timesheetEntryId, {
+          payStdHours:   isAbsorber ? round2(groupDayRateHours) : 0,
+          payOtHours:    0,
+          payDtHours:    0,
+          payTotalHours: isAbsorber ? round2(groupDayRateHours) : 0,
+          payAdjustmentReason: isAbsorber
+            ? `Day rate — ${groupDayRateHours} hrs paid (actual ${round2(billedTotal)})`
+            : "Day rate paid on another row for this day",
         });
       }
       continue;
@@ -1228,6 +1285,7 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
     .from("payroll_run_entries")
     .select(`
       id, timesheet_entry_id, employee_key, work_date, position,
+      job_id, specialty_id,
       std_hours, ot_hours, dt_hours,
       std_rate, is_holiday, holiday_multiplier, pay_adjustment_reason,
       payroll_daily_rules_exempt
@@ -1249,6 +1307,8 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
     for (const r of tsRows ?? []) shiftByTsId.set((r as any).id, (r as any).shift_id ?? null);
   }
 
+  const recomputeDayRateMap = await loadDayRateMapForJobs((data as any[]).map((r) => r.job_id));
+
   // Reuse applyDailyRulesToCandidates by adapting the shape.
   // Pass the row's existing std_rate so the bump routes to the highest-
   // rate row per (employee, date, shift) group.
@@ -1265,6 +1325,10 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
     // must reproduce what this run was built from; re-deriving would let a
     // flag flipped after the snapshot silently change a draft's hours.
     dailyRulesExempt: !!r.payroll_daily_rules_exempt,
+    // Day-rate rows must survive a recompute. Without this the 5hr min /
+    // round-up would overwrite the day-rate block and quietly turn a
+    // day-rate run back into an hourly one.
+    dayRateHours: recomputeDayRateMap.get(dayRateKey(r.job_id, r.work_date, r.specialty_id))?.coveredHours ?? null,
   }));
   const ratesByRowId = new Map<string, number>();
   for (const r of data as any[]) {
