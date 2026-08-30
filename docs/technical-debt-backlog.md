@@ -2278,3 +2278,31 @@ So the priced duplicates are junk and the used original is unpriced: exactly bac
 **Likely mechanism worth confirming:** the rate-card editor appears to create a NEW specialty when a name is typed rather than matching an existing one — which would explain six identically-named Leads appearing on two cards on the same day. If so, that is the upstream bug and blocking selection alone will not stop it recurring.
 
 **Related:** `docs/day-rate-payroll-plan.md`, and the entry on duplicate employee records.
+
+---
+
+## Move the payroll void cascade from BEFORE UPDATE to AFTER UPDATE (added 2026-08-30)
+
+**Why:** Voiding a payroll run was broken from the day it was written and nobody had ever noticed, because nobody had ever voided a run. Discovered 2026-08-30 when Connor tried to void the 8/29 Neon Nights run and got:
+
+```
+tuple to be updated was already modified by an operation triggered by the current command
+```
+
+**The collision:**
+
+1. `payroll_runs_void_trg` — **BEFORE UPDATE** on `payroll_runs` — deletes that run's `payroll_run_entries`.
+2. `payroll_run_entries_refresh_totals` — **AFTER DELETE** on `payroll_run_entries` — runs `UPDATE payroll_runs SET entry_count/…, total_pay = … WHERE id = v_run_id`.
+3. That target row is the one the outer statement is already modifying, so Postgres rejects it.
+
+Voiding therefore only ever worked on a run with zero entries. Confirmed against prod: 12 draft, 1 finalized, **0 voided**, ever.
+
+**What shipped in v2.4.1 is a workaround, not the fix.** `voidPayrollRun` now performs the cascade itself in separate statements — release `timesheet_entries.payroll_run_id`, delete `payroll_run_entries`, then flip status — so the BEFORE trigger's DELETE matches zero rows and nothing nests. That unblocks the app but leaves the trigger itself broken.
+
+**The trigger is still a landmine for anyone who updates status directly** — the Supabase SQL editor, a future API route, a migration, a bulk script. Any of those will hit the original error.
+
+**Proper fix:** split the trigger. Keep a BEFORE UPDATE that only stamps `voided_at` (it needs `NEW`), and move the cascade — the `timesheet_entries` release and the `payroll_run_entries` delete — into an **AFTER UPDATE** trigger. By then the outer statement has finished with the `payroll_runs` row, so the totals refresh can update it freely. Once that lands, the app-side cascade in `voidPayrollRun` becomes redundant and can be reduced back to a single status update.
+
+**Also worth checking while in there:** `refresh_payroll_run_totals` is `FOR EACH ROW`, so deleting a 138-entry run fires 138 separate `UPDATE payroll_runs` statements that all compute the same (eventually zero) totals. A statement-level trigger would do it once. Not causing a problem at current volumes, but it is pure waste.
+
+**Related:** the void path has no test coverage — it is a DB-trigger interaction, which the current pure-function test suite explicitly does not cover (see `tests/README.md`). This is the class of bug unit tests were never going to catch.
