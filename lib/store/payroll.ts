@@ -1524,6 +1524,46 @@ export async function removeZeroHourEntriesFromRun(runId: string): Promise<numbe
 // reasoning: relying on finalized runs avoids staleness from unapprove →
 // edit → re-approve cycles.)
 
+/** Employment type that makes someone eligible for the weekly 40-hour OT
+ *  rule. Anything else — including a blank or missing classification —
+ *  is treated as a contractor and exempt.
+ *
+ *  Policy (Connor via John, 2026-08-30): the weekly 40-hour rule applies
+ *  to EMPLOYEES ONLY. Contractors are never spilled to OT. Where an
+ *  individual genuinely needs it (state law, a specific contract), the
+ *  team overrides in Rippling.
+ *
+ *  Blank defaults to contractor deliberately — in the real world there
+ *  are only a handful of actual employees, and existing blank records are
+ *  being backfilled to contractor. New records default to contractor too
+ *  (see backlog). So the only way to be OT-eligible is to be explicitly
+ *  marked an employee. */
+const OT_ELIGIBLE_EMPLOYMENT_TYPE = "Employee";
+
+/** Employee keys eligible for the weekly 40-hour OT spill. Keys with no
+ *  employees row, or any employment_type other than "Employee", are
+ *  omitted — contractors do not spill. */
+async function loadOvertimeEligibleEmployeeKeys(keys: string[]): Promise<Set<string>> {
+  const eligible = new Set<string>();
+  if (keys.length === 0) return eligible;
+  const { data, error } = await supabase
+    .from("employees")
+    .select("employee_key, employment_type")
+    .in("employee_key", keys);
+  if (error) {
+    // Fail CLOSED on the money-affecting side: if we cannot read the
+    // classification we do not invent overtime. Surfaced in the log.
+    console.error("[payroll] loadOvertimeEligibleEmployeeKeys:", error);
+    return eligible;
+  }
+  for (const r of (data ?? []) as any[]) {
+    if ((r.employment_type ?? "").trim() === OT_ELIGIBLE_EMPLOYMENT_TYPE) {
+      eligible.add(r.employee_key);
+    }
+  }
+  return eligible;
+}
+
 /** Internal: gather every row contributing to weekly totals for this run,
  *  bucketed by (employee_key, pay_week_start). Marks rows from finalized
  *  runs as frozen so applyWeeklySpill only mutates this run's rows. */
@@ -1544,6 +1584,14 @@ async function gatherWeekRowsForRun(runId: string, weekStart: "sun" | "mon"): Pr
   if (workDates.length === 0 || employees.length === 0) {
     return { byWeek: new Map(), thisRunRowIdByEntryId: new Map() };
   }
+  // Weekly OT is an EMPLOYEE-only rule; contractors never spill. Drop
+  // ineligible people here so the preview and finalize paths — which both
+  // funnel through this collector — can never disagree.
+  const otEligible = await loadOvertimeEligibleEmployeeKeys(employees as string[]);
+  if (otEligible.size === 0) {
+    return { byWeek: new Map(), thisRunRowIdByEntryId: new Map() };
+  }
+
   const weeks = Array.from(new Set(workDates.map(d => payWeekStartFor(d, weekStart))));
   // Build a date range covering all weeks: weekStart → weekStart + 6 days.
   const dateMin = weeks.reduce((a, b) => a < b ? a : b);
@@ -1574,6 +1622,9 @@ async function gatherWeekRowsForRun(runId: string, weekStart: "sun" | "mon"): Pr
   const byWeek = new Map<string, WeekHourRow[]>();
   const thisRunRowIdByEntryId = new Map<string, string>();
   const pushRow = (employeeKey: string | null, workDate: string, row: WeekHourRow) => {
+    // Contractors (and anyone unclassified) never contribute to — or are
+    // mutated by — the weekly 40-hour spill.
+    if (!employeeKey || !otEligible.has(employeeKey)) return;
     const wk = payWeekStartFor(workDate, weekStart);
     const key = `${employeeKey ?? "__"}|${wk}`;
     const list = byWeek.get(key) ?? [];
