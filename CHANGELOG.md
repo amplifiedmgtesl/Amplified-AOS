@@ -4,6 +4,12 @@ What changed and when. Newest entries at the top.
 
 ## August 2026
 
+### August 30 — v2.5.0
+- Day rate is now set on the job's **day record**, not worked out from the quote. Each day of a job can be marked Day Rate or Hourly, with the number of hours the day rate covers stored alongside it. Payroll reads that. The quote can still override a single specialty — if one role is billed hourly on an otherwise day-rate day, that still works — but the day is what everyone else follows.
+- This fixes people being paid the wrong way because of how they were booked. On the Neon Nights run, the crew lead was paid 17 clock hours on two days while the twenty stagehands she was supervising were paid a flat 10, purely because "Stagehand Lead" wasn't one of the roles on the quote. Riggers booked as "Up" but quoted as "Climber" had the same problem. Those people now follow the day like everyone else.
+- The hours a day rate covers are no longer worked out by dividing the day rate by the hourly rate. That division was wrong whenever the two rates weren't set consistently — on an upcoming September job it produced 17-hour and 19-hour "days" for two roles because a flat $650/day was quoted while their hourly rates were left at the rate-card default. The day record's own number is used instead.
+- Existing days have been set from the job's schedule, so nothing changes for work already entered. Payroll runs already created keep the hours they were built with; to pick this up, void the run and create a new one.
+
 ### August 30 — v2.4.1
 - Fixed: voiding a payroll run always failed. The Void button returned "tuple to be updated was already modified by an operation triggered by the current command" on any run that had entries on it — which is every real run. The cause was two database triggers fighting: voiding a run deletes its entries, and deleting entries recalculates the run's totals, which tried to update the same run row that was still mid-void. Confirmed against production: no payroll run had ever reached voided status. Voiding now releases the entries first, so the totals recalculation and the status change no longer collide. The timesheet entries go back into the candidate pool as they always should have, ready for a fresh run.
 

@@ -14,7 +14,7 @@
 import { supabase } from "@/lib/supabase/client";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "./types";
 import { resolveRateCardForJob, pickRateCardForJob } from "./quotes";
-import { loadDayRateMapForJobs, dayRateKey } from "./payroll-day-rate";
+import { loadDayRateResolver } from "./payroll-day-rate";
 
 function newRunId(): string {
   return `prr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -392,10 +392,10 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
   for (let i = 0; i < input.entries.length; i++) {
     ratesByRowId.set(input.entries[i].timesheetEntryId, resolutions[i].stdRate);
   }
-  // Day-rate context from the job's issued quote. Same lookup the invoice
-  // pricing path uses, so pay and bill agree on which (date, specialty)
-  // combinations are day rate and how many hours the block covers.
-  const dayRateMap = await loadDayRateMapForJobs(input.entries.map((e) => e.jobId));
+  // Day-rate basis: the job's day record, with the quote line as a
+  // per-specialty override. Anyone working a specialty that was never
+  // quoted still gets the day's basis — see payroll-day-rate.ts.
+  const dayRates = await loadDayRateResolver(input.entries.map((e) => e.jobId));
   const dailyAdjustments = applyDailyRulesToCandidates(input.entries.map(e => ({
     timesheetEntryId: e.timesheetEntryId,
     employeeKey: e.employeeKey,
@@ -406,7 +406,7 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
     otHours: e.otHours,
     dtHours: e.dtHours,
     dailyRulesExempt: e.dailyRulesExempt,
-    dayRateHours: dayRateMap.get(dayRateKey(e.jobId, e.workDate, e.specialtyId))?.coveredHours ?? null,
+    dayRateHours: dayRates.hoursFor(e.jobId, e.workDate, e.specialtyId),
   })), ratesByRowId);
   const rows = input.entries.map((e, i) => {
     const resolved = resolutions[i];
@@ -509,10 +509,10 @@ export async function addEntriesToPayrollRun(
   for (let i = 0; i < entries.length; i++) {
     ratesByRowId.set(entries[i].timesheetEntryId, resolutions[i].stdRate);
   }
-  // Day-rate context from the job's issued quote. Same lookup the invoice
-  // pricing path uses, so pay and bill agree on which (date, specialty)
-  // combinations are day rate and how many hours the block covers.
-  const dayRateMap = await loadDayRateMapForJobs(entries.map((e) => e.jobId));
+  // Day-rate basis: the job's day record, with the quote line as a
+  // per-specialty override. Anyone working a specialty that was never
+  // quoted still gets the day's basis — see payroll-day-rate.ts.
+  const dayRates = await loadDayRateResolver(entries.map((e) => e.jobId));
   const dailyAdjustments = applyDailyRulesToCandidates(entries.map(e => ({
     timesheetEntryId: e.timesheetEntryId,
     employeeKey: e.employeeKey,
@@ -523,7 +523,7 @@ export async function addEntriesToPayrollRun(
     otHours: e.otHours,
     dtHours: e.dtHours,
     dailyRulesExempt: e.dailyRulesExempt,
-    dayRateHours: dayRateMap.get(dayRateKey(e.jobId, e.workDate, e.specialtyId))?.coveredHours ?? null,
+    dayRateHours: dayRates.hoursFor(e.jobId, e.workDate, e.specialtyId),
   })), ratesByRowId);
 
   // Adding entries to an existing run can cross a daily-group boundary
@@ -1307,7 +1307,7 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
     for (const r of tsRows ?? []) shiftByTsId.set((r as any).id, (r as any).shift_id ?? null);
   }
 
-  const recomputeDayRateMap = await loadDayRateMapForJobs((data as any[]).map((r) => r.job_id));
+  const recomputeDayRates = await loadDayRateResolver((data as any[]).map((r) => r.job_id));
 
   // Reuse applyDailyRulesToCandidates by adapting the shape.
   // Pass the row's existing std_rate so the bump routes to the highest-
@@ -1328,7 +1328,7 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
     // Day-rate rows must survive a recompute. Without this the 5hr min /
     // round-up would overwrite the day-rate block and quietly turn a
     // day-rate run back into an hourly one.
-    dayRateHours: recomputeDayRateMap.get(dayRateKey(r.job_id, r.work_date, r.specialty_id))?.coveredHours ?? null,
+    dayRateHours: recomputeDayRates.hoursFor(r.job_id, r.work_date, r.specialty_id),
   }));
   const ratesByRowId = new Map<string, number>();
   for (const r of data as any[]) {
