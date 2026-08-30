@@ -2461,3 +2461,29 @@ Day-rate payroll (v2.4.0) derives the paid block as `round(base_day / base_hourl
 2. Or ship `docs/day-rate-source-of-truth-design.md` first, which makes payroll read `expected_hours` and never divide.
 
 **This is exactly what #36 option B was built to catch** — the uneven-ratio warning in the rate-card editor. It fires on rate cards, not on hand-edited quote lines, which is where this one came from. Worth extending the check to quote lines.
+
+---
+
+## Constrain `rate_mode` to a dropdown + DB check — day vs hourly, no free text (added 2026-08-30)
+
+**Why:** the planned `rate_mode` field on `job_request_days` (see `docs/day-rate-source-of-truth-design.md`) decides whether a day is paid as a flat day-rate block or by the clock. A wrong or unrecognised value silently means "hourly", so a typo pays a whole crew the wrong way with no error.
+
+**This has already happened on the existing field.** `quote_lines.rate_mode` was never constrained and has drifted to **three** values:
+
+| Value | Rows |
+|---|---|
+| `hourly` | 1,424 |
+| `day` | 363 |
+| **`day_rate`** | **19** |
+
+The code tests `rate_mode === "day"`, so those 19 would be treated as hourly. They happen to be harmless — all on **superseded** quotes with `specialty_id` NULL, and `loadQuoteRateHints` skips any line without a specialty — but nothing prevented them and nothing flagged them. `invoice_lines` is clean (`hourly` 1,038 / `day` 260), which is luck, not enforcement.
+
+**Wanted (John, 2026-08-30):**
+
+1. **Dropdown in the UI**, not a text input. The user picks Day Rate or Hourly; there is no way to type a third thing.
+2. **A DB `CHECK` constraint** as the backstop — `rate_mode in ('day','hourly')`. The dropdown covers the screen; the constraint covers imports, API routes, SQL-editor edits and future code. Per John's standing preference (2026-08-30) for **hard blocks over warnings**, the database should refuse the value outright rather than let it land and warn later.
+3. **Apply the same constraint to `quote_lines` and `invoice_lines`** while in there, and normalise or delete the 19 `day_rate` rows first so the constraint can be added.
+
+**Naming note:** the stored values stay `day` / `hourly` to match the existing columns — do not introduce a fourth spelling. The dropdown's *labels* can read "Day Rate" and "Hourly"; only the labels differ from the stored value.
+
+**Related:** `docs/day-rate-source-of-truth-design.md`, and the entry on hard-blocking unpayable specialties — same principle, that invalid data should be impossible to create rather than detected afterwards.
