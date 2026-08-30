@@ -1819,8 +1819,46 @@ export async function reopenPayrollRun(id: string): Promise<void> {
 }
 
 export async function voidPayrollRun(id: string, reason?: string): Promise<void> {
-  // The DB trigger payroll_runs_void_releases_entries clears the junction
-  // rows so the underlying timesheet entries become candidates again.
+  // Release and clear the entries BEFORE flipping status, in separate
+  // statements. This is deliberate — see below.
+  //
+  // The DB trigger payroll_runs_void_releases_entries does the same cascade
+  // itself, but it runs BEFORE UPDATE on payroll_runs, so its DELETE of
+  // payroll_run_entries fires the AFTER DELETE trigger
+  // payroll_run_entries_refresh_totals, which runs
+  // `UPDATE payroll_runs ... WHERE id = <the row being voided>`. Postgres
+  // rejects that with:
+  //
+  //   tuple to be updated was already modified by an operation triggered
+  //   by the current command
+  //
+  // so voiding a run with entries ALWAYS failed. Confirmed against prod
+  // 2026-08-30: no run had ever reached 'voided' status.
+  //
+  // Doing the cascade here first means the trigger finds nothing to delete,
+  // no AFTER DELETE fires, and the status update completes cleanly. The
+  // trigger stays in place as the safety net for anyone updating status
+  // directly (e.g. the SQL editor) — fixing it properly by moving the
+  // cascade to AFTER UPDATE needs a migration and is on the backlog.
+
+  // 1. Release the source timesheet entries from the super-freeze.
+  const { error: releaseErr } = await supabase
+    .from("timesheet_entries")
+    .update({ payroll_run_id: null })
+    .eq("payroll_run_id", id);
+  if (releaseErr) throw releaseErr;
+
+  // 2. Drop the run's entries. Fires refresh_payroll_run_totals, which is
+  //    fine here: it's a standalone statement, not nested inside an update
+  //    of the same payroll_runs row. Blocked by the freeze trigger if the
+  //    run is finalized/exported, which is the intended guard.
+  const { error: entriesErr } = await supabase
+    .from("payroll_run_entries")
+    .delete()
+    .eq("payroll_run_id", id);
+  if (entriesErr) throw entriesErr;
+
+  // 3. Flip status. The BEFORE trigger's cascade now matches zero rows.
   const { error } = await supabase
     .from("payroll_runs")
     .update({

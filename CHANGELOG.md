@@ -4,6 +4,9 @@ What changed and when. Newest entries at the top.
 
 ## August 2026
 
+### August 30 — v2.4.1
+- Fixed: voiding a payroll run always failed. The Void button returned "tuple to be updated was already modified by an operation triggered by the current command" on any run that had entries on it — which is every real run. The cause was two database triggers fighting: voiding a run deletes its entries, and deleting entries recalculates the run's totals, which tried to update the same run row that was still mid-void. Confirmed against production: no payroll run had ever reached voided status. Voiding now releases the entries first, so the totals recalculation and the status change no longer collide. The timesheet entries go back into the candidate pool as they always should have, ready for a fresh run.
+
 ### August 30 — v2.4.0
 - Payroll now pays day rates on jobs that were quoted at day rates. Where a day was sold as a flat day rate, payroll pays the number of hours that day rate covers instead of the hours on the timesheet — so a stagehand on a $330 day (a $33/hr rate, so a 10-hour day) is paid 10 hours, whether the timesheet says 3 hours or 17. This is deliberate: on a day-rate job the crew check in and stay on call across the whole span, used on and off rather than working straight through, which is the reason the job is priced that way in the first place. Half days need nothing special — a day quoted at $165 covers 5 hours, so it pays 5. It reads this straight off the issued quote, so there is nothing to switch on and no way for pay and billing to disagree about which days were day rate.
 - The 40-hour weekly overtime rule now applies to employees only. Contractors are no longer pushed into overtime when their week goes past 40 hours. Anyone not explicitly marked as an employee is treated as a contractor. Where an individual genuinely needs overtime — a state rule, or their own contract — that is handled in Rippling.
