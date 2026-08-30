@@ -62,12 +62,38 @@ happens, see §3), and the day record answers everything else.
 
 ### What has to be added
 
-`job_request_days` gains **one** field:
+`job_request_days` gains **two** fields:
 
-- `rate_mode` — `'day'` | `'hourly'`
+```sql
+rate_mode      text    check (rate_mode in ('day','hourly'))
+day_rate_hours numeric check (day_rate_hours is null or day_rate_hours between 1 and 24)
+-- day rate with no hours must be impossible:
+check (rate_mode <> 'day' or day_rate_hours > 0)
+```
 
-**The hours are already there.** `job_request_days.expected_hours` holds exactly
-the block size the derivation has been computing. Nothing new needed.
+`rate_mode` is NULL by default, meaning "fall back to the quote line" — today's
+behaviour — so all 251 existing rows are unaffected until backfilled.
+
+### Why a dedicated hours column and NOT `expected_hours`
+
+`expected_hours` already holds the right number today (see §4), which makes
+overloading it tempting. **Do not.** It is an operational planning field with an
+existing job:
+
+- `components/shared/job-print-sheet.tsx` / `job-print-preview.tsx` — the sheets
+  crew are given, telling them when to be on site
+- `components/shared/job-request-days-section.tsx` — day planning
+- `lib/store/quotes.ts` — quote generation
+- `lib/job-health/runner.ts` — health checks
+
+**Decision (John, 2026-08-30): a separate `day_rate_hours` column.** Reusing
+`expected_hours` would couple crew scheduling and call sheets to payroll — edit
+a shift length so the crew know when to arrive, and you have silently changed
+what everyone is paid. Two meanings, two columns.
+
+`expected_hours` remains the best *seed* for the backfill (§5), and the two are
+expected to agree on day-rate days — but they are allowed to diverge, and only
+`day_rate_hours` drives pay.
 
 ---
 
@@ -84,7 +110,7 @@ exception. `loadQuoteRateHints` already has a documented tiebreaker for a
 
 ---
 
-## 4. `expected_hours` is more accurate than the derivation
+## 4. The right number is already knowable — `expected_hours` proves it
 
 Today the block is derived as `round(base_day / base_hourly)` from the quote.
 Comparing that against `expected_hours` on the day record across all issued
@@ -105,7 +131,10 @@ day. Three independent signals say the block is 10 — the day record, the quote
 own `hours` field (30 ÷ 3 crew, 10 ÷ 1 crew), and Labor on the identical $650.
 
 The derived number is a division artifact. `expected_hours` is a number a human
-entered. **⚠ See §7 — this job has not run yet.**
+entered. That is the evidence the correct value is already known at day level —
+it is why `day_rate_hours` can be seeded from it rather than guessed. It is not
+an argument for storing pay in that column; see §2. **⚠ See §7 — this job has
+not run yet.**
 
 Neon Nights shows the same thing on the half day: `expected_hours` = 5 on
 2026-08-11 and 10 on the rest, matching the quote exactly, and it also covers
@@ -131,6 +160,18 @@ work on `dev` makes setup required**, which closes this going forward. No
 auto-create needed.
 
 **Still required: a backfill for legacy jobs.** Old jobs predate the concept.
+
+The backfill is smaller than the 251 total suggests — measured 2026-08-30:
+
+| Set | Rows | Action |
+|---|---|---|
+| Day records on **day-rate jobs** | **64** | `rate_mode='day'`, seed `day_rate_hours` from `expected_hours` |
+| Day records on hourly jobs | 187 | `rate_mode='hourly'`, `day_rate_hours` NULL |
+
+**All 64 have `expected_hours` between 4 and 14 — no outliers**, so the seeded
+values are inspectable in one screen before applying. John is content to
+backfill everything rather than leave NULLs (2026-08-30); the fallback path
+stays in the code regardless, for days added later.
 
 **Residual gap to decide:** required setup guarantees a record for the days
 *planned*, not the days *worked*. A job set up for six days that runs seven
@@ -172,7 +213,41 @@ and never divides.
 
 ---
 
-## 8. Relationship to backlog #36
+## 8. Build sequencing (John, 2026-08-30)
+
+Deliberately staged so the blast radius stays small.
+
+| Step | Work | Notes |
+|---|---|---|
+| 1 | Migration: `rate_mode` + `day_rate_hours` + the three checks | Prod migration is John's to apply |
+| 2 | Populate Neon Nights (8/11–8/16) and FARMTOUR (9/17–9/20), then backfill the remaining 62 + 187 | 11 rows to unblock, the rest at leisure |
+| 3 | **Payroll only** — read the day record, quote line overrides per specialty, NULL falls through to today's derivation | Billing untouched |
+| 4 | Later: point quoting and invoicing at the same source | Closes the divergence in §6 |
+
+**Step 3 must wire all three entry points** — `createPayrollRun`,
+`addEntriesToPayrollRun` and `recomputeDailyRulesForRun`. Missing the third
+means Recalculate silently converts a day-rate run back to hourly; that bug was
+nearly shipped on 2026-08-30 in the quote-based version.
+
+**Before step 3 lands, void the stale drafts.** Five of the twelve draft runs
+touch day-rate jobs. Once payroll reads day records, adding entries to an old
+draft produces a half-day-rate, half-hourly run. The 626-entry 2026-06-17 draft
+showing **$0 total pay** is worth killing regardless.
+
+**Acceptance test: FARMTOUR.** The derivation says 17 and 19, the day record
+says 10, and 10 is confirmed independently three ways. If FARMTOUR pays 10-hour
+blocks after step 3, the change works — and it has to be right before
+17 September anyway, so the verification and the deadline are the same work.
+
+**Temporary divergence is benign.** Between steps 3 and 4 payroll reads the day
+record while billing still derives from the quote. The derived floor only
+affects *overflow* — the day charge is `qty × base_day` and is unaffected — so
+the worst case is slightly under-billed overflow on a very long day, not a wrong
+invoice.
+
+---
+
+## 9. Relationship to backlog #36
 
 #36 asks whether to store the day-rate floor or keep deriving it and warn.
 **This design answers it: store it — and it is already stored**, as
