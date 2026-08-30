@@ -1,0 +1,32 @@
+name: Tests
+
+# Runs the unit suite on every push to a long-lived branch and on every PR.
+# The suite is pure-calculation only (see tests/README.md) — it needs no
+# database, no secrets and no env vars, which is why this workflow has none.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `npm ci` rather than `npm install` so the lockfile is authoritative
+      # and a drifted lockfile fails here instead of on Vercel.
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Unit tests
+        run: npm test
