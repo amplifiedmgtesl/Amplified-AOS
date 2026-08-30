@@ -2306,3 +2306,33 @@ Voiding therefore only ever worked on a run with zero entries. Confirmed against
 **Also worth checking while in there:** `refresh_payroll_run_totals` is `FOR EACH ROW`, so deleting a 138-entry run fires 138 separate `UPDATE payroll_runs` statements that all compute the same (eventually zero) totals. A statement-level trigger would do it once. Not causing a problem at current volumes, but it is pure waste.
 
 **Related:** the void path has no test coverage — it is a DB-trigger interaction, which the current pure-function test suite explicitly does not cover (see `tests/README.md`). This is the class of bug unit tests were never going to catch.
+
+---
+
+## Branch protection on `main` + get CI onto `main` (added 2026-08-30)
+
+**Why:** CI landed 2026-08-30 (`.github/workflows/test.yml` — `npm ci`, typecheck, `npm test`) and is green on `dev`. Two follow-ups were deliberately deferred.
+
+### 1. The workflow is on `dev` only
+
+It was pushed to `main` and **failed immediately**: `npm error Missing script: "test"`. The vitest setup arrived on dev via the `invoicing-unit-tests` merge and has never been promoted, so `main` has no test script, no vitest devDependency and no `tests/`.
+
+Promoting the tests to `main` on their own is not the fix — that merge also carries `lib/store/invoice-math.ts`, changes to `lib/store/invoices.ts` and `lib/store/types.ts`, the #36 option-B rate-card editor warnings, a job-health check and two migrations (`20260708a`, `20260708c`). Those must cross as a deliberate promotion with the checklist followed, not as a side effect of wanting CI.
+
+So the workflow was removed from `main` again (`dc35ccd`) and **returns with the promotion that carries the test suite.** `CLAUDE.md` and the updated `docs/promote-to-prod-checklist.md` were left on `main` — they are docs and useful there regardless.
+
+**⚠ Do not enable the required status check before the workflow is back on `main`.** A hotfix branched off `main` would produce no `Tests` check and the PR would block indefinitely — precisely the flow used in an emergency.
+
+### 2. Branch protection — deferred on purpose
+
+**Decision (John, 2026-08-30): leave it off for now and let CI soak first**, to see whether it produces false failures or friction before anything is gated on it. The failure above is a fair example of why.
+
+When it goes on, the agreed shape is **`main` only, not `dev`**:
+
+- Requiring a status check effectively bans direct pushes — GitHub evaluates required checks against a commit already on the remote, so a fresh direct push has nothing to point at. Protecting a branch therefore means PRs for every change to it.
+- On `main` that is cheap: promotions are deliberate and infrequent and already follow a checklist.
+- On `dev` it would be permanent friction for a solo developer pushing many times a day, guarding a failure that is recoverable in one commit.
+
+Settings → Branches → require the `Tests` check on `main`.
+
+**Side benefit:** PR merges create a distinct merge SHA, which avoids the Vercel duplicate-commit gotcha documented in the checklist (skipped production builds, hit 2026-06-11 and 2026-07-21).
