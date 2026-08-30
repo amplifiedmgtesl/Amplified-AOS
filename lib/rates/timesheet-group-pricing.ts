@@ -18,6 +18,8 @@ import { supabase } from "@/lib/supabase/client";
 import type { QuoteLine } from "@/lib/store/types";
 import { computeLineTotal } from "@/lib/rates/line-calc";
 
+import { dayRateCoveredHours } from "./day-rate";
+
 /** The operator's billing-structure intent per (date, specialty), read from
  *  the source quote's lines. Build days quoted at day-rate produce day-mode
  *  lines automatically; show days quoted hourly stay hourly. */
@@ -139,9 +141,7 @@ export function priceTimesheetGroup(
     const hourlyForOverflow = hint!.baseHourly > 0 ? hint!.baseHourly : baseHourly;
     // Floor = how many hours the day rate "covers" per worker.
     // Derived from quote's day/hourly ratio. For CCMF: 350/35 = 10.
-    const floor = hourlyForOverflow > 0
-      ? Math.round(baseDay / hourlyForOverflow)
-      : 10;
+    const floor = dayRateCoveredHours(baseDay, hourlyForOverflow);
     // Per-worker overflow = hours past the floor, summed across workers.
     let overflow = 0;
     g.workerTotalHours.forEach((hrs) => {

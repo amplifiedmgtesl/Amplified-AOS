@@ -4,6 +4,11 @@ What changed and when. Newest entries at the top.
 
 ## August 2026
 
+### August 30 — v2.4.0
+- Payroll now pays day rates on jobs that were quoted at day rates. Where a day was sold as a flat day rate, payroll pays the number of hours that day rate covers instead of the hours on the timesheet — so a stagehand on a $330 day (a $33/hr rate, so a 10-hour day) is paid 10 hours, whether the timesheet says 3 hours or 17. This is deliberate: on a day-rate job the crew check in and stay on call across the whole span, used on and off rather than working straight through, which is the reason the job is priced that way in the first place. Half days need nothing special — a day quoted at $165 covers 5 hours, so it pays 5. It reads this straight off the issued quote, so there is nothing to switch on and no way for pay and billing to disagree about which days were day rate.
+- The 40-hour weekly overtime rule now applies to employees only. Contractors are no longer pushed into overtime when their week goes past 40 hours. Anyone not explicitly marked as an employee is treated as a contractor. Where an individual genuinely needs overtime — a state rule, or their own contract — that is handled in Rippling.
+- Both changes apply to payroll runs created from now on. An existing draft run keeps the hours and rates it was built with; to pick these up, void it and create a new run for the job.
+
 ### August 29 — v2.3.4
 - Payroll accounts no longer have Timekeeping or Timesheet Review. Both are gone from the payroll sidebar, and the direct links are blocked as well. Entering and approving hours stays with operations; payroll works from already-approved time on the Payroll screen. This reverses the access granted on August 4 in v2.3.0. Payroll accounts keep Payroll, Employees, and read-only Jobs.
 
