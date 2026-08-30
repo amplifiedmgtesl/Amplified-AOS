@@ -9,7 +9,27 @@ Established with John 2026-07-21 alongside the change log feature.
 - If anything on dev is being **held back**, it must be cherry-picked around,
   not merged — and it gets NO changelog entry yet.
 
-## 2. Finalize CHANGELOG.md
+## 2. Run the tests
+
+```bash
+npm test
+```
+
+All green before anything crosses to `main`. Takes about a second.
+
+**Add tests as part of the change, not afterwards.** If the change introduced
+or altered a pure calculation — money math, hour splits, rate derivation, date
+helpers — it needs a test in the same promotion. See `tests/README.md` for the
+scope rule: pure functions only, no database, no mocks.
+
+**Know what this does not cover.** The suite tests pure functions. It says
+nothing about DB triggers, RLS, PostgREST behaviour or anything needing a round
+trip. The 2026-08-30 payroll-void bug — two triggers colliding, broken since the
+day it was written, zero runs ever voided — was exactly that class and a green
+suite would never have caught it. Green means the arithmetic is sound, not that
+the feature works.
+
+## 3. Finalize CHANGELOG.md
 
 - The entry must describe **exactly** what's crossing to `main` — nothing
   that's staying parked on dev.
@@ -18,7 +38,7 @@ Established with John 2026-07-21 alongside the change log feature.
 - Dated heading carries the new version: `### July 21 — v2.1.0`.
 - Entries for held-back work get pulled from the entry before merging.
 
-## 3. Bump the version in package.json
+## 4. Bump the version in package.json
 
 John's convention (semver):
 
@@ -32,7 +52,7 @@ Every promotion bumps something. The on-screen version under the Sign out
 button is the tie-back to the changelog heading — that only works if the
 number always moves.
 
-## 4. Merge and migrate
+## 5. Merge and migrate
 
 - Merge to `main` (user-authorized push).
 - Apply any pending SQL migrations to the **prod** Supabase (user-driven —
@@ -52,12 +72,12 @@ trigger commit to `main`:
 git commit --allow-empty -m "chore: trigger production deploy of <sha>"
 ```
 
-## 5. Verify on prod
+## 6. Verify on prod
 
 - The version under the Sign out button shows the new number.
 - The /changelog page's top entry matches it and describes what just shipped.
 
-## 6. Sync `dev` back up to `main`
+## 7. Sync `dev` back up to `main`
 
 Merge `main` into `dev` immediately after the promotion, so the two agree on
 `CHANGELOG.md` and `package.json`.
