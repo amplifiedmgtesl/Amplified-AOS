@@ -123,53 +123,53 @@ Working priority order for active/requested projects. The `#N` ids are stable la
   Mechanically small per table (four columns + one trigger, the function already exists); the survey and
   the keep/skip decisions are the real work. Migrations dev-first per the standard flow.
 
-- **#62 — Retire duplicate employees with an active/inactive flag; the picker must stop offering
-  everybody** (added 2026-08-30, John). Came out of the Rippling reconciliation. John's framing:
-  *"Do we have an active/inactive flag on employee records so that when adding a record it only shows
-  active records? So they will still show on old jobs, but can't be picked for a new job."* That is the
-  right shape — it retires a duplicate **without repointing any timesheet row**, so payroll runs stay
-  consistent with their snapshots, history is untouched, and a wrong call is reversible by flipping the
-  flag. Compare the alternative (merging keys) which rewrites rows that are inside finalized payroll
-  runs, with no audit trail to undo it (see **#61**, and **#31** — the payroll super-freeze that should
-  block those edits is currently not enforced).
-  **Today the picker filters on `is_deleted` only.** [components/shared/employee-picker.tsx](../components/shared/employee-picker.tsx)
-  `loadAllEmployees` selects `employee_key, full_name, first_name, last_name, email, phone, city, state`
-  with `.eq("is_deleted", false)` — it never reads `status` and does not even select it. So the dropdown
-  offers all **2,881** live records, including 799 marked `Terminated`.
-  **⚠ The existing `status` column CANNOT be the source of the flag — verified against PROD 2026-08-30.**
-  Values are `Active/Listed` 880, `Terminated` 799, `Active` 787, NULL 335, `''` 83, `Listed` 2 — four
-  spellings of two concepts. But the fatal part is that status is *inversely* correlated with reality:
+- **#62 — Retire the duplicate employee records by marking them `Inactive`, and make the picker
+  filter on `status`** (added 2026-08-30, John. **REWRITTEN 2026-08-30** — the original version of this
+  item proposed a new boolean column and an evidence-based seed; both were superseded, see below.)
+  John's framing: *"an active/inactive flag on employee records so that when adding a record it only
+  shows active records? So they will still show on old jobs, but can't be picked for a new job."*
+  Retiring a duplicate this way **repoints no timesheet row**, so payroll runs stay consistent with their
+  snapshots, history is untouched, and a wrong call is undone by flipping the value back. The
+  alternative — merging keys — rewrites rows inside finalized payroll runs with no audit trail to undo
+  it (see **#61**, and **#31**: the payroll super-freeze that should block those edits is not enforced).
 
-  | status | people | with timesheet activity |
-  |---|---|---|
-  | Active/Listed | 880 | 5 |
-  | Terminated | 799 | 10 |
-  | Active | 787 | 98 |
-  | **(no status)** | **418** | **347** |
+  **✅ ALREADY DONE (prod, 2026-08-30).** No migration is needed — `status` now carries the flag:
+  - `status` cleaned to exactly three values: **`Active` 2,084 · `Terminated` 799 · `Inactive` 5**
+    (was `Active/Listed` 880, `Terminated` 799, `Active` 787, NULL 335, `''` 83, `Listed` 2).
+    `Inactive` is a **new** value that never existed in the source data.
+  - `rippling_employee_id` moved off 8 records due to be retired, onto their survivor.
+  - The 7 login-linked `coordinator-backfill` records were **relinked**: `profiles.employee_key` now
+    points at the surviving `AES-*` record for Andie, Brent, Brian, Chris, Paul, Sean, Shelby — so those
+    `emp-17849124887xx` rows are now ordinary duplicates and no longer need protecting.
+  Rollback scripts + pre-change snapshots for every step: `~/amplified/rippling-reconcile-2026-08-29/`.
 
-  **347 of the 460 people who have ever worked carry no status at all.** Filtering the picker on
-  `status='Active'` would hide three-quarters of the real crew. Converting these values to a dropdown
-  without re-deriving them just freezes bad data behind a nicer control.
-  **`position_status` is a redundant mirror** — 797 of the 799 `Terminated` rows repeat it there (2
-  disagree), with its own variants (`Active/Unknown` 670, `A - Active` 119, blank 883). Retire it with
-  `status`; do NOT preserve both. (`worker_category` and `employment_type` are a different axis —
-  worker *type*, not active-ness — leave them alone.)
-  **Proposed work:** (1) add a dedicated boolean (e.g. `is_active` / `pickable`, default true) rather
-  than overloading `status`; (2) **seed it from evidence, not from `status`** — active if the record has
-  timesheet history OR a `rippling_employee_id` OR a matching `profiles` login. Against prod that yields
-  **510 active / 2,371 inactive**, and 510 is credible against Rippling's 436-person roster; (3) make the
-  maintenance UI a two-value dropdown, no free text; (4) only then flip the picker to filter on it;
-  (5) retire `status` + `position_status`.
-  **⚠ Cutover risk — ship in two steps.** Add the column and backfill first, have Connor review the 510
-  against expectation, and flip the picker only after. Get the seed wrong and a legitimate crew member
-  vanishes from the dropdown mid-job.
-  **Open questions for Connor:** (a) 10 records are `Terminated` yet have timesheet activity — genuinely
-  rehired, or a stale flag? (b) should terminated people be pickable for NEW jobs at all? (old jobs keep
-  showing them either way, since no timesheet row is touched).
-  ⚠ **Does not by itself fix duplicate creation** — see the intake gap in **#63**; and the seven
-  `coordinator-backfill` records (`emp-17849124887xx`) are login-linked and must stay active regardless:
-  all seven have `@amplifiedesl.com` logins in `profiles` (Andie=payroll, Brent=staff, the other five
-  crew_leader). See [[duplicate-employee-records]] and [[coordinator-to-crewleader-employee-link]].
+  **REMAINING WORK — two pieces:**
+  **(1) Mark the duplicate twins `Inactive`.** Plan is built and current:
+  `~/amplified/rippling-reconcile-2026-08-29/10-retire-plan.csv` — **40 people, 46 surplus records**, one
+  row per record tagged KEEP ACTIVE / RETIRE. Rule: keep the record with the most recent timesheet
+  activity (survivors for the 7 login people are fixed by the relink above). 29 of the 46 carry timesheet
+  history, which stays exactly where it is. ⚠ **This is not the whole duplicate set** — a further ~35
+  pairs found by fuzzy name matching (`07-missing-possible-name-matches.csv`, e.g. Bob/Robert Burke,
+  Eddie Alspaugh/Edward Aspaugh, Marley Creasy/Creasey) have **zero overlap** with the 46 and still need
+  a survivor analysis. True total is roughly **81 records**.
+  **(2) Make the picker filter on `status='Active'`.** [components/shared/employee-picker.tsx](../components/shared/employee-picker.tsx)
+  `loadAllEmployees` currently selects `employee_key, full_name, first_name, last_name, email, phone,
+  city, state` with `.eq("is_deleted", false)` — it never reads `status` and does not even select it. Add
+  `status` to the select and `.eq("status","Active")`. **Until this ships, marking records `Inactive`
+  changes no behaviour** — the dropdown still offers everyone.
+
+  **⚠ The employees table is a POOL, not a roster — do not shrink it.** John 2026-08-30: *"this employee
+  master are not real employees. Its basically a pool of possible workers for jobs… we don't want to
+  limit it, unless they expressly change it."* Crew are sometimes phoned the same day to fill a job, so a
+  person with no timesheet history is still perfectly callable. **Everything defaults to `Active`**; only
+  an explicit human decision makes someone `Inactive`. An earlier proposal here to seed the flag from
+  *evidence of work* (timesheet history / rippling id / login → ~510 active) was **REJECTED for exactly
+  this reason — do not resurrect it.** The ~2,084 Active records are the intended pool size.
+
+  **Related:** `status` dropdown + soft-delete wiring + coordinator import/export is **#64**. Duplicate
+  *creation* is not fixed by any of this — that is **#63**. A cross-link so an active record's screens can
+  show history from its retired twins is a separate, larger project (see **#65**).
+  See [[duplicate-employee-records]] and [[coordinator-to-crewleader-employee-link]].
 
 - **#63 — The employee picker's duplicate guard only catches exact prefix/substring matches** (added
   2026-08-30). The guard exists and is doing its job as written: `+ Create employee "X"` renders only
@@ -195,6 +195,101 @@ Working priority order for active/requested projects. The `#N` ids are stable la
   ⚠ `rippling_employee_id` **cannot** be used as an intake gate — confirmed with John 2026-08-29: crew
   usually work a job *before* they are added to Rippling, so AOS is always the first system to know about
   a person. The Rippling id is a reconciliation key after the fact, not an identity gate.
+
+- **#64 — `employees.status`: lock to a 3-value dropdown, wire soft-delete to it, and add it to the
+  coordinator import/export** (added 2026-08-30, John). Follows the PROD status cleanup applied
+  2026-08-30 (see below). Three separate pieces, all small:
+  **(a) Replace the free-text input with a static dropdown.** [components/shared/employee-profile.tsx](../components/shared/employee-profile.tsx)
+  (~line 220) renders `status` as a bare `<input>`, which is how six spellings of two concepts got in.
+  Choices: **Active / Inactive / Terminated**. John: *"If Connor wants more later he can do that."*
+  Consider a CHECK constraint or lookup table so the DB enforces it too, not just the UI.
+  **(b) Soft-delete must set `status='Inactive'`.** `deleteEmployee` ([lib/store/db.ts](../lib/store/db.ts) ~line 957)
+  sets `is_deleted=true` and leaves `status` untouched. As of the 2026-08-30 cleanup the two agree
+  exactly (all 5 soft-deleted records are `Inactive`, and no non-deleted record is) — that agreement is a
+  useful cross-check and will silently rot on the next delete unless the write sets both.
+  **(c) Add `status` to the coordinator crew-roster import/export**
+  ([lib/storage/crew-roster-export.ts](../lib/storage/crew-roster-export.ts) / `crew-roster-import.ts`)
+  so Connor can mark people inactive in bulk — John: *"so they can mark people as inactive if they aren't
+  able to be worked anymore."* This is the intended day-to-day mechanism for keeping the pool current.
+  **⚠ Read this before filtering any picker on `status='Active'`.** The employees table is **not** a
+  roster of employees — it is a **pool of possible workers** (John 2026-08-30: *"Its basically a pool of
+  possible workers for jobs… we don't want to limit it, unless they expressly change it"*). Crew are
+  sometimes phoned the same day to fill a job, so a person with no timesheet history is still perfectly
+  callable. **Everything defaults to Active**; only an explicit human decision makes someone Inactive.
+  An earlier proposal to seed the flag from *evidence of work* (timesheet history / Rippling id / login,
+  giving ~510 active) was **rejected for exactly this reason** — do not resurrect it.
+  **PROD state after the 2026-08-30 cleanup:** `Active` 2,084 · `Terminated` 799 · `Inactive` 5.
+  Was: `Active/Listed` 880, `Terminated` 799, `Active` 787, NULL 335, `''` 83, `Listed` 2.
+  `Inactive` is a **new** value that never existed in the source data; it is reserved for retired
+  duplicate records (see **#62**) and for anyone Connor explicitly marks. `Listed` / `Active/Listed`
+  meant *listed in the pool* and folded into `Active`. Rollback scripts + pre-change snapshots for every
+  step are in `~/amplified/rippling-reconcile-2026-08-29/` (`96`–`99`).
+  ⚠ `position_status` is still a redundant near-copy of the old `status` (797 of the 799 `Terminated`
+  repeat there) and was deliberately left untouched as a safety net during the cleanup. Retire it as part
+  of this work once (a) lands — but not before, and check nothing reads it first.
+
+- **#65 — Cross-link retired duplicate employee records to their survivor, so reporting sees the whole
+  person** (added 2026-08-30, John). Larger scope than the **#62** cleanup; raised while agreeing that
+  cleanup. John: *"if we start adding details for an employee (i think we show that now on the employee
+  record) like jobs they are linked to, timekeeping records, etc. The active records would not show all
+  the details. We need some kind of cross link record that joins them all up so future reporting will
+  pull in details from the old employee records. But that's a large scope than this initial cleanup."*
+  **The problem #62 leaves behind.** Marking a duplicate `Inactive` is deliberately non-destructive —
+  every timesheet row stays on the key that owns it. The cost is that a person's history stays split:
+  Chris Travis has 74 timesheet entries across three records, and after retirement his surviving record
+  shows only its own 23. Any per-employee view — jobs worked, hours, pay history, documents — silently
+  under-reports. Today that is tolerable because those screens are thin; it gets worse as they grow,
+  which is exactly why John flagged it now rather than later.
+  **Sketch (design, do not build without scoping with John):** a link table — e.g.
+  `employee_aliases(employee_key PK/FK → employees, canonical_employee_key FK → employees, reason,
+  linked_at, linked_by)` — mapping each retired record to its survivor, with the survivor mapping to
+  itself so a single join covers both cases. Then per-employee reads resolve through it instead of
+  matching on `employee_key` alone. Deliberately **not** a merge: no row is rewritten, nothing inside a
+  finalized payroll run moves, and a wrong link is undone by deleting a row rather than by trying to
+  reconstruct history that no audit trail recorded (see **#61**).
+  **Seed data already exists:** `~/amplified/rippling-reconcile-2026-08-29/10-retire-plan.csv` holds
+  40 clusters / 46 records with survivors chosen, and `07-missing-possible-name-matches.csv` a further
+  ~35 pairs. Between them they are the initial contents of the table.
+  **Decide during scoping:** which reads must resolve through aliases (employee profile, crew history,
+  payroll history, job costing?) versus which should keep using the raw key; whether the picker shows a
+  merged person or the survivor only; and what happens to an alias if someone later decides two records
+  were *not* the same human. Ties to **#62** (produces the retired records) and **#7** (per-view queries
+  vs the startup cache — an alias join is another reason those reads should be live, not cached).
+
+- **#66 — TABLED FOR DISCUSSION: add a third `employment_type` of "Pool" for people who have never
+  worked for us** (added 2026-08-30, John). *"maybe we should change the employee_type field from 2
+  choices of employee and contractor and add one for 'pool' so we can identify someone that never worked
+  for us."* **Not scheduled — this is a placeholder for a design conversation**, not an agreed change.
+  **Why it is attractive.** `employees` is a pool of possible workers, not a roster (see **#62**), so
+  `status` answers *"can we call them?"* but nothing answers *"have they ever actually worked for us?"*.
+  A third value carries that distinction on the axis where it belongs — worker *type* — instead of
+  overloading `status`, which stays Active/Inactive/Terminated.
+  **PROD today (2026-08-30):**
+
+  | employment_type | records | have worked | never worked |
+  |---|---|---|---|
+  | (blank) | 1,876 | 440 | 1,436 |
+  | Independent Contractor | 649 | 13 | 636 |
+  | Employee | 363 | 3 | 360 |
+
+  **The field is currently unusable and that must be fixed as part of any change here.** 1,876 of 2,888
+  records are blank, including 440 of the ~456 people who have actually worked. And the values that ARE
+  set are mostly wrong: only 3 of the 363 marked `Employee` have ever worked a job, while **Connor says
+  there are about 6 real W-2 employees** — so the 363 is import noise, not data. A second field
+  disagrees: `worker_category` (`F - Full Time` 49, `P - Part Time` 87, `CAS - Casual` 3,
+  `1099 - Contractor` 1) picks a partly different set; union of the two signals is 8 people, intersection
+  is 3, and neither equals Connor's 6.
+  **⚠ Do NOT derive "Pool" from "has no timesheet rows".** That is a fact already computable from
+  `timesheet_entries`; baking it into a stored field means it is wrong the moment the person works their
+  first job, and nothing currently updates it (no audit trail either — **#61**). If "Pool" is added it
+  should mean *"we have not established an employment relationship"*, set deliberately, not derived.
+  **Questions for the discussion:** (a) is "Pool" a *type* at all, or is it really the absence of one —
+  i.e. should blank simply mean pool? (b) what flips someone from Pool to Employee/Contractor, and who
+  does it? (c) does `worker_category` get retired, or kept as the full/part-time axis? (d) **Rippling
+  knows the real answer** — it drives W-2 vs 1099 — so the cheapest fix may be importing the value rather
+  than curating it here; that is the same ask as the hire-date/status export already outstanding for the
+  ~68 unmatched people. Pairs with **#64** (status dropdown) — if both land, do the field-vocabulary work
+  once.
 
 ### 🧪 Findings from the Time Clock + Phase 0 test run, 2026-08-11 (#38–#58, plus #59 added 2026-08-12)
 
@@ -2336,3 +2431,33 @@ When it goes on, the agreed shape is **`main` only, not `dev`**:
 Settings → Branches → require the `Tests` check on `main`.
 
 **Side benefit:** PR merges create a distinct merge SHA, which avoids the Vercel duplicate-commit gotcha documented in the checklist (skipped production builds, hit 2026-06-11 and 2026-07-21).
+
+---
+
+## ⚠ FARMTOUR quote will overpay ~$3,400 — fix before 17 September (added 2026-08-30)
+
+**Why:** `AES_26091720_LFT_FARMTOUR` runs **17–20 September 2026** and every line on the issued quote (`AES_26091720_LFT_FARMTOUR_EST_REV2`) is `rate_mode = 'day'`. A flat **$650/day** was quoted across the board, but `base_hourly` was left at each role's rate-card default instead of being raised to $65 like Labor:
+
+| Role | base_day | base_hourly | Block derived | Intended |
+|---|---|---|---|---|
+| Labor | $650 | **$65** | 10 ✓ | 10 |
+| Telendler | $650 | **$38** | **17** ✗ | 10 |
+| Steward | $650 | **$34** | **19** ✗ | 10 |
+| BUS STOCK | $400 | $40 | 10 ✓ | 10 |
+
+Day-rate payroll (v2.4.0) derives the paid block as `round(base_day / base_hourly)`, so when this job runs it will pay **17-hour and 19-hour blocks**:
+
+- 3 Telendlers × 4 days × 7 extra hrs = **84 hrs**
+- 1 Steward × 4 days × 9 extra hrs = **36 hrs**
+
+**≈ $3,400 overpaid**, and invisible in review — the rows just look like long days.
+
+**The intended block is unambiguously 10**, confirmed three ways: `job_request_days.expected_hours` = 10 for all four dates; the quote's own `hours` field (30 ÷ 3 crew, 10 ÷ 1 crew); and Labor on the identical $650 deriving 10.
+
+**Also note** the 2026-09-20 Labor line has `base_hourly = 0`, so it falls through to the hardcoded fallback of 10 — right by luck, not by data.
+
+**Fix, either:**
+1. Correct `base_hourly` to $65 on the Telendler and Steward lines. It is an issued quote, so this likely means a revision — and it changes no billed total, since day-mode billing uses `base_day`.
+2. Or ship `docs/day-rate-source-of-truth-design.md` first, which makes payroll read `expected_hours` and never divide.
+
+**This is exactly what #36 option B was built to catch** — the uneven-ratio warning in the rate-card editor. It fires on rate cards, not on hand-edited quote lines, which is where this one came from. Worth extending the check to quote lines.
