@@ -291,6 +291,38 @@ Working priority order for active/requested projects. The `#N` ids are stable la
   ~68 unmatched people. Pairs with **#64** (status dropdown) — if both land, do the field-vocabulary work
   once.
 
+  **Refinements from the 2026-08-30 discussion (John):**
+  - **Never overwrite an existing value.** *"if it has something other than blank and we've never used
+    them in AOS, we keep whatever is already there. Especially if it has an AOS number."* A
+    classification that is already set is evidence somebody once knew something; absence of a timesheet
+    row is not evidence against it. So **Pool applies only to records that are blank AND have never
+    worked** — currently **1,436** records (1,370 of them carrying an `AES-*` key from the original
+    import). The other 1,065 never-worked records keep `Independent Contractor` (703), `Employee` (360)
+    or `Contractor` (2). This also makes Pool mean *"we know nothing about this person"* rather than
+    *"hasn't worked yet"*, which is the more honest definition and does not go stale on first use.
+  - **A gate rule, not just a value.** *"we would need to make a rule to switch them to something before
+    using them on a job."* That is a check at **assignment time** — block or prompt when someone with
+    `employment_type='Pool'` is added to a job — not merely a dropdown choice. Design it as such; it is
+    the part that actually keeps the field honest, and it is a different mechanism from the `status`
+    filter in **#62**.
+  - **`Contractor` is now a real value in prod** (2 records: `rip-78 Cody Sweatt LLC`,
+    `rip-294 Carolina Boyz`, added by the 2026-08-30 import at John's direction to distinguish
+    subcontracted entities from 1099 individuals). It is **behaviourally safe** — `db.ts:1413` derives
+    `type` as `employment_type === "Employee" ? "staff" : "contractor"`, so anything not exactly
+    `"Employee"` is a contractor and OT-exempt. But it is a **fifth** spelling in this field and must be
+    a deliberate vocabulary decision here, not left as an artifact of one import.
+  - **⚠ Do not assume an LLC name means a company.** John: *"The other option is an individual setup an
+    LLC or something for some reason."* An individual invoicing through an LLC is still one person, and
+    a subcontracted crew is not — the name alone cannot tell them apart, and Claude's initial read of
+    these two as "not people" was an unwarranted assumption. Connor has to say which is which.
+  - **Candidate vocabulary for the discussion:** Employee / Independent Contractor / Subcontractor /
+    Pool — but settle (a) whether Pool is a *type* at all or simply what blank means, and (b) whether
+    "Subcontractor" is a distinct commercial relationship needing different rate, insurance and payment
+    handling, before adding values.
+  - ⚠ **The 69 records added by the 2026-08-30 import have never worked in AOS** and were set to
+    `Independent Contractor` / `Contractor` at John's direction. Under a naive "never worked ⇒ Pool" rule
+    they would all be reclassified immediately — another reason the rule must be *blank-only*.
+
 ### 🧪 Findings from the Time Clock + Phase 0 test run, 2026-08-11 (#38–#58, plus #59 added 2026-08-12)
 
 Full session log: driven by John against the dev preview at `aa000d9` (kiosk merged onto Phase 0), using a
