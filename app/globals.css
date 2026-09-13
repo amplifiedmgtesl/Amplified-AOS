@@ -248,9 +248,10 @@ small,.muted{color:var(--muted)}
   background:#fafafa;
   min-width:60px;
 }
+/* #89: no colour override on screen — #666 on the dark header row made both
+   Sign IN labels unreadable. Print keeps its own grey styling below. */
 .timesheet-grid .sig-box-th{
   font-size:11px;
-  color:#666;
   font-style:italic;
 }
 

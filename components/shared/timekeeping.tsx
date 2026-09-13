@@ -264,7 +264,6 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
   const [dayFilter, setDayFilter] = useState<string>("all");
   // Staff-finalization filter (migration 20260614a). Lets the crew leader collapse
   // the grid to just the workers who haven't marked their time final yet.
-  const [finalizeFilter, setFinalizeFilter] = useState<"all" | "awaiting" | "done">("all");
   // Bulk selection (admin only — gated on !hideBillAlways at render time).
   // Cleared whenever the picker switches timesheets so we never act on
   // entries from a different job.
@@ -692,7 +691,9 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
         const key = `${slot.employeeKey}|${slot.eventDate}|${slot.shiftId || ""}`;
         if (seen.has(key)) return;
         const emp = slot.employeeKey ? employees.find((e) => e.employeeKey === slot.employeeKey) : null;
-        const posName = positions.find((p) => p.id === slot.positionId)?.name || "Stagehand";
+        // #73: no invented default — a slot with no position imports blank, and
+        // approval already refuses rows missing their position/specialty.
+        const posName = positions.find((p) => p.id === slot.positionId)?.name || "";
         const isHol = holidayDateSet.has(slot.eventDate);
         // Snapshot bill rates + OT/DT thresholds from rate card (migration
         // 20260606a). Specialty-keyed lookup; falls back to blankTimeEntry
@@ -1079,7 +1080,9 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
     if (!timesheet) return;
     // Approved-AND-invoice-bound rows can't be re-rejected (DB trigger blocks
     // the status change). Filter them out and warn if any were skipped.
-    const eligible = timesheet.rows.filter((r) => selectedIds.has(r.id) && r.status !== "rejected" && r.employeeKey);
+    // #92: never reject a 'planned' row — nobody has worked it, so there is
+    // nothing to reject. A no-show is its own (not yet built) status.
+    const eligible = timesheet.rows.filter((r) => selectedIds.has(r.id) && r.status !== "rejected" && r.status !== "planned" && r.employeeKey);
     const lockedByInvoice = eligible.filter((r) => r.status === "approved" && r.invoiceLineId);
     const targets = eligible.filter((r) => !(r.status === "approved" && r.invoiceLineId));
     if (targets.length === 0) return;
@@ -1124,16 +1127,19 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
   // Per-action eligibility counts for the batch buttons. Each button label
   // shows the actionable count (not the raw selection count) so the operator
   // sees the truth about what a click will do. Buttons disable at 0.
-  //   approve: rows not already approved (and have an employee)
-  //   reject:  rows not already rejected and NOT super-frozen by invoice binding
+  //   approve: rows not already approved (and have an employee), never planned
+  //   reject:  rows not already rejected, never planned, NOT super-frozen by invoice binding
   //   unlock:  approved rows that aren't invoice-bound
-  //   delete:  rows not approved (DB freeze blocks delete on approved)
+  //   delete:  rows not approved (DB freeze blocks delete on approved) —
+  //            planned rows count here: deleting a mistaken row is legitimate
+  // #91: planned rows stay selectable in this grid (Delete needs them) but are
+  // excluded from the approve/reject counts so the labels match what happens.
   const eligible = useMemo(() => {
     if (!timesheet) return { approve: 0, reject: 0, unlock: 0, delete: 0 };
     const sel = timesheet.rows.filter((r) => selectedIds.has(r.id));
     return {
-      approve: sel.filter((r) => r.status !== "approved" && r.employeeKey).length,
-      reject:  sel.filter((r) => r.status !== "rejected" && r.employeeKey && !(r.status === "approved" && r.invoiceLineId)).length,
+      approve: sel.filter((r) => r.status !== "approved" && r.status !== "planned" && r.employeeKey).length,
+      reject:  sel.filter((r) => r.status !== "rejected" && r.status !== "planned" && r.employeeKey && !(r.status === "approved" && r.invoiceLineId)).length,
       unlock:  sel.filter((r) => r.status === "approved" && !r.invoiceLineId).length,
       delete:  sel.filter((r) => r.status !== "approved").length,
     };
@@ -1392,16 +1398,6 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
           {timesheet && timesheet.rows.length > 0 && (
             <>
               <span style={{ flex: 1 }} />
-              {!hideBillAlways && (
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }} title="Filter the grid by whether the worker marked their time final in the staff app">
-                  Staff time:
-                  <select value={finalizeFilter} onChange={(e) => setFinalizeFilter(e.target.value as "all" | "awaiting" | "done")} style={{ fontSize: 12, padding: "3px 6px" }}>
-                    <option value="all">All</option>
-                    <option value="awaiting">Awaiting staff</option>
-                    <option value="done">Staff done</option>
-                  </select>
-                </label>
-              )}
               <button className="secondary" onClick={expandAll} style={{ fontSize: 12, padding: "4px 10px" }}>Expand all</button>
               <button className="secondary" onClick={collapseAll} style={{ fontSize: 12, padding: "4px 10px" }}>Collapse all</button>
             </>
@@ -1631,13 +1627,10 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                               · {dayRows.length} crew member{dayRows.length === 1 ? "" : "s"}
                             </span>
                             <span style={{ fontSize: 12, opacity: 0.85 }}>
+                              {statusMix.planned ? `· ${statusMix.planned} planned ` : ""}
                               {statusMix.approved ? `· ${statusMix.approved} approved ` : ""}
                               {statusMix.submitted ? `· ${statusMix.submitted} pending ` : ""}
                               {statusMix.rejected ? `· ${statusMix.rejected} rejected ` : ""}
-                              {(() => {
-                                const fin = dayRows.filter((r) => r.staffFinalized).length;
-                                return fin ? `· ${fin} staff-finalized` : "";
-                              })()}
                             </span>
                             <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                               {prevDayKey && prevDayKey !== "no-date" && day !== "no-date" && (
@@ -1680,10 +1673,8 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                       </tr>
                     </tbody>
                     {!isCollapsed && dayRows.map((row, dayIdx) => {
-                    // Staff-finalization filter (advisory). "awaiting" hides rows the
-                    // worker already marked final; "done" shows only those.
-                    if (finalizeFilter === "awaiting" && row.staffFinalized) return null;
-                    if (finalizeFilter === "done" && !row.staffFinalized) return null;
+                    // #90: the "Staff time" filter was removed — kiosk and office
+                    // rows are never staff-finalized, so it misled. Every row shows.
                     const idx = rowIndexById.get(row.id) ?? 0;
                     const band = `line-band-${idx % 4}`;
                     const unlinked = !row.employeeKey;
@@ -1718,7 +1709,10 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                                 lastName: emp.lastName || emp.fullName.split(" ").slice(1).join(" ") || "",
                                 phone: emp.phone || "",
                                 email: emp.email || "",
-                                status: row.status === "approved" ? "approved" : "submitted",
+                                // #88: swapping the person on a planned row (a no-show's
+                                // replacement) must not push it into the approval queue —
+                                // it stays planned until time is recorded.
+                                status: row.status === "approved" || row.status === "planned" ? row.status : "submitted",
                               })}
                               onCreateInline={async (typedName) => {
                                 // Add to employee master on the fly so the
@@ -1964,10 +1958,16 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                               Pending
                             </span>
                           )}
+                          {/* #87: same colours as Timesheet Review's Planned badge. */}
+                          {row.employeeKey && row.status === "planned" && (
+                            <span className="badge"
+                                  style={{ fontSize: 11, background: "#f1eefb", color: "#4a3a8a", textAlign: "center", padding: "3px 8px" }}
+                                  title="Scheduled, no time recorded yet">
+                              Planned
+                            </span>
+                          )}
                           {/* Staff-finalization marker (advisory). Only the positive
-                              "✓ Staff done" chip renders, to avoid cluttering the busy
-                              grid — use the "Awaiting staff" filter + day-header counter
-                              to find rows still awaiting worker input. */}
+                              "✓ Staff done" chip renders. */}
                           {row.status === "submitted" && row.staffFinalized && (
                             <span className="badge"
                                   style={{ fontSize: 11, background: "#e8f7e8", color: "#1a5a1a", textAlign: "center", padding: "3px 8px" }}

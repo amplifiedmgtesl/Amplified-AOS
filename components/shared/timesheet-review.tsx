@@ -15,6 +15,27 @@ import { formatClock } from "@/lib/time-utils";
 
 type StatusFilter = "pending" | "planned" | "approved" | "rejected" | "all";
 
+/**
+ * #93: an EMPTY <input type="date"> renders a greyed "today" in Safari, which
+ * reads as a filter that is already applied. While empty this is a plain text
+ * box saying "Any date"; it becomes the native date picker on focus, and
+ * stays one while it holds a value.
+ */
+function FilterDateInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [focused, setFocused] = useState(false);
+  const showPicker = focused || !!value;
+  return (
+    <input
+      type={showPicker ? "date" : "text"}
+      value={value}
+      placeholder="Any date"
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
 function fullName(r: StaffEntryReviewRow) {
   return `${r.firstName} ${r.lastName}`.trim() || r.email || "—";
 }
@@ -120,6 +141,11 @@ export default function TimesheetReview() {
   }, [rows, jobNoById]);
 
   const filtered = useMemo(() => {
+    // #94: stable order — date, then last name, then first name.
+    const byDateThenName = (a: StaffEntryReviewRow, b: StaffEntryReviewRow) =>
+      (a.workDate ?? "").localeCompare(b.workDate ?? "")
+      || (a.lastName ?? "").localeCompare(b.lastName ?? "")
+      || (a.firstName ?? "").localeCompare(b.firstName ?? "");
     return rows.filter((r) => {
       if (status === "pending"  && !isPending(r)) return false;
       if (status === "planned"  && r.status !== "planned") return false;
@@ -134,7 +160,7 @@ export default function TimesheetReview() {
       if (dateFrom && (r.workDate ?? "") < dateFrom) return false;
       if (dateTo   && (r.workDate ?? "") > dateTo)   return false;
       return true;
-    });
+    }).sort(byDateThenName);
   }, [rows, status, employeeEmail, jobFilter, dateFrom, dateTo]);
 
   const totals = useMemo(() => {
@@ -192,7 +218,8 @@ export default function TimesheetReview() {
   }
 
   async function handleRejectSelected() {
-    const eligibleRows = filtered.filter((r) => selectedIds.has(r.id) && r.status !== "rejected");
+    // #92: planned rows were never worked — nothing to reject.
+    const eligibleRows = filtered.filter((r) => selectedIds.has(r.id) && r.status !== "rejected" && r.status !== "planned");
     // Invoice-bound approved rows are super-frozen — DB trigger blocks status changes.
     // Payroll-locked rows can't transition status either until the run is voided.
     const lockedByInvoice = eligibleRows.filter((r) => r.status === "approved" && r.invoiceLineId);
@@ -226,12 +253,15 @@ export default function TimesheetReview() {
       return next;
     });
   }
+  // #91: planned rows can't be selected here at all — there is no action on
+  // this screen that applies to them. "Select all" skips them too.
+  const selectableRows = useMemo(() => filtered.filter((r) => r.status !== "planned"), [filtered]);
   function toggleAllVisible() {
     setSelectedIds((prev) => {
-      const allSelected = filtered.length > 0 && filtered.every((r) => prev.has(r.id));
+      const allSelected = selectableRows.length > 0 && selectableRows.every((r) => prev.has(r.id));
       if (allSelected) return new Set();
       const next = new Set(prev);
-      for (const r of filtered) next.add(r.id);
+      for (const r of selectableRows) next.add(r.id);
       return next;
     });
   }
@@ -239,20 +269,20 @@ export default function TimesheetReview() {
     () => filtered.reduce((n, r) => (selectedIds.has(r.id) ? n + 1 : n), 0),
     [filtered, selectedIds],
   );
-  const allVisibleSelected = filtered.length > 0 && selectedVisibleCount === filtered.length;
+  const allVisibleSelected = selectableRows.length > 0 && selectedVisibleCount === selectableRows.length;
 
   // Per-action eligibility for the batch buttons. Matches the same model
   // used on the timekeeping editor screen so the labels never lie about
   // what a click will do.
-  //   approve: selected rows that aren't already approved
-  //   reject:  selected rows that aren't already rejected and aren't
-  //            super-frozen by invoice binding (invoice-bound rows can't
-  //            change status until the invoice line is unlinked)
+  //   approve: selected rows that aren't already approved or planned
+  //   reject:  selected rows that aren't already rejected or planned and
+  //            aren't super-frozen by invoice binding (invoice-bound rows
+  //            can't change status until the invoice line is unlinked)
   const eligible = useMemo(() => {
     const sel = filtered.filter((r) => selectedIds.has(r.id));
     return {
-      approve: sel.filter((r) => r.status !== "approved").length,
-      reject:  sel.filter((r) => r.status !== "rejected" && !(r.status === "approved" && r.invoiceLineId) && !r.payrollRunId).length,
+      approve: sel.filter((r) => r.status !== "approved" && r.status !== "planned").length,
+      reject:  sel.filter((r) => r.status !== "rejected" && r.status !== "planned" && !(r.status === "approved" && r.invoiceLineId) && !r.payrollRunId).length,
     };
   }, [filtered, selectedIds]);
 
@@ -298,11 +328,11 @@ export default function TimesheetReview() {
         </div>
         <div>
           <small>From date</small>
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <FilterDateInput value={dateFrom} onChange={setDateFrom} />
         </div>
         <div>
           <small>To date</small>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <FilterDateInput value={dateTo} onChange={setDateTo} />
         </div>
       </div>
 
@@ -387,7 +417,8 @@ export default function TimesheetReview() {
                     aria-label="Select row"
                     checked={checked}
                     onChange={() => toggleRow(r.id)}
-                    disabled={!!busyBatch}
+                    disabled={!!busyBatch || r.status === "planned"}
+                    title={r.status === "planned" ? "Planned — record time first (kiosk or Timekeeping)" : undefined}
                   />
                 </td>
                 <td>{r.workDate || "—"}</td>
