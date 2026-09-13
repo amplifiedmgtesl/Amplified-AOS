@@ -45,6 +45,64 @@ function hasOverride(a: JobRequestAssignment): boolean {
   return !!(a.plannedIn1 || a.plannedOut1 || a.plannedIn2 || a.plannedOut2);
 }
 
+/**
+ * One planned-time field (#69).
+ *
+ * Shows the time this person is actually scheduled for: their own override in
+ * dark text, or the day window's time in grey when they ride the default. The
+ * inherited value is DISPLAY ONLY — nothing is written unless the field is
+ * changed, so an untouched row keeps following the day window if it moves.
+ *
+ * Why a native picker holding a value rather than a placeholder: Safari ignores
+ * `placeholder` on time inputs and draws a plausible "12:30 PM" in an empty one
+ * (#39). With a value there is nothing for it to invent. When there is no
+ * value at all (no override and no day time), the field is a plain text box
+ * showing "—" until focused, for the same reason.
+ */
+function PlannedTimeInput({
+  label, stored, inherited, disabled, onChange,
+}: {
+  label: string;
+  stored?: string;
+  inherited?: string;
+  disabled: boolean;
+  onChange: (v: string | undefined) => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const shown = stored || inherited || "";
+  const usePicker = !!shown || focused;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+      <input
+        type={usePicker ? "time" : "text"}
+        aria-label={label}
+        disabled={disabled}
+        value={shown}
+        placeholder="—"
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onChange={(e) => {
+          const v = e.target.value || undefined;
+          // Picking the day's own time is not an override — keep following the day.
+          onChange(v && v === inherited ? undefined : v);
+        }}
+        title={stored ? "This person's own time" : inherited ? "From the day's schedule" : undefined}
+        style={{ width: 92, flex: "0 0 auto", color: stored ? "#111" : "#9ca3af" }}
+      />
+      {stored && !disabled && (
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => onChange(undefined)}
+          title={inherited ? "Reset to the day's schedule" : "Clear"}
+          aria-label={`Reset ${label}`}
+          style={{ padding: "0 4px", fontSize: 11, lineHeight: 1.4 }}
+        >↺</button>
+      )}
+    </span>
+  );
+}
+
 // Global CSS sets input{width:100%}; checkboxes/radios must opt out or they
 // stretch the row and shove the label to the far edge.
 const checkInputStyle: React.CSSProperties = { width: "auto", flex: "0 0 auto", margin: 0 };
@@ -194,8 +252,29 @@ export function JobRequestCrewSection({
   function expandAll()   { setExpandedIds(new Set(days.map((d) => d.id))); }
   function collapseAll() { setExpandedIds(new Set()); }
 
+  // #72: after Add, take the user to the row — it usually lands off-screen,
+  // which made the button look like it did nothing (and invited a second click).
+  const [focusAssignmentId, setFocusAssignmentId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusAssignmentId) return;
+    const row = document.querySelector<HTMLElement>(`[data-assignment-id="${focusAssignmentId}"]`);
+    if (!row) return;
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Highlight rather than focus: at rest the employee cell is a click-to-open
+    // tile, so the first focusable input in the row is the Confirmed checkbox —
+    // focusing that would let a stray Space tick it.
+    row.style.transition = "background-color 0.3s";
+    row.style.backgroundColor = "#fff3c4";
+    setTimeout(() => { row.style.backgroundColor = ""; }, 1600);
+    setFocusAssignmentId(null);
+  }, [focusAssignmentId, assignmentsByDay]);
+
   async function addAssignment(dayId: string) {
     const existing = assignmentsByDay[dayId] ?? [];
+    // #72: reuse an untouched blank row on this day instead of stacking another.
+    const blank = existing.find((a) =>
+      !a.employeeKey && !a.positionId && !a.specialtyId && !a.shiftId && !a.notes && !hasOverride(a));
+    if (blank) { setFocusAssignmentId(blank.id); return; }
     const next: JobRequestAssignment = {
       id: newAssignmentId(),
       jobRequestDayId: dayId,
@@ -205,6 +284,7 @@ export function JobRequestCrewSection({
     try {
       const persisted = await upsertAssignment(next);
       setAssignmentsByDay((cur) => ({ ...cur, [dayId]: [...(cur[dayId] ?? []), persisted] }));
+      setFocusAssignmentId(persisted.id);
     } catch (err: any) {
       flash(`Add failed: ${err?.message ?? err}`, false);
     }
@@ -583,21 +663,16 @@ export function JobRequestCrewSection({
                       borderRadius: 6, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap",
                     }}>
                       <strong style={{ opacity: 0.7 }}>Planned day window:</strong>
+                      {/* #96: the rule lives in the tooltip and the help guide, not on screen. */}
                       {dayWindow
-                        ? <>
-                            <span>{dayWindow}</span>
-                            <span className="muted">· blank crew times below default to this. Set a crew member&apos;s time only to override.</span>
-                          </>
-                        : <span style={{ color: "#9a3412" }}>
-                            <strong>none set.</strong> Add start/end times on the Daily Requirements tab —
-                            without them the printed sign-in sheet&apos;s Expected column prints blank,
-                            and &quot;Copy planned → actual&quot; copies nothing for anyone left on the default.
+                        ? <span title="Crew times shown in grey come from this window. Change a crew member's time to override it.">{dayWindow}</span>
+                        : <span style={{ color: "#9a3412" }}
+                                title="Without a day window the printed sheets have no expected times and Copy planned → actual has nothing to copy.">
+                            <strong>none set</strong> — add times on Daily Requirements.
                           </span>}
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                      <div className="muted" style={{ fontSize: 11 }}>
-                        Pick the actual people scheduled for this day. Confirmed = they&apos;ve agreed to work it.
-                      </div>
+                      <span />{/* #96: "Confirmed = they've agreed to work it" moved to the column header's tooltip */}
                       <div style={{ display: "flex", gap: 6 }}>
                         {prev && (assignmentsByDay[prev.id]?.length ?? 0) > 0 && (
                           <button
@@ -630,7 +705,7 @@ export function JobRequestCrewSection({
                             <th style={{ textAlign: "left" }}>Position</th>
                             <th style={{ textAlign: "left" }}>Specialty</th>
                             {shifts.length >= 2 && <th style={{ textAlign: "left", width: 120 }}>Shift</th>}
-                            <th style={{ textAlign: "left", width: 90 }}>Confirmed</th>
+                            <th style={{ textAlign: "left", width: 90 }} title="They've agreed to work this day">Confirmed</th>
                             <th style={{ textAlign: "left" }}>Notes</th>
                             <th style={{ width: 30 }}></th>
                           </tr>
@@ -641,7 +716,7 @@ export function JobRequestCrewSection({
                             const plannedColSpan = 6 + (shifts.length >= 2 ? 1 : 0);
                             return (
                               <Fragment key={a.id}>
-                              <tr>
+                              <tr data-assignment-id={a.id}>
                                 <td>
                                   <LazyEmployeePicker
                                     employeeKey={a.employeeKey}
@@ -723,83 +798,33 @@ export function JobRequestCrewSection({
                                   the matching day block. Pair 2 = meal-break return or a
                                   second shift.
 
-                                  #39: these inputs used to carry placeholder={d.startTime}.
-                                  `placeholder` is NOT supported on <input type="time"> in any
-                                  browser, so the "day window shows through as grey text"
-                                  design never worked: Chrome renders --:-- --, but SAFARI
-                                  renders a plausible 12:30 PM on every unset field —
-                                  including pair-2 fields on a single-block day where no
-                                  pair-2 window exists. An unset row therefore displayed what
-                                  looked like a real planned time, which is exactly the
-                                  override-vs-fallback conflation Phase 0 exists to prevent.
-                                  The fallback is now adjacent muted text instead. */}
+                                  #39 → #69: `placeholder` is ignored on <input type="time">
+                                  and Safari draws a fake 12:30 PM in an empty one, so each
+                                  field now HOLDS the resolved time (grey when inherited) —
+                                  see PlannedTimeInput. */}
                               <tr>
                                 <td colSpan={plannedColSpan} style={{ paddingTop: 0, paddingBottom: 8 }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 11, color: "#666" }}>
                                     <span style={{ minWidth: 54 }}>Planned:</span>
-                                    <input
-                                      type="time"
-                                      aria-label="Planned in (pair 1)"
-                                      disabled={disabled}
-                                      value={a.plannedIn1 ?? ""}
-                                      onChange={(e) => patchAssignment(d.id, a, { plannedIn1: e.target.value || undefined })}
-                                      style={{ width: 92, flex: "0 0 auto" }}
-                                    />
+                                    {/* #69/#96: grey = the day's schedule, dark = this
+                                        person's own time, ↺ resets. The colour carries
+                                        what the per-row hint text used to say. */}
+                                    <PlannedTimeInput label="Planned in (pair 1)" disabled={disabled}
+                                      stored={a.plannedIn1} inherited={d.startTime}
+                                      onChange={(v) => patchAssignment(d.id, a, { plannedIn1: v })} />
                                     <span>–</span>
-                                    <input
-                                      type="time"
-                                      aria-label="Planned out (pair 1)"
-                                      disabled={disabled}
-                                      value={a.plannedOut1 ?? ""}
-                                      onChange={(e) => patchAssignment(d.id, a, { plannedOut1: e.target.value || undefined })}
-                                      style={{ width: 92, flex: "0 0 auto" }}
-                                    />
+                                    <PlannedTimeInput label="Planned out (pair 1)" disabled={disabled}
+                                      stored={a.plannedOut1} inherited={d.endTime}
+                                      onChange={(v) => patchAssignment(d.id, a, { plannedOut1: v })} />
                                     <span style={{ opacity: 0.6, padding: "0 4px" }}>·</span>
                                     <span style={{ minWidth: 30 }}>back</span>
-                                    <input
-                                      type="time"
-                                      aria-label="Planned in (pair 2)"
-                                      disabled={disabled}
-                                      value={a.plannedIn2 ?? ""}
-                                      onChange={(e) => patchAssignment(d.id, a, { plannedIn2: e.target.value || undefined })}
-                                      style={{ width: 92, flex: "0 0 auto" }}
-                                    />
+                                    <PlannedTimeInput label="Planned in (pair 2)" disabled={disabled}
+                                      stored={a.plannedIn2} inherited={d.startTime2}
+                                      onChange={(v) => patchAssignment(d.id, a, { plannedIn2: v })} />
                                     <span>–</span>
-                                    <input
-                                      type="time"
-                                      aria-label="Planned out (pair 2)"
-                                      disabled={disabled}
-                                      value={a.plannedOut2 ?? ""}
-                                      onChange={(e) => patchAssignment(d.id, a, { plannedOut2: e.target.value || undefined })}
-                                      style={{ width: 92, flex: "0 0 auto" }}
-                                    />
-                                    {/* #39/#40: what an empty field actually means, stated
-                                        once per row. "override only" was a static label on
-                                        every row including ones that DID carry overrides,
-                                        where it read as a false status. */}
-                                    {hasOverride(a) ? (
-                                      <span
-                                        title="This crew member has planned times of their own; blank fields still use the day window."
-                                        style={{
-                                          background: "#eef5ff", color: "#1e3a8a", borderRadius: 999,
-                                          padding: "1px 8px", fontWeight: 700, fontSize: 10,
-                                        }}
-                                      >override</span>
-                                    ) : noDayWindow ? (
-                                      <span style={{ color: "#9a3412" }}>
-                                        · no day window set — blank fields have nothing to fall back to
-                                      </span>
-                                    ) : (
-                                      // Deliberately does NOT name the times. The panel banner
-                                      // above already shows the window and states the rule, and
-                                      // on a two-block day naming it here repeated a long string
-                                      // on every crew row — with its own "·" separator colliding
-                                      // with the "·" between the two blocks. The row only has to
-                                      // say which way an empty field falls.
-                                      <span style={{ opacity: 0.6 }} title={`Day window: ${dayWindow}`}>
-                                        · leave blank to use the day window
-                                      </span>
-                                    )}
+                                    <PlannedTimeInput label="Planned out (pair 2)" disabled={disabled}
+                                      stored={a.plannedOut2} inherited={d.endTime2}
+                                      onChange={(v) => patchAssignment(d.id, a, { plannedOut2: v })} />
                                   </div>
                                 </td>
                               </tr>
