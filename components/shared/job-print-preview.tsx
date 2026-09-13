@@ -28,6 +28,8 @@ import { CrewScheduleReport } from "./crew-schedule-report";
 import { CrewSignInSheet } from "./crew-sign-in-sheet";
 import { JobPrintSheet } from "./job-print-sheet";
 import { TimesheetActualsSheet } from "./timesheet-actuals-sheet";
+import { printWithTitle } from "@/lib/print-with-title";
+import { parsePrintSort, PRINT_SORT_LABEL, type PrintSort } from "@/lib/jobs/print-format";
 import type { JobRequest, JobRequestDay } from "@/lib/store/types";
 
 export type PrintDoc = "schedule" | "signin" | "actuals" | "summary";
@@ -57,6 +59,7 @@ export default function JobPrintPreview({ id }: { id: string }) {
   // Default ON: a sheet that silently omits people is worse than a noisy one.
   const includeUnassigned = searchParams.get("unassigned") !== "0";
   const blankRows = Math.max(0, Math.min(20, Number(searchParams.get("blanks") ?? 0) || 0));
+  const sort: PrintSort = parsePrintSort(searchParams.get("sort"));
 
   const [job, setJob] = useState<JobRequest | null>(null);
   const [days, setDays] = useState<JobRequestDay[]>([]);
@@ -122,17 +125,57 @@ export default function JobPrintPreview({ id }: { id: string }) {
     [days],
   );
 
+  // #71 (print part): the schedule and sign-in sheet print EXPECTED times, so a
+  // day in the selection with no time window is a hard stop — not a warning.
+  // (The old #38 confirm in lib/jobs/confirm-sign-in-sheet-print.ts was never
+  // wired to this route — #70 — and is removed.)
+  const needsWindow = doc === "schedule" || doc === "signin";
+  const daysMissingWindow = needsWindow
+    ? days
+        .filter((d) => day === "all" || d.eventDate === day)
+        .filter((d) => !(d.startTime && d.endTime) && !(d.startTime2 && d.endTime2))
+        .map((d) => d.eventDate)
+        .sort()
+    : [];
+  const blocked = daysMissingWindow.length > 0;
+
+  // Remember the last document chosen, so the job's single Print button (#86)
+  // reopens on it.
+  useEffect(() => {
+    try { localStorage.setItem("aos.jobPrint.lastDoc", doc); } catch { /* storage unavailable */ }
+  }, [doc]);
+
   if (loading) return <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>Loading…</div>;
   if (!job) return <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>Job not found.</div>;
 
+  // #78: Sign-In and Actuals are wide two-row forms and must be landscape; the
+  // schedule follows so the set prints the same way. Stated on the route
+  // itself rather than inherited from the app-wide rule, which Safari did not
+  // apply here. The summary keeps the app default.
+  const landscape = doc !== "summary";
+
+  function doPrint() {
+    if (blocked || !job) return;
+    // #83: a real filename instead of "Amplified Operations Suite.pdf".
+    printWithTitle([DOC_LABEL[doc], job.jobNo, job.eventName, day === "all" ? "All days" : day]);
+  }
+
   return (
-    <div className="print-preview-page">
+    <div className={`print-preview-page${landscape ? " is-landscape" : ""}`}>
+      {landscape && (
+        // @page can't live in styled-jsx or be scoped by class, so it goes in a
+        // plain <style> that only exists while a landscape document is shown.
+        <style>{`@page { size: landscape; margin: 0.3in; }`}</style>
+      )}
       {/* ─── Toolbar (never printed) ─────────────────────────────────────── */}
       <div className="print-actions hide-print">
         <div className="ppa-row">
           <a href={`/job-requests/${encodeURIComponent(id)}`} className="ppa-back">← Back to job</a>
-          <button onClick={() => window.print()} className="ppa-print">Print / Save as PDF</button>
-          <span className="ppa-title">{DOC_LABEL[doc]}</span>
+          <button onClick={doPrint} className="ppa-print" disabled={blocked}
+            title={blocked ? "Set start/end times for the listed days first" : undefined}>
+            Print / Save as PDF
+          </button>
+          <span className="ppa-title" title={DOC_PURPOSE[doc]}>{DOC_LABEL[doc]}</span>
         </div>
 
         <div className="ppa-row">
@@ -167,8 +210,19 @@ export default function JobPrintPreview({ id }: { id: string }) {
             </label>
           )}
 
+          {doc !== "summary" && (
+            <label>
+              Sort:{" "}
+              <select value={sort} onChange={(e) => setParam("sort", e.target.value === "last" ? null : e.target.value)}>
+                {(Object.keys(PRINT_SORT_LABEL) as PrintSort[]).map((s) => (
+                  <option key={s} value={s}>{PRINT_SORT_LABEL[s]}</option>
+                ))}
+              </select>
+            </label>
+          )}
+
           {doc === "signin" && (
-            <label title="Extra empty rows for walk-ups and last-minute replacements — the people most likely to be added on the day, and currently invisible on every printed sheet (backlog #48).">
+            <label title="Extra empty rows for walk-ups and last-minute replacements.">
               Blank rows:{" "}
               <select value={String(blankRows)} onChange={(e) => setParam("blanks", e.target.value === "0" ? null : e.target.value)}>
                 {[0, 2, 5, 10].map((n) => <option key={n} value={n}>{n}</option>)}
@@ -177,21 +231,24 @@ export default function JobPrintPreview({ id }: { id: string }) {
           )}
         </div>
 
-        <div className="ppa-purpose">{DOC_PURPOSE[doc]}</div>
-        <div className="ppa-tip">
-          Tip: in the print dialog choose &quot;Save as PDF&quot; and uncheck &quot;Headers and footers&quot;.
-        </div>
+        {/* #96: purpose + "Save as PDF" tip moved to tooltips / the help guide. */}
+        {blocked && (
+          <div className="ppa-blocked">
+            Can&apos;t print — no start/end times on {daysMissingWindow.join(", ")}.{" "}
+            <a href={`/job-requests/${encodeURIComponent(id)}`}>Set them on Daily Requirements</a>
+          </div>
+        )}
       </div>
 
       {/* ─── The document itself ─────────────────────────────────────────── */}
       <div className="print-preview-paper">
         {doc === "schedule" && (
-          <CrewScheduleReport form={job} dayFilter={day} includeUnassigned={includeUnassigned} />
+          <CrewScheduleReport form={job} dayFilter={day} includeUnassigned={includeUnassigned} sort={sort} />
         )}
         {doc === "signin" && (
-          <CrewSignInSheet form={job} dayFilter={day} includeUnassigned={includeUnassigned} blankRows={blankRows} />
+          <CrewSignInSheet form={job} dayFilter={day} includeUnassigned={includeUnassigned} blankRows={blankRows} sort={sort} />
         )}
-        {doc === "actuals" && <TimesheetActualsSheet form={job} dayFilter={day} />}
+        {doc === "actuals" && <TimesheetActualsSheet form={job} dayFilter={day} sort={sort} />}
         {doc === "summary" && <JobPrintSheet form={job} />}
       </div>
     </div>

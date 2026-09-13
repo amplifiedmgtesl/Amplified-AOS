@@ -1,10 +1,10 @@
 // Resolving a crew member's PLANNED (scheduled) times — the "planned" side of
 // the Planned-vs-Actual model.
 //
-// One rule, in one place, because four surfaces have to agree on it: the
-// printed crew sign-in sheet's Expected column, the Time Clock kiosk's
-// expected-time display, "Copy planned → actual" on the timekeeping grid, and
-// the pre-flight that warns before printing a sheet with a blank Expected.
+// One rule, in one place, because several surfaces have to agree on it: the
+// printed crew documents (via lib/jobs/print-format.ts, which calls
+// resolvePlannedTimes), the Time Clock kiosk's expected-time display, and
+// "Copy planned → actual" on the timekeeping grid.
 // If they disagree, a worker signs against one schedule while the office bills
 // from another.
 //

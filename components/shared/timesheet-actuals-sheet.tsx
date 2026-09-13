@@ -26,6 +26,7 @@ import { loadTimesheetForJobLive } from "@/lib/store/app-store";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { loadCaptures, signSignatureUrls, type TimesheetCapture } from "@/lib/storage/timesheet-captures";
 import { formatClock } from "@/lib/time-utils";
+import { nextDayFlags, sortForPrint, type PrintSort } from "@/lib/jobs/print-format";
 import type { JobRequest, JobRequestShift, TimeEntry, Specialty } from "@/lib/store/types";
 
 function rowName(e: TimeEntry): string {
@@ -33,13 +34,23 @@ function rowName(e: TimeEntry): string {
   return n || "(unnamed)";
 }
 
+/** A recorded time with "(+1)" when it fell on the day after the work date (#77). */
+function timeCell(value: string | undefined, nextDay: boolean): string {
+  const t = formatClock(value);
+  if (!t) return "—";
+  return nextDay ? `${t} (+1)` : t;
+}
+
 export function TimesheetActualsSheet({
   form,
   dayFilter = "all",
+  sort = "last",
 }: {
   form: JobRequest;
   /** "all", or a single YYYY-MM-DD. */
   dayFilter?: string;
+  /** Row order (#80) — shared with the other two documents. */
+  sort?: PrintSort;
 }) {
   const [rows, setRows] = useState<TimeEntry[]>([]);
   const [captures, setCaptures] = useState<Map<string, TimesheetCapture>>(new Map());
@@ -136,10 +147,8 @@ export function TimesheetActualsSheet({
         </div>
       </header>
 
-      <div className="tas-banner">
-        RECORD OF HOURS WORKED — actual times as recorded. Signatures shown were
-        captured at the Time Clock; rows marked <em>entered by office</em> were keyed in.
-      </div>
+      {/* #96: one short line — provenance is shown per row ("entered by office"). */}
+      <div className="tas-banner">RECORD OF HOURS WORKED — actual recorded times.</div>
 
       {loading ? (
         <div className="tas-empty">Loading…</div>
@@ -149,7 +158,12 @@ export function TimesheetActualsSheet({
         </div>
       ) : (
         dayKeys.map((dk) => {
-          const dayRows = byDay.get(dk)!.sort((a, b) => rowName(a).localeCompare(rowName(b)));
+          const dayRows = sortForPrint(byDay.get(dk)!, sort, (r) => ({
+            firstName: r.firstName ?? "",
+            lastName: r.lastName ?? "",
+            position: r.position ?? "",
+            specialty: r.specialtyId ? specialtiesById.get(r.specialtyId)?.name ?? "" : "",
+          }));
           const dayHours = dayRows.reduce((s, r) => s + Number(r.totalHours ?? 0), 0);
           return (
             <section key={dk} className="tas-day">
@@ -184,16 +198,17 @@ export function TimesheetActualsSheet({
                     <th>Time IN 2</th><th>Time OUT 2</th><th>Meal 2</th>
                   </tr>
                 </thead>
-                <tbody>
                   {dayRows.map((r) => {
                     const cap = captures.get(r.id);
+                    const [n1, n2, n3, n4] = nextDayFlags(r.timeIn1, r.timeOut1, r.timeIn2, r.timeOut2);
                     const spc = r.specialtyId ? specialtiesById.get(r.specialtyId)?.name : "";
                     const pos = r.position || "\u2014";
                     return (
                       // Identity above, captured detail below — the same two-row
                       // shape as the sign-in sheet, so the form and the record
-                      // read as the same document at different stages.
-                      <Fragment key={r.id}>
+                      // read as the same document at different stages. Own tbody
+                      // so the pair never splits across a page (#99).
+                      <tbody key={r.id} className="print-person">
                         <tr className="tas-identity">
                           <td colSpan={2} className="tas-name">{rowName(r)}</td>
                           <td colSpan={2}>{spc ? pos + " \u00b7 " + spc : pos}</td>
@@ -202,18 +217,17 @@ export function TimesheetActualsSheet({
                         </tr>
                         <tr className="tas-capture">
                           <td className="tas-sig">{sigCell(cap, "in1", !!r.timeIn1)}</td>
-                          <td>{formatClock(r.timeIn1) || "\u2014"}</td>
-                          <td>{formatClock(r.timeOut1) || "\u2014"}</td>
+                          <td>{timeCell(r.timeIn1, n1)}</td>
+                          <td>{timeCell(r.timeOut1, n2)}</td>
                           <td>{r.mealBreak1Minutes ? r.mealBreak1Minutes + "m" : "\u2014"}</td>
                           <td className="tas-sig">{sigCell(cap, "in2", !!r.timeIn2)}</td>
-                          <td>{formatClock(r.timeIn2) || "\u2014"}</td>
-                          <td>{formatClock(r.timeOut2) || "\u2014"}</td>
+                          <td>{timeCell(r.timeIn2, n3)}</td>
+                          <td>{timeCell(r.timeOut2, n4)}</td>
                           <td>{r.mealBreak2Minutes ? r.mealBreak2Minutes + "m" : "\u2014"}</td>
                         </tr>
-                      </Fragment>
+                      </tbody>
                     );
                   })}
-                </tbody>
               </table>
             </section>
           );

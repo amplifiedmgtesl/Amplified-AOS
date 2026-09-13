@@ -793,34 +793,21 @@ export default function JobDetail({
             </button>
           )}
           {editingId && (
-            <a
+            // #86: one Print button. The preview page offers every job document
+            // (Crew Schedule, Sign-In Sheet, Timesheet – Actuals, Job Summary)
+            // and reopens on whichever was used last.
+            <button
+              type="button"
               className="secondary"
-              href={`/job-requests/${encodeURIComponent(editingId)}/print?doc=summary`}
-              style={{ display: "inline-block", padding: "10px 14px", border: "1px solid var(--line)", borderRadius: 12, background: "#fff", fontWeight: 700 }}
-              title="Preview and print the job summary"
+              onClick={() => {
+                let last = "schedule";
+                try { last = localStorage.getItem("aos.jobPrint.lastDoc") || "schedule"; } catch { /* storage unavailable */ }
+                window.location.href = `/job-requests/${encodeURIComponent(editingId)}/print?doc=${encodeURIComponent(last)}`;
+              }}
+              title="Crew schedule, sign-in sheet, timesheet and job summary"
             >
-              Print PDF
-            </a>
-          )}
-          {editingId && (
-            <a
-              className="secondary"
-              href={`/job-requests/${encodeURIComponent(editingId)}/print?doc=signin`}
-              style={{ display: "inline-block", padding: "10px 14px", border: "1px solid var(--line)", borderRadius: 12, background: "#fff", fontWeight: 700 }}
-              title="Preview and print the crew sign-in sheet — blank time and signature boxes"
-            >
-              Sign-In Sheet
-            </a>
-          )}
-          {editingId && (
-            <a
-              className="secondary"
-              href={`/job-requests/${encodeURIComponent(editingId)}/print?doc=schedule`}
-              style={{ display: "inline-block", padding: "10px 14px", border: "1px solid var(--line)", borderRadius: 12, background: "#fff", fontWeight: 700 }}
-              title="Preview and print the crew schedule — reference only, no signature or blank time columns"
-            >
-              Crew Schedule
-            </a>
+              Print
+            </button>
           )}
           {editingId && form.addToCalendar && (
             <button

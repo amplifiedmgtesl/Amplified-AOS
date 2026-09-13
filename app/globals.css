@@ -816,7 +816,7 @@ td, th {
 }
 .crew-sign-in-sheet .csis-footer {
   margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc;
-  font-size: 8pt; color: #888; text-align: center;
+  font-size: 8pt; color: #555; text-align: center; /* #84: #888 barely printed */
 }
 
 
@@ -884,7 +884,7 @@ td, th {
 }
 .crew-schedule-report .csr-footer {
   margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc;
-  font-size: 8pt; color: #888; text-align: center;
+  font-size: 8pt; color: #555; text-align: center; /* #84: #888 barely printed */
 }
 
 
@@ -1056,15 +1056,41 @@ body.show-ids .record-id::before { content: "🆔 "; }
 .print-actions label { display: inline-flex; align-items: center; gap: 5px; color: #cbd5e1; }
 .print-actions select { width: auto; padding: 4px 8px; border-radius: 6px; font-size: 13px; }
 .print-actions .ppa-check input { margin: 0; }
-.print-actions .ppa-purpose { color: #fcd9a8; font-size: 12px; }
-.print-actions .ppa-tip { color: #94a3b8; font-size: 11px; margin-top: 2px; }
+.print-actions .ppa-print:disabled { background: #475569; color: #cbd5e1; cursor: not-allowed; }
+.print-actions .ppa-blocked {
+  margin-top: 4px; padding: 6px 10px; border-radius: 6px;
+  background: #7f1d1d; color: #fee2e2; font-size: 13px; font-weight: 600;
+}
+.print-actions .ppa-blocked a { color: #fff; text-decoration: underline; }
+/* #78: landscape documents preview on landscape paper (11in minus margins),
+   so what is on screen is what prints. */
+.print-preview-page.is-landscape .print-preview-paper { max-width: 11in; padding: 0.3in; }
 
 @media print {
   /* The paper IS the page when printing — drop the shell's framing entirely so
      nothing shifts between what was previewed and what comes out. */
   .print-preview-page { background: #fff; padding: 0; }
-  .print-preview-paper { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+  .print-preview-paper,
+  .print-preview-page.is-landscape .print-preview-paper { max-width: none; margin: 0; padding: 0; box-shadow: none; }
 }
+
+/* ===== Shared by the three job print documents (round 3) ===== */
+/* #81: fixed layout makes the colgroup widths binding, so long content wraps
+   inside its cell instead of pushing the table past the printable width. */
+.crew-sign-in-sheet .csis-table,
+.crew-schedule-report .csr-table,
+.timesheet-actuals-sheet .tas-table { table-layout: fixed; }
+.crew-sign-in-sheet .csis-table td,
+.crew-schedule-report .csr-table td,
+.timesheet-actuals-sheet .tas-table td { overflow-wrap: anywhere; }
+/* #99: each person is their own <tbody>; never split one across a page. */
+.print-person { break-inside: avoid; page-break-inside: avoid; }
+/* #74: one time block per line, never broken mid-range. */
+.print-range { white-space: nowrap; }
+/* #75: key for starred individual times. */
+.print-override-key { font-size: 8pt; color: #444; margin-top: 3px; }
+.crew-sign-in-sheet .csis-unfilled { color: #777; font-style: italic; }
+.crew-sign-in-sheet .csis-unconfirmed { color: #9a3412; font-size: 8.5pt; }
 
 /* ===== TIMESHEET OF ACTUALS (#46c) ===== */
 /* Same visual family as the sign-in sheet — deliberately, since it is the same
@@ -1128,7 +1154,7 @@ body.show-ids .record-id::before { content: "🆔 "; }
   max-width: 100%; max-height: 34px; width: auto; object-fit: contain;
   display: block; margin: 0 auto;
 }
-.timesheet-actuals-sheet .tas-nosig { font-size: 8pt; color: #999; font-style: italic; }
+.timesheet-actuals-sheet .tas-nosig { font-size: 8pt; color: #666; font-style: italic; } /* #84: #999 was near-invisible */
 .timesheet-actuals-sheet .tas-total {
   margin-top: 12px; text-align: right; font-size: 11pt;
   border-top: 2px solid #8a6f3a; padding-top: 6px;

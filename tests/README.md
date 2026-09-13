@@ -23,6 +23,7 @@ Currently covered:
 | `rates/timesheet-group-pricing.test.ts` | `buildBillRateMap`, `priceTimesheetGroup` — timesheet group → invoice line, day-rate floor and overflow |
 | `store/invoice-math.test.ts` | subtotals, deposit amount, deposit credit, amount due, balance due |
 | `store/invoice-display.test.ts` | `invoiceHolidayLookup` (drives the holiday multiplier), quote + invoice `displayStatus` |
+| `jobs/print-format.test.ts` | job print documents: next-day `(+1)` flags (mirrors `inferPairDates`), `*` override markers, phone format, print sort options |
 
 That is the complete set of pure functions on the invoicing path. What remains
 untested in `lib/store/invoices.ts`, `lib/storage/invoice-days.ts`,

@@ -20,8 +20,12 @@ import { supabase } from "@/lib/supabase/client";
 import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { loadAssignmentsForRequest } from "@/lib/storage/job-request-assignments";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
-import { formatClock, formatClockRange } from "@/lib/time-utils";
-import { formatPlannedTimes } from "@/lib/jobs/planned-times";
+import { formatClock } from "@/lib/time-utils";
+import {
+  plannedRanges, dayRanges, printRangeText, anyOverride,
+  sortForPrint, splitFullName, UNASSIGNED_LABEL, type PrintSort,
+} from "@/lib/jobs/print-format";
+import { PrintTimeRanges, OverrideKey } from "./print-time-ranges";
 import type {
   JobRequest,
   JobRequestDay,
@@ -41,9 +45,7 @@ type Employee = {
 // two-block day contradict its own rows — the header read "Window 08:00–13:00"
 // above rows saying "08:00–13:00 · 14:00–19:00".
 function dayWindowText(d: JobRequestDay): string {
-  const pair1 = formatClockRange(d.startTime, d.endTime);
-  const pair2 = formatClockRange(d.startTime2, d.endTime2);
-  return [pair1, pair2].filter(Boolean).join(" · ");
+  return dayRanges(d).map(printRangeText).join(" · ");
 }
 
 export function CrewSignInSheet({
@@ -51,6 +53,7 @@ export function CrewSignInSheet({
   dayFilter = "all",
   includeUnassigned = true,
   blankRows = 0,
+  sort = "last",
 }: {
   form: JobRequest;
   /** "all", or a single YYYY-MM-DD to print one day. */
@@ -59,6 +62,8 @@ export function CrewSignInSheet({
   includeUnassigned?: boolean;
   /** Extra empty rows for walk-ups and last-minute replacements (#48). */
   blankRows?: number;
+  /** Row order (#80) — shared with the other two documents. */
+  sort?: PrintSort;
 }) {
   const [days, setDays] = useState<JobRequestDay[]>([]);
   const [assignments, setAssignments] = useState<JobRequestAssignment[]>([]);
@@ -141,18 +146,29 @@ export function CrewSignInSheet({
         <div className="csis-empty">No days defined for this job yet.</div>
       ) : (
         days.filter((d) => dayFilter === "all" || d.eventDate === dayFilter).map((d) => {
-          const dayAsg = assignments
-            .filter((a) => a.jobRequestDayId === d.id)
-            .filter((a) => includeUnassigned || (a.employeeKey && a.confirmed))
-            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+          const dayAsg = sortForPrint(
+            assignments
+              .filter((a) => a.jobRequestDayId === d.id)
+              .filter((a) => includeUnassigned || (a.employeeKey && a.confirmed))
+              .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+            sort,
+            (a) => ({
+              ...splitFullName(a.employeeKey ? employeesByKey.get(a.employeeKey)?.fullName : ""),
+              position: positionsById.get(a.positionId || "")?.name || "",
+              specialty: specialtiesById.get(a.specialtyId || "")?.name || "",
+            }),
+          );
+          const showKey = dayAsg.some((a) => anyOverride(plannedRanges(a, d)));
+          // #84: no leading "·" when there is no call time.
+          const meta = [
+            d.callTime ? `Call ${formatClock(d.callTime)}` : "",
+            dayWindowText(d) ? `Window ${dayWindowText(d)}` : "",
+          ].filter(Boolean).join(" · ");
           return (
             <section key={d.id} className="csis-day">
               <div className="csis-day-header">
                 <h2>{formatDay(d.eventDate)}</h2>
-                <div className="csis-day-meta">
-                  {d.callTime && <span>Call {formatClock(d.callTime)}</span>}
-                  {dayWindowText(d) && <span> · Window {dayWindowText(d)}</span>}
-                </div>
+                <div className="csis-day-meta">{meta}</div>
               </div>
               {dayAsg.length === 0 ? (
                 <div className="csis-empty">No crew assigned for this day.</div>
@@ -186,20 +202,23 @@ export function CrewSignInSheet({
                       <th>Time IN 2</th><th>Time OUT 2</th><th>Meal 2</th>
                     </tr>
                   </thead>
-                  <tbody>
                     {dayAsg.map((a) => {
                       const emp = a.employeeKey ? employeesByKey.get(a.employeeKey) : null;
                       const pos = positionsById.get(a.positionId || "")?.name || "\u2014";
                       const spc = specialtiesById.get(a.specialtyId || "")?.name || "";
                       return (
                         // Two rows per person, exactly as the printed timesheet
-                        // does it: identity above, capture below.
-                        <Fragment key={a.id}>
+                        // does it: identity above, capture below. Their own
+                        // tbody keeps the pair together across a page (#99).
+                        <tbody key={a.id} className="print-person">
                           <tr className="csis-identity">
-                            <td colSpan={2}>{emp?.fullName || ""}</td>
+                            <td colSpan={2}>
+                              {emp?.fullName || <span className="csis-unfilled">{UNASSIGNED_LABEL}</span>}
+                              {!a.confirmed && <span className="csis-unconfirmed"> \u2014 unconfirmed</span>}
+                            </td>
                             <td colSpan={2}>{spc ? pos + " \u00b7 " + spc : pos}</td>
                             <td colSpan={1}>{anyShift && a.shiftId ? (shiftsById.get(a.shiftId)?.label || "") : ""}</td>
-                            <td colSpan={3}>{formatPlannedTimes(a, d) || ""}</td>
+                            <td colSpan={3}><PrintTimeRanges ranges={plannedRanges(a, d)} /></td>
                           </tr>
                           <tr className="csis-capture">
                             <td className="csis-sig"></td>
@@ -211,7 +230,7 @@ export function CrewSignInSheet({
                             <td className="csis-blank"></td>
                             <td className="csis-blank"></td>
                           </tr>
-                        </Fragment>
+                        </tbody>
                       );
                     })}
                     {/* Walk-ups and last-minute replacements. Printed sheets read
@@ -220,7 +239,7 @@ export function CrewSignInSheet({
                         Deliberately marked, not blank: "scheduled" vs "added on
                         the day" is worth telling apart on paper. */}
                     {Array.from({ length: blankRows }).map((_, i) => (
-                      <Fragment key={`blank-${i}`}>
+                      <tbody key={`blank-${i}`} className="print-person">
                         <tr className="csis-identity csis-walkup">
                           <td colSpan={2}></td>
                           <td colSpan={2}></td>
@@ -237,18 +256,18 @@ export function CrewSignInSheet({
                           <td className="csis-blank"></td>
                           <td className="csis-blank"></td>
                         </tr>
-                      </Fragment>
+                      </tbody>
                     ))}
-                  </tbody>
                 </table>
               )}
+              {showKey && <OverrideKey />}
             </section>
           );
         })
       )}
 
       <footer className="csis-footer">
-        Printed {new Date().toLocaleString()} · Expected times are the schedule (planned) — actual times captured above ·
+        Printed {new Date().toLocaleString()} · Scheduled times are planned — write actual times in the boxes ·
         Amplified Operations Suite
       </footer>
     </div>

@@ -36,8 +36,12 @@ import { supabase } from "@/lib/supabase/client";
 import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { loadAssignmentsForRequest } from "@/lib/storage/job-request-assignments";
 import { loadShifts } from "@/lib/storage/job-request-shifts";
-import { formatClock, formatClockRange } from "@/lib/time-utils";
-import { formatPlannedTimes } from "@/lib/jobs/planned-times";
+import { formatClock } from "@/lib/time-utils";
+import {
+  plannedRanges, dayRanges, printRangeText, anyOverride, formatPhone,
+  sortForPrint, splitFullName, UNASSIGNED_LABEL, type PrintSort,
+} from "@/lib/jobs/print-format";
+import { PrintTimeRanges, OverrideKey } from "./print-time-ranges";
 import type {
   JobRequest,
   JobRequestDay,
@@ -53,23 +57,24 @@ type Employee = {
   phone?: string;
 };
 
-/** The day's scheduled window, BOTH blocks (#47). */
+/** The day's scheduled window, BOTH blocks (#47), with (+1) on next-day times. */
 function dayWindowText(d: JobRequestDay): string {
-  const pair1 = formatClockRange(d.startTime, d.endTime);
-  const pair2 = formatClockRange(d.startTime2, d.endTime2);
-  return [pair1, pair2].filter(Boolean).join(" · ");
+  return dayRanges(d).map(printRangeText).join(" · ");
 }
 
 export function CrewScheduleReport({
   form,
   dayFilter = "all",
   includeUnassigned = true,
+  sort = "last",
 }: {
   form: JobRequest;
   /** "all", or a single YYYY-MM-DD to print one day. */
   dayFilter?: string;
   /** False hides rows with no employee picked and rows not yet confirmed. */
   includeUnassigned?: boolean;
+  /** Row order (#80) — shared with the other two documents. */
+  sort?: PrintSort;
 }) {
   const [days, setDays] = useState<JobRequestDay[]>([]);
   const [assignments, setAssignments] = useState<JobRequestAssignment[]>([]);
@@ -148,30 +153,39 @@ export function CrewScheduleReport({
         </div>
       </header>
 
-      {/* Says what this is, so it cannot be mistaken for the capture form. */}
-      <div className="csr-banner">
-        SCHEDULE — reference only. Times are what is <strong>planned</strong>.
-        Record actual times on the Crew Sign-In Sheet or at the Time Clock.
-      </div>
+      {/* Says what this is, so it cannot be mistaken for the capture form.
+          #96: one short line — the longer explanation belongs in the help guide. */}
+      <div className="csr-banner">SCHEDULE — planned times, reference only.</div>
 
       {days.length === 0 ? (
         <div className="csr-empty">No days defined for this job yet.</div>
       ) : (
         days.filter((d) => dayFilter === "all" || d.eventDate === dayFilter).map((d) => {
-          const dayAsg = assignments
-            .filter((a) => a.jobRequestDayId === d.id)
-            .filter((a) => includeUnassigned || (a.employeeKey && a.confirmed))
-            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+          const dayAsg = sortForPrint(
+            assignments
+              .filter((a) => a.jobRequestDayId === d.id)
+              .filter((a) => includeUnassigned || (a.employeeKey && a.confirmed))
+              .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)),
+            sort,
+            (a) => ({
+              ...splitFullName(a.employeeKey ? employeesByKey.get(a.employeeKey)?.fullName : ""),
+              position: positionsById.get(a.positionId || "")?.name || "",
+              specialty: specialtiesById.get(a.specialtyId || "")?.name || "",
+            }),
+          );
           const window = dayWindowText(d);
+          const showKey = dayAsg.some((a) => anyOverride(plannedRanges(a, d)));
+          // #84: join the meta parts so there is no leading "·" when there is no call time.
+          const meta = [
+            d.callTime ? `Call ${formatClock(d.callTime)}` : "",
+            window,
+            `${dayAsg.length} crew`,
+          ].filter(Boolean).join(" · ");
           return (
             <section key={d.id} className="csr-day">
               <div className="csr-day-header">
                 <h2>{formatDay(d.eventDate)}</h2>
-                <div className="csr-day-meta">
-                  {d.callTime && <span>Call {formatClock(d.callTime)}</span>}
-                  {window && <span> · {window}</span>}
-                  <span> · {dayAsg.length} crew</span>
-                </div>
+                <div className="csr-day-meta">{meta}</div>
               </div>
               {dayAsg.length === 0 ? (
                 <div className="csr-empty">No crew assigned for this day.</div>
@@ -186,28 +200,32 @@ export function CrewScheduleReport({
                       <th>Phone</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {dayAsg.map((a) => {
-                      const emp = a.employeeKey ? employeesByKey.get(a.employeeKey) : null;
-                      const pos = positionsById.get(a.positionId || "")?.name || "—";
-                      const spc = specialtiesById.get(a.specialtyId || "")?.name || "";
-                      const planned = formatPlannedTimes(a, d);
-                      return (
-                        <tr key={a.id}>
+                  {dayAsg.map((a) => {
+                    const emp = a.employeeKey ? employeesByKey.get(a.employeeKey) : null;
+                    const pos = positionsById.get(a.positionId || "")?.name || "—";
+                    const spc = specialtiesById.get(a.specialtyId || "")?.name || "";
+                    return (
+                      // One tbody per person so a page break never splits a row (#99).
+                      <tbody key={a.id} className="print-person">
+                        <tr>
                           <td>
-                            {emp?.fullName || <span className="csr-unfilled">(unassigned)</span>}
+                            {emp?.fullName || <span className="csr-unfilled">{UNASSIGNED_LABEL}</span>}
                             {!a.confirmed && <span className="csr-unconfirmed"> — unconfirmed</span>}
                           </td>
                           <td>{spc ? `${pos} · ${spc}` : pos}</td>
                           {anyShift && <td>{a.shiftId ? (shiftsById.get(a.shiftId)?.label || "") : ""}</td>}
-                          <td>{planned || <span className="csr-unfilled">no time set</span>}</td>
-                          <td>{emp?.phone || ""}</td>
+                          <td>
+                            <PrintTimeRanges ranges={plannedRanges(a, d)}
+                              empty={<span className="csr-unfilled">no time set</span>} />
+                          </td>
+                          <td>{formatPhone(emp?.phone)}</td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
+                      </tbody>
+                    );
+                  })}
                 </table>
               )}
+              {showKey && <OverrideKey />}
             </section>
           );
         })
