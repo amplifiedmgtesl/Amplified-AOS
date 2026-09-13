@@ -1281,19 +1281,11 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
               </optgroup>
             </select>
           </div>
+          {/* #96: the text-only "Linked Invoice / Quote Detail" card was removed,
+              and this card's description became the button tooltip. */}
           {!hideBillAlways && (
-            <div className="list-card">
-              <strong>Linked Invoice / Quote Detail</strong>
-              <div className="muted">Use this page to generate time-based labor breakdowns that feed quote and invoice detail.</div>
-            </div>
-          )}
-          {!hideBillAlways && (
-            <div className="list-card">
-              <strong>Hide Bill Columns</strong>
-              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-                Hides STD BILL / OT BILL / DT BILL / TOTAL BILL when sharing
-                this view with someone who shouldn't see billing data.
-              </div>
+            <div className="list-card" title="Hides STD / OT / DT / TOTAL BILL when sharing this view with someone who shouldn't see billing data">
+              <strong>Bill Columns</strong>
               <div className="action-row" style={{ marginTop: 8 }}>
                 <button
                   className="secondary"

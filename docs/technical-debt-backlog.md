@@ -638,7 +638,7 @@ sign-out enables and records correctly; rounding is nearest-5 as designed.
 
 **Test job left in place on dev** (`jobreq-1786821000000`) for the re-test; delete or re-seed as needed.
 
-### 🧪 Round 3 — full re-test of Phase 0 + kiosk + round-2 fixes + #46 print set, 2026-09-13 (#67–#104)
+### 🧪 Round 3 — full re-test of Phase 0 + kiosk + round-2 fixes + #46 print set, 2026-09-13 (#67–#105)
 
 Driven by John against the dev preview at `c03aed0`, test job re-seeded to 2026-09-13 / 09-14
 (`AES_26091314_RHI_KIOSK`, day 1 block 2 20:00→02:00). One step at a time; every step checked on screen
@@ -773,6 +773,20 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   are per-job".
 - **#104 — Help button on every page → an in-app guide for that screen** (like /changelog); updated as a
   promote-checklist step; short crew-facing kiosk version; becomes source material for the AOS Assistant.
+
+**Found while fixing (2026-09-13, unattended):**
+
+- **#105 — ⚠ PROD: nothing in the app writes `job_request_days.rate_mode` / `day_rate_hours`, so every
+  day created since v2.5.0 is NULL and payroll silently falls back to the old quote-line resolution.**
+  Verified in prod: all **12** day records created since 2026-08-31 have `rate_mode` NULL (183 hourly +
+  64 day, all from the migration backfill). `lib/storage/job-request-days.ts` and
+  `job-request-days-section.tsx` never read or write the columns; `payroll-day-rate.ts:117` skips any
+  day that isn't exactly 'day'/'hourly'. The v2.5.0 changelog says "Each day of a job can be marked Day
+  Rate or Hourly" — there is no control for it. **No pay impact yet:** none of the 7 affected jobs
+  (DRONESHO, WAREHOUS, BMI CONCERT, STCECILI, SL265NAS, ZACHBRYA, MYCHEMIC) has a day-rate quote line.
+  The first new day-rate job will reproduce the Neon Nights mis-pay v2.5.0 was shipped to fix. Needs:
+  the day control on Daily Requirements, a default on insert, and a backfill of the NULL rows. Fix on
+  a branch off `main` (prod bug), not in this round.
 
 **Not yet tested (runs tonight/next):** kiosk Time Out 2 before midnight (Freeman) and after midnight
 (Dickens) — day selection after midnight and the "open sign-in on another day" warning.

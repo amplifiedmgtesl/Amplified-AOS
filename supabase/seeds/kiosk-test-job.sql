@@ -105,11 +105,14 @@ ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.sor
 --
 -- A trigger (sync_job_request_from_days_trg) pushes these dates up onto the
 -- job_requests header, so request_date/end_date need no manual update.
+-- rate_mode: the v2.5.0 column. Seeded explicitly as 'hourly' so payroll
+-- reads the day record rather than falling back to the quote line (NULL).
+-- ⚠ Round 3 found the APP never writes this column either — see backlog #105.
 INSERT INTO job_request_days
-  (id, job_request_id, event_date, start_time, end_time, start_time2, end_time2, sort_order, is_holiday)
-SELECT 'jrd-kiosktest-1', 'jobreq-1786821000000', p.day1, '08:00', '13:00', '20:00', '02:00', 0, false FROM seed_params p
+  (id, job_request_id, event_date, start_time, end_time, start_time2, end_time2, sort_order, is_holiday, rate_mode)
+SELECT 'jrd-kiosktest-1', 'jobreq-1786821000000', p.day1, '08:00', '13:00', '20:00', '02:00', 0, false, 'hourly' FROM seed_params p
 UNION ALL
-SELECT 'jrd-kiosktest-2', 'jobreq-1786821000000', p.day2, '09:00', '17:00', NULL,    NULL,    1, false FROM seed_params p;
+SELECT 'jrd-kiosktest-2', 'jobreq-1786821000000', p.day2, '09:00', '17:00', NULL,    NULL,    1, false, 'hourly' FROM seed_params p;
 
 -- ─── 3. Crew assignments — 7 on day 1 (both shifts), 3 on day 2 ─────────────
 -- Deliberate variety, each row earning its place in the test:
@@ -143,9 +146,10 @@ VALUES
 -- badges show noise instead of signal. The first version of this seed omitted
 -- them and both symptoms showed up in testing.
 --
--- Quantities match the roster exactly, so a clean re-seed reads "7/7 spec
--- filled" with no short/extra badge. To exercise those badges, delete a need
--- (→ "+1 extra") or bump a quantity (→ "−1 short").
+-- Quantities match the roster, but only CONFIRMED crew count toward the spec
+-- and ...-07 is seeded unconfirmed on purpose, so a clean re-seed reads
+-- "6/7 spec filled · −1 short" on day 1 until that box is ticked (round 3).
+-- Day 2 reads "3/3". To exercise "+1 extra", add a second Labor on day 1.
 INSERT INTO job_request_crew_needs
   (id, job_request_day_id, position_id, specialty_id, shift_id, quantity, sort_order)
 VALUES
