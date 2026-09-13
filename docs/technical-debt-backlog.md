@@ -638,6 +638,145 @@ sign-out enables and records correctly; rounding is nearest-5 as designed.
 
 **Test job left in place on dev** (`jobreq-1786821000000`) for the re-test; delete or re-seed as needed.
 
+### 🧪 Round 3 — full re-test of Phase 0 + kiosk + round-2 fixes + #46 print set, 2026-09-13 (#67–#104)
+
+Driven by John against the dev preview at `c03aed0`, test job re-seeded to 2026-09-13 / 09-14
+(`AES_26091314_RHI_KIOSK`, day 1 block 2 20:00→02:00). One step at a time; every step checked on screen
+AND in the dev DB. Numbering: round-3 finding *N* = **#(66+N)**. Fix plan: `docs/round-3-fix-plan.md`;
+unattended decisions: `docs/round-3-review-with-john.md`.
+
+**Verified working:** header/days/crew needs render 12h with both blocks (#41/#47 fixed); #38 warnings on
+Health Check + Assigned Crew; checkbox squash gone (#43), no duplicate ✓ (#42); planned-time entry saves
+only the edited field (other three stay NULL); override chip conditional (#40); Crew Schedule and
+Sign-In Sheet resolve planned/fallback identically to Assigned Crew; import creates rows as `planned`
+with blank actuals and real rate-card rates (no $35 — the seeded quote resolves the card); unfilled crew
+slots skipped with a clear message; re-import adds no duplicates; Planned rows stay out of Pending and
+bulk approve refuses them (Review + grid); kiosk shows live date/time, shift tag, scheduled times,
+Block 1/2 labels (#49–#53); Time In 1 locks the instant at tap (#52 fixed), rounds, promotes
+planned→submitted, stores capture + private signature; Copy planned→actual computes hours/OT/DT/bill
+correctly incl. midnight-crossing blocks (end_date → next day); Actuals doc shows the kiosk signature and
+"entered by office"; invoice balance display unchanged; 39 invoice-math unit tests pass.
+
+**Decisions John made this run:** Daily Requirements stay editable on Booked jobs (#68); hard stops go at
+points of use — Timekeeping import, printing, kiosk — not on the job (#71); greyed day-window times in the
+planned inputs, not blank (#69); `*` marks override times, `(+1)` marks next-day end times, on every
+document and screen (#75/#77); sort options Last name / First name / Position-Specialty on all print docs
+(#80); per-row Start/End Date dropped from the sign-in sheet — date lives in the day header, (+1) replaces
+end date (#79); one Print button (#86); remove the "Staff time" filter (#90); planned rows not selectable
+for approve/reject (#91); a No Show status (#92); Copy planned→actual requires a reason and is logged on
+the job (#98); explanations move to hover + a help guide, not on-screen text (#96, #104).
+
+**Findings**
+
+- **#67 — Screens work from data loaded at app open; Save can write stale data back.** Job header showed
+  pre-re-seed dates until a hard reload (Daily Requirements, read live, showed the new days — the
+  mismatch warning fired). `db.ts` `_loadAll` caches `job_requests` at startup; header Save writes
+  `request_date`/`end_date`/`job_no` from that copy (`db.ts:1683`), which would undo the day→header sync
+  trigger. Less reachable on Booked jobs (header locked) but real for leads, second tabs, second users.
+  Architectural — pairs with the de-cache project. See also #101.
+- **#68 — DECIDED: Daily Requirements must stay editable on Booked jobs.** `job-detail.tsx:403` locks
+  everything but status + crew once status ≠ lead. ⚠ Design with it: what deleting a day does when
+  timesheet rows exist on it; and the Create Quote button is hidden on locked jobs, so a Booked job with no
+  quote has no quote button at all (ties to #55).
+- **#69 — DECIDED: planned-time inputs show the effective time greyed; Safari renders empty
+  `<input type=time>` as a fake "12:30 PM".** Approach: keep the native picker, set its value to the
+  resolved planned time, style grey when inherited / dark when overridden, only write on change, add a ↺
+  reset per field. Verify no whole-row save path writes the inherited values.
+- **#70 — The #38 sign-in print pre-flight is dead code.** `lib/jobs/confirm-sign-in-sheet-print.ts`
+  has zero callers — lost when the Sign-In Sheet button became a link to the #46 preview route.
+  Superseded by #71's hard stop at print.
+- **#71 — DECIDED: hard stops at points of use.** Block Add Crew from Job for a day with no time window;
+  block printing Crew Schedule / Sign-In for such a day; kiosk needs the window for day selection. Stop
+  names the day and links to fix it. Jobs/quotes/leads stay free. Prod has 13/118 days (6 jobs) in the
+  last 60 days with no window, so these fire on real jobs.
+- **#72 — Add Crew Member writes an empty assignment row on click; repeated clicks stack blanks; new row
+  lands off-screen.** Reuse an existing blank row on that day; scroll to and focus the new row. Import
+  skips blanks and prints show them as "(unassigned)", so the harm is clutter + confusion.
+- **#73 — Import names a position-less slot "Stagehand" from a literal** (`timekeeping.tsx` addCrewFromJob,
+  `|| "Stagehand"`). Same class as #57.
+- **#74 — Crew Schedule wraps a time range mid-range.** One block per line.
+- **#75 — DECIDED: mark override times with `*`** on the specific time, with a one-line key. Colour is
+  lost on B&W printers.
+- **#76 — Phone numbers print in mixed formats.** Format for display.
+- **#77 — DECIDED: `(+1)` on end times that fall on the next day** — every document and screen that shows
+  planned or actual ranges.
+- **#78 — Print documents default to portrait in Safari; prod Timekeeping print defaults landscape with the
+  same app-wide `@page { size: landscape }`.** Cause on the new preview route not yet found. Sign-In and
+  Actuals must be landscape; the on-screen preview paper is hardcoded 8.5in and must match.
+- **#79 — DECIDED: sign-in sheet drops per-row Start/End Date** (date in day header; `(+1)` replaces end
+  date). Confirm during the midnight kiosk test that a hand-keyed out-time earlier than in-time rolls to
+  the next day.
+- **#80 — DECIDED: Sort option on all three print docs** — Last name / First name / Position-Specialty;
+  walk-up and unassigned rows last; persisted in the URL. Kiosk currently sorts by first name; align.
+- **#81 — Sign-In Sheet table runs past the right margin** (Meal 2 unbordered at the paper edge).
+- **#82 — Unassigned rows print blank on the Sign-In Sheet** but "(unassigned) — unconfirmed" on the Crew
+  Schedule. Make them match.
+- **#83 — Every print saves as "Amplified Operations Suite.pdf".** The preview route calls `window.print()`
+  instead of `printWithTitle` (used by Timekeeping, payroll, rate cards). Name: "<Doc> — <job no> — <day
+  or All days>".
+- **#84 — Minor print polish:** leading "·" in day-header meta; near-invisible footer; footer says
+  "Expected" where the column says "Scheduled".
+- **#85 — Next test round: seed a REAL quote** built from requirements, and run once with a quote and
+  once with none (#55). Current seed quote is a header with no lines ($0).
+- **#86 — DECIDED: one Print button** replacing Print PDF / Sign-In Sheet / Crew Schedule (all already
+  selectable on the preview route). Pre-Invoice stays separate (role-gated; becomes pre-quote/pre-invoice).
+- **#87 — Timekeeping grid has no Planned status badge** — only Approved/Rejected/Pending pills exist, so
+  planned rows show nothing.
+- **#88 — Picking an employee in the grid sets status 'submitted' with no time recorded**
+  (`timekeeping.tsx` EmployeePicker onSelect). Reverses #54 for a replacement on a planned row.
+- **#89 — "SIGN IN 2" grid header is the wrong (greyed) colour.**
+- **#90 — DECIDED: remove the "Staff time" filter** (All / Awaiting staff / Staff done) and the per-day
+  staff-done counter. Kiosk/office rows are never staff-finalized so the filter misleads; redesign with
+  #44/#45.
+- **#91 — DECIDED: planned rows can't be selected for bulk approve/reject; counts only count actionable
+  rows** (Timesheet Review + grid). The code comment says labels "never lie"; #54 made them lie.
+- **#92 — DECIDED: add a No Show status; block Reject on planned rows.** Reject currently has no planned
+  guard. No Show: set from Planned, reversible; excluded from Pending (automatic); own filter + badge;
+  pre-invoice report must exclude or list it; a late kiosk punch on a No Show row must promote it (today
+  `promoteWorkedStatus` only promotes from planned); staff app unaware (#44/#45). Dedupe keeps re-import
+  from resurrecting the row.
+- **#93 — Timesheet Review From/To date inputs show a greyed "today" while empty** — reads as an applied
+  filter. Same Safari behaviour as #69.
+- **#94 — Timesheet Review rows have no stable order.** Sort by date then name (or #80's options).
+- **#95 — WITHDRAWN** (dot legend on kiosk — superseded by #96).
+- **#96 — DECIDED: strip explanatory on-screen text; use hover titles + a help guide (#104).** Keep short
+  text only for a problem to act on. Kiosk (touch) relies on training. Candidates: Assigned Crew banner
+  sentence + per-row fallback hint, print-page purpose/tip lines, document banners, Timekeeping panel
+  descriptions, the kiosk's duplicated date/schedule line under the name.
+- **#97 — Kiosk rounding ignores seconds** (`lib/timeclock/time.ts` wallClockParts uses hour+minute only).
+  2:52:58 stored as 14:50; nearest-5 with seconds is 14:55. Always rounds against the worker at :x2:30–:59.
+- **#98 — DECIDED: Copy planned → actual needs scope, a reason, and a record.** Today it fills every blank
+  row on every day with no confirm and no summary — including blocks that haven't happened. Make it
+  day/selection-scoped, require a reason, write who/when/day/count/reason to a job activity log (new
+  table), mark filled rows "copied from schedule" (shown on grid + Actuals doc), demote the button. Open:
+  which roles may use it.
+- **#99 — Actuals doc splits a person's two lines across a page break.**
+- **#100 — DECIDED-PENDING (John + Connor): early/late punches vs schedule.** Kiosk accepts any time on the
+  selected day; pay/bill use the actual; nothing flags variance. Decide pay rule (actual vs snap to
+  schedule unless approved); highlight actual-vs-planned variance beyond a tolerance in grid/Review; kiosk
+  confirm when far from schedule (also the deferred block-2 mis-tap design).
+- **#101 — Every kiosk punch re-upserts the entire timesheet** (all rows share one `updated_at`), so a
+  kiosk tab left open overwrites grid edits made meanwhile with its stale copy. Punch should write only
+  the punched row. Kiosk-blocking; pairs with #44 and #67.
+
+**Ideas raised this run**
+
+- **#102 — Job requirements become the quote editor.** Live quote preview on the job built with
+  `buildLinesFromJob` pricing (no save); quote lines not directly editable — changes go through
+  requirements; quote-only fields (terms, discount, deposit, notes) stay on the quote; post-quote changes
+  allowed, then "revise quote" or knowingly leave unquoted (remember that choice). Health Check variance
+  checks: requirements↔quote, assigned crew↔requirements (the crew tab already computes short/extra),
+  timekeeping↔assigned crew (walk-ups #48).
+- **#103 — Quotes / Invoices / Payroll tabs on the job**, each role-gated, listing records with links;
+  Create/Continue/View Quote moves to the Quotes tab. Payroll runs today are pay-period scoped, but
+  `payroll_run_entries.job_id` lets the tab list runs containing this job's hours. See also "Payroll runs
+  are per-job".
+- **#104 — Help button on every page → an in-app guide for that screen** (like /changelog); updated as a
+  promote-checklist step; short crew-facing kiosk version; becomes source material for the AOS Assistant.
+
+**Not yet tested (runs tonight/next):** kiosk Time Out 2 before midnight (Freeman) and after midnight
+(Dickens) — day selection after midnight and the "open sign-in on another day" warning.
+
 **Closed:**
 - **~~#8~~** — Full client→invoice system rewrite + Connor PDF recovery — ✅ DONE 2026-07-16 (see the ✅ DONE section below; bug class mechanically impossible + recovery executed).
 - **~~#1~~** — Rippling payroll export — ✅ CLOSED 2026-07-20 per John. Export shipped to prod 2026-07-10; the held follow-ups (Connor mapping review, W-2/1099 handling, rate mismatches, real test-import, rate-card pay seeding) are closed with it — reopen individually if any resurfaces.
