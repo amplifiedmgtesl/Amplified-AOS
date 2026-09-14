@@ -787,6 +787,23 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   The first new day-rate job will reproduce the Neon Nights mis-pay v2.5.0 was shipped to fix. Needs:
   the day control on Daily Requirements, a default on insert, and a backfill of the NULL rows. Fix on
   a branch off `main` (prod bug), not in this round.
+  **Correction after reading `payroll-day-rate.ts`:** for a day-rate job with blank days, quoted
+  day-rate roles make the payroll run REFUSE to build ("set to Day Rate but has no day-rate hours");
+  unquoted roles pay hourly (the Neon Nights case). How it happened: the design (§5) kept "NULL falls
+  back to the quote" for days added later, but the final v2.5.0 commit removed the hours fallback and
+  no control to set the day was ever built.
+  **TABLED by John 2026-09-13** until round 3 is done. Checked prod: the only upcoming day-rate job is
+  FARMTOUR (9/17–20), whose 4 days are set (day, 10h) — safe; all other upcoming quotes (EDSHEERA,
+  BIGTRUCK, OHIOWORL, JUNECONC) are hourly in lines, terms and notes. **Trigger:** fix before any job
+  created since 8/30 gets a day-rate quote, and no later than 2026-10-13. Scope when un-tabled: Day
+  Rate / Hourly per day on Daily Requirements (hours box pre-filled from Expected Hours, then
+  independent), carried by add/copy day, default Hourly, Health Check for day-rate-no-hours and
+  quote-day-vs-record-hourly, backfill the NULL rows; open question — editable on Booked jobs.
+
+- **Adoption note (prod, 2026-09-13):** Assigned Crew is mostly skipped since late August — of 14 jobs
+  with timesheets since 8/24 only 2 used it properly; 9 had zero assignments. FARMTOUR has 196 crew-day
+  needs (issued quote sells 144) and 0 assignments, 4 days out. Everything round 3 builds reads
+  assignments, so promotion needs a workflow/training plan with Connor.
 
 **Decided in the review of the unattended fixes (2026-09-13):**
 
