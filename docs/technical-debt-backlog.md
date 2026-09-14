@@ -727,6 +727,10 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   "Expected" where the column says "Scheduled".
 - **#85 — Next test round: seed a REAL quote** built from requirements, and run once with a quote and
   once with none (#55). Current seed quote is a header with no lines ($0).
+  **DECIDED (John, 2026-09-13):** the seed creates the job (days, crew needs, assignments) but NO
+  quote; **Create Quote from the requirements + issue it becomes test step 1** in the app (quote
+  pricing runs in app code, so a SQL seed can't do it faithfully). Add a **second seeded job with no
+  quote ever** to test #55/#57 ("Rate TBD", nothing invented, nothing breaks).
 - **#86 — DECIDED: one Print button** replacing Print PDF / Sign-In Sheet / Crew Schedule (all already
   selectable on the preview route). Pre-Invoice stays separate (role-gated; becomes pre-quote/pre-invoice).
 - **#87 — Timekeeping grid has no Planned status badge** — only Approved/Rejected/Pending pills exist, so
