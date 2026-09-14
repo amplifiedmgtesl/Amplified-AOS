@@ -280,6 +280,9 @@ export function JobRequestCrewSection({
       jobRequestDayId: dayId,
       confirmed: false,
       sortOrder: existing.length,
+      // #106: a single-shift job fills its one shift in — the Shift column is
+      // hidden below 2 shifts, so there is nothing to pick.
+      shiftId: shifts.length === 1 ? shifts[0].id : undefined,
     };
     try {
       const persisted = await upsertAssignment(next);

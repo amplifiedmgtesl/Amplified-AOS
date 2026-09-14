@@ -24,6 +24,7 @@ import { EqualizerLoader } from "@/components/shared/equalizer-loader";
 import { JobHealthBanner } from "@/components/shared/job-health-banner";
 import { EmployeePicker, LazyEmployeePicker, pushEmployeeIntoCache, type PickerEmployee } from "@/components/shared/employee-picker";
 import { useUserRole } from "@/lib/auth/use-user-role";
+import { appendJobAuditLine } from "@/lib/jobs/job-notes-log";
 
 // Picker selection — always anchored on job_requests ("job:<jobId>").
 // The pre-rewrite "legacy:<jobSheetId>" mode was retired 2026-06-11 after the
@@ -533,6 +534,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
         lastName:  emp.lastName  || emp.fullName.split(" ").slice(1).join(" ") || "",
         phone: emp.phone || "",
         email: emp.email || "",
+        shiftId: onlyShiftId,   // #106: single-shift job — nothing to pick
         status: "submitted",
       })],
     });
@@ -553,6 +555,20 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
    *  rules group by shift, so a missing shift breaks the 5hr-min calc on
    *  multi-shift days. */
   const jobHasShifts = shiftLabelById.size > 0;
+  // #106: shift is only REQUIRED when the job has 2+ shifts — payroll's daily
+  // rules group by (employee, date, shift), so the choice only matters when
+  // there is more than one. A single-shift job fills its one shift in
+  // automatically (import + manual add), so nobody has to pick it.
+  const shiftRequired = shiftLabelById.size >= 2;
+  const onlyShiftId: string | null = shiftLabelById.size === 1 ? Array.from(shiftLabelById.keys())[0] : null;
+  /** #106: what this row is missing before time may be recorded on it. */
+  function missingRole(r: { positionId?: string | null; specialtyId?: string | null; shiftId?: string | null }): string[] {
+    const gaps: string[] = [];
+    if (!r.positionId) gaps.push("position");
+    if (r.positionId && requiresSpecialty(r.positionId) && !r.specialtyId) gaps.push("specialty");
+    if (shiftRequired && !r.shiftId) gaps.push("shift");
+    return gaps;
+  }
   // Phase 4: per-date holiday lookup for the selected job. Maps YYYY-MM-DD
   // to {isHoliday: true} for days the planner flagged. Drives auto-seeding
   // of isHoliday on new rows + the day-group "🎄 Holiday" badge.
@@ -690,8 +706,12 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
       // Brown had finished, entered and approved. The key can't be made
       // correct until `employees` is de-duplicated, so instead of
       // pretending it's safe we show the operator what's about to land.
+      // #106: on a single-shift job a missing shift MEANS the one shift, on both
+      // sides of the key — otherwise rows imported before auto-fill (shift
+      // NULL) wouldn't match new ones (shift filled) and would import twice.
+      const shiftKey = (s: string | null | undefined) => s || onlyShiftId || "";
       const seen = new Set(timesheet.rows.map((r) =>
-        `${r.employeeKey || ""}|${r.workDate || ""}|${r.shiftId || ""}`
+        `${r.employeeKey || ""}|${r.workDate || ""}|${shiftKey(r.shiftId)}`
       ));
       const positions = loadPositions();
       const employees = loadEmployees();
@@ -704,7 +724,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
       const additions: TimeEntry[] = [];
       slots.forEach((slot, idx) => {
         if (!slot.employeeKey) return;
-        const key = `${slot.employeeKey}|${slot.eventDate}|${slot.shiftId || ""}`;
+        const key = `${slot.employeeKey}|${slot.eventDate}|${shiftKey(slot.shiftId)}`;
         if (seen.has(key)) return;
         const emp = slot.employeeKey ? employees.find((e) => e.employeeKey === slot.employeeKey) : null;
         // #73: no invented default — a slot with no position imports blank, and
@@ -734,7 +754,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
           // actual" to pull the plan into these columns on demand.
           timeIn1:  "",
           timeOut1: "",
-          shiftId: slot.shiftId,
+          shiftId: slot.shiftId || onlyShiftId,
           isHoliday: isHol,
           holidayMultiplier: isHol ? effectiveHolidayMultiplier : null,
           // #54: 'planned', not 'submitted'. Nobody has worked this row — it
@@ -804,63 +824,89 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
   // Copy planned → actual (Planned-vs-Actual redesign §5.4). Pulls each row's
   // planned times from its crew assignment into the ACTUAL time columns, on
   // demand — the deliberate replacement for the old silent import-time copy.
-  // Per-assignment planned times win; pair 1 falls back to the day window
-  // when a worker has none. Only fills rows whose actual times are all blank
-  // (never clobbers entered actuals) and never touches locked (approved) rows.
-  async function copyPlannedToActual() {
+  // Per-assignment planned times win; each side falls back to the day window.
+  // Only fills rows whose actual times are all blank (never clobbers entered
+  // actuals) and never touches locked (approved) rows.
+  //
+  // #98 (round 3): this records SCHEDULED time as WORKED time, so it is an
+  // exception, not a shortcut. It is scoped to one day or to the selected
+  // rows, needs a reason, and every run appends a who/when/why line to the
+  // job's Notes (interim audit — #108). #106: rows missing position /
+  // specialty / shift are skipped, same as typing time into them is blocked.
+  const [copyModal, setCopyModal] = useState<null | { scope: "day" | "selected"; day: string; reason: string }>(null);
+  function openCopyPlanned() {
+    if (!timesheet) return;
+    const datedDays = dayGroups.map(([d]) => d).filter((d) => d !== "no-date");
+    const expanded = datedDays.filter((d) => !isDayCollapsed(d));
+    const selected = timesheet.rows.filter((r) => selectedIds.has(r.id));
+    setCopyModal({
+      scope: selected.length > 0 ? "selected" : "day",
+      day: expanded[0] ?? datedDays[0] ?? "",
+      reason: "",
+    });
+  }
+  async function copyPlannedToActual(scope: "day" | "selected", day: string, reason: string) {
     if (!timesheet || pickerKind !== "job") return;
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) { alert("A reason is required."); return; }
+    const inScope = (r: TimeEntry) => scope === "selected" ? selectedIds.has(r.id) : (r.workDate || "") === day;
     setCopyingPlanned(true);
     try {
       const slots = await loadJobCrewSlots(pickerKey);
-      // Index planned data by the same (employee|date|shift) grain the grid uses.
+      // Index planned data by the same (employee|date|shift) grain the grid
+      // uses; a single-shift job treats a missing shift as its one shift.
+      const shiftKey = (s: string | null | undefined) => s || onlyShiftId || "";
       const bySlotKey = new Map<string, (typeof slots)[number]>();
       for (const s of slots) {
-        bySlotKey.set(`${s.employeeKey || ""}|${s.eventDate}|${s.shiftId || ""}`, s);
+        bySlotKey.set(`${s.employeeKey || ""}|${s.eventDate}|${shiftKey(s.shiftId)}`, s);
       }
-      let filled = 0, skippedFilled = 0, skippedLocked = 0, noPlan = 0;
+      let filled = 0, skippedFilled = 0, skippedLocked = 0, noPlan = 0, noRole = 0;
+      const filledDays = new Set<string>();
       const nextRows = timesheet.rows.map((r) => {
+        if (!inScope(r)) return r;
         if (r.status === "approved") { skippedLocked++; return r; }
         const hasActual = !!(r.timeIn1 || r.timeOut1 || r.timeIn2 || r.timeOut2);
         if (hasActual) { skippedFilled++; return r; }
-        const s = bySlotKey.get(`${r.employeeKey || ""}|${r.workDate || ""}|${r.shiftId || ""}`);
-        if (!s) return r;
-        // Each pair falls back to the matching day window block (pair 1 →
-        // start/end, pair 2 → start2/end2). Per-assignment planned times win.
-        // Shared with the printed sign-in sheet and the kiosk — all three have
-        // to resolve "expected" identically or a worker signs against one
-        // schedule while the office bills from another. The slot row carries
-        // both the assignment's planned_* and its day's window, so it satisfies
-        // both sides of the resolver.
+        if (missingRole(r).length > 0) { noRole++; return r; }
+        const s = bySlotKey.get(`${r.employeeKey || ""}|${r.workDate || ""}|${shiftKey(r.shiftId)}`);
+        if (!s) { noPlan++; return r; }
+        // Shared resolver with the print documents and the kiosk — all have to
+        // resolve "expected" identically. The slot row carries both the
+        // assignment's planned_* and its day's window.
         const { pair1, pair2, isEmpty } = resolvePlannedTimes(s, s);
         if (isEmpty) { noPlan++; return r; }
-        const in1  = pair1.in  ?? "";
-        const out1 = pair1.out ?? "";
-        const in2  = pair2.in  ?? "";
-        const out2 = pair2.out ?? "";
         filled++;
-        return promoteWorkedStatus(
-          computeTimeEntry({ ...r, timeIn1: in1, timeOut1: out1, timeIn2: in2, timeOut2: out2 }));
+        if (r.workDate) filledDays.add(r.workDate);
+        return promoteWorkedStatus(computeTimeEntry({
+          ...r,
+          timeIn1: pair1.in ?? "", timeOut1: pair1.out ?? "",
+          timeIn2: pair2.in ?? "", timeOut2: pair2.out ?? "",
+        }));
       });
+      const skipped = [
+        skippedFilled ? `${skippedFilled} already had times` : "",
+        skippedLocked ? `${skippedLocked} approved (locked)` : "",
+        noRole ? `${noRole} missing position/specialty/shift` : "",
+        noPlan ? `${noPlan} with no planned times` : "",
+      ].filter(Boolean);
       if (filled === 0) {
-        const bits = [
-          skippedFilled ? `${skippedFilled} already have actual times` : "",
-          skippedLocked ? `${skippedLocked} are locked/approved` : "",
-          noPlan ? `${noPlan} have no planned times or day window` : "",
-        ].filter(Boolean);
-        alert(bits.length
-          ? `Nothing to fill — ${bits.join(", ")}.`
-          : "No matching crew assignments found for these rows.");
+        alert(`Nothing copied${skipped.length ? ` — ${skipped.join(", ")}` : ""}.`);
         return;
       }
       persist({ ...timesheet, rows: nextRows });
-      const tail = [
-        skippedFilled ? `${skippedFilled} kept (already filled)` : "",
-        skippedLocked ? `${skippedLocked} locked` : "",
-      ].filter(Boolean);
-      if (tail.length) {
-        // Non-blocking confirmation only when we deliberately skipped rows.
-        console.info(`[timekeeping] copyPlannedToActual: filled ${filled}; ${tail.join(", ")}.`);
-      }
+      setCopyModal(null);
+      const where = scope === "selected"
+        ? `${Array.from(filledDays).sort().join(", ")} (selected rows)`
+        : day;
+      const failure = await appendJobAuditLine(
+        pickerKey,
+        `Copied planned → actual — ${where}, ${filled} row${filled === 1 ? "" : "s"} — "${trimmedReason}"`,
+      );
+      alert(
+        `Copied planned times into ${filled} row${filled === 1 ? "" : "s"}.` +
+        (skipped.length ? `\nSkipped: ${skipped.join(", ")}.` : "") +
+        (failure ? `\n\n⚠ The note on the job could not be written (${failure}). Add the reason to the job's notes manually.` : ""),
+      );
     } catch (e) {
       console.error("[timekeeping] copyPlannedToActual failed:", e);
       alert("Couldn't copy planned times — see console for details.");
@@ -987,7 +1033,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
     // Block approval if the job has shifts defined and this row has no
     // shift_id. Payroll's daily rules group by shift — a missing shift
     // means an unbumped 5hr-min day or wrong grouping.
-    if (jobHasShifts && !entry.shiftId) {
+    if (shiftRequired && !entry.shiftId) {
       alert(
         "Shift is required to approve this entry.\n\n" +
         "Pick the shift (Load In, Steel, Production Load Out, etc.) from the " +
@@ -1034,13 +1080,13 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
     // no specialty choices pass through. Also block when shift_id is missing
     // if the job has shifts defined.
     const missingSpec  = eligible.filter((r) => requiresSpecialty(r.positionId) && !r.specialtyId);
-    const missingShift = eligible.filter((r) => jobHasShifts && !r.shiftId);
+    const missingShift = eligible.filter((r) => shiftRequired && !r.shiftId);
     // #54: a 'planned' row has no time recorded — there is nothing to approve.
     // promoteWorkedStatus() clears this the moment anyone punches or types.
     const stillPlanned = eligible.filter((r) => r.status === "planned");
     const targets      = eligible.filter((r) =>
       !(requiresSpecialty(r.positionId) && !r.specialtyId)
-      && !(jobHasShifts && !r.shiftId)
+      && !(shiftRequired && !r.shiftId)
       && r.status !== "planned"
     );
     if (missingSpec.length > 0 || missingShift.length > 0 || stillPlanned.length > 0) {
@@ -1392,17 +1438,20 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
           >
             {addingCrew ? "Loading…" : "Add Crew from Job"}
           </button>
+          <button className="secondary" onClick={addManualCrew} disabled={!timesheet}>+ Add Crew Member</button>
           {pickerKind === "job" && (
+            // #98: demoted — an exception with a required reason, not a primary action.
             <button
+              type="button"
               className="secondary"
-              onClick={copyPlannedToActual}
+              onClick={openCopyPlanned}
               disabled={!timesheet || copyingPlanned || (timesheet?.rows.length ?? 0) === 0}
-              title="Fill blank actual times from each worker's planned times (falling back to the day window). Skips rows that already have times or are locked."
+              title="Exception only: record scheduled times as worked for one day or the selected rows. Needs a reason, which is noted on the job."
+              style={{ fontSize: 12, padding: "4px 10px" }}
             >
-              {copyingPlanned ? "Copying…" : "Copy planned → actual"}
+              {copyingPlanned ? "Copying…" : "Copy planned → actual…"}
             </button>
           )}
-          <button className="secondary" onClick={addManualCrew} disabled={!timesheet}>+ Add Crew Member</button>
           {timesheet && timesheet.rows.length > 0 && (
             <>
               <span style={{ flex: 1 }} />
@@ -1692,6 +1741,10 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                     // locked (also can't be un-approved) — visually the same here.
                     const isLocked = row.status === "approved";
                     const lockedClass = isLocked ? " line-locked" : "";
+                    // #106: no time without a role. Locked rows already carry
+                    // time; the gate only applies to rows still being filled in.
+                    const roleGaps = isLocked ? [] : missingRole(row);
+                    const timeBlocked = roleGaps.length > 0 && !(row.timeIn1 || row.timeOut1 || row.timeIn2 || row.timeOut2);
                     return (
                     <tbody key={row.id} className={`line-employee ${isCollapsed ? "is-collapsed-day" : ""}`} data-day={row.workDate || "no-date"}>
                     <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}${lockedClass}`} style={isLocked ? { opacity: 0.85 } : undefined}>
@@ -1895,16 +1948,16 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                                 disabled={isLocked}
                                 onChange={(e) => updateRow(row.id, { shiftId: e.target.value || null })}
                                 title={
-                                  !row.shiftId
-                                    ? "Shift is required to approve — payroll groups daily rules by shift"
+                                  !row.shiftId && shiftRequired
+                                    ? "Pick the shift before entering time — payroll groups daily rules by shift"
                                     : ""
                                 }
-                                required
+                                required={shiftRequired}
                                 style={{
                                   fontSize: 11,
                                   width: "auto",
                                   maxWidth: 180,
-                                  ...(!row.shiftId && !isLocked
+                                  ...(!row.shiftId && !isLocked && shiftRequired
                                     ? { background: "#fff4d6", borderColor: "#e0c070" }
                                     : {}),
                                 }}
@@ -2049,27 +2102,28 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                         </div>
                       </td>
                     </tr>
-                    <tr className={`line-row line-row-end ${band}${lockedClass}`} style={isLocked ? { opacity: 0.85 } : undefined}>
+                    <tr className={`line-row line-row-end ${band}${lockedClass}`} style={isLocked ? { opacity: 0.85 } : undefined}
+                        title={timeBlocked ? `Set ${roleGaps.join(", ")} first` : undefined}>
                       <td className="sig-box"></td>
                       <td>
-                        <LazyTimeSelect ariaLabel="Time In 1" value={row.timeIn1} options={TIMES} disabled={isLocked}
+                        <LazyTimeSelect ariaLabel="Time In 1" value={row.timeIn1} options={TIMES} disabled={isLocked || timeBlocked}
                           onChange={(v) => updateRow(row.id, { timeIn1: v })} />
                         <span className="print-time">{formatClock(row.timeIn1)}</span>
                       </td>
                       <td>
-                        <LazyTimeSelect ariaLabel="Time Out 1" value={row.timeOut1} options={TIMES} disabled={isLocked}
+                        <LazyTimeSelect ariaLabel="Time Out 1" value={row.timeOut1} options={TIMES} disabled={isLocked || timeBlocked}
                           onChange={(v) => updateRow(row.id, { timeOut1: v })} />
                         <span className="print-time">{formatClock(row.timeOut1)}</span>
                       </td>
                       <td><select className="input-tight" disabled={isLocked} value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak1Minutes ?? row.lunchMinutes ?? 0}</span></td>
                       <td className="sig-box"></td>
                       <td>
-                        <LazyTimeSelect ariaLabel="Time In 2" value={row.timeIn2} options={TIMES} disabled={isLocked}
+                        <LazyTimeSelect ariaLabel="Time In 2" value={row.timeIn2} options={TIMES} disabled={isLocked || timeBlocked}
                           onChange={(v) => updateRow(row.id, { timeIn2: v })} />
                         <span className="print-time">{formatClock(row.timeIn2)}</span>
                       </td>
                       <td>
-                        <LazyTimeSelect ariaLabel="Time Out 2" value={row.timeOut2} options={TIMES} disabled={isLocked}
+                        <LazyTimeSelect ariaLabel="Time Out 2" value={row.timeOut2} options={TIMES} disabled={isLocked || timeBlocked}
                           onChange={(v) => updateRow(row.id, { timeOut2: v })} />
                         <span className="print-time">{formatClock(row.timeOut2)}</span>
                       </td>
@@ -2231,6 +2285,63 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
       )}
 
       {/* "+ Add Crew Member" modal — picker first, row second. */}
+      {copyModal && timesheet && (
+        <div
+          onClick={() => !copyingPlanned && setCopyModal(null)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+            zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(460px, 95vw)", background: "#fff", borderRadius: 12,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.3)", padding: 18,
+            }}
+          >
+            <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>Copy planned → actual</h3>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>Apply to</label>
+              <select
+                value={copyModal.scope === "selected" ? "__selected__" : copyModal.day}
+                onChange={(e) => setCopyModal({
+                  ...copyModal,
+                  scope: e.target.value === "__selected__" ? "selected" : "day",
+                  day: e.target.value === "__selected__" ? copyModal.day : e.target.value,
+                })}
+                style={{ width: "100%" }}
+              >
+                {selectedIds.size > 0 && <option value="__selected__">Selected rows ({selectedIds.size})</option>}
+                {dayGroups.map(([d]) => d).filter((d) => d !== "no-date").map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>Reason (required — added to the job notes)</label>
+              <textarea
+                value={copyModal.reason}
+                onChange={(e) => setCopyModal({ ...copyModal, reason: e.target.value })}
+                placeholder="e.g. Kiosk down, times confirmed with crew chief"
+                rows={3}
+                style={{ width: "100%" }}
+                autoFocus
+              />
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button type="button" className="secondary" onClick={() => setCopyModal(null)} disabled={copyingPlanned}>Cancel</button>
+              <button
+                type="button"
+                disabled={copyingPlanned || !copyModal.reason.trim() || (copyModal.scope === "day" && !copyModal.day)}
+                onClick={() => void copyPlannedToActual(copyModal.scope, copyModal.day, copyModal.reason)}
+              >
+                {copyingPlanned ? "Copying…" : "Copy"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {addCrewModalOpen && (
         <div
           onClick={() => setAddCrewModalOpen(false)}
