@@ -898,7 +898,9 @@ export default function JobDetail({
 
           {sectionTab === "daily" && (
             editingId
-              ? <JobRequestDaysSection jobRequestId={editingId} disabled={isLocked} hideHeader jobStartDate={form.requestDate} />
+              ? /* #68: days stay editable on Booked jobs (same lock as Assigned Crew); the
+                 header, including Notes, stays locked. */
+                <JobRequestDaysSection jobRequestId={editingId} disabled={isCrewLocked} hideHeader jobStartDate={form.requestDate} />
               : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
                   Save the job first to start adding days and crew requirements.
                 </div>

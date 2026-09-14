@@ -260,7 +260,34 @@ export function JobRequestDaysSection({
     return bits.join(" · ");
   }
 
+  /** #68: timesheet rows link to a day by job + DATE, not by day id, so a
+   *  deleted or re-dated day would orphan them (payroll's day-rate lookup then
+   *  finds no day). Count them before allowing either. */
+  async function timesheetRowsOn(date: string): Promise<number> {
+    const { count, error } = await supabase
+      .from("timesheet_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("job_id", jobRequestId)
+      .eq("work_date", date);
+    if (error) throw error;
+    return count ?? 0;
+  }
+
   async function patchDay(d: JobRequestDay, patch: Partial<JobRequestDay>) {
+    if (patch.eventDate !== undefined && patch.eventDate !== d.eventDate && d.eventDate) {
+      try {
+        const n = await timesheetRowsOn(d.eventDate);
+        if (n > 0) {
+          alert(`${d.eventDate} has ${n} timesheet row${n === 1 ? "" : "s"} — remove or move ${n === 1 ? "it" : "them"} in Timekeeping before changing the date.`);
+          // Re-render so the date input snaps back to the stored value.
+          setDays((cur) => cur.map((x) => (x.id === d.id ? { ...d } : x)));
+          return;
+        }
+      } catch (err: any) {
+        flash(`Couldn't check timesheet rows: ${err?.message ?? err}`, false);
+        return;
+      }
+    }
     const next = { ...d, ...patch };
     setDays((cur) => cur.map((x) => (x.id === d.id ? next : x)));
     try {
@@ -274,7 +301,28 @@ export function JobRequestDaysSection({
   }
 
   async function removeDay(d: JobRequestDay) {
-    if (!confirm(`Remove day ${d.eventDate} and all its crew needs?`)) return;
+    // #68: hard stop when time has been recorded against this date; otherwise
+    // the confirm names everything that goes with the day (assignments
+    // cascade too — the old message only mentioned crew needs).
+    let assigned = 0;
+    try {
+      const n = d.eventDate ? await timesheetRowsOn(d.eventDate) : 0;
+      if (n > 0) {
+        alert(`Can't remove ${d.eventDate} — it has ${n} timesheet row${n === 1 ? "" : "s"}. Remove or move ${n === 1 ? "it" : "them"} in Timekeeping first.`);
+        return;
+      }
+      const { count, error } = await supabase
+        .from("job_request_assignments")
+        .select("id", { count: "exact", head: true })
+        .eq("job_request_day_id", d.id);
+      if (error) throw error;
+      assigned = count ?? 0;
+    } catch (err: any) {
+      flash(`Couldn't check this day before removing it: ${err?.message ?? err}`, false);
+      return;
+    }
+    const needs = (crewByDayId[d.id] ?? []).reduce((s, c) => s + (Number(c.quantity) || 0), 0);
+    if (!confirm(`Remove ${d.eventDate}? This also removes ${needs} crew need${needs === 1 ? "" : "s"} and ${assigned} assigned crew.`)) return;
     try {
       await deleteJobRequestDay(d.id);
       setDays((cur) => cur.filter((x) => x.id !== d.id));
