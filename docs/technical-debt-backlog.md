@@ -788,6 +788,30 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   the day control on Daily Requirements, a default on insert, and a backfill of the NULL rows. Fix on
   a branch off `main` (prod bug), not in this round.
 
+**Decided in the review of the unattended fixes (2026-09-13):**
+
+- **#106 — DECIDED: no time without a role.** A timesheet row can't have time recorded — grid time
+  inputs, Copy planned → actual, kiosk punch — until it has **position + specialty**, and **shift when
+  the job has 2+ shifts**. Import still brings position-less rows in (blank, not "Stagehand" — #73).
+  Kiosk shows the person but only "No position set — see your crew leader". Setting the specialty
+  already re-snapshots rate-card rates, so rows get real rates before any time exists.
+  **Single-shift jobs: the one shift is filled in automatically** (assignments + import), so nobody
+  picks it. Grid approval rule changes to match (2+ shifts). Why shift matters: payroll applies the
+  5-hour minimum and whole-hour round-up per `(employee, date, shift_id ?? position)` group
+  (`payroll.ts:845`) — a wrong/missing shift gives two minimums or merges two shifts.
+  ⚠ Trap found: the grid required shift on jobs with ≥1 shift, but Assigned Crew only shows the Shift
+  column at ≥2 — so single-shift crew imported shift-less and couldn't be approved.
+- **#107 — Timesheet Review bulk Approve skips the specialty and shift checks the grid enforces.**
+  A row the grid refuses can be approved from Review. Make Review apply the same rules.
+- **#57 — pulled INTO round 3 (John).** Remove the invented rates: `timekeeping.ts` blankTimeEntry
+  35/52/70 and `db.ts:1296` `|| 35/52/70` → blank + "Rate TBD"; rate-card editors' new-row pre-fill
+  (35/350/52.5/70 in `rate-card-editor.tsx:149`, `master-rate-card-editor.tsx:100`) → empty, card
+  can't save with an empty rate. Prod: 2,160 of 3,383 timesheet rows carry 35/52/70 (254 since
+  2026-08-01). Impact verified: invoices + pre-invoice re-price from the rate card and payroll ignores
+  bill rates, so the wrong snapshot is display-only (grid, Review) — the rate-card pre-fill is the one
+  that can reach invoices.
+- **#80 addendum — the kiosk gets a Sort choice too** (Last / First / Position-Specialty).
+
 **Not yet tested (runs tonight/next):** kiosk Time Out 2 before midnight (Freeman) and after midnight
 (Dickens) — day selection after midnight and the "open sign-in on another day" warning.
 
