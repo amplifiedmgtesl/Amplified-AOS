@@ -675,7 +675,8 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   trigger. Less reachable on Booked jobs (header locked) but real for leads, second tabs, second users.
   Architectural — pairs with the de-cache project. See also #101.
 - **#68 — DECIDED: Daily Requirements must stay editable on Booked jobs.** `job-detail.tsx:403` locks
-  everything but status + crew once status ≠ lead. ⚠ Design with it: what deleting a day does when
+  everything but status + crew once status ≠ lead. ⚠ Unlock ONLY days/crew needs — Notes must stay
+  locked (#98 appends its audit lines there). ⚠ Design with it: what deleting a day does when
   timesheet rows exist on it; and the Create Quote button is hidden on locked jobs, so a Booked job with no
   quote has no quote button at all (ties to #55).
 - **#69 — DECIDED: planned-time inputs show the effective time greyed; Safari renders empty
@@ -751,6 +752,22 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   table), mark filled rows "copied from schedule" (shown on grid + Actuals doc), demote the button.
   **Roles — DECIDED (John, 2026-09-13): leave as-is** (anyone who can edit Timekeeping). In practice
   that is one admin plus crew leaders; nobody else uses these screens.
+  **Where the reason goes — DECIDED (John, 2026-09-13): the job's Notes, until #108 exists.** Every run
+  appends one line with when, who and why, e.g. `[2026-09-13 3:40 PM · John O'Brien] Copied planned →
+  actual — 9/13, 8 rows — "Kiosk down, times confirmed with crew chief"`. Reason is required. Written
+  as a targeted append to `job_requests.notes`, never through the header Save (stale-cache #67).
+  Notes are locked once a job leaves Lead (`job-detail.tsx` isLocked), which is where Copy is used —
+  "mostly safe": flipping status back to Lead unlocks them. No separate activity table yet.
+
+- **#108 — PROJECT: job activity log / audit trail** (John, 2026-09-13: "currently there is 0 auditing").
+  Verified: most tables carry created/updated by+at (last touch only) and quotes/invoices/payroll carry
+  lifecycle stamps (issued/voided/finalized by), `employees` has none (#61) — but **no history**: an edit
+  overwrites the previous value and no reasons are kept. Sketch: one log table (job, when, who, action,
+  entity, summary, reason, before/after); app-written business events (Copy planned→actual, No Show,
+  unlock approved time, status changes, quote/invoice/payroll lifecycle) plus DB-trigger change capture
+  on key tables so it can't be bypassed; an Activity tab on the job (#103); a retention rule (the
+  monitoring log already caused prod load). Design properly as its own project — do NOT build a
+  throwaway. Until then, #98 writes to job Notes. When built, Copy (and No Show) move to it.
 - **#99 — Actuals doc splits a person's two lines across a page break.**
 - **#100 — DECIDED-PENDING (John + Connor): early/late punches vs schedule.** Kiosk accepts any time on the
   selected day; pay/bill use the actual; nothing flags variance. Decide pay rule (actual vs snap to
