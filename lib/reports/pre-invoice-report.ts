@@ -96,6 +96,9 @@ export type PreInvoiceReport = {
      *  nobody has worked yet. */
     plannedExcluded: number;
   };
+  /** #92: crew marked No Show, by day. Never billed; the view lists them only
+   *  when "Include no-shows" is ticked (default off). */
+  noShows: Array<{ workDate: string; name: string }>;
 };
 
 type EntryRow = {
@@ -119,6 +122,8 @@ type EntryRow = {
   total_hours: number | null;
   is_holiday: boolean | null;
   status: string | null;
+  first_name: string | null;
+  last_name: string | null;
 };
 
 type ReportGroup = {
@@ -162,7 +167,7 @@ export async function buildPreInvoiceReport(jobId: string): Promise<PreInvoiceRe
       time_in1, time_out1, time_in2, time_out2,
       meal_break_1_minutes, meal_break_2_minutes,
       std_hours, ot_hours, dt_hours, total_hours,
-      is_holiday, status
+      is_holiday, status, first_name, last_name
     `)
     .eq("job_id", jobId);
   if (entriesRes.error) throw entriesRes.error;
@@ -187,7 +192,17 @@ export async function buildPreInvoiceReport(jobId: string): Promise<PreInvoiceRe
   const groups = new Map<string, ReportGroup>();
   let zeroHourExcluded = 0;
   let plannedExcluded = 0;
+  const noShows: PreInvoiceReport["noShows"] = [];
   for (const e of entries) {
+    // #92: a no-show is never billed. Collected separately so the view can
+    // optionally name them; skipped before any other bucket.
+    if (e.status === "no_show") {
+      noShows.push({
+        workDate: e.work_date ?? "",
+        name: [e.first_name, e.last_name].filter(Boolean).join(" ") || "(unnamed)",
+      });
+      continue;
+    }
     // Zero-hour entries (blank placeholder rows in the grid) have nothing
     // to bill — excluding them keeps phantom "(no date)" days and dash
     // lines off the client-facing report. Counted for the on-screen warning.
@@ -370,5 +385,6 @@ export async function buildPreInvoiceReport(jobId: string): Promise<PreInvoiceRe
       zeroHourExcluded,
       plannedExcluded,
     },
+    noShows: noShows.sort((a, b) => a.workDate.localeCompare(b.workDate) || a.name.localeCompare(b.name)),
   };
 }

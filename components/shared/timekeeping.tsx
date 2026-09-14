@@ -860,11 +860,12 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
       for (const s of slots) {
         bySlotKey.set(`${s.employeeKey || ""}|${s.eventDate}|${shiftKey(s.shiftId)}`, s);
       }
-      let filled = 0, skippedFilled = 0, skippedLocked = 0, noPlan = 0, noRole = 0;
+      let filled = 0, skippedFilled = 0, skippedLocked = 0, noPlan = 0, noRole = 0, skippedNoShow = 0;
       const filledDays = new Set<string>();
       const nextRows = timesheet.rows.map((r) => {
         if (!inScope(r)) return r;
         if (r.status === "approved") { skippedLocked++; return r; }
+        if (r.status === "no_show") { skippedNoShow++; return r; }
         const hasActual = !!(r.timeIn1 || r.timeOut1 || r.timeIn2 || r.timeOut2);
         if (hasActual) { skippedFilled++; return r; }
         if (missingRole(r).length > 0) { noRole++; return r; }
@@ -887,6 +888,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
         skippedFilled ? `${skippedFilled} already had times` : "",
         skippedLocked ? `${skippedLocked} approved (locked)` : "",
         noRole ? `${noRole} missing position/specialty/shift` : "",
+        skippedNoShow ? `${skippedNoShow} marked No Show` : "",
         noPlan ? `${noPlan} with no planned times` : "",
       ].filter(Boolean);
       if (filled === 0) {
@@ -992,6 +994,31 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
     setAddCrewModalOpen(true);
   }
 
+  // #92: mark / undo No Show on a Planned row. Reason optional; either way a
+  // who/when/why line goes on the job's Notes (interim audit, #108).
+  async function toggleNoShow(row: TimeEntry) {
+    if (!timesheet) return;
+    const name = [row.firstName, row.lastName].filter(Boolean).join(" ") || "(unnamed)";
+    const marking = row.status === "planned";
+    if (!marking && row.status !== "no_show") return;
+    let reason: string | null = "";
+    if (marking) {
+      reason = prompt(`Mark ${name} as a No Show on ${row.workDate ?? "(no date)"}?\n\nReason (optional):`, "");
+      if (reason === null) return; // cancelled
+    } else if (!confirm(`Undo No Show for ${name} on ${row.workDate ?? "(no date)"}? The row goes back to Planned.`)) {
+      return;
+    }
+    const nextStatus = marking ? "no_show" : "planned";
+    persist({ ...timesheet, rows: timesheet.rows.map((r) => r.id === row.id ? { ...r, status: nextStatus } : r) });
+    if (pickerKind === "job") {
+      const text = marking
+        ? `No Show — ${name}, ${row.workDate ?? "(no date)"}${reason?.trim() ? ` — "${reason.trim()}"` : ""}`
+        : `Undo No Show — ${name}, ${row.workDate ?? "(no date)"}`;
+      const failure = await appendJobAuditLine(pickerKey, text);
+      if (failure) alert(`Status changed, but the note on the job could not be written (${failure}).`);
+    }
+  }
+
   function removeRow(id: string) {
     if (!timesheet) return;
     // Confirm — the entry is removed from the timesheet and persisted away on
@@ -1083,11 +1110,12 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
     const missingShift = eligible.filter((r) => shiftRequired && !r.shiftId);
     // #54: a 'planned' row has no time recorded — there is nothing to approve.
     // promoteWorkedStatus() clears this the moment anyone punches or types.
-    const stillPlanned = eligible.filter((r) => r.status === "planned");
+    const stillPlanned = eligible.filter((r) => r.status === "planned" || r.status === "no_show");
     const targets      = eligible.filter((r) =>
       !(requiresSpecialty(r.positionId) && !r.specialtyId)
       && !(shiftRequired && !r.shiftId)
       && r.status !== "planned"
+      && r.status !== "no_show"
     );
     if (missingSpec.length > 0 || missingShift.length > 0 || stillPlanned.length > 0) {
       const reasons: string[] = [];
@@ -1144,7 +1172,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
     // the status change). Filter them out and warn if any were skipped.
     // #92: never reject a 'planned' row — nobody has worked it, so there is
     // nothing to reject. A no-show is its own (not yet built) status.
-    const eligible = timesheet.rows.filter((r) => selectedIds.has(r.id) && r.status !== "rejected" && r.status !== "planned" && r.employeeKey);
+    const eligible = timesheet.rows.filter((r) => selectedIds.has(r.id) && r.status !== "rejected" && r.status !== "planned" && r.status !== "no_show" && r.employeeKey);
     const lockedByInvoice = eligible.filter((r) => r.status === "approved" && r.invoiceLineId);
     const targets = eligible.filter((r) => !(r.status === "approved" && r.invoiceLineId));
     if (targets.length === 0) return;
@@ -1200,8 +1228,8 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
     if (!timesheet) return { approve: 0, reject: 0, unlock: 0, delete: 0 };
     const sel = timesheet.rows.filter((r) => selectedIds.has(r.id));
     return {
-      approve: sel.filter((r) => r.status !== "approved" && r.status !== "planned" && r.employeeKey).length,
-      reject:  sel.filter((r) => r.status !== "rejected" && r.status !== "planned" && r.employeeKey && !(r.status === "approved" && r.invoiceLineId)).length,
+      approve: sel.filter((r) => r.status !== "approved" && r.status !== "planned" && r.status !== "no_show" && r.employeeKey).length,
+      reject:  sel.filter((r) => r.status !== "rejected" && r.status !== "planned" && r.status !== "no_show" && r.employeeKey && !(r.status === "approved" && r.invoiceLineId)).length,
       unlock:  sel.filter((r) => r.status === "approved" && !r.invoiceLineId).length,
       delete:  sel.filter((r) => r.status !== "approved").length,
     };
@@ -1685,6 +1713,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                             </span>
                             <span style={{ fontSize: 12, opacity: 0.85 }}>
                               {statusMix.planned ? `· ${statusMix.planned} planned ` : ""}
+                              {statusMix.no_show ? `· ${statusMix.no_show} no show ` : ""}
                               {statusMix.approved ? `· ${statusMix.approved} approved ` : ""}
                               {statusMix.submitted ? `· ${statusMix.submitted} pending ` : ""}
                               {statusMix.rejected ? `· ${statusMix.rejected} rejected ` : ""}
@@ -2026,6 +2055,27 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                                   title="Scheduled, no time recorded yet">
                               Planned
                             </span>
+                          )}
+                          {/* #92: No Show — set from Planned, undo back to Planned. Never
+                              paid or billed (payroll + invoicing read approved rows only).
+                              A late punch or typed time lifts it back to Pending. */}
+                          {row.employeeKey && row.status === "no_show" && (
+                            <span className="badge"
+                                  style={{ fontSize: 11, background: "#fdecea", color: "#7a1f1f", textAlign: "center", padding: "3px 8px" }}
+                                  title="Marked as a no-show — not paid or billed">
+                              No Show
+                            </span>
+                          )}
+                          {!hideBillAlways && row.employeeKey && (row.status === "planned" || row.status === "no_show") && (
+                            <button
+                              type="button"
+                              className="secondary"
+                              disabled={!!busyBatch}
+                              onClick={() => void toggleNoShow(row)}
+                              style={{ fontSize: 11, padding: "2px 8px" }}
+                            >
+                              {row.status === "no_show" ? "Undo No Show" : "No Show"}
+                            </button>
                           )}
                           {/* Staff-finalization marker (advisory). Only the positive
                               "✓ Staff done" chip renders. */}

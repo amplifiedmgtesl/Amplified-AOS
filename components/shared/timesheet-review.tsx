@@ -14,7 +14,7 @@ import { useUserRole } from "@/lib/auth/use-user-role";
 import { formatClock } from "@/lib/time-utils";
 import { supabase } from "@/lib/supabase/client";
 
-type StatusFilter = "pending" | "planned" | "approved" | "rejected" | "all";
+type StatusFilter = "pending" | "planned" | "no_show" | "approved" | "rejected" | "all";
 
 /**
  * #93: an EMPTY <input type="date"> renders a greyed "today" in Safari, which
@@ -67,6 +67,7 @@ function statusBadge(r: StaffEntryReviewRow) {
   if (r.status === "rejected")  return <span className="badge" style={{ background: "#fbeaea", color: "#8a1a1a" }}>Rejected</span>;
   if (r.status === "submitted") return <span className="badge" style={{ background: "#eaf2fb", color: "#1a4a7a" }}>Submitted</span>;
   if (r.status === "planned")   return <span className="badge" style={{ background: "#f1eefb", color: "#4a3a8a" }} title="Scheduled from crew assignments — not yet worked. Becomes Submitted once any time is recorded.">Planned</span>;
+  if (r.status === "no_show")   return <span className="badge" style={{ background: "#fdecea", color: "#7a1f1f" }} title="Marked as a no-show — not paid or billed">No Show</span>;
   return <span className="badge" style={{ background: "#fff4d6", color: "#7a5a1a" }}>Pending</span>;
 }
 
@@ -150,6 +151,7 @@ export default function TimesheetReview() {
     return rows.filter((r) => {
       if (status === "pending"  && !isPending(r)) return false;
       if (status === "planned"  && r.status !== "planned") return false;
+      if (status === "no_show"  && r.status !== "no_show") return false;
       if (status === "approved" && r.status !== "approved") return false;
       if (status === "rejected" && r.status !== "rejected") return false;
       if (employeeEmail && (r.email || "") !== employeeEmail) return false;
@@ -214,17 +216,17 @@ export default function TimesheetReview() {
     // #54: never approve a 'planned' row. Nobody has worked it — approving it
     // would bless a zero-hour record as a reviewed fact. Reachable from the
     // Planned/All filters, so guard here rather than relying on the filter.
-    const planned = selected.filter((r) => r.status === "planned");
+    const planned = selected.filter((r) => r.status === "planned" || r.status === "no_show");
     // #107: the same role checks the Timekeeping grid enforces — position,
     // specialty (when the position has specialties) and shift (when the job
     // has 2+ shifts). Review used to approve rows the grid refuses.
-    const gapsById = await roleGapsFor(selected.filter((r) => r.status !== "planned"));
-    const missing = selected.filter((r) => r.status !== "planned" && (gapsById.get(r.id)?.length ?? 0) > 0);
-    const targets = selected.filter((r) => r.status !== "planned" && !(gapsById.get(r.id)?.length));
+    const gapsById = await roleGapsFor(selected.filter((r) => r.status !== "planned" && r.status !== "no_show"));
+    const missing = selected.filter((r) => r.status !== "planned" && r.status !== "no_show" && (gapsById.get(r.id)?.length ?? 0) > 0);
+    const targets = selected.filter((r) => r.status !== "planned" && r.status !== "no_show" && !(gapsById.get(r.id)?.length));
     if (planned.length > 0 || missing.length > 0) {
       const reasons: string[] = [];
       if (planned.length > 0) {
-        reasons.push(`${planned.length} still Planned — no time recorded, nothing to approve.`);
+        reasons.push(`${planned.length} Planned or No Show — no time recorded, nothing to approve.`);
       }
       if (missing.length > 0) {
         const list = missing.slice(0, 5)
@@ -260,7 +262,7 @@ export default function TimesheetReview() {
 
   async function handleRejectSelected() {
     // #92: planned rows were never worked — nothing to reject.
-    const eligibleRows = filtered.filter((r) => selectedIds.has(r.id) && r.status !== "rejected" && r.status !== "planned");
+    const eligibleRows = filtered.filter((r) => selectedIds.has(r.id) && r.status !== "rejected" && r.status !== "planned" && r.status !== "no_show");
     // Invoice-bound approved rows are super-frozen — DB trigger blocks status changes.
     // Payroll-locked rows can't transition status either until the run is voided.
     const lockedByInvoice = eligibleRows.filter((r) => r.status === "approved" && r.invoiceLineId);
@@ -296,7 +298,7 @@ export default function TimesheetReview() {
   }
   // #91: planned rows can't be selected here at all — there is no action on
   // this screen that applies to them. "Select all" skips them too.
-  const selectableRows = useMemo(() => filtered.filter((r) => r.status !== "planned"), [filtered]);
+  const selectableRows = useMemo(() => filtered.filter((r) => r.status !== "planned" && r.status !== "no_show"), [filtered]);
   function toggleAllVisible() {
     setSelectedIds((prev) => {
       const allSelected = selectableRows.length > 0 && selectableRows.every((r) => prev.has(r.id));
@@ -322,8 +324,8 @@ export default function TimesheetReview() {
   const eligible = useMemo(() => {
     const sel = filtered.filter((r) => selectedIds.has(r.id));
     return {
-      approve: sel.filter((r) => r.status !== "approved" && r.status !== "planned").length,
-      reject:  sel.filter((r) => r.status !== "rejected" && r.status !== "planned" && !(r.status === "approved" && r.invoiceLineId) && !r.payrollRunId).length,
+      approve: sel.filter((r) => r.status !== "approved" && r.status !== "planned" && r.status !== "no_show").length,
+      reject:  sel.filter((r) => r.status !== "rejected" && r.status !== "planned" && r.status !== "no_show" && !(r.status === "approved" && r.invoiceLineId) && !r.payrollRunId).length,
     };
   }, [filtered, selectedIds]);
 
@@ -347,6 +349,7 @@ export default function TimesheetReview() {
           <select value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
             <option value="pending">Pending (needs approval)</option>
             <option value="planned">Planned (not yet worked)</option>
+            <option value="no_show">No Show</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
             <option value="all">All</option>
@@ -458,8 +461,8 @@ export default function TimesheetReview() {
                     aria-label="Select row"
                     checked={checked}
                     onChange={() => toggleRow(r.id)}
-                    disabled={!!busyBatch || r.status === "planned"}
-                    title={r.status === "planned" ? "Planned — record time first (kiosk or Timekeeping)" : undefined}
+                    disabled={!!busyBatch || r.status === "planned" || r.status === "no_show"}
+                    title={r.status === "planned" ? "Planned — record time first (kiosk or Timekeeping)" : r.status === "no_show" ? "No Show — nothing to approve" : undefined}
                   />
                 </td>
                 <td>{r.workDate || "—"}</td>

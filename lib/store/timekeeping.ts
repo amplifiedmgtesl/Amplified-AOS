@@ -41,11 +41,13 @@ export function mealBreakOptions() {
  * stay byte-identical. Call it alongside computeTimeEntry on any path that
  * writes times.
  *
- * Only ever moves planned → submitted. Approved/rejected/submitted rows and
- * legacy NULL-status rows are returned untouched.
+ * Only ever moves planned → submitted, or no_show → submitted (#92: someone
+ * marked No Show who turns up late and punches in really did work).
+ * Approved/rejected/submitted rows and legacy NULL-status rows are returned
+ * untouched.
  */
 export function promoteWorkedStatus(entry: TimeEntry): TimeEntry {
-  if (entry.status !== "planned") return entry;
+  if (entry.status !== "planned" && entry.status !== "no_show") return entry;
   const worked = !!(entry.timeIn1 || entry.timeOut1 || entry.timeIn2 || entry.timeOut2);
   return worked ? { ...entry, status: "submitted" } : entry;
 }

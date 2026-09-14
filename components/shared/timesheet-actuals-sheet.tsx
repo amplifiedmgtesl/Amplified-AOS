@@ -45,12 +45,15 @@ export function TimesheetActualsSheet({
   form,
   dayFilter = "all",
   sort = "last",
+  includeNoShows = false,
 }: {
   form: JobRequest;
   /** "all", or a single YYYY-MM-DD. */
   dayFilter?: string;
   /** Row order (#80) — shared with the other two documents. */
   sort?: PrintSort;
+  /** #92: list no-shows under each day (names only). Off by default. */
+  includeNoShows?: boolean;
 }) {
   const [rows, setRows] = useState<TimeEntry[]>([]);
   const [captures, setCaptures] = useState<Map<string, TimesheetCapture>>(new Map());
@@ -101,12 +104,23 @@ export function TimesheetActualsSheet({
 
   // Group by work date, so the document reads day by day like the others.
   const byDay = new Map<string, TimeEntry[]>();
+  const noShowsByDay = new Map<string, TimeEntry[]>();
   for (const r of rows) {
     const d = r.workDate || "(no date)";
     if (dayFilter !== "all" && d !== dayFilter) continue;
+    // #92: a no-show is not hours worked — never a row on this record. When
+    // the option is on they are named under the day instead.
+    if (r.status === "no_show") {
+      if (includeNoShows) {
+        if (!noShowsByDay.has(d)) noShowsByDay.set(d, []);
+        noShowsByDay.get(d)!.push(r);
+      }
+      continue;
+    }
     if (!byDay.has(d)) byDay.set(d, []);
     byDay.get(d)!.push(r);
   }
+  for (const d of noShowsByDay.keys()) if (!byDay.has(d)) byDay.set(d, []);
   const dayKeys = Array.from(byDay.keys()).sort();
 
   function formatDay(iso: string): string {
@@ -129,6 +143,7 @@ export function TimesheetActualsSheet({
   }
 
   const totalHours = rows
+    .filter((r) => r.status !== "no_show")
     .filter((r) => dayFilter === "all" || (r.workDate || "(no date)") === dayFilter)
     .reduce((s, r) => s + Number(r.totalHours ?? 0), 0);
 
@@ -229,6 +244,12 @@ export function TimesheetActualsSheet({
                     );
                   })}
               </table>
+              {(noShowsByDay.get(dk)?.length ?? 0) > 0 && (
+                <div className="tas-noshows">
+                  <strong>No show:</strong>{" "}
+                  {noShowsByDay.get(dk)!.map(rowName).sort().join(", ")}
+                </div>
+              )}
             </section>
           );
         })

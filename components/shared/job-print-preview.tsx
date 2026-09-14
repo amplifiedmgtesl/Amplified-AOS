@@ -60,6 +60,8 @@ export default function JobPrintPreview({ id }: { id: string }) {
   const includeUnassigned = searchParams.get("unassigned") !== "0";
   const blankRows = Math.max(0, Math.min(20, Number(searchParams.get("blanks") ?? 0) || 0));
   const sort: PrintSort = parsePrintSort(searchParams.get("sort"));
+  // #92: default OFF — only "noshows=1" turns it on.
+  const includeNoShows = searchParams.get("noshows") === "1";
 
   const [job, setJob] = useState<JobRequest | null>(null);
   const [days, setDays] = useState<JobRequestDay[]>([]);
@@ -221,6 +223,17 @@ export default function JobPrintPreview({ id }: { id: string }) {
             </label>
           )}
 
+          {doc === "actuals" && (
+            <label className="ppa-check">
+              <input
+                type="checkbox"
+                checked={includeNoShows}
+                onChange={(e) => setParam("noshows", e.target.checked ? "1" : null)}
+              />
+              Include no-shows
+            </label>
+          )}
+
           {doc === "signin" && (
             <label title="Extra empty rows for walk-ups and last-minute replacements.">
               Blank rows:{" "}
@@ -248,7 +261,7 @@ export default function JobPrintPreview({ id }: { id: string }) {
         {doc === "signin" && (
           <CrewSignInSheet form={job} dayFilter={day} includeUnassigned={includeUnassigned} blankRows={blankRows} sort={sort} />
         )}
-        {doc === "actuals" && <TimesheetActualsSheet form={job} dayFilter={day} sort={sort} />}
+        {doc === "actuals" && <TimesheetActualsSheet form={job} dayFilter={day} sort={sort} includeNoShows={includeNoShows} />}
         {doc === "summary" && <JobPrintSheet form={job} />}
       </div>
     </div>

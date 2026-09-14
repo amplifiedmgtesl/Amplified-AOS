@@ -146,6 +146,8 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
   const [shiftsById, setShiftsById] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // #92: default OFF — the client-facing report doesn't name no-shows unless asked.
+  const [includeNoShows, setIncludeNoShows] = useState(false);
   const role = useUserRole();
   const roleBlocked = role != null && PRICING_BLOCKED_ROLES.has(role);
 
@@ -455,14 +457,29 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
         );
       })}
 
+      {includeNoShows && report.noShows.length > 0 ? (
+        <section className="preinv-noshows">
+          <h3 style={{ fontSize: "11pt", margin: "18px 0 6px" }}>No shows</h3>
+          {Array.from(new Set(report.noShows.map((n) => n.workDate))).map((d) => (
+            <div key={d} style={{ fontSize: "10pt" }}>
+              <strong>{d || "(no date)"}:</strong>{" "}
+              {report.noShows.filter((n) => n.workDate === d).map((n) => n.name).join(", ")}
+            </div>
+          ))}
+        </section>
+      ) : null}
+
       {/* Print button (hidden on print) */}
       <div className="print-actions hide-print">
         <button onClick={() => window.print()} style={{ padding: "8px 16px", fontSize: 14 }}>
           Print / Save as PDF
         </button>
-        <span className="muted" style={{ marginLeft: 12, fontSize: 12 }}>
-          Tip: in the print dialog, choose "Save as PDF" as the destination, and uncheck "Headers and footers" for clean output.
-        </span>
+        {report.noShows.length > 0 && (
+          <label style={{ marginLeft: 12, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <input type="checkbox" checked={includeNoShows} onChange={(e) => setIncludeNoShows(e.target.checked)} style={{ width: "auto" }} />
+            Include no-shows ({report.noShows.length})
+          </label>
+        )}
       </div>
 
       {/* Component-scoped styles — mirrors invoice-pdf-view.tsx */}
