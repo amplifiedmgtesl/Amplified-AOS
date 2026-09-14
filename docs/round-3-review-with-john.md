@@ -78,6 +78,7 @@ it's a prod payroll bug and belongs on a branch off `main`. Details in the backl
     quote-only lookup (`amplified-staff/lib/calc/rate-resolution.ts`) — **not changed**, so staff-app
     entries on a quote-less job still price the old way until mirrored.
     → **REVIEWED (John, 2026-09-14): keep, AND mirror into the staff app now** (own branch; step-2 fix).
+    ✅ Built: staff app `fix/staff-rate-lookup` — same chain; unresolved rates now 0 (Rate TBD), not 35/52/70.
 14. **#57 rate-card editors** refuse to save a row with neither an hourly nor a day rate (0 such rows in
     prod, so no existing card is blocked). ⚠ Prod has **143 rate-card rows** at exactly the old pre-fill
     ($35 / $350 / $52.50 / $70) — some may be real, many are probably untouched defaults. Worth a review.
@@ -93,6 +94,9 @@ it's a prod payroll bug and belongs on a branch off `main`. Details in the backl
     the required reason + Notes audit line.
     (b) No Show: drop the reason box — plain Yes/No confirm; Notes line still records who/when. Undo No
     Show unchanged.
+    (c) Access (John): everyone who had the old button keeps it — coordinators, payroll and /lead crew
+    leaders can now tick rows on a job timesheet, but their bar shows only Copy Planned.
+    ✅ Built on `fix/copy-planned-selection`.
 16. **#68 on Booked jobs:** days can change, which moves the job's start/end dates (DB trigger), but the
     **job number doesn't recompute** because the header is locked — a job re-dated after booking keeps
     its old number. Decide whether that's right.

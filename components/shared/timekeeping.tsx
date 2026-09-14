@@ -621,7 +621,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
       // Resolve the multiplier + rate card profile via the job's most recent
       // quote (the V2 snapshot pattern locks the rate card to the quote, so
       // this is the source of truth for what will be billed).
-      // ⚠ SYNCED COPY: this quote→rate-card→specialty resolution is mirrored in
+      // ⚠ SYNCED COPY: this quote→(job chain, #57)→rate-card→specialty resolution is mirrored in
       // the staff app at amplified-staff/lib/calc/rate-resolution.ts
       // (resolveEntryRates). Mirror any change there so staff timesheets price the
       // same way. See amplified-staff/docs/v2-alignment-plan.md.
