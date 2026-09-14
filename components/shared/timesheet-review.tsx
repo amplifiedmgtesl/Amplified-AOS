@@ -440,7 +440,9 @@ export default function TimesheetReview() {
                 <td>{r.otHours > 0 ? r.otHours.toFixed(1) : "—"}</td>
                 <td>{r.dtHours > 0 ? r.dtHours.toFixed(1) : "—"}</td>
                 <td><strong>{r.totalHours.toFixed(1)}</strong></td>
-                {!hideBill && <td>${r.billTotal.toFixed(2)}</td>}
+                {!hideBill && <td>{r.totalHours > 0 && r.billTotal === 0
+                  ? <span style={{ color: "#9a3412" }} title="No rate for this specialty on the job's rate card">Rate TBD</span>
+                  : `$${r.billTotal.toFixed(2)}`}</td>}
                 <td>{statusBadge(r)}{payrollLockBadge(r)}</td>
               </tr>
               );

@@ -195,17 +195,15 @@ function inferPairDatesLocal(
   return { in1Date, out1Date, in2Date, out2Date };
 }
 
-// Default position for a freshly-seeded row. Operator picks via the
-// cascading dropdown — this just keeps the row FK-clean from the start
-// (position_id is the source of truth post-Phase 3; "Stagehand" is the
-// canonical default position for event labor in this system).
-const DEFAULT_POSITION_ID = "pos-01";
-
+// A fresh row carries NO invented values (#57, #73, #106): no default
+// position — the operator must pick one, and time can't be entered until
+// they do — and bill rates of 0, which render as "Rate TBD" until choosing a
+// specialty snapshots the real rate-card rate.
 export function blankTimeEntry(id: string): TimeEntry {
   return computeTimeEntry({
     id,
-    position: "Stagehand",
-    positionId: DEFAULT_POSITION_ID,
+    position: "",
+    positionId: undefined,
     firstName: "",
     lastName: "",
     phone: "",
@@ -221,9 +219,9 @@ export function blankTimeEntry(id: string): TimeEntry {
     otHours: 0,
     dtHours: 0,
     totalHours: 0,
-    billStdRate: 35,
-    billOtRate: 52,
-    billDtRate: 70,
+    billStdRate: 0,
+    billOtRate: 0,
+    billDtRate: 0,
     billTotal: 0,
     status: "submitted",
     isHoliday: false,

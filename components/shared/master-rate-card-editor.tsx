@@ -97,14 +97,20 @@ export default function MasterRateCardEditor() {
     setRows((cur) => [...cur, {
       specialtyId: first?.id ?? "",
       department: posName, position: posName, specialty: first?.name ?? "",
-      hourly: 35, day: 350, otRate: 52.5, dtRate: 70,
-      // Pay rates default to 0 — admin enters them explicitly.
+      // #57: bill rates start EMPTY like pay rates — never a pre-filled number.
+      hourly: 0, day: 0, otRate: 0, dtRate: 0,
       payHourly: 0, payOtRate: 0, payDtRate: 0,
       otAfter: "none" as TriggerOption, dtAfter: "none" as TriggerOption, travel: 0, show: true,
     }]);
   }
 
   async function save() {
+    // #57: a row with no hourly AND no day rate is unpriced — refuse to save it.
+    const unpriced = rows.filter((r) => !(Number(r.hourly) > 0) && !(Number(r.day) > 0));
+    if (unpriced.length > 0) {
+      setStatusMsg({ text: `Can't save — ${unpriced.length} row${unpriced.length === 1 ? " has" : "s have"} no hourly or day rate: ${unpriced.slice(0, 5).map((r) => `${r.position} / ${r.specialty || "?"}`).join(", ")}${unpriced.length > 5 ? "…" : ""}.`, ok: false });
+      return;
+    }
     setSaving(true);
     try {
       const now = new Date().toISOString();

@@ -620,9 +620,24 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
           const v = q?.holiday_multiplier;
           tkPerf("multiplier query resolved → setJobHolidayMultiplier", { value: v });
           setJobHolidayMultiplier(v == null ? null : Number(v));
-          const rcId = q?.rate_card_profile_id;
+          // #57: a job with no quote used to get an EMPTY map here, so every
+          // row fell back to invented $35/52/70. A job must be runnable with no
+          // quote (#55), so fall back to the same chain the quote itself uses:
+          // the job's pinned card, else the client card effective on the start
+          // date, else the master default (resolveRateCardForJob).
+          const quoteRcId: string | undefined = q?.rate_card_profile_id;
+          const rcIdPromise: Promise<string | undefined> = quoteRcId
+            ? Promise.resolve(quoteRcId)
+            : import("@/lib/store/quotes")
+                .then(({ resolveRateCardForJob }) => resolveRateCardForJob(pickerKey))
+                .then((card) => {
+                  if (card && v == null) setJobHolidayMultiplier(card.holidayMultiplier);
+                  return card?.id;
+                })
+                .catch((e) => { console.error("[timekeeping] resolve rate card for job:", e); return undefined; });
+          void rcIdPromise.then((rcId) => {
           if (!rcId) {
-            tkPerf("no rate_card_profile_id on quote", {});
+            tkPerf("no rate card resolved for job", {});
             setRateCardBySpecialty(new Map());
             return;
           }
@@ -650,6 +665,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
               tkPerf("rate card rows resolved → setRateCardBySpecialty", { count: m.size });
               setRateCardBySpecialty(m);
             });
+          });
         });
     });
   }, [picker]);
@@ -2086,10 +2102,13 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                           : "Fallback rate stored on the row — no rate-card match for this specialty";
                         return (
                           <>
-                            <td className="hide-print" style={cellStyle} title={title}>{stdR}</td>
-                            <td className="hide-print" style={cellStyle} title={row.isHoliday ? "Inert on holiday rows — bill uses base × multiplier" : title}>{otR}</td>
-                            <td className="hide-print" style={cellStyle} title={row.isHoliday ? "Inert on holiday rows — bill uses base × multiplier" : title}>{dtR}</td>
-                            <td className="hide-print">${row.billTotal.toFixed(2)}</td>
+                            {/* #57: no rate is shown as TBD, never as an invented number. */}
+                            <td className="hide-print" style={cellStyle} title={title}>{stdR || "TBD"}</td>
+                            <td className="hide-print" style={cellStyle} title={row.isHoliday ? "Inert on holiday rows — bill uses base × multiplier" : title}>{otR || "TBD"}</td>
+                            <td className="hide-print" style={cellStyle} title={row.isHoliday ? "Inert on holiday rows — bill uses base × multiplier" : title}>{dtR || "TBD"}</td>
+                            <td className="hide-print">{!stdR && row.totalHours > 0
+                              ? <span style={{ color: "#9a3412" }} title="No rate for this specialty on the job's rate card">Rate TBD</span>
+                              : `$${row.billTotal.toFixed(2)}`}</td>
                           </>
                         );
                       })() : null}

@@ -146,8 +146,10 @@ export default function RateCardEditor() {
       department: posName,
       position: posName,
       specialty: first?.name ?? "",
-      hourly: 35, day: 350, otRate: 52.5, dtRate: 70,
-      // Pay rates default to 0 — admin enters them explicitly.
+      // #57: bill rates start EMPTY like pay rates — a pre-filled $35/$350
+      // saved unchanged becomes a real rate that reaches invoices (143 prod
+      // rows carried exactly those numbers on 2026-09-13).
+      hourly: 0, day: 0, otRate: 0, dtRate: 0,
       payHourly: 0, payOtRate: 0, payDtRate: 0,
       otAfter: "none", dtAfter: "none", travel: 0, show: true,
     }]);
@@ -156,6 +158,12 @@ export default function RateCardEditor() {
   function saveCurrentProfile() {
     if (mode === "none") {
       setStatusMsg("Pick a saved rate card or click + New Rate Card before saving.");
+      return;
+    }
+    // #57: a row with no hourly AND no day rate is unpriced — refuse to save it.
+    const unpriced = rows.filter((r) => !(Number(r.hourly) > 0) && !(Number(r.day) > 0));
+    if (unpriced.length > 0) {
+      setStatusMsg(`Can't save — ${unpriced.length} row${unpriced.length === 1 ? " has" : "s have"} no hourly or day rate: ${unpriced.slice(0, 5).map((r) => `${r.position} / ${r.specialty || "?"}`).join(", ")}${unpriced.length > 5 ? "…" : ""}.`);
       return;
     }
     // Uniqueness guard: enforces the same (client_id, lower(name), effective_date)

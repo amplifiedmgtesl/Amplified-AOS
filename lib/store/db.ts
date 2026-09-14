@@ -1290,12 +1290,11 @@ function rowToTimeEntry(r: any): import("./types").TimeEntry {
     dtHours: Number(r.dt_hours ?? 0),
     totalHours: Number(r.total_hours ?? 0),
     // Billing rates — renamed from std_rate/ot_rate/dt_rate/total_pay in
-    // migration 20260528b. NOT pay rates. The 35/52/70 default mirrors
-    // the legacy placeholder used by blankTimeEntry — operator overrides
-    // per row as needed.
-    billStdRate: Number(r.bill_std_rate) || 35,
-    billOtRate: Number(r.bill_ot_rate) || 52,
-    billDtRate: Number(r.bill_dt_rate) || 70,
+    // migration 20260528b. NOT pay rates. #57: a missing rate reads as 0
+    // ("Rate TBD" on screen), never as an invented $35/52/70.
+    billStdRate: Number(r.bill_std_rate ?? 0) || 0,
+    billOtRate: Number(r.bill_ot_rate ?? 0) || 0,
+    billDtRate: Number(r.bill_dt_rate ?? 0) || 0,
     billOtAfter: r.bill_ot_after == null ? null : Number(r.bill_ot_after),
     billDtAfter: r.bill_dt_after == null ? null : Number(r.bill_dt_after),
     billTotal: Number(r.bill_total ?? 0),
