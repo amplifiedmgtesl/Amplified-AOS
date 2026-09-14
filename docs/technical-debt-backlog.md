@@ -785,6 +785,29 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   selected day; pay/bill use the actual; nothing flags variance. Decide pay rule (actual vs snap to
   schedule unless approved); highlight actual-vs-planned variance beyond a tolerance in grid/Review; kiosk
   confirm when far from schedule (also the deferred block-2 mis-tap design).
+  **DECIDED (John, 2026-09-13): at minimum, FLAG it** — otherwise nobody knows the row needs checking.
+  Pay rule and any kiosk confirm wait for Connor. Scope of the flag:
+  - **Every capture path, not just the kiosk** — staff app self-entry, crew leader typing in the grid,
+    Copy, kiosk. An early/late time can be an accident on any of them.
+  - **Sign-in AND sign-out**, each against its planned time (per-person override, else day window).
+  - **Separate buffers for sign-in and sign-out** (e.g. in: 15 min early/late; out: 30 min).
+  - Shown in Timekeeping + Timesheet Review (and a Health Check), so the approver sees it.
+  - **Buffers configurable** — system-wide default with a possible per-job override. See #109.
+
+- **#109 — TODO: move business rules out of code into configurable settings** (John, 2026-09-13).
+  "Right now we have a lot of things configured in code… may want to make configurable instead of
+  making code changes. Or it could vary by job." Inventory found in code today (verify before building):
+  `PAYROLL_DAILY_MINIMUM_HOURS = 5`, `PAYROLL_WEEKLY_OT_THRESHOLD = 40`, `PAYROLL_OT_MULTIPLIER = 1.5`,
+  `PAYROLL_DT_MULTIPLIER = 2.0` (`payroll.ts:647–656`); `HOLIDAY_MULTIPLIER = 2.0` (`line-calc.ts:69`);
+  `DEFAULT_DAY_FLOOR_HOURS = 10` (`day-floor.ts`); `DEFAULT_DEPOSIT_PCT = 50` (`invoice-math.ts`);
+  kiosk rounding to nearest 5 min (`timeclock/time.ts:44`); kiosk day-window grace 120 min
+  (`planned-times.ts:112`); default meal break 30 min on new rows (`timekeeping.ts:218`, also #58);
+  default Expected Hours 10 (`job-detail.tsx`, `job-request-days-section.tsx`); crew export radius
+  100 mi (`crew-roster-export.ts`); plus the new #100 sign-in/sign-out buffers. Design: a settings
+  screen backed by `company_settings` (exists) for system defaults; per-job overrides only where a
+  real need exists (pay/bill rules may belong on the rate card or client instead); every rule read
+  from one resolver so code has no literals. ⚠ Pay-rule settings change wages — changes need an audit
+  trail (#108) and must not retroactively alter finalized payroll runs.
 - **#101 — Every kiosk punch re-upserts the entire timesheet** (all rows share one `updated_at`), so a
   kiosk tab left open overwrites grid edits made meanwhile with its stale copy. Punch should write only
   the punched row. Kiosk-blocking; pairs with #44 and #67.
