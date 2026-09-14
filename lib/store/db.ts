@@ -481,6 +481,31 @@ export function upsertTimesheet(row: Timesheet) {
   syncTimesheet(row);
 }
 
+/**
+ * Save ONE timesheet entry and wait for the result (#101, kiosk punches).
+ *
+ * upsertTimesheet re-upserts every row on the sheet in the background, so a
+ * single punch rewrote the whole timesheet and a failure was only an alert.
+ * A punch must touch only the punched row and must KNOW whether it saved,
+ * because the worker has just signed for it.
+ *
+ * Refuses staff-app-owned rows (user_id set): the whole-sheet sync silently
+ * skipped those, so a kiosk punch on one used to report success while writing
+ * nothing (#44). Returns an error message, or null on success.
+ */
+export async function saveTimesheetEntry(t: Timesheet, entryId: string): Promise<string | null> {
+  const idx = t.rows.findIndex((r) => r.id === entryId);
+  if (idx < 0) return "entry not found on this timesheet";
+  const entry = t.rows[idx];
+  if (entry.userId) return "this entry is managed in the staff app";
+  const { error } = await supabase
+    .from("timesheet_entries")
+    .upsert([timesheetEntryToRow(entry, t.id, t.jobId ?? null, entry.sortOrder ?? idx)], { onConflict: "id" });
+  if (error) return error.message;
+  _cache.timesheets = [..._cache.timesheets.filter((r) => r.id !== t.id), t];
+  return null;
+}
+
 // ─── Staff timesheet submission review ────────────────────────────────────────
 
 export async function approveStaffEntry(entryId: string, timesheetId: string): Promise<void> {

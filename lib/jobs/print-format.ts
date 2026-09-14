@@ -61,13 +61,21 @@ export function plannedRanges(
   a: Pick<JobRequestAssignment, "plannedIn1" | "plannedOut1" | "plannedIn2" | "plannedOut2">,
   day: Pick<JobRequestDay, "startTime" | "endTime" | "startTime2" | "endTime2"> | null | undefined,
 ): PrintRange[] {
+  return plannedBlocks(a, day).filter((r): r is PrintRange => r !== null);
+}
+
+/** The same as plannedRanges but kept by block: [block 1, block 2], null when
+ *  a block has nothing — for screens that label "Block 1" / "Block 2". */
+export function plannedBlocks(
+  a: Pick<JobRequestAssignment, "plannedIn1" | "plannedOut1" | "plannedIn2" | "plannedOut2">,
+  day: Pick<JobRequestDay, "startTime" | "endTime" | "startTime2" | "endTime2"> | null | undefined,
+): [PrintRange | null, PrintRange | null] {
   const { pair1, pair2 } = resolvePlannedTimes(a, day);
   const in1 = pair1.in, out1 = pair1.out, in2 = pair2.in, out2 = pair2.out;
   const [n1, n2, n3, n4] = nextDayFlags(in1, out1, in2, out2);
-  return [
-    { start: printTime(in1, !!a.plannedIn1, n1), end: printTime(out1, !!a.plannedOut1, n2) },
-    { start: printTime(in2, !!a.plannedIn2, n3), end: printTime(out2, !!a.plannedOut2, n4) },
-  ].filter(nonEmpty);
+  const b1: PrintRange = { start: printTime(in1, !!a.plannedIn1, n1), end: printTime(out1, !!a.plannedOut1, n2) };
+  const b2: PrintRange = { start: printTime(in2, !!a.plannedIn2, n3), end: printTime(out2, !!a.plannedOut2, n4) };
+  return [nonEmpty(b1) ? b1 : null, nonEmpty(b2) ? b2 : null];
 }
 
 /** The day window's own blocks (no overrides possible). */

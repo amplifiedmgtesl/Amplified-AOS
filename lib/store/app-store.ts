@@ -79,6 +79,7 @@ export function loadJobSheets(): JobSheet[] { return db.getJobSheets(); }
 export function loadTimesheets(): Timesheet[] { return db.getTimesheets(); }
 export function saveTimesheets(rows: Timesheet[]) { db.setTimesheets(rows); }
 export function upsertTimesheet(row: Timesheet) { db.upsertTimesheet(row); }
+export async function saveTimesheetEntry(t: Timesheet, entryId: string) { return db.saveTimesheetEntry(t, entryId); }
 
 export async function getAllStaffReviewEntries() { return db.getAllStaffReviewEntries(); }
 export async function approveStaffEntry(entryId: string, timesheetId: string) { return db.approveStaffEntry(entryId, timesheetId); }

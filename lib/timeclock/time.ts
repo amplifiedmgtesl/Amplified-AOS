@@ -19,29 +19,34 @@ export function deviceTimeZone(): string {
   }
 }
 
-/** Wall-clock hour/minute for `date` in `timeZone` (device local when falsy). */
-function wallClockParts(date: Date, timeZone?: string): { hour: number; minute: number } {
+/** Wall-clock hour/minute/second for `date` in `timeZone` (device local when falsy). */
+function wallClockParts(date: Date, timeZone?: string): { hour: number; minute: number; second: number } {
   const fmt = new Intl.DateTimeFormat("en-US", {
     hour: "2-digit",
     minute: "2-digit",
+    second: "2-digit",
     hour12: false,
     ...(timeZone ? { timeZone } : {}),
   });
   let hour = 0;
   let minute = 0;
+  let second = 0;
   for (const p of fmt.formatToParts(date)) {
     if (p.type === "hour") hour = Number(p.value);
     if (p.type === "minute") minute = Number(p.value);
+    if (p.type === "second") second = Number(p.value);
   }
   // hour12:false can emit "24" for midnight in some engines — normalize.
   if (hour === 24) hour = 0;
-  return { hour, minute };
+  return { hour, minute, second };
 }
 
 /** Round a captured instant to the nearest 5 minutes; return "HH:MM" (24h). */
 export function roundInstantToTimeString(date: Date, timeZone?: string): string {
-  const { hour, minute } = wallClockParts(date, timeZone);
-  let total = Math.round((hour * 60 + minute) / 5) * 5; // nearest 5-min
+  const { hour, minute, second } = wallClockParts(date, timeZone);
+  // #97: seconds count. Dropping them rounded 2:52:58 down to 2:50 — every
+  // punch between :x2:30 and :x2:59 lost 5 minutes, always against the worker.
+  let total = Math.round((hour * 60 + minute + second / 60) / 5) * 5; // nearest 5-min
   total = ((total % 1440) + 1440) % 1440;               // wrap within the day
   const h = Math.floor(total / 60);
   const m = total % 60;

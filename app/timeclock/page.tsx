@@ -46,7 +46,7 @@ import {
   loadJobRequests,
   loadSpecialties,
   loadTimesheetForJobLive,
-  upsertTimesheet,
+  saveTimesheetEntry,
 } from "@/lib/store/app-store";
 import { computeTimeEntry, promoteWorkedStatus } from "@/lib/store/timekeeping";
 import type { JobRequest, JobRequestDay, TimeEntry, Timesheet } from "@/lib/store/types";
@@ -55,8 +55,10 @@ import { deviceLocalDate, deviceTimeZone, roundInstantToTimeString } from "@/lib
 import { uploadSignature, upsertCapture } from "@/lib/storage/timesheet-captures";
 import { loadJobCrewSlots, type JobCrewSlot } from "@/lib/storage/job-request-assignments";
 import { loadJobRequestDays } from "@/lib/storage/job-request-days";
-import { dayWindowContains, resolvePlannedTimes } from "@/lib/jobs/planned-times";
-import { formatClock, formatClockRange } from "@/lib/time-utils";
+import { loadShifts } from "@/lib/storage/job-request-shifts";
+import { plannedBlocks, printRangeText, sortForPrint, parsePrintSort, PRINT_SORT_LABEL, type PrintSort, type PrintRange } from "@/lib/jobs/print-format";
+import { dayWindowContains } from "@/lib/jobs/planned-times";
+import { formatClock } from "@/lib/time-utils";
 
 type Slot = "in1" | "out1" | "in2" | "out2";
 type SlotState = "available" | "done" | "disabled";
@@ -77,6 +79,15 @@ function slotStates(e: TimeEntry): Record<Slot, SlotState> {
     in2: in2 ? "done" : !out2 && (nothing || out1) ? "available" : "disabled",
     out2: out2 ? "done" : in2 && !out2 ? "available" : "disabled",
   };
+}
+
+/** A planned block for the kiosk: "(+1)" on next-day times (#77), no override
+ *  stars — the worker only needs their time, not how it was set. */
+function kioskRangeText(r: PrintRange): string {
+  return printRangeText({
+    start: r.start ? { ...r.start, override: false } : null,
+    end: r.end ? { ...r.end, override: false } : null,
+  });
 }
 
 function rowName(e: TimeEntry): string {
@@ -125,6 +136,17 @@ export default function TimeClockPage() {
   // (employee|date|shift). Empty map is survivable — the screen just shows
   // "not scheduled" rather than failing.
   const [crewSlots, setCrewSlots] = useState<Map<string, JobCrewSlot>>(new Map());
+  // #106: how many active shifts the job has — shift is required only at 2+.
+  const [shiftCount, setShiftCount] = useState(0);
+  // #80: roster sort, remembered on this device. Default last name.
+  const [sort, setSort] = useState<PrintSort>("last");
+  useEffect(() => {
+    try { setSort(parsePrintSort(localStorage.getItem("aos.kiosk.sort"))); } catch { /* storage unavailable */ }
+  }, []);
+  function changeSort(next: PrintSort) {
+    setSort(next);
+    try { localStorage.setItem("aos.kiosk.sort", next); } catch { /* storage unavailable */ }
+  }
 
   // Signature modal state. pendingPunch carries the FROZEN instant (#52).
   const [sigOpen, setSigOpen] = useState(false);
@@ -164,12 +186,13 @@ export default function TimeClockPage() {
     setSelectedRowId(null);
     setDay("");
     setCrewSlots(new Map());
+    setShiftCount(0);
     if (!id) return;
     setLoading(true);
     try {
       // Roster and schedule together — the schedule is what makes the punch
       // buttons meaningful, so don't render the roster without it.
-      const [ts, slots, dayRows] = await Promise.all([
+      const [ts, slots, dayRows, shiftRows] = await Promise.all([
         loadTimesheetForJobLive(id),
         loadJobCrewSlots(id).catch((e) => {
           console.error("[timeclock] loadJobCrewSlots failed:", e);
@@ -179,7 +202,12 @@ export default function TimeClockPage() {
           console.error("[timeclock] loadJobRequestDays failed:", e);
           return [] as JobRequestDay[];
         }),
+        loadShifts(id).catch((e) => {
+          console.error("[timeclock] loadShifts failed:", e);
+          return [];
+        }),
       ]);
+      setShiftCount(shiftRows.length);
       setTimesheet(ts);
       setCrewSlots(new Map(slots.map((s) => [slotKey(s.employeeKey, s.eventDate, s.shiftId), s])));
 
@@ -220,10 +248,17 @@ export default function TimeClockPage() {
   const days = distinctDays(timesheet);
   const rows = useMemo(() => {
     if (!timesheet) return [];
-    return timesheet.rows
-      .filter((r) => (r.workDate || "no-date") === day)
-      .sort((a, b) => rowName(a).localeCompare(rowName(b)));
-  }, [timesheet, day]);
+    return sortForPrint(
+      timesheet.rows.filter((r) => (r.workDate || "no-date") === day),
+      sort,
+      (r) => ({
+        firstName: r.firstName ?? "",
+        lastName: r.lastName ?? "",
+        position: r.position ?? "",
+        specialty: r.specialtyId ? specialtyName.get(r.specialtyId) ?? "" : "",
+      }),
+    );
+  }, [timesheet, day, sort, specialtyName]);
 
   const selectedRow = rows.find((r) => r.id === selectedRowId) || null;
 
@@ -254,9 +289,26 @@ export default function TimeClockPage() {
   const plannedFor = useCallback((r: TimeEntry): [string, string] => {
     const s = slotFor(r);
     if (!s) return ["", ""];
-    const { pair1, pair2 } = resolvePlannedTimes(s, s);
-    return [formatClockRange(pair1.in, pair1.out), formatClockRange(pair2.in, pair2.out)];
+    // Same resolver as the printed documents, kept by block (#77: "(+1)").
+    const [b1, b2] = plannedBlocks(
+      { plannedIn1: s.plannedIn1 ?? undefined, plannedOut1: s.plannedOut1 ?? undefined,
+        plannedIn2: s.plannedIn2 ?? undefined, plannedOut2: s.plannedOut2 ?? undefined },
+      { startTime: s.startTime ?? undefined, endTime: s.endTime ?? undefined,
+        startTime2: s.startTime2 ?? undefined, endTime2: s.endTime2 ?? undefined },
+    );
+    return [b1 ? kioskRangeText(b1) : "", b2 ? kioskRangeText(b2) : ""];
   }, [slotFor]);
+
+  /** #106: what a row is missing before anyone may punch on it. */
+  const roleGaps = useCallback((r: TimeEntry): string[] => {
+    const gaps: string[] = [];
+    if (!r.positionId) gaps.push("position");
+    let positionHasSpecialties = false;
+    try { positionHasSpecialties = loadSpecialties().some((sp) => sp.positionId === r.positionId); } catch { /* cache warming */ }
+    if (r.positionId && positionHasSpecialties && !r.specialtyId) gaps.push("specialty");
+    if (shiftCount >= 2 && !r.shiftId) gaps.push("shift");
+    return gaps;
+  }, [shiftCount]);
 
   function flash(msg: string) {
     setToast(msg);
@@ -326,7 +378,13 @@ export default function TimeClockPage() {
       const nextRows = fresh.rows.map((r) =>
         (r.id === entry.id ? promoteWorkedStatus(computeTimeEntry({ ...r, ...patch })) : r));
       const nextTs: Timesheet = { ...fresh, rows: nextRows };
-      upsertTimesheet(nextTs); // updates shared cache + syncs to DB in background
+      // #101: write ONLY this row, and wait for it. The worker is about to be
+      // told the punch is recorded — it has to actually be recorded first.
+      const saveError = await saveTimesheetEntry(nextTs, entry.id);
+      if (saveError) {
+        flash(`Punch NOT recorded — ${saveError}. See your crew leader.`);
+        return;
+      }
 
       // Upload signature (sign-ins only), then write the audit/capture row.
       let signaturePath: string | undefined;
@@ -358,6 +416,11 @@ export default function TimeClockPage() {
   const label: React.CSSProperties = { color: "#94a3b8", fontSize: 13, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 };
 
   const selectedPlanned = selectedRow ? plannedFor(selectedRow) : ["", ""] as [string, string];
+  // #106: same rule as the grid — no punching on a row with no role, unless it
+  // already carries time (so an open shift can still be closed).
+  const selectedGaps = selectedRow ? roleGaps(selectedRow) : [];
+  const selectedBlocked = !!selectedRow && selectedGaps.length > 0
+    && !(selectedRow.timeIn1 || selectedRow.timeOut1 || selectedRow.timeIn2 || selectedRow.timeOut2);
   const selectedSlot = selectedRow ? slotFor(selectedRow) : null;
 
   return (
@@ -404,6 +467,18 @@ export default function TimeClockPage() {
               style={{ width: "100%", marginTop: 6, padding: "10px 12px", fontSize: 15, borderRadius: 8, border: "1px solid #475569", background: "#0f172a", color: "#e2e8f0" }}
             >
               {days.map((d) => <option key={d} value={d}>{d === "no-date" ? "No date" : d}</option>)}
+            </select>
+          </div>
+        )}
+        {timesheet && (
+          <div style={{ flex: "0 1 200px" }}>
+            <div style={label}>Sort</div>
+            <select
+              value={sort}
+              onChange={(e) => changeSort(parsePrintSort(e.target.value))}
+              style={{ width: "100%", marginTop: 6, padding: "10px 12px", fontSize: 15, borderRadius: 8, border: "1px solid #475569", background: "#0f172a", color: "#e2e8f0" }}
+            >
+              {(Object.keys(PRINT_SORT_LABEL) as PrintSort[]).map((k) => <option key={k} value={k}>{PRINT_SORT_LABEL[k]}</option>)}
             </select>
           </div>
         )}
@@ -514,12 +589,16 @@ export default function TimeClockPage() {
           <p style={{ color: "#94a3b8", margin: "0 0 4px", fontSize: 14 }}>
             {[selectedRow.position, selectedRow.specialtyId ? specialtyName.get(selectedRow.specialtyId) : ""].filter(Boolean).join(" · ")}
           </p>
-          <p style={{ color: "#64748b", margin: "0 0 18px", fontSize: 13 }}>
-            {formatWorkDate(selectedRow.workDate || day)}
-            {(selectedPlanned[0] || selectedPlanned[1])
-              ? ` · scheduled ${[selectedPlanned[0], selectedPlanned[1]].filter(Boolean).join(" · ")}`
-              : " · no scheduled time on file"}
-          </p>
+          {/* #96: the date + full schedule line that sat here repeated the header
+              and the block labels. #106: a row with no role can't be punched —
+              the one message that does belong on screen. */}
+          {selectedBlocked ? (
+            <div style={{ margin: "10px 0 18px", padding: "12px 14px", borderRadius: 10, background: "#3b2410", border: "1px solid #b45309", color: "#fde68a", fontSize: 16, fontWeight: 700 }}>
+              No {selectedGaps.join(" / ")} set — see your crew leader.
+            </div>
+          ) : (
+            <div style={{ height: 14 }} />
+          )}
 
           {/* #49/#53: the two blocks are separated and each is labelled with
               its own planned window, so "which button do I press" is answered
@@ -543,7 +622,7 @@ export default function TimeClockPage() {
                       const st = slotStates(selectedRow)[slot];
                       const timeVal = selectedRow[slot === "in1" ? "timeIn1" : slot === "out1" ? "timeOut1" : slot === "in2" ? "timeIn2" : "timeOut2"];
                       const isIn = slot === "in1" || slot === "in2";
-                      const disabled = st !== "available" || busy;
+                      const disabled = st !== "available" || busy || selectedBlocked;
                       const bg = st === "done" ? "#14532d" : st === "available" ? (isIn ? "#2563eb" : "#b45309") : "#1e293b";
                       const border = st === "available" ? "none" : "1px solid #334155";
                       return (
