@@ -721,9 +721,19 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
       // FIRST unfilled slot per day/shift ever landed, so even the count
       // was arbitrary. Skip them and say how many were skipped.
       const unfilled = slots.filter((s) => !s.employeeKey).length;
+      // #71: hard stop per day — a day with no time window has no schedule for
+      // the kiosk, the printed sheets or Copy planned → actual to work from.
+      // Days that do have times still import; the refused days are named.
+      const noWindowDays = Array.from(new Set(
+        slots
+          .filter((s) => !(s.startTime && s.endTime) && !(s.startTime2 && s.endTime2))
+          .map((s) => s.eventDate)
+          .filter(Boolean),
+      )).sort();
       const additions: TimeEntry[] = [];
       slots.forEach((slot, idx) => {
         if (!slot.employeeKey) return;
+        if (noWindowDays.includes(slot.eventDate)) return;
         const key = `${slot.employeeKey}|${slot.eventDate}|${shiftKey(slot.shiftId)}`;
         if (seen.has(key)) return;
         const emp = slot.employeeKey ? employees.find((e) => e.employeeKey === slot.employeeKey) : null;
@@ -775,6 +785,10 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
         }));
         seen.add(key);
       });
+      if (additions.length === 0 && noWindowDays.length > 0) {
+        alert(`Can't add crew for ${noWindowDays.join(", ")} — ${noWindowDays.length === 1 ? "that day has" : "those days have"} no start/end times. Set them on the Job Request → Daily Requirements tab first.`);
+        return;
+      }
       if (additions.length === 0) {
         alert(unfilled > 0
           ? `Nothing to add. ${unfilled} crew assignment${unfilled === 1 ? " has" : "s have"} no employee picked yet — set those on the Job Request → Assigned Crew tab. Everyone else is already on this timesheet.`
@@ -813,6 +827,9 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
         alert(`Skipping ${unfilled} crew assignment${unfilled === 1 ? "" : "s"} with no employee picked yet — set those on the Job Request → Assigned Crew tab.`);
       }
       persist({ ...timesheet, rows: [...timesheet.rows, ...additions] });
+      if (noWindowDays.length > 0) {
+        alert(`Added ${additions.length} row${additions.length === 1 ? "" : "s"}. Not added: ${noWindowDays.join(", ")} — no start/end times. Set them on Daily Requirements, then run Add Crew from Job again.`);
+      }
     } catch (e) {
       console.error("[timekeeping] addCrewFromJob failed:", e);
       alert("Couldn't load crew assignments — see console for details.");
