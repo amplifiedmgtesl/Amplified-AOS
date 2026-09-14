@@ -1787,10 +1787,11 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                     // locked (also can't be un-approved) — visually the same here.
                     const isLocked = row.status === "approved";
                     const lockedClass = isLocked ? " line-locked" : "";
-                    // #106: no time without a role. Locked rows already carry
-                    // time; the gate only applies to rows still being filled in.
+                    // #106: no time without a role — a complete lock, including
+                    // rows that already carry time (John, 2026-09-14: prod has
+                    // only old rows in that state, none current).
                     const roleGaps = isLocked ? [] : missingRole(row);
-                    const timeBlocked = roleGaps.length > 0 && !(row.timeIn1 || row.timeOut1 || row.timeIn2 || row.timeOut2);
+                    const timeBlocked = roleGaps.length > 0;
                     return (
                     <tbody key={row.id} className={`line-employee ${isCollapsed ? "is-collapsed-day" : ""}`} data-day={row.workDate || "no-date"}>
                     <tr className={`line-row ${band}${unlinked ? " line-unlinked" : ""}${lockedClass}`} style={isLocked ? { opacity: 0.85 } : undefined}>

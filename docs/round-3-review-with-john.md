@@ -47,8 +47,9 @@ it's a prod payroll bug and belongs on a branch off `main`. Details in the backl
 
 ## Batch 2 (built after the review, 2026-09-13 late) — calls to check
 
-11. **Rows that already carry time aren't locked by #106** (grid and kiosk), so an open shift can still
-    be closed and legacy rows can be corrected. The block only stops the FIRST time going in.
+11. ~~Rows that already carry time aren't locked by #106~~ → **REVIEWED (John, 2026-09-14): lock
+    completely**, including rows with time, in the grid and at the kiosk. Prod check: of 3,038 rows with
+    time, 85 unapproved ones miss position/specialty, only 2 from the last 30 days — old jobs.
 12. **#71 import:** days with times import; days without are skipped and named. The whole import is only
     refused when every day lacks times — a multi-day job with one unscheduled future day still imports.
 13. **#57 Timekeeping rate card when the job has no quote:** now uses the job chain (pin → client card

@@ -416,11 +416,10 @@ export default function TimeClockPage() {
   const label: React.CSSProperties = { color: "#94a3b8", fontSize: 13, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 };
 
   const selectedPlanned = selectedRow ? plannedFor(selectedRow) : ["", ""] as [string, string];
-  // #106: same rule as the grid — no punching on a row with no role, unless it
-  // already carries time (so an open shift can still be closed).
+  // #106: same rule as the grid — no punching at all on a row with no role,
+  // even one already signed in (complete lock, John 2026-09-14).
   const selectedGaps = selectedRow ? roleGaps(selectedRow) : [];
-  const selectedBlocked = !!selectedRow && selectedGaps.length > 0
-    && !(selectedRow.timeIn1 || selectedRow.timeOut1 || selectedRow.timeIn2 || selectedRow.timeOut2);
+  const selectedBlocked = !!selectedRow && selectedGaps.length > 0;
   const selectedSlot = selectedRow ? slotFor(selectedRow) : null;
 
   return (
