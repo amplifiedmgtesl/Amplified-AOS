@@ -812,9 +812,13 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   real need exists (pay/bill rules may belong on the rate card or client instead); every rule read
   from one resolver so code has no literals. ⚠ Pay-rule settings change wages — changes need an audit
   trail (#108) and must not retroactively alter finalized payroll runs.
-- **#101 — Every kiosk punch re-upserts the entire timesheet** (all rows share one `updated_at`), so a
-  kiosk tab left open overwrites grid edits made meanwhile with its stale copy. Punch should write only
-  the punched row. Kiosk-blocking; pairs with #44 and #67.
+- **#101 — Every kiosk punch re-upserts the entire timesheet** (all rows share one `updated_at`).
+  **Correction (read the code while fixing):** `applyPunch` reloads the timesheet fresh from the DB
+  immediately before writing, so an open kiosk tab does NOT overwrite older grid edits — the risk is a
+  near-simultaneous edit, not a stale tab. The real defects were: every row rewritten, the save was
+  fire-and-forget (the worker was told "recorded" before it saved), and staff-app-owned rows were
+  silently skipped (#44). **FIXED on `fix/phase0-round3`:** single-row awaited save, "Punch NOT
+  recorded" on failure, staff-owned rows refused.
 
 **Ideas raised this run**
 
@@ -891,6 +895,12 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   touched rows — an older pending entry can be invisible. Its payroll lookup also passes every id in
   one `.in()`. Same class as the 1,000-row cache truncation; fix with server-side filtering (status /
   date range) or paging. Found while building #107, not fixed.
+
+- **#111 — TODO: copy production data down to dev for testing** (John, 2026-09-13). **Do it the next
+  time the dev and prod schemas match** (i.e. right after a promotion applies the pending migrations).
+  Plan before doing it: prod holds employee PII and ID-scan files (storage buckets), auth users, and
+  signatures — decide what to copy, scrub or leave; keep dev's own test logins; never point anything
+  back at prod. Makes tests run against real job shapes (e.g. FARMTOUR-sized days) instead of seeds.
 
 **Not yet tested (runs tonight/next):** kiosk Time Out 2 before midnight (Freeman) and after midnight
 (Dickens) — day selection after midnight and the "open sign-in on another day" warning.

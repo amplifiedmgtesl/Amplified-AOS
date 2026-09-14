@@ -44,6 +44,33 @@ it's a prod payroll bug and belongs on a branch off `main`. Details in the backl
 10. **Import with no position now imports blank** instead of "Stagehand" (#73). Approval already
     refuses rows missing position/specialty, so it can't be approved that way.
 
+## Batch 2 (built after the review, 2026-09-13 late) — calls to check
+
+11. **Rows that already carry time aren't locked by #106** (grid and kiosk), so an open shift can still
+    be closed and legacy rows can be corrected. The block only stops the FIRST time going in.
+12. **#71 import:** days with times import; days without are skipped and named. The whole import is only
+    refused when every day lacks times — a multi-day job with one unscheduled future day still imports.
+13. **#57 Timekeeping rate card when the job has no quote:** now uses the job chain (pin → client card
+    effective on the start date → master default). ⚠ The staff app carries a synced copy of the old
+    quote-only lookup (`amplified-staff/lib/calc/rate-resolution.ts`) — **not changed**, so staff-app
+    entries on a quote-less job still price the old way until mirrored.
+14. **#57 rate-card editors** refuse to save a row with neither an hourly nor a day rate (0 such rows in
+    prod, so no existing card is blocked). ⚠ Prod has **143 rate-card rows** at exactly the old pre-fill
+    ($35 / $350 / $52.50 / $70) — some may be real, many are probably untouched defaults. Worth a review.
+15. **Copy planned → actual dialog** defaults to "Selected rows" when rows are ticked, otherwise the
+    first expanded day. No Show and Undo use simple browser prompts (reason optional).
+16. **#68 on Booked jobs:** days can change, which moves the job's start/end dates (DB trigger), but the
+    **job number doesn't recompute** because the header is locked — a job re-dated after booking keeps
+    its old number. Decide whether that's right.
+17. **#107:** office/remote time (no job) skips the position and shift checks in Review.
+18. **Kiosk sort default is Last name**, remembered per device.
+19. **#101 was overstated** — see the backlog correction: the kiosk already reloaded fresh before a
+    punch, so an open tab didn't overwrite grid edits. The fix still matters (single-row, awaited save).
+
+Built in batch 2: #57, #68, #71 (import), #92, #97, #98, #101, #106, #107, kiosk sort, kiosk (+1),
+kiosk text. Tests 208/208 (12 new). Found and logged, not fixed: #110 (Review loads ≤1,000 entries),
+#111 (copy prod to dev when schemas match).
+
 ## Built (batch 1)
 
 #69, #70, #71 (print), #72, #73, #74, #75, #76, #77, #78, #80, #81, #82, #83, #84, #86, #87, #88, #89,
