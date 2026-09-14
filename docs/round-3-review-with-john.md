@@ -1,14 +1,22 @@
 # Round 3 fixes — decisions to review with John
 
-> ## ▶ RESUME HERE (stopped 2026-09-14 ~12:10 AM)
-> - **Review of judgement calls:** 1–11 done (11 changed to "lock completely"). **Next: call 12** (#71
->   import skips no-window days vs. block the whole import), then 13–19.
-> - **Kiosk test:** finished and passed (see backlog "Kiosk midnight test").
-> - **Branch `fix/phase0-round3`:** local only in `Amplified-AOS`, **not pushed** (needs John's "push"),
->   not merged to dev. Local `dev` is also 1 commit ahead of origin (backlog notes `1a98d90`).
-> - **After calls 12–19:** push → merge to dev → re-seed test job (per #85: no quote in seed; quote
->   created in-app as step 1; second no-quote job) → full re-test from step 1 including the new items.
-> - **Tabled / waiting:** #105 prod day rate_mode (trigger Oct 13), #100 (Connor), #108, #109, #110, #111.
+> ## ▶ RESUME HERE (updated 2026-09-14 morning — merged to dev)
+> **State:** all round-3 fixes (batches 1 + 2) are MERGED to `dev` and on the dev preview. Kiosk
+> midnight test from the previous round passed (backlog). Nothing below is browser-verified yet.
+>
+> **Plan for the new session, in order:**
+> 1. **John answers judgement calls 12–19** below, one at a time (1–11 are done; 11 = "lock completely").
+> 2. **Fix whatever calls 12–19 change** — branch per task off `dev`, then merge.
+> 3. **Update the test seed per #85:** no quote in `supabase/seeds/kiosk-test-job.sql` (the placeholder
+>    quote goes); Create Quote from Daily Requirements + issue it becomes test step 1; add a second
+>    seeded job that never gets a quote (#55/#57 "Rate TBD"). Day 1 = the day of testing.
+> 4. **Re-seed dev on the morning of testing** (block 2 crosses midnight — the fixture expires daily).
+> 5. **Full re-test from step 1**, one step at a time, covering the old script plus everything in
+>    "To test after merge" at the bottom of this doc.
+>
+> **Tabled / waiting:** #105 prod day `rate_mode` (trigger: day-rate quote on a post-8/30 job, or
+> Oct 13), #100 early/late flag (Connor + #109), #108 audit trail, #109 settings, #110 Review
+> 1,000-row cap, #111 copy prod→dev when schemas match, staff-app mirror of the #57 rate lookup.
 
 Branch `fix/phase0-round3` (off `dev`). Built unattended on 2026-09-13 while the kiosk midnight
 sign-outs were still running on the dev preview. **Not pushed, not merged** — the push was blocked
@@ -104,3 +112,13 @@ Planned badge + counts + Reject guard; Review sort and "Any date"; Staff time fi
 button; Sort; `*`, key and `(+1)`; phone format; `(unassigned)` on both sheets; Print blocked for a
 no-window day; filenames; **landscape by default in Safari**; nothing clipped at the right edge; a
 person's two rows never split across pages.
+
+Batch 2 additions: "Rate TBD" instead of $35 (grid + Review); a job with no quote still gets rate-card
+rates; rate-card editors refuse an unpriced row; time locked on rows missing position / specialty /
+(2+ shifts) shift — grid AND kiosk; single-shift jobs fill the shift automatically; Review approve
+refuses rows missing a role; Copy planned → actual dialog (day or selected rows, required reason,
+Notes line on the job); No Show mark/undo + Notes line, Review filter, late punch lifts it, "Include
+no-shows" on Actuals + pre-invoice (default off); Daily Requirements editable on a Booked job; can't
+delete/re-date a day with timesheet rows; delete-day confirm names crew needs + assigned crew; Add Crew
+from Job skips no-window days; kiosk rounding with seconds, "Punch NOT recorded" on a failed save,
+"No position set — see your crew leader", kiosk Sort, (+1) on kiosk times.
