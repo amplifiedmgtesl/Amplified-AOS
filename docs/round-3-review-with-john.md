@@ -2,7 +2,8 @@
 
 Branch `fix/phase0-round3` (off `dev`). Built unattended on 2026-09-13 while the kiosk midnight
 sign-outs were still running on the dev preview. **Not pushed, not merged** — the push was blocked
-pending John's OK, and merging to dev mid-test would have changed the preview under him.
+pending John's OK, and merging to dev mid-test would have changed the preview under him. Batch 1
+excluded the kiosk; batch 2 (below) includes it, still local only.
 
 Typecheck clean; unit suite **196/196** (22 new, `tests/jobs/print-format.test.ts`). **No browser
 verification** — the app needs a login, which I can't do — so every screen change below is
@@ -77,11 +78,13 @@ kiosk text. Tests 208/208 (12 new). Found and logged, not fixed: #110 (Review lo
 #90, #91, #92 (Reject guard only), #93, #94, #96 (non-kiosk screens touched), #99, seed (`rate_mode`,
 corrected crew-needs comment).
 
-## Not built — needs you
+## Not built — still open
 
-#67 stale data / #101 kiosk whole-timesheet write · #68 editable days on Booked + delete-day rules ·
-#71 import + kiosk stops · #85 real quote in the seed · #92 No Show status · #97 kiosk rounding ·
-#98 Copy reason + activity log · #100 early/late policy · #102–#104 ideas · #105 prod day rate_mode.
+#67 stale screen data (architectural) · #85 next-round seed (quote created in-app; second no-quote job)
+· #100 early/late flag (waits on Connor + #109 settings) · #102–#104 ideas · #105 prod day `rate_mode`
+(tabled, trigger Oct 13) · #108 audit trail project · #109 configurable business rules · #110 Review
+1,000-row cap · #111 copy prod to dev · #44/#45 staff app ownership · staff-app mirror of the #57 rate
+lookup.
 
 ## To test after merge
 
