@@ -676,7 +676,15 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   Architectural — pairs with the de-cache project. See also #101.
 - **#68 — DECIDED: Daily Requirements must stay editable on Booked jobs.** `job-detail.tsx:403` locks
   everything but status + crew once status ≠ lead. ⚠ Unlock ONLY days/crew needs — Notes must stay
-  locked (#98 appends its audit lines there). ⚠ Design with it: what deleting a day does when
+  locked (#98 appends its audit lines there).
+  **Delete / re-date rules DECIDED (John, 2026-09-13):** (1) a day with ANY timesheet rows on its date
+  can't be deleted or have its date changed — "9/14 has 3 timesheet rows — remove or move them in
+  Timekeeping first"; (2) a day with assignments but no timesheet rows can be deleted, and the confirm
+  names everything that goes with it ("…also removes 34 crew needs and 12 assigned crew") — today it
+  only mentions crew needs although assignments cascade too (`20260503c` ON DELETE CASCADE);
+  (3) times, crew needs, rate mode etc. stay freely editable. Why: timesheet rows link by job + date,
+  not day id, so a deleted/re-dated day orphans them (payroll's day-rate lookup then finds no day).
+  ⚠ Original note: what deleting a day does when
   timesheet rows exist on it; and the Create Quote button is hidden on locked jobs, so a Booked job with no
   quote has no quote button at all (ties to #55).
 - **#69 — DECIDED: planned-time inputs show the effective time greyed; Safari renders empty
