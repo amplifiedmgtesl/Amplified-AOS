@@ -885,6 +885,12 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   bill rates, so the wrong snapshot is display-only (grid, Review) — the rate-card pre-fill is the one
   that can reach invoices.
 - **#80 addendum — the kiosk gets a Sort choice too** (Last / First / Position-Specialty).
+- **#110 — Timesheet Review loads at most 1,000 entries.** `getAllStaffReviewEntries` (`db.ts:541`)
+  selects every `timesheet_entries` row with no range, ordered by `updated_at` desc; PostgREST caps a
+  select at 1,000 rows and prod has 3,383. So Review silently shows only the 1,000 most recently
+  touched rows — an older pending entry can be invisible. Its payroll lookup also passes every id in
+  one `.in()`. Same class as the 1,000-row cache truncation; fix with server-side filtering (status /
+  date range) or paging. Found while building #107, not fixed.
 
 **Not yet tested (runs tonight/next):** kiosk Time Out 2 before midnight (Freeman) and after midnight
 (Dickens) — day selection after midnight and the "open sign-in on another day" warning.

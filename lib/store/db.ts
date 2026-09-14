@@ -515,6 +515,10 @@ export interface StaffEntryReviewRow {
   jobClient: string;
   jobEventName: string;
   jobDate: string;
+  /** #107: needed so Review applies the same approval checks as the grid. */
+  positionId: string | null;
+  specialtyId: string | null;
+  shiftId: string | null;
   timeIn1: string;
   timeOut1: string;
   timeIn2: string;
@@ -542,7 +546,7 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
   const { data, error } = await supabase
     .from("timesheet_entries")
     .select(`
-      id, work_date, position, first_name, last_name, email, employee_key, user_id,
+      id, work_date, position, position_id, specialty_id, shift_id, first_name, last_name, email, employee_key, user_id,
       job_sheet_id, job_id, invoice_line_id, timesheet_id, time_in1, time_out1, time_in2, time_out2,
       meal_break_1_minutes, meal_break_2_minutes,
       std_hours, ot_hours, dt_hours, total_hours, bill_total,
@@ -581,6 +585,9 @@ export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]>
     id: r.id,
     workDate: r.work_date ?? null,
     position: r.position ?? "",
+    positionId: r.position_id ?? null,
+    specialtyId: r.specialty_id ?? null,
+    shiftId: r.shift_id ?? null,
     firstName: r.first_name ?? "",
     lastName: r.last_name ?? "",
     email: r.email ?? "",

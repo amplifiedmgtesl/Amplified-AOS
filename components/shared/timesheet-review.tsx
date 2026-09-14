@@ -12,6 +12,7 @@ import {
 import type { StaffEntryReviewRow } from "@/lib/store/db";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { formatClock } from "@/lib/time-utils";
+import { supabase } from "@/lib/supabase/client";
 
 type StatusFilter = "pending" | "planned" | "approved" | "rejected" | "all";
 
@@ -179,20 +180,60 @@ export default function TimesheetReview() {
   // same flow as the single-row Approve button (ensure-or-reuse a timesheet,
   // bind the entry to it, mark approved). Errors on individual rows are
   // surfaced but don't abort the batch.
+  /** #107: per-row list of what's missing before approval, using the specialty
+   *  master and each job's active shift count. Rows with no job skip the
+   *  shift rule (office time has no shifts). */
+  async function roleGapsFor(rs: StaffEntryReviewRow[]): Promise<Map<string, string[]>> {
+    const out = new Map<string, string[]>();
+    if (rs.length === 0) return out;
+    const jobIds = Array.from(new Set(rs.map((r) => r.jobId).filter(Boolean) as string[]));
+    const [spcRes, shiftRes] = await Promise.all([
+      supabase.from("specialties").select("position_id").eq("is_active", true),
+      jobIds.length
+        ? supabase.from("job_request_shifts").select("job_request_id, is_active").in("job_request_id", jobIds)
+        : Promise.resolve({ data: [] as any[], error: null }),
+    ]);
+    const positionsWithSpecialties = new Set((spcRes.data ?? []).map((s: any) => s.position_id).filter(Boolean));
+    const shiftCount = new Map<string, number>();
+    for (const s of (shiftRes.data ?? []) as any[]) {
+      if (s.is_active === false) continue;
+      shiftCount.set(s.job_request_id, (shiftCount.get(s.job_request_id) ?? 0) + 1);
+    }
+    for (const r of rs) {
+      const gaps: string[] = [];
+      if (r.jobId && !r.positionId) gaps.push("position");
+      if (r.positionId && positionsWithSpecialties.has(r.positionId) && !r.specialtyId) gaps.push("specialty");
+      if (r.jobId && (shiftCount.get(r.jobId) ?? 0) >= 2 && !r.shiftId) gaps.push("shift");
+      out.set(r.id, gaps);
+    }
+    return out;
+  }
+
   async function handleApproveSelected() {
     const selected = filtered.filter((r) => selectedIds.has(r.id) && r.status !== "approved");
     // #54: never approve a 'planned' row. Nobody has worked it — approving it
     // would bless a zero-hour record as a reviewed fact. Reachable from the
     // Planned/All filters, so guard here rather than relying on the filter.
     const planned = selected.filter((r) => r.status === "planned");
-    const targets = selected.filter((r) => r.status !== "planned");
-    if (planned.length > 0) {
-      const msg =
-        `${planned.length} of the selected row${planned.length === 1 ? " is" : "s are"} still Planned — ` +
-        `scheduled but with no time recorded, so there is nothing to approve.\n\n` +
-        (targets.length === 0
-          ? `Nothing else is selected. Record time on those rows first (kiosk or the Timekeeping grid).`
-          : `Approve the other ${targets.length} row${targets.length === 1 ? "" : "s"} and skip these?`);
+    // #107: the same role checks the Timekeeping grid enforces — position,
+    // specialty (when the position has specialties) and shift (when the job
+    // has 2+ shifts). Review used to approve rows the grid refuses.
+    const gapsById = await roleGapsFor(selected.filter((r) => r.status !== "planned"));
+    const missing = selected.filter((r) => r.status !== "planned" && (gapsById.get(r.id)?.length ?? 0) > 0);
+    const targets = selected.filter((r) => r.status !== "planned" && !(gapsById.get(r.id)?.length));
+    if (planned.length > 0 || missing.length > 0) {
+      const reasons: string[] = [];
+      if (planned.length > 0) {
+        reasons.push(`${planned.length} still Planned — no time recorded, nothing to approve.`);
+      }
+      if (missing.length > 0) {
+        const list = missing.slice(0, 5)
+          .map((r) => `  • ${fullName(r)} ${r.workDate ?? ""} — missing ${gapsById.get(r.id)!.join(", ")}`)
+          .join("\n");
+        reasons.push(`${missing.length} missing position/specialty/shift (fix in Timekeeping):\n${list}${missing.length > 5 ? "\n  …" : ""}`);
+      }
+      const msg = `These rows won't be approved:\n\n${reasons.join("\n\n")}\n\n` +
+        (targets.length === 0 ? "Nothing else is selected." : `Approve the other ${targets.length} row${targets.length === 1 ? "" : "s"}?`);
       if (targets.length === 0) { alert(msg); return; }
       if (!confirm(msg)) return;
     }
