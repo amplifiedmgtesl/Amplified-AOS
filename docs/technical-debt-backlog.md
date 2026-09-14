@@ -736,6 +736,10 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   pre-invoice report must exclude or list it; a late kiosk punch on a No Show row must promote it (today
   `promoteWorkedStatus` only promotes from planned); staff app unaware (#44/#45). Dedupe keeps re-import
   from resurrecting the row.
+  **Details DECIDED (John, 2026-09-13):** set only on a Planned row (any Timekeeping user); undo returns
+  it to Planned; **reason optional**; marking/undoing appends a when/who/why line to the job Notes (same
+  interim pattern as #98 until #108). Printed Actuals and the pre-invoice report each get an
+  **"Include no-shows" option, default OFF** (when on: listed under each day by name, no times).
 - **#93 — Timesheet Review From/To date inputs show a greyed "today" while empty** — reads as an applied
   filter. Same Safari behaviour as #69.
 - **#94 — Timesheet Review rows have no stable order.** Sort by date then name (or #80's options).
