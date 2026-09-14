@@ -902,8 +902,11 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   signatures — decide what to copy, scrub or leave; keep dev's own test logins; never point anything
   back at prod. Makes tests run against real job shapes (e.g. FARMTOUR-sized days) instead of seeds.
 
-**Not yet tested (runs tonight/next):** kiosk Time Out 2 before midnight (Freeman) and after midnight
-(Dickens) — day selection after midnight and the "open sign-in on another day" warning.
+**Kiosk midnight test — PASSED (2026-09-13/14, dev preview, pre-fix code):** Freeman Time Out 2 at
+11:25 PM (end date 9/13, 10.75 h, $437); Dickens signed in early at 3:10 PM for a 9:00 PM block and
+out at 12:06 AM — kiosk opened on work day **9/13** at 12:05 AM (round-2 fix works), stored 00:05 on
+the 9/13 row with end date 9/14, 8.42 h, $547.30. "⚠ Not today" showed after midnight (accurate).
+Not exercised: the "open sign-in on another day" warning (would need a return after ~4 AM).
 
 **Closed:**
 - **~~#8~~** — Full client→invoice system rewrite + Connor PDF recovery — ✅ DONE 2026-07-16 (see the ✅ DONE section below; bug class mechanically impossible + recovery executed).

@@ -1,5 +1,15 @@
 # Round 3 fixes — decisions to review with John
 
+> ## ▶ RESUME HERE (stopped 2026-09-14 ~12:10 AM)
+> - **Review of judgement calls:** 1–11 done (11 changed to "lock completely"). **Next: call 12** (#71
+>   import skips no-window days vs. block the whole import), then 13–19.
+> - **Kiosk test:** finished and passed (see backlog "Kiosk midnight test").
+> - **Branch `fix/phase0-round3`:** local only in `Amplified-AOS`, **not pushed** (needs John's "push"),
+>   not merged to dev. Local `dev` is also 1 commit ahead of origin (backlog notes `1a98d90`).
+> - **After calls 12–19:** push → merge to dev → re-seed test job (per #85: no quote in seed; quote
+>   created in-app as step 1; second no-quote job) → full re-test from step 1 including the new items.
+> - **Tabled / waiting:** #105 prod day rate_mode (trigger Oct 13), #100 (Connor), #108, #109, #110, #111.
+
 Branch `fix/phase0-round3` (off `dev`). Built unattended on 2026-09-13 while the kiosk midnight
 sign-outs were still running on the dev preview. **Not pushed, not merged** — the push was blocked
 pending John's OK, and merging to dev mid-test would have changed the preview under him. Batch 1
