@@ -748,8 +748,9 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
 - **#98 — DECIDED: Copy planned → actual needs scope, a reason, and a record.** Today it fills every blank
   row on every day with no confirm and no summary — including blocks that haven't happened. Make it
   day/selection-scoped, require a reason, write who/when/day/count/reason to a job activity log (new
-  table), mark filled rows "copied from schedule" (shown on grid + Actuals doc), demote the button. Open:
-  which roles may use it.
+  table), mark filled rows "copied from schedule" (shown on grid + Actuals doc), demote the button.
+  **Roles — DECIDED (John, 2026-09-13): leave as-is** (anyone who can edit Timekeeping). In practice
+  that is one admin plus crew leaders; nobody else uses these screens.
 - **#99 — Actuals doc splits a person's two lines across a page break.**
 - **#100 — DECIDED-PENDING (John + Connor): early/late punches vs schedule.** Kiosk accepts any time on the
   selected day; pay/bill use the actual; nothing flags variance. Decide pay rule (actual vs snap to
