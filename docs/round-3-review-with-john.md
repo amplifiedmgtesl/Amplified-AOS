@@ -16,9 +16,29 @@
 >    retired (days/crew/timesheet removed). **Test step 1 (job A):** Create Quote from Daily
 >    Requirements → issue → Book.
 > 4. **Re-seed dev on the morning of testing (2026-09-15)** — block 2 crosses midnight, the fixture
->    expires daily.
+>    expires daily. **Ask John before running it.** DEV ONLY (`ovtbvnfhteqxnyirzctt`).
 > 5. **Full re-test from step 1**, one step at a time, covering the old script plus everything in
 >    "To test after merge" at the bottom of this doc.
+>
+> **Morning notes (written 2026-09-14 end of day):**
+> - **The seed has never run.** Its columns and types were checked against the dev schema (read-only;
+>    `attachment_names` fixed to `'[]'::jsonb`), but the first real run is tomorrow — watch its output.
+> - **Why two new jobs:** the old job's issued quote is frozen by `quotes_freeze_check` and can't be
+>    deleted, so that job can never be "no quote" again. The seed clears its days, crew and timesheet
+>    (drops off the kiosk and Timekeeping) and leaves the header, shifts and frozen quote.
+> - **Job A (KIOSKA)** — same fixture as before: 2 days, 2 shifts (Load In / Show), day-1 block 2
+>    20:00→02:00, 7 crew day 1 (…-07 unconfirmed → "6/7 · −1 short") + 3 crew day 2, rate card pinned.
+>    Starts **LEAD** because Create Quote is hidden past Lead. Step 1: Create Quote from Daily
+>    Requirements → issue → Book; then grid rates should match the quote.
+> - **Job B (KIOSKB)** — BOOKED, one day 09:00–17:00, no shifts, **no pinned card**, never quote it.
+>    Rates come from Rhino's client card effective on the start date: **Joseph Allen Stagehand $38,
+>    Ryan Anderson Head Rigger $65, Caleb Ballard General Labor = Rate TBD** (not on the card) — check in
+>    AOS Timekeeping AND on a staff-app entry. Different people from job A.
+> - **Re-seeding mid-test:** once job A's quote is issued it survives re-seeds (NOTICE printed), and the
+>    seed keeps job A's job number and status. If job B ever gets an issued quote the no-quote test is
+>    void — seed a new job id. The seed refuses to run if any test rows are approved or invoice-bound.
+> - **What's on dev:** AOS `cd68a7a` (fixes `f078b34` + seed), staff app `d477341`. Tests only cover
+>    arithmetic (208/208); nothing is browser-verified.
 >
 > **Tabled / waiting:** #105 prod day `rate_mode` (trigger: day-rate quote on a post-8/30 job, or
 > Oct 13), #100 early/late flag (Connor + #109), #108 audit trail, #109 settings, #110 Review
