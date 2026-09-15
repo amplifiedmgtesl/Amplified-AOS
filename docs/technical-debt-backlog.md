@@ -731,6 +731,9 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   quote; **Create Quote from the requirements + issue it becomes test step 1** in the app (quote
   pricing runs in app code, so a SQL seed can't do it faithfully). Add a **second seeded job with no
   quote ever** to test #55/#57 ("Rate TBD", nothing invented, nothing breaks).
+  **BUILT 2026-09-14 (seed only, not run):** the old job's issued quote is frozen and undeletable, so the
+  seed now creates `jobreq-kiosktest-a` (LEAD, full fixture) and `jobreq-kiosktest-b` (BOOKED, no quote,
+  no pinned card, one off-card General Labor worker) and retires `jobreq-1786821000000`.
 - **#86 — DECIDED: one Print button** replacing Print PDF / Sign-In Sheet / Crew Schedule (all already
   selectable on the preview route). Pre-Invoice stays separate (role-gated; becomes pre-quote/pre-invoice).
 - **#87 — Timekeeping grid has no Planned status badge** — only Approved/Rejected/Pending pills exist, so

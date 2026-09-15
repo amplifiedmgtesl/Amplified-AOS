@@ -1,6 +1,6 @@
 # Round 3 fixes — decisions to review with John
 
-> ## ▶ RESUME HERE (updated 2026-09-14 morning — merged to dev)
+> ## ▶ RESUME HERE (updated 2026-09-14 afternoon — review done, fixes + seed on dev)
 > **State:** all round-3 fixes (batches 1 + 2) are MERGED to `dev` and on the dev preview. Kiosk
 > midnight test from the previous round passed (backlog). Nothing below is browser-verified yet.
 >
@@ -8,17 +8,21 @@
 > 1. ✅ **Judgement calls 1–19 all reviewed** (2026-09-14). Changes: 11 lock completely; 13 mirror the
 >    rate lookup into the staff app; 15 Copy Planned → selection-only "Copy Planned N" button + No Show
 >    without a reason box. Everything else kept as built.
-> 2. **Fix calls 13 + 15** — branch per task off `dev`, then merge.
-> 3. **Update the test seed per #85:** no quote in `supabase/seeds/kiosk-test-job.sql` (the placeholder
->    quote goes); Create Quote from Daily Requirements + issue it becomes test step 1; add a second
->    seeded job that never gets a quote (#55/#57 "Rate TBD"). Day 1 = the day of testing.
-> 4. **Re-seed dev on the morning of testing** (block 2 crosses midnight — the fixture expires daily).
+> 2. ✅ **Calls 13 + 15 fixed and merged to dev** (AOS `f078b34`, staff app `d477341`).
+> 3. ✅ **Test seed updated per #85** (`supabase/seeds/kiosk-test-job.sql`) — NOT run yet. Two new jobs,
+>    both without a quote: **A** `jobreq-kiosktest-a` (KIOSKA, LEAD, the full fixture) and **B**
+>    `jobreq-kiosktest-b` (KIOSKB, BOOKED, never quoted, no pinned card, one General Labor worker
+>    who must read "Rate TBD"). The old job `jobreq-1786821000000` has a frozen issued quote, so it is
+>    retired (days/crew/timesheet removed). **Test step 1 (job A):** Create Quote from Daily
+>    Requirements → issue → Book.
+> 4. **Re-seed dev on the morning of testing (2026-09-15)** — block 2 crosses midnight, the fixture
+>    expires daily.
 > 5. **Full re-test from step 1**, one step at a time, covering the old script plus everything in
 >    "To test after merge" at the bottom of this doc.
 >
 > **Tabled / waiting:** #105 prod day `rate_mode` (trigger: day-rate quote on a post-8/30 job, or
 > Oct 13), #100 early/late flag (Connor + #109), #108 audit trail, #109 settings, #110 Review
-> 1,000-row cap, #111 copy prod→dev when schemas match, staff-app mirror of the #57 rate lookup.
+> 1,000-row cap, #111 copy prod→dev when schemas match.
 
 Branch `fix/phase0-round3` (off `dev`). Built unattended on 2026-09-13 while the kiosk midnight
 sign-outs were still running on the dev preview. **Not pushed, not merged** — the push was blocked
@@ -122,11 +126,9 @@ corrected crew-needs comment).
 
 ## Not built — still open
 
-#67 stale screen data (architectural) · #85 next-round seed (quote created in-app; second no-quote job)
-· #100 early/late flag (waits on Connor + #109 settings) · #102–#104 ideas · #105 prod day `rate_mode`
+#67 stale screen data (architectural) · #100 early/late flag (waits on Connor + #109 settings) · #102–#104 ideas · #105 prod day `rate_mode`
 (tabled, trigger Oct 13) · #108 audit trail project · #109 configurable business rules · #110 Review
-1,000-row cap · #111 copy prod to dev · #44/#45 staff app ownership · staff-app mirror of the #57 rate
-lookup.
+1,000-row cap · #111 copy prod to dev · #44/#45 staff app ownership.
 
 ## To test after merge
 
@@ -139,9 +141,16 @@ person's two rows never split across pages.
 Batch 2 additions: "Rate TBD" instead of $35 (grid + Review); a job with no quote still gets rate-card
 rates; rate-card editors refuse an unpriced row; time locked on rows missing position / specialty /
 (2+ shifts) shift — grid AND kiosk; single-shift jobs fill the shift automatically; Review approve
-refuses rows missing a role; Copy planned → actual dialog (day or selected rows, required reason,
-Notes line on the job); No Show mark/undo + Notes line, Review filter, late punch lifts it, "Include
+refuses rows missing a role; No Show mark/undo + Notes line, Review filter, late punch lifts it, "Include
 no-shows" on Actuals + pre-invoice (default off); Daily Requirements editable on a Booked job; can't
 delete/re-date a day with timesheet rows; delete-day confirm names crew needs + assigned crew; Add Crew
 from Job skips no-window days; kiosk rounding with seconds, "Punch NOT recorded" on a failed save,
 "No position set — see your crew leader", kiosk Sort, (+1) on kiosk times.
+
+Review-call fixes (2026-09-14): **Copy Planned N** in the selection bar — count matches eligible ticked
+rows (skips rows with time, approved, No Show, missing role), hover "N of M", greyed only at 0, required
+reason + Notes line, no toolbar button or day option; as coordinator / payroll / crew leader (/lead) you
+can tick rows on a job but see only Copy Planned. **No Show** is a plain Yes/No. **Job B (no quote):**
+Stagehand $38 and Head Rigger $65 from the client card, General Labor "Rate TBD" — in AOS Timekeeping
+AND on a staff-app entry. **Job A:** Create Quote from requirements → issue → Book, then the rates on the
+grid match the quote.
