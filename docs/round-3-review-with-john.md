@@ -5,8 +5,10 @@
 > midnight test from the previous round passed (backlog). Nothing below is browser-verified yet.
 >
 > **Plan for the new session, in order:**
-> 1. **John answers judgement calls 12–19** below, one at a time (1–11 are done; 11 = "lock completely").
-> 2. **Fix whatever calls 12–19 change** — branch per task off `dev`, then merge.
+> 1. ✅ **Judgement calls 1–19 all reviewed** (2026-09-14). Changes: 11 lock completely; 13 mirror the
+>    rate lookup into the staff app; 15 Copy Planned → selection-only "Copy Planned N" button + No Show
+>    without a reason box. Everything else kept as built.
+> 2. **Fix calls 13 + 15** — branch per task off `dev`, then merge.
 > 3. **Update the test seed per #85:** no quote in `supabase/seeds/kiosk-test-job.sql` (the placeholder
 >    quote goes); Create Quote from Daily Requirements + issue it becomes test step 1; add a second
 >    seeded job that never gets a quote (#55/#57 "Rate TBD"). Day 1 = the day of testing.
@@ -70,22 +72,43 @@ it's a prod payroll bug and belongs on a branch off `main`. Details in the backl
     time, 85 unapproved ones miss position/specialty, only 2 from the last 30 days — old jobs.
 12. **#71 import:** days with times import; days without are skipped and named. The whole import is only
     refused when every day lacks times — a multi-day job with one unscheduled future day still imports.
+    → **REVIEWED (John, 2026-09-14): keep as built.**
 13. **#57 Timekeeping rate card when the job has no quote:** now uses the job chain (pin → client card
     effective on the start date → master default). ⚠ The staff app carries a synced copy of the old
     quote-only lookup (`amplified-staff/lib/calc/rate-resolution.ts`) — **not changed**, so staff-app
     entries on a quote-less job still price the old way until mirrored.
+    → **REVIEWED (John, 2026-09-14): keep, AND mirror into the staff app now** (own branch; step-2 fix).
+    ✅ Built: staff app `fix/staff-rate-lookup` — same chain; unresolved rates now 0 (Rate TBD), not 35/52/70.
 14. **#57 rate-card editors** refuse to save a row with neither an hourly nor a day rate (0 such rows in
     prod, so no existing card is blocked). ⚠ Prod has **143 rate-card rows** at exactly the old pre-fill
     ($35 / $350 / $52.50 / $70) — some may be real, many are probably untouched defaults. Worth a review.
+    → **REVIEWED (John, 2026-09-14): keep the rule; no review of the 143 rows** — the defaults were chosen
+    because they were the common real rates, so matching them is expected.
 15. **Copy planned → actual dialog** defaults to "Selected rows" when rows are ticked, otherwise the
     first expanded day. No Show and Undo use simple browser prompts (reason optional).
+    → **REVIEWED (John, 2026-09-14): CHANGE (fix before re-test).**
+    (a) Copy planned → actual becomes a selection-only batch button beside Approve/Reject, labelled
+    "Copy Planned N" like "Approve N": N counts only eligible ticked rows (skip rows with any actual
+    time, approved, No Show, missing position/specialty/shift); hover "Copy planned to N of M"; disabled
+    only when N = 0. Remove the toolbar button, the dialog's whole-day scope, and the day picker. Keep
+    the required reason + Notes audit line.
+    (b) No Show: drop the reason box — plain Yes/No confirm; Notes line still records who/when. Undo No
+    Show unchanged.
+    (c) Access (John): everyone who had the old button keeps it — coordinators, payroll and /lead crew
+    leaders can now tick rows on a job timesheet, but their bar shows only Copy Planned.
+    ✅ Built on `fix/copy-planned-selection`.
 16. **#68 on Booked jobs:** days can change, which moves the job's start/end dates (DB trigger), but the
     **job number doesn't recompute** because the header is locked — a job re-dated after booking keeps
     its old number. Decide whether that's right.
+    → **REVIEWED (John, 2026-09-14): keep as built** — job number is the job's permanent ID once Booked
+    (issued quote/invoice numbers derive from it).
 17. **#107:** office/remote time (no job) skips the position and shift checks in Review.
+    → **REVIEWED (John, 2026-09-14): keep as built.**
 18. **Kiosk sort default is Last name**, remembered per device.
+    → **REVIEWED (John, 2026-09-14): keep as built.**
 19. **#101 was overstated** — see the backlog correction: the kiosk already reloaded fresh before a
     punch, so an open tab didn't overwrite grid edits. The fix still matters (single-row, awaited save).
+    → **REVIEWED (John, 2026-09-14): agreed, closed.**
 
 Built in batch 2: #57, #68, #71 (import), #92, #97, #98, #101, #106, #107, kiosk sort, kiosk (+1),
 kiosk text. Tests 208/208 (12 new). Found and logged, not fixed: #110 (Review loads ≤1,000 entries),

@@ -621,7 +621,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
       // Resolve the multiplier + rate card profile via the job's most recent
       // quote (the V2 snapshot pattern locks the rate card to the quote, so
       // this is the source of truth for what will be billed).
-      // ⚠ SYNCED COPY: this quote→rate-card→specialty resolution is mirrored in
+      // ⚠ SYNCED COPY: this quote→(job chain, #57)→rate-card→specialty resolution is mirrored in
       // the staff app at amplified-staff/lib/calc/rate-resolution.ts
       // (resolveEntryRates). Mirror any change there so staff timesheets price the
       // same way. See amplified-staff/docs/v2-alignment-plan.md.
@@ -846,27 +846,24 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
   // actuals) and never touches locked (approved) rows.
   //
   // #98 (round 3): this records SCHEDULED time as WORKED time, so it is an
-  // exception, not a shortcut. It is scoped to one day or to the selected
-  // rows, needs a reason, and every run appends a who/when/why line to the
-  // job's Notes (interim audit — #108). #106: rows missing position /
-  // specialty / shift are skipped, same as typing time into them is blocked.
-  const [copyModal, setCopyModal] = useState<null | { scope: "day" | "selected"; day: string; reason: string }>(null);
-  function openCopyPlanned() {
-    if (!timesheet) return;
-    const datedDays = dayGroups.map(([d]) => d).filter((d) => d !== "no-date");
-    const expanded = datedDays.filter((d) => !isDayCollapsed(d));
-    const selected = timesheet.rows.filter((r) => selectedIds.has(r.id));
-    setCopyModal({
-      scope: selected.length > 0 ? "selected" : "day",
-      day: expanded[0] ?? datedDays[0] ?? "",
-      reason: "",
-    });
+  // exception, not a shortcut. Round-3 review call 15: selected rows only, a
+  // batch-bar button counted like Approve (no whole-day scope). Needs a
+  // reason, and every run appends a who/when/why line to the job's Notes
+  // (interim audit — #108). #106: rows missing position / specialty / shift
+  // are skipped, same as typing time into them is blocked.
+  const [copyModal, setCopyModal] = useState<null | { reason: string }>(null);
+  /** Rows "Copy Planned N" counts. Planned-times availability needs the crew
+   *  slots (async), so rows with no plan are only reported after the run. */
+  function isCopyEligible(r: TimeEntry): boolean {
+    if (r.status === "approved" || r.status === "no_show" || !r.employeeKey) return false;
+    if (r.timeIn1 || r.timeOut1 || r.timeIn2 || r.timeOut2) return false;
+    return missingRole(r).length === 0;
   }
-  async function copyPlannedToActual(scope: "day" | "selected", day: string, reason: string) {
+  async function copyPlannedToActual(reason: string) {
     if (!timesheet || pickerKind !== "job") return;
     const trimmedReason = reason.trim();
     if (!trimmedReason) { alert("A reason is required."); return; }
-    const inScope = (r: TimeEntry) => scope === "selected" ? selectedIds.has(r.id) : (r.workDate || "") === day;
+    const inScope = (r: TimeEntry) => selectedIds.has(r.id);
     setCopyingPlanned(true);
     try {
       const slots = await loadJobCrewSlots(pickerKey);
@@ -914,9 +911,8 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
       }
       persist({ ...timesheet, rows: nextRows });
       setCopyModal(null);
-      const where = scope === "selected"
-        ? `${Array.from(filledDays).sort().join(", ")} (selected rows)`
-        : day;
+      setSelectedIds(new Set());
+      const where = Array.from(filledDays).sort().join(", ");
       const failure = await appendJobAuditLine(
         pickerKey,
         `Copied planned → actual — ${where}, ${filled} row${filled === 1 ? "" : "s"} — "${trimmedReason}"`,
@@ -1011,26 +1007,22 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
     setAddCrewModalOpen(true);
   }
 
-  // #92: mark / undo No Show on a Planned row. Reason optional; either way a
-  // who/when/why line goes on the job's Notes (interim audit, #108).
+  // #92: mark / undo No Show on a Planned row. Plain Yes/No (round-3 review
+  // call 15 — no reason box); a who/when line goes on the job's Notes
+  // (interim audit, #108).
   async function toggleNoShow(row: TimeEntry) {
     if (!timesheet) return;
     const name = [row.firstName, row.lastName].filter(Boolean).join(" ") || "(unnamed)";
     const marking = row.status === "planned";
     if (!marking && row.status !== "no_show") return;
-    let reason: string | null = "";
-    if (marking) {
-      reason = prompt(`Mark ${name} as a No Show on ${row.workDate ?? "(no date)"}?\n\nReason (optional):`, "");
-      if (reason === null) return; // cancelled
-    } else if (!confirm(`Undo No Show for ${name} on ${row.workDate ?? "(no date)"}? The row goes back to Planned.`)) {
-      return;
-    }
+    const question = marking
+      ? `Mark ${name} as a No Show on ${row.workDate ?? "(no date)"}?`
+      : `Undo No Show for ${name} on ${row.workDate ?? "(no date)"}? The row goes back to Planned.`;
+    if (!confirm(question)) return;
     const nextStatus = marking ? "no_show" : "planned";
     persist({ ...timesheet, rows: timesheet.rows.map((r) => r.id === row.id ? { ...r, status: nextStatus } : r) });
     if (pickerKind === "job") {
-      const text = marking
-        ? `No Show — ${name}, ${row.workDate ?? "(no date)"}${reason?.trim() ? ` — "${reason.trim()}"` : ""}`
-        : `Undo No Show — ${name}, ${row.workDate ?? "(no date)"}`;
+      const text = `${marking ? "No Show" : "Undo No Show"} — ${name}, ${row.workDate ?? "(no date)"}`;
       const failure = await appendJobAuditLine(pickerKey, text);
       if (failure) alert(`Status changed, but the note on the job could not be written (${failure}).`);
     }
@@ -1242,15 +1234,19 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
   // #91: planned rows stay selectable in this grid (Delete needs them) but are
   // excluded from the approve/reject counts so the labels match what happens.
   const eligible = useMemo(() => {
-    if (!timesheet) return { approve: 0, reject: 0, unlock: 0, delete: 0 };
+    if (!timesheet) return { approve: 0, reject: 0, unlock: 0, delete: 0, copy: 0 };
     const sel = timesheet.rows.filter((r) => selectedIds.has(r.id));
     return {
+      copy:    sel.filter(isCopyEligible).length,
       approve: sel.filter((r) => r.status !== "approved" && r.status !== "planned" && r.status !== "no_show" && r.employeeKey).length,
       reject:  sel.filter((r) => r.status !== "rejected" && r.status !== "planned" && r.status !== "no_show" && r.employeeKey && !(r.status === "approved" && r.invoiceLineId)).length,
       unlock:  sel.filter((r) => r.status === "approved" && !r.invoiceLineId).length,
       delete:  sel.filter((r) => r.status !== "approved").length,
     };
-  }, [timesheet, selectedIds]);
+  }, [timesheet, selectedIds, shiftRequired]);
+  // Row selection: admins for the batch bar; everyone else only on a job
+  // timesheet, where the bar offers just "Copy Planned N" (review call 15).
+  const canSelectRows = !hideBillAlways || pickerKind === "job";
   function handleDeleteSelected() {
     if (!timesheet) return;
     const count = selectedIds.size;
@@ -1479,24 +1475,11 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
           <button
             onClick={addCrewFromJob}
             disabled={!timesheet || addingCrew}
-            title="Seed one row per scheduled assignment from the Job Request → Assigned Crew tab. Actual times start blank — use “Copy planned → actual” to pre-fill."
+            title="Seed one row per scheduled assignment from the Job Request → Assigned Crew tab. Actual times start blank — select rows and use “Copy Planned” to pre-fill."
           >
             {addingCrew ? "Loading…" : "Add Crew from Job"}
           </button>
           <button className="secondary" onClick={addManualCrew} disabled={!timesheet}>+ Add Crew Member</button>
-          {pickerKind === "job" && (
-            // #98: demoted — an exception with a required reason, not a primary action.
-            <button
-              type="button"
-              className="secondary"
-              onClick={openCopyPlanned}
-              disabled={!timesheet || copyingPlanned || (timesheet?.rows.length ?? 0) === 0}
-              title="Exception only: record scheduled times as worked for one day or the selected rows. Needs a reason, which is noted on the job."
-              style={{ fontSize: 12, padding: "4px 10px" }}
-            >
-              {copyingPlanned ? "Copying…" : "Copy planned → actual…"}
-            </button>
-          )}
           {timesheet && timesheet.rows.length > 0 && (
             <>
               <span style={{ flex: 1 }} />
@@ -1505,11 +1488,25 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
             </>
           )}
         </div>
-        {/* Batch action bar — appears when one or more rows are ticked (admin only). */}
-        {!hideBillAlways && selectedIds.size > 0 && (
+        {/* Batch action bar — appears when one or more rows are ticked. Copy
+            Planned for anyone on a job timesheet; the rest admin only. */}
+        {canSelectRows && selectedIds.size > 0 && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: "6px 12px",
                         background: "#eaf2fb", border: "1px solid #b6c8e0", borderRadius: 8, flexWrap: "wrap" }}>
             <strong style={{ fontSize: 13 }}>{selectedIds.size} selected</strong>
+            {pickerKind === "job" && (
+              // #98: an exception with a required reason, not a primary action.
+              <button
+                className="secondary"
+                onClick={() => setCopyModal({ reason: "" })}
+                disabled={!!busyBatch || copyingPlanned || eligible.copy === 0}
+                title={eligible.copy === 0 ? "No selected rows can take planned times (already have times, approved, No Show, or missing position/specialty/shift)" : `Copy planned to ${eligible.copy} of ${selectedIds.size}`}
+                style={{ padding: "4px 12px", fontSize: 12 }}
+              >
+                {copyingPlanned ? "Copying…" : `Copy Planned ${eligible.copy}`}
+              </button>
+            )}
+            {!hideBillAlways && (<>
             <button
               onClick={handleApproveSelected}
               disabled={!!busyBatch || eligible.approve === 0}
@@ -1545,6 +1542,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
             >
               {busyBatch === "delete" ? "Deleting…" : `Delete ${eligible.delete}`}
             </button>
+            </>)}
             <button className="secondary" onClick={() => setSelectedIds(new Set())} disabled={!!busyBatch} style={{ padding: "4px 10px", fontSize: 12 }}>
               Clear
             </button>
@@ -1640,7 +1638,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                     <th colSpan={r1Spans.end}>End Date</th>
                     <th colSpan={phantomSpan}>{jobHasShifts ? "Shift" : ""}</th>
                     <th rowSpan={2} className="hide-print" style={{ minWidth: 90 }}>
-                      {!hideBillAlways && timesheet.rows.length > 0 && (() => {
+                      {canSelectRows && timesheet.rows.length > 0 && (() => {
                         const allSel = timesheet.rows.every((r) => selectedIds.has(r.id));
                         const someSel = !allSel && timesheet.rows.some((r) => selectedIds.has(r.id));
                         return (
@@ -2032,7 +2030,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                           {/* 1. Bulk select checkbox, with a label so it's obvious
                               what it does (the column header "Status" doesn't make
                               it clear). */}
-                          {!hideBillAlways && (
+                          {canSelectRows && (
                             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#666" }}>
                               <input
                                 type="checkbox"
@@ -2368,24 +2366,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
               boxShadow: "0 20px 60px rgba(0,0,0,0.3)", padding: 18,
             }}
           >
-            <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>Copy planned → actual</h3>
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>Apply to</label>
-              <select
-                value={copyModal.scope === "selected" ? "__selected__" : copyModal.day}
-                onChange={(e) => setCopyModal({
-                  ...copyModal,
-                  scope: e.target.value === "__selected__" ? "selected" : "day",
-                  day: e.target.value === "__selected__" ? copyModal.day : e.target.value,
-                })}
-                style={{ width: "100%" }}
-              >
-                {selectedIds.size > 0 && <option value="__selected__">Selected rows ({selectedIds.size})</option>}
-                {dayGroups.map(([d]) => d).filter((d) => d !== "no-date").map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
-            </div>
+            <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>Copy planned to {eligible.copy} row{eligible.copy === 1 ? "" : "s"}</h3>
             <div style={{ marginBottom: 14 }}>
               <label style={{ fontSize: 12, color: "#666", display: "block", marginBottom: 4 }}>Reason (required — added to the job notes)</label>
               <textarea
@@ -2401,8 +2382,8 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
               <button type="button" className="secondary" onClick={() => setCopyModal(null)} disabled={copyingPlanned}>Cancel</button>
               <button
                 type="button"
-                disabled={copyingPlanned || !copyModal.reason.trim() || (copyModal.scope === "day" && !copyModal.day)}
-                onClick={() => void copyPlannedToActual(copyModal.scope, copyModal.day, copyModal.reason)}
+                disabled={copyingPlanned || !copyModal.reason.trim()}
+                onClick={() => void copyPlannedToActual(copyModal.reason)}
               >
                 {copyingPlanned ? "Copying…" : "Copy"}
               </button>
