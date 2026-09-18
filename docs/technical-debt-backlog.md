@@ -2446,6 +2446,8 @@ So the only lever is the **base rate**, and using it to force a total is harmful
 
 **Interim workaround (John, 2026-08-30):** overrides are done in **Rippling directly**. Acceptable short-term. Note the tradeoff to evaluate when this is picked up — an override applied only in Rippling means AOS and Rippling permanently disagree about what was paid, so AOS labour-cost and margin reporting silently drifts from reality, and there is no audit trail in AOS explaining why.
 
+**Confirmed again 2026-09-18 (John), now also covering OT *thresholds*.** The rate card splits every rate into a bill/pay pair (`hourly`/`pay_hourly` etc.) but keeps ONE set of triggers (`ot_after`/`dt_after`), shared between billing and payroll — payroll inherits the split via `payOtHours: e.otHours`. John's decision: do NOT add `pay_ot_after`/`pay_dt_after`. On the rare job where the client's OT trigger differs from what's owed the worker, handle it manually in AOS or directly in Rippling. **That lands on this same missing mechanism** — the AOS half still doesn't exist, so today these are Rippling-only, with the AOS/Rippling drift noted above. Context: the BMI_CONCERT OT incident, items #112/#113.
+
 **Likely shape when built:** mirror `BaseRateInput` with a `PayHoursInput`; add `updatePayrollRunEntryPayHours` recomputing through `recomputePayFromBase`; stamp `pay_adjustment_reason` (the column already exists and is already used by the 5-hour minimum / round-up reasons). Draft-only, blocked by the existing freeze trigger on finalized/exported runs.
 
 **Analyse before building:** whether AOS should own the override at all, or whether Rippling stays the system of record for exceptions and AOS just needs to record that an override happened.
@@ -2792,3 +2794,64 @@ The code tests `rate_mode === "day"`, so those 19 would be treated as hourly. Th
 **Naming note:** the stored values stay `day` / `hourly` to match the existing columns — do not introduce a fourth spelling. The dropdown's *labels* can read "Day Rate" and "Hourly"; only the labels differ from the stored value.
 
 **Related:** `docs/day-rate-source-of-truth-design.md`, and the entry on hard-blocking unpayable specialties — same principle, that invalid data should be impossible to create rather than detected afterwards.
+
+---
+
+## #112 — Quote revision silently inherits the parent's rate card (added 2026-09-18)
+
+**Severity: high.** This one is live on every job in the system and is invisible to the operator.
+
+`createDraftFromRevision` (`lib/store/quotes.ts:713`) builds the new draft with `{ ...parent }`, which copies `rateCardProfileId` verbatim. It never re-resolves against the client's *current* rate card. So a job first quoted before its client rate card existed keeps the Master Default card through unlimited revisions, and nothing on screen says which card is in play.
+
+**Confirmed incident — AES_260903_BMI_CONCERT (`jobreq-1788404361084`), reported by Connor 2026-09-17:**
+
+| Quote | Created | Rate card |
+|---|---|---|
+| `_EST` (rev 1) | 2026-09-03 03:00 | `ratecard-master-default` |
+| `_EST_REV1` (rev 2) | 2026-09-03 03:09 | `ratecard-master-default` |
+| `_EST_REV2` (rev 3) | **2026-09-18 01:44** | `ratecard-master-default` |
+
+The client's own card (`ratecard-1788656271691`, Boomerang, effective 2026-08-30, `ot_after = none`) was created 2026-09-06 00:57. REV2 was revised **twelve days later** and still inherited Master Default, which carries `ot_after = 10` / `dt_after = 15`.
+
+Result: a job contracted for no daily OT billed and would have paid 2 hrs OT per head. Connor revised the quote repeatedly trying to clear it ("I know we've done this a few times so not sure what I'm missing") and it came back every time. He was doing the right thing; Revise just undid it.
+
+**Contributing factor:** Timekeeping resolves rates through the *quote's* pinned card (`components/shared/timekeeping.tsx:628-650`), while payroll and invoicing use `resolveRateCardForJob` (the job pin → client+date → master chain). Pinning the job does **not** help while the quote carries a stale card — the quote wins on the Timekeeping screen. See the `rate-card-resolution-divergence` memory note.
+
+**Fix options (decide which):**
+1. **Re-resolve on revise.** `createDraftFromRevision` calls `resolveRateCardForJob` and, if it returns a different card than the parent's, either switches automatically or prompts: "The client's rate card has changed since this quote was issued. Use *Standard (2026-08-30)* instead of *Master Default*?" Prompting is safer — silently re-pricing a revision is its own footgun.
+2. **Show the card, always.** The rate card name belongs on the quote detail view and the Timekeeping header, not just inside the draft editor's dropdown. Today there is no way to see which card a job is priced from without opening a draft or querying the DB.
+3. **Converge the two resolution chains** so Timekeeping, invoicing and payroll can't disagree about which card applies. This is the real fix and the biggest one.
+
+**Workaround until then:** in the revision draft editor, the "Rate Card Profile" dropdown (`quote-draft-editor.tsx:792`) *does* change it — `changeRateCard` re-prices every line. The operator must actively pick the right card; Revise alone won't. Note the freeze trigger blocks fixing this by SQL on an issued quote (`rate_card_profile_id` is in the frozen column list in `quotes_freeze_check()`), which is correct — it must go through Revise.
+
+**Related:** the "Timesheet std/ot/dt split should derive from the job's billing rule" entry above — same family, different root cause. That one is about rate-card *edits* not propagating; this one is about revisions re-pinning a stale card.
+
+---
+
+## #113 — Timekeeping has no visibility or control over the snapshotted OT/DT threshold (added 2026-09-18)
+
+**Severity: high**, and it is what made #112 unfixable from the UI.
+
+`bill_ot_after` / `bill_dt_after` are snapshotted onto each timesheet row at creation (migration `20260606a`). The snapshot is correct by design — threshold changes must not retroactively re-split approved or invoiced entries. The problem is that **once a row is wrong, nothing in the app can correct it**:
+
+- there is no UI field for either threshold, and no display of them anywhere;
+- the ST/OT/DT hour cells are computed by `computeTimeEntry`, not typed, so the operator cannot override the split;
+- editing the times just recomputes from the same stale threshold;
+- deleting and re-adding the row re-reads the same quote and reproduces it.
+
+The **only** in-app path that re-snapshots is changing the row's specialty (`components/shared/timekeeping.tsx:472`), which fires only when `specialtyId` actually changes. That is an undiscoverable side effect, not a feature — and it still pulls from the quote's card, so it reproduces the wrong value until #112 is fixed.
+
+On the BMI job this left two rows frozen at `bill_ot_after = 10` with no operator remedy. Fixing it required direct SQL against prod:
+
+```sql
+update timesheet_entries
+   set bill_ot_after = 0, bill_dt_after = 0,
+       std_hours = total_hours, ot_hours = 0, dt_hours = 0,
+       bill_total = round(total_hours * bill_std_rate, 2)
+ where job_id = 'jobreq-1788404361084';
+```
+
+**Wanted:**
+1. **Surface the threshold on the row** — at minimum a read-only display ("OT after 10") so a wrong split is *visible* instead of being discovered on an invoice. Per John's standing preference this should be a value the operator can see, not an explanatory banner.
+2. **Allow a re-snapshot on an unlocked row** — an explicit "re-pull rates from the rate card" action on non-approved, non-invoice-bound rows, rather than the accidental specialty-change trigger. This is the same mechanism the propagation prompt in the std/ot/dt entry above describes; build once, use for both.
+3. **Consider a manual OT-hours override** with an audit note, for the cases where neither the card nor the clock is right. Overlaps the existing "Payroll run: no way to override pay HOURS on an entry" entry — same shape of gap on the billing side.
