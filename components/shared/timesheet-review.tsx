@@ -12,6 +12,7 @@ import {
 import type { StaffEntryReviewRow } from "@/lib/store/db";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { formatClock } from "@/lib/time-utils";
+import { nextDayFlags } from "@/lib/jobs/print-format";
 import { supabase } from "@/lib/supabase/client";
 
 type StatusFilter = "pending" | "planned" | "no_show" | "approved" | "rejected" | "all";
@@ -477,8 +478,15 @@ export default function TimesheetReview() {
                 </td>
                 <td>{r.position || "—"}</td>
                 <td style={{ fontSize: 12 }}>
-                  {formatClock(r.timeIn1) || "—"} – {formatClock(r.timeOut1) || "—"}
-                  {r.timeIn2 && <><br/>{formatClock(r.timeIn2)} – {formatClock(r.timeOut2)}</>}
+                  {/* Round-3 re-test #17: (+1) on next-day times, same rule as the prints. */}
+                  {(() => {
+                    const nd = nextDayFlags(r.timeIn1, r.timeOut1, r.timeIn2, r.timeOut2);
+                    const t = (v: string | undefined, next: boolean) => formatClock(v) ? `${formatClock(v)}${next ? " (+1)" : ""}` : "";
+                    return <>
+                      {t(r.timeIn1, nd[0]) || "—"} – {t(r.timeOut1, nd[1]) || "—"}
+                      {r.timeIn2 && <><br/>{t(r.timeIn2, nd[2])} – {t(r.timeOut2, nd[3])}</>}
+                    </>;
+                  })()}
                 </td>
                 <td>{r.stdHours.toFixed(1)}</td>
                 <td>{r.otHours > 0 ? r.otHours.toFixed(1) : "—"}</td>

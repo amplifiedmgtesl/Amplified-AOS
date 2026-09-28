@@ -1,6 +1,79 @@
 # Round 3 fixes — decisions to review with John
 
-> ## ▶ RESUME HERE (updated 2026-09-14 afternoon — review done, fixes + seed on dev)
+> ## ▶ RESUME HERE (updated 2026-09-28 evening — re-test done, fix batch built unattended)
+> **Re-test 2026-09-28:** steps 1–32 run on the dev preview (seed first run + re-seed after fix
+> `14bffdb`). Everything on the "To test after merge" list passed **except** Safari landscape (#R24)
+> and the staff-app Rate TBD entry (skipped: staff app is coordinators-only for now). Midnight kiosk
+> crossing not re-run (passed last round). 24 findings — see "Re-test findings" below.
+> **Fix batch** on branch `fix/round3-retest-batch` (off dev) — **committed locally, NOT pushed or
+> merged** (unattended rules). Typecheck clean, 208/208 tests. **Nothing browser-verified.**
+> **Next:** John reviews the judgement calls below → push + merge to dev → re-seed (ask first;
+> job A is now job C — see J7) → re-test the changed screens one step at a time.
+
+## Re-test findings, 2026-09-28 (R1–R24)
+
+| # | Finding | Status |
+|---|---|---|
+| R1 | No Day Rate / Hourly control on Daily Requirements — backlog #105 reconfirmed | Tabled (#105, prod branch off `main`, by Oct 13) |
+| R2 | Day Notes squashed to ~70px | Fixed — full-width row |
+| R3 | Holiday takes space in the time row | Fixed — under Date (row 2) |
+| R4 | Day-delete ✕ ambiguous / reads as "close" | Fixed — "🗑 Delete day", set apart |
+| R5 | Seed left crew-need hours 0 | Fixed `59612bf` (on dev) |
+| R6 | 0-hour hourly line priced as a day → negative Balance Due | Fixed `59612bf` (on dev) |
+| R7 | Quote lines stop at block 1; Shift column blank | Fixed — see J1 |
+| R8 | Quote editor/view say "Department", everything else "Position" | Fixed — Position (John) |
+| R9 | Seed: no need with quantity > 1 | Fixed — Stagehand/Labor qty 3 both A days |
+| R10 | Quote editor buttons buried under Terms | Fixed — see J2 |
+| R11 | No link from Timekeeping back to the job | Fixed — "Open job →" |
+| R12 | Sign-In "Time OUT" headers wrap | Fixed — widths + nowrap (J3) |
+| R13 | Sign IN headers italic/grey | Fixed — normal bold (John) |
+| R14 | `\u2014 unconfirmed` printed literally | Fixed |
+| R15 | PDF file names too long | Fixed — job no. · document · day |
+| R16 | Grid shows Sign IN columns on screen (print-only use) | **Not done** — see J4 |
+| R17 | Review In/Out has no (+1) | Fixed |
+| R18 | Kiosk lists every job (leads, retired, back to March) | Fixed — see J5 |
+| R19 | Manual "+ Add Crew Member" row saves as Pending with no time | Fixed — Planned |
+| R20 | "Set position… first" hint invisible on the locked field | Fixed — hint on the locked cells only |
+| R21 | Labor Summary looks duplicated (specialty hidden); "Workers" = person-days | Fixed — Specialty column, "Person-days" (John) |
+| R22 | Rate Card Add Row off-screen, stacks blanks | Fixed — reuse blank + scroll/highlight |
+| R23 | Safari PDF has a blank page 2 | **Not done** — see J6 |
+| R24 | Safari opens print in Portrait | **Partly** — see J6 |
+
+Decided along the way (John): unconfirmed crew still import with Add Crew from Job ("fine for now");
+Add Crew from Job imports all days, no per-day pick and no confirm; clearing ticks after a batch
+action stays. Future ideas (backlog, not this round): quote → Job / Timesheet buttons; a flag for
+"worked block 1, didn't return for block 2".
+
+## Judgement calls in the re-test fix batch — say if any are wrong
+
+- **J1 (R7).** Quote lines now span the whole day — start of block 1 to end of block 2 — with
+  `end_date` = next day when that end is past midnight, and carry the crew need's **shift**. Line
+  times aren't shown on any quote screen (only passed to invoices), so the visible change is the
+  **Shift** column filling in (it read "—" on every line).
+- **J2 (R10).** Did both: **Terms collapsed** (click "Terms" to open) and the **Save / Issue /
+  Preview / Delete bar pinned** to the bottom of the window — the long part of the page is the line
+  items, not only Terms, so collapsing alone wouldn't bring the buttons up.
+- **J3 (R12).** Signature columns 18% → 16%, Time OUT 9% → 11%, headers never wrap. Applied to the
+  **printed timesheet** too, so the paper sheet and the timesheet still line up column for column.
+- **J4 (R16) — not done.** The name row spans the Sign IN 1 column, so hiding it on screen shifts
+  every column in that row. Needs a layout change I won't make without seeing it. Next visual session.
+- **J5 (R18).** Kiosk shows jobs running **yesterday → tomorrow** (device date), any status except
+  Lost/Cancelled. By **date, not "Booked"** — status is almost never advanced in prod, so a Booked
+  filter would hide real jobs. Yesterday is included so a past-midnight shift can still sign out.
+- **J6 (R23/R24).** Safari ignores the page's landscape setting; there's no reliable way to force it.
+  Added a hover tip on Print ("In Safari, choose Landscape"). The blank page 2 needs a Safari session
+  to find — not attempted blind.
+- **J7 (seed).** Job A's quote is issued and frozen, so it can never be "no quote" again. The seed
+  now builds the same fixture as **job C** (`jobreq-kiosktest-c`, `…_RHI_KIOSKC`) and retires job A
+  (days/crew/timesheet removed; header + frozen quote stay). Dry-run on dev inside a rolled-back
+  transaction: C = Lead, 2 days, 14 crew needed, 10 assigned, no quote; A = 0 days, quote kept;
+  B unchanged. Expected quote for C (with qty 3): **$4,007** (was $3,019 + 2 × 5h × $38 + 2 × 8h × $38).
+- **J8 (R2/R3/R4).** The "Second block (e.g. after lunch)…" sentence became a hover tip on "2nd
+  block" (minimal on-screen text) — that freed the row for Holiday.
+- **J9 (R21).** Only Timekeeping's two Labor Summaries changed. The invoice editor has its own
+  "Workers" columns — left alone.
+
+> ## (previous) RESUME HERE (2026-09-14 afternoon — review done, fixes + seed on dev)
 > **State:** all round-3 fixes (batches 1 + 2) are MERGED to `dev` and on the dev preview. Kiosk
 > midnight test from the previous round passed (backlog). Nothing below is browser-verified yet.
 >

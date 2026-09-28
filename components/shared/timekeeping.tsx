@@ -1,6 +1,7 @@
 
 "use client";
 
+import Link from "next/link";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { printWithTitle } from "@/lib/print-with-title";
 import {
@@ -535,7 +536,10 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
         phone: emp.phone || "",
         email: emp.email || "",
         shiftId: onlyShiftId,   // #106: single-shift job — nothing to pick
-        status: "submitted",
+        // Round-3 re-test #19: no time yet, so it's Planned (like Add Crew
+        // from Job) — not a 0-hour row waiting in Review's Pending list.
+        // promoteWorkedStatus flips it to submitted when time lands.
+        status: "planned",
       })],
     });
   }
@@ -1383,6 +1387,13 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                   ))}
               </optgroup>
             </select>
+            {/* Round-3 re-test #11: a way back to the job. Office view only —
+                the crew-leader (/lead) view has no job pages. */}
+            {pickerKind === "job" && pickerKey && !hideBillAlwaysProp && (
+              <Link href={`/job-requests/${encodeURIComponent(pickerKey)}`} style={{ fontSize: 12, display: "inline-block", marginTop: 4 }}>
+                Open job →
+              </Link>
+            )}
           </div>
           {/* #96: the text-only "Linked Invoice / Quote Detail" card was removed,
               and this card's description became the button tooltip. */}
@@ -1439,11 +1450,11 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                 // we hand the document over to the print engine.
                 setTimeout(() => {
                   setExpandingDayKey(null);
+                  // #15: job number + document + day; no event/client name.
                   printWithTitle([
+                    currentJob?.jobNo || headerTitle,
                     "Timesheet",
-                    headerTitle,
-                    headerClient,
-                    dayFilter !== "all" ? dayFilter : undefined,
+                    dayFilter !== "all" ? dayFilter : "All days",
                   ]);
                   setTimeout(() => setCollapsedOverrides(prevOverrides), 1000);
                 }, 400);
@@ -1609,13 +1620,14 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                 return (
               <table className="timesheet-grid line-table">
                 <colgroup>
-                  <col style={{ width: "18%" }} />{/* Sign IN 1 */}
+                  {/* Round-3 re-test #12: same widths as the Sign-In Sheet. */}
+                  <col style={{ width: "16%" }} />{/* Sign IN 1 */}
                   <col style={{ width: "9%"  }} />{/* Time IN 1 */}
-                  <col style={{ width: "9%"  }} />{/* Time OUT 1 */}
+                  <col style={{ width: "11%" }} />{/* Time OUT 1 */}
                   <col style={{ width: "7%"  }} />{/* Meal 1 */}
-                  <col style={{ width: "18%" }} />{/* Sign IN 2 */}
+                  <col style={{ width: "16%" }} />{/* Sign IN 2 */}
                   <col style={{ width: "9%"  }} />{/* Time IN 2 */}
-                  <col style={{ width: "9%"  }} />{/* Time OUT 2 */}
+                  <col style={{ width: "11%" }} />{/* Time OUT 2 */}
                   <col style={{ width: "21%" }} />{/* Meal 2 (absorbs remaining) */}
                   <col className="col-hidden" />{/* STD HRS */}
                   <col className="col-hidden" />{/* OT HRS */}
@@ -2168,27 +2180,26 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                         </div>
                       </td>
                     </tr>
-                    <tr className={`line-row line-row-end ${band}${lockedClass}`} style={isLocked ? { opacity: 0.85 } : undefined}
-                        title={timeBlocked ? `Set ${roleGaps.join(", ")} first` : undefined}>
+                    <tr className={`line-row line-row-end ${band}${lockedClass}`} style={isLocked ? { opacity: 0.85 } : undefined}>
                       <td className="sig-box"></td>
-                      <td>
+                      <td className={timeBlocked ? "time-blocked" : undefined} title={timeBlocked ? `Set ${roleGaps.join(", ")} first` : undefined}>
                         <LazyTimeSelect ariaLabel="Time In 1" value={row.timeIn1} options={TIMES} disabled={isLocked || timeBlocked}
                           onChange={(v) => updateRow(row.id, { timeIn1: v })} />
                         <span className="print-time">{formatClock(row.timeIn1)}</span>
                       </td>
-                      <td>
+                      <td className={timeBlocked ? "time-blocked" : undefined} title={timeBlocked ? `Set ${roleGaps.join(", ")} first` : undefined}>
                         <LazyTimeSelect ariaLabel="Time Out 1" value={row.timeOut1} options={TIMES} disabled={isLocked || timeBlocked}
                           onChange={(v) => updateRow(row.id, { timeOut1: v })} />
                         <span className="print-time">{formatClock(row.timeOut1)}</span>
                       </td>
                       <td><select className="input-tight" disabled={isLocked} value={row.mealBreak1Minutes ?? row.lunchMinutes ?? 0} onChange={(e)=>updateRow(row.id, { mealBreak1Minutes:Number(e.target.value) })}>{mealBreakOptions().map((t)=><option key={t} value={t}>{t}</option>)}</select><span className="print-time">{row.mealBreak1Minutes ?? row.lunchMinutes ?? 0}</span></td>
                       <td className="sig-box"></td>
-                      <td>
+                      <td className={timeBlocked ? "time-blocked" : undefined} title={timeBlocked ? `Set ${roleGaps.join(", ")} first` : undefined}>
                         <LazyTimeSelect ariaLabel="Time In 2" value={row.timeIn2} options={TIMES} disabled={isLocked || timeBlocked}
                           onChange={(v) => updateRow(row.id, { timeIn2: v })} />
                         <span className="print-time">{formatClock(row.timeIn2)}</span>
                       </td>
-                      <td>
+                      <td className={timeBlocked ? "time-blocked" : undefined} title={timeBlocked ? `Set ${roleGaps.join(", ")} first` : undefined}>
                         <LazyTimeSelect ariaLabel="Time Out 2" value={row.timeOut2} options={TIMES} disabled={isLocked || timeBlocked}
                           onChange={(v) => updateRow(row.id, { timeOut2: v })} />
                         <span className="print-time">{formatClock(row.timeOut2)}</span>
@@ -2262,13 +2273,14 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table>
-                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hideBillAlways && <th>Total Bill</th>}</tr></thead>
+                  <thead><tr><th>Position</th><th>Specialty</th><th title="One per person per day">Person-days</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hideBillAlways && <th>Total Bill</th>}</tr></thead>
                   <tbody>
                     {summary.length === 0 ? (
-                      <tr><td colSpan={hideBillAlways ? 6 : 7} className="muted" style={{ textAlign: "center" }}>No entries.</td></tr>
+                      <tr><td colSpan={hideBillAlways ? 7 : 8} className="muted" style={{ textAlign: "center" }}>No entries.</td></tr>
                     ) : summary.map((r) => (
-                      <tr key={r.position}>
+                      <tr key={`${r.positionId ?? r.position}|${r.specialtyId ?? ""}`}>
                         <td>{r.position}</td>
+                        <td>{(r.specialtyId && specialtyNameById.get(r.specialtyId)) || "—"}</td>
                         <td>{r.workers}</td>
                         <td>{r.stdHours.toFixed(2)}</td>
                         <td>{r.otHours.toFixed(2)}</td>
@@ -2289,13 +2301,14 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
               </p>
               <div style={{ overflowX: "auto" }}>
                 <table>
-                  <thead><tr><th>Position</th><th>Workers</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hideBillAlways && <th>Total Bill</th>}</tr></thead>
+                  <thead><tr><th>Position</th><th>Specialty</th><th title="One per person per day">Person-days</th><th>STD Hours</th><th>OT Hours</th><th>DT Hours</th><th>Total Hours</th>{!hideBillAlways && <th>Total Bill</th>}</tr></thead>
                   <tbody>
                     {approvedSummary.length === 0 ? (
-                      <tr><td colSpan={hideBillAlways ? 6 : 7} className="muted" style={{ textAlign: "center" }}>No approved entries yet.</td></tr>
+                      <tr><td colSpan={hideBillAlways ? 7 : 8} className="muted" style={{ textAlign: "center" }}>No approved entries yet.</td></tr>
                     ) : approvedSummary.map((r) => (
-                      <tr key={r.position}>
+                      <tr key={`${r.positionId ?? r.position}|${r.specialtyId ?? ""}`}>
                         <td>{r.position}</td>
+                        <td>{(r.specialtyId && specialtyNameById.get(r.specialtyId)) || "—"}</td>
                         <td>{r.workers}</td>
                         <td>{r.stdHours.toFixed(2)}</td>
                         <td>{r.otHours.toFixed(2)}</td>

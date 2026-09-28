@@ -474,7 +474,7 @@ export function JobRequestDaysSection({
                 </button>
                 {isExpanded && (
                 <div style={{ padding: 10 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "130px 110px 110px 110px 90px 1fr 110px 80px", gap: 8, alignItems: "end" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "130px 110px 110px 110px 90px 1fr", gap: 8, alignItems: "end" }}>
                   <div>
                     <small>Date</small>
                     <input
@@ -511,30 +511,7 @@ export function JobRequestDaysSection({
                       onChange={(e) => patchDay(d, { expectedHours: Number(e.target.value || 0) })}
                     />
                   </div>
-                  <div>
-                    <small>Notes</small>
-                    <input
-                      disabled={disabled}
-                      value={d.notes ?? ""}
-                      onChange={(e) => patchDay(d, { notes: e.target.value })}
-                      placeholder="e.g. Load-in day"
-                    />
-                  </div>
-                  <div style={{ alignSelf: "end", paddingBottom: 6 }}>
-                    <label
-                      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, cursor: disabled ? "not-allowed" : "pointer" }}
-                      title="Flag this day as a holiday — all work hours bill at 2× the regular rate when this quote/invoice is generated."
-                    >
-                      <input
-                        type="checkbox"
-                        disabled={disabled}
-                        checked={!!d.isHoliday}
-                        onChange={(e) => patchDay(d, { isHoliday: e.target.checked })}
-                      />
-                      🎄 Holiday
-                    </label>
-                  </div>
-                  <div className="action-row" style={{ alignItems: "end", gap: 4 }}>
+                  <div className="action-row" style={{ alignItems: "end", justifyContent: "flex-end", gap: 6 }}>
                     {prev && (
                       <button
                         type="button"
@@ -550,8 +527,9 @@ export function JobRequestDaysSection({
                       className="secondary"
                       disabled={disabled}
                       onClick={() => removeDay(d)}
-                      style={{ color: "#a00", padding: "4px 8px", fontSize: 12 }}
-                    >✕</button>
+                      title="Delete this day and its crew needs + assigned crew"
+                      style={{ color: "#a00", padding: "4px 8px", fontSize: 12, marginLeft: 12 }}
+                    >🗑 Delete day</button>
                   </div>
                 </div>
 
@@ -560,9 +538,23 @@ export function JobRequestDaysSection({
                     template as the row above so "2nd Start / 2nd End" line up
                     directly under "Start Time / End Time". Flows to the Assigned
                     Crew fallback, copy planned→actual, and the sign-in sheet. */}
-                <div style={{ display: "grid", gridTemplateColumns: "130px 110px 110px 110px 90px 1fr 110px 80px", gap: 8, alignItems: "end", marginTop: 6 }}>
-                  <div />
-                  <div style={{ textAlign: "right", alignSelf: "center" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "130px 110px 110px 110px 90px 1fr", gap: 8, alignItems: "end", marginTop: 6 }}>
+                  <div style={{ alignSelf: "center" }}>
+                    <label
+                      style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, cursor: disabled ? "not-allowed" : "pointer" }}
+                      title="Flag this day as a holiday — all work hours bill at 2× the regular rate when this quote/invoice is generated."
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={disabled}
+                        checked={!!d.isHoliday}
+                        onChange={(e) => patchDay(d, { isHoliday: e.target.checked })}
+                      />
+                      🎄 Holiday
+                    </label>
+                  </div>
+                  <div style={{ textAlign: "right", alignSelf: "center" }}
+                       title="Second block (e.g. after lunch). Leave blank for a single-block day.">
                     <small className="muted">2nd block</small>
                   </div>
                   <div>
@@ -577,9 +569,19 @@ export function JobRequestDaysSection({
                       {TIMES.map((t) => <option key={t} value={t}>{t ? formatClock(t) : "—"}</option>)}
                     </select>
                   </div>
-                  <div style={{ gridColumn: "5 / -1", alignSelf: "center" }}>
-                    <small className="muted">Second block (e.g. after lunch). Leave blank for a single-block day.</small>
-                  </div>
+                </div>
+
+                {/* Round-3 re-test #2: day notes get a full-width row — they
+                    were squeezed into a ~70px column between Exp Hrs and Holiday. */}
+                <div style={{ marginTop: 6 }}>
+                  <small>Notes</small>
+                  <input
+                    disabled={disabled}
+                    value={d.notes ?? ""}
+                    onChange={(e) => patchDay(d, { notes: e.target.value })}
+                    placeholder="e.g. Load-in day"
+                    style={{ width: "100%" }}
+                  />
                 </div>
 
                 <div style={{ marginTop: 10, paddingLeft: 8, borderLeft: "2px solid var(--border, #e5e7eb)" }}>

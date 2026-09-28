@@ -416,7 +416,7 @@ export default function QuoteDetail({ id }: { id: string }) {
         <table>
           <thead>
             <tr>
-              <th>Date</th><th>Department</th><th>Specialty</th><th>Shift</th>
+              <th>Date</th><th>Position</th><th>Specialty</th><th>Shift</th>
               <th>Qty</th><th>Hrs</th><th>Travel</th>
               <th>$/hr</th><th>$/day</th><th>OT</th><th>DT</th>
               <th>Rule</th><th>Mode</th><th>Total</th>

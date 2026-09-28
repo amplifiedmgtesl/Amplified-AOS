@@ -179,13 +179,15 @@ export function CrewSignInSheet({
                       fills in on site lines up with the document the office
                       reads back in the app. */}
                   <colgroup>
-                    <col style={{ width: "18%" }} />{/* Sign IN 1  */}
+                    {/* Round-3 re-test #12: 2 points from each signature column to
+                        Time OUT so its header fits on one line. */}
+                    <col style={{ width: "16%" }} />{/* Sign IN 1  */}
                     <col style={{ width: "9%"  }} />{/* Time IN 1  */}
-                    <col style={{ width: "9%"  }} />{/* Time OUT 1 */}
+                    <col style={{ width: "11%" }} />{/* Time OUT 1 */}
                     <col style={{ width: "7%"  }} />{/* Meal 1     */}
-                    <col style={{ width: "18%" }} />{/* Sign IN 2  */}
+                    <col style={{ width: "16%" }} />{/* Sign IN 2  */}
                     <col style={{ width: "9%"  }} />{/* Time IN 2  */}
-                    <col style={{ width: "9%"  }} />{/* Time OUT 2 */}
+                    <col style={{ width: "11%" }} />{/* Time OUT 2 */}
                     <col style={{ width: "21%" }} />{/* Meal 2     */}
                   </colgroup>
                   <thead>
@@ -214,7 +216,7 @@ export function CrewSignInSheet({
                           <tr className="csis-identity">
                             <td colSpan={2}>
                               {emp?.fullName || <span className="csis-unfilled">{UNASSIGNED_LABEL}</span>}
-                              {!a.confirmed && <span className="csis-unconfirmed"> \u2014 unconfirmed</span>}
+                              {!a.confirmed && <span className="csis-unconfirmed"> — unconfirmed</span>}
                             </td>
                             <td colSpan={2}>{spc ? pos + " \u00b7 " + spc : pos}</td>
                             <td colSpan={1}>{anyShift && a.shiftId ? (shiftsById.get(a.shiftId)?.label || "") : ""}</td>
