@@ -169,9 +169,12 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         const driftFound = healedLines.some((l, i) => l !== q.lines[i]);
         if (driftFound && !cancelled) {
           const newTotal = Math.round(healedLines.reduce((s, l) => s + (l.total || 0), 0) * 100) / 100;
+          // Deposit follows the healed total, as on every edit — otherwise
+          // the stale saved deposit can exceed it (negative Balance Due).
+          const newDeposit = money(newTotal * ((q.depositPct ?? 0) / 100));
           // Skip the next autosave — heal isn't a user edit.
           skipNextAutosaveRef.current = true;
-          setQuote({ ...q, lines: healedLines, total: newTotal });
+          setQuote({ ...q, lines: healedLines, total: newTotal, deposit: newDeposit });
         }
 
         // Build the day list. If no day rows, synthesize a single day from the job.

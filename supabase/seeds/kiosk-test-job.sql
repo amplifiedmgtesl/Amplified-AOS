@@ -164,12 +164,12 @@ ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.sor
 --
 -- rate_mode seeded explicitly as 'hourly' — the app never writes it (#105).
 INSERT INTO job_request_days
-  (id, job_request_id, event_date, start_time, end_time, start_time2, end_time2, sort_order, is_holiday, rate_mode)
-SELECT 'jrd-kiosktest-a-1', 'jobreq-kiosktest-a', p.day1, '08:00', '13:00', '20:00', '02:00', 0, false, 'hourly' FROM seed_params p
+  (id, job_request_id, event_date, start_time, end_time, start_time2, end_time2, sort_order, is_holiday, rate_mode, expected_hours)
+SELECT 'jrd-kiosktest-a-1', 'jobreq-kiosktest-a', p.day1, '08:00', '13:00', '20:00', '02:00', 0, false, 'hourly', 11 FROM seed_params p
 UNION ALL
-SELECT 'jrd-kiosktest-a-2', 'jobreq-kiosktest-a', p.day2, '09:00', '17:00', NULL,    NULL,    1, false, 'hourly' FROM seed_params p
+SELECT 'jrd-kiosktest-a-2', 'jobreq-kiosktest-a', p.day2, '09:00', '17:00', NULL,    NULL,    1, false, 'hourly', 8 FROM seed_params p
 UNION ALL
-SELECT 'jrd-kiosktest-b-1', 'jobreq-kiosktest-b', p.day1, '09:00', '17:00', NULL,    NULL,    0, false, 'hourly' FROM seed_params p;
+SELECT 'jrd-kiosktest-b-1', 'jobreq-kiosktest-b', p.day1, '09:00', '17:00', NULL,    NULL,    0, false, 'hourly', 8 FROM seed_params p;
 
 -- ─── 4. Crew assignments ────────────────────────────────────────────────────
 -- Job A — 7 on day 1 (both shifts), 3 on day 2. Deliberate variety:
@@ -205,24 +205,27 @@ VALUES
 -- Assigned Crew header shows noise. They are also what Create Quote builds job
 -- A's quote lines from.
 --
+-- Per-person hours on every need (Load In 5 = block 1, Show 6 = block 2, full days 8):
+-- the first run left them 0 and Create Quote priced a $0 quote (round 3, 2026-09-28).
+--
 -- Only CONFIRMED crew count toward the spec and job A's ...-07 is unconfirmed on
 -- purpose, so a clean re-seed reads "6/7 spec filled · −1 short" on A day 1 until
 -- that box is ticked. A day 2 reads "3/3"; B reads "3/3".
 INSERT INTO job_request_crew_needs
-  (id, job_request_day_id, position_id, specialty_id, shift_id, quantity, sort_order)
+  (id, job_request_day_id, position_id, specialty_id, shift_id, quantity, sort_order, hours)
 VALUES
-  ('jrcn-kiosktest-a-d1-01','jrd-kiosktest-a-1','pos-04','spc-04-01','shift-kiosktest-a-loadin',1,0),
-  ('jrcn-kiosktest-a-d1-02','jrd-kiosktest-a-1','pos-01','spc-01-01','shift-kiosktest-a-loadin',1,1),
-  ('jrcn-kiosktest-a-d1-03','jrd-kiosktest-a-1','pos-01','spc-01-02','shift-kiosktest-a-loadin',1,2),
-  ('jrcn-kiosktest-a-d1-04','jrd-kiosktest-a-1','pos-03','spc-03-03','shift-kiosktest-a-loadin',1,3),
-  ('jrcn-kiosktest-a-d1-05','jrd-kiosktest-a-1','pos-05','spc-05-01','shift-kiosktest-a-show',  1,4),
-  ('jrcn-kiosktest-a-d1-06','jrd-kiosktest-a-1','pos-08','spc-08-01','shift-kiosktest-a-show',  1,5),
-  ('jrcn-kiosktest-a-d1-07','jrd-kiosktest-a-1','pos-10','spc-10-05','shift-kiosktest-a-show',  1,6),
-  ('jrcn-kiosktest-a-d2-01','jrd-kiosktest-a-2','pos-04','spc-04-01','shift-kiosktest-a-show',  1,0),
-  ('jrcn-kiosktest-a-d2-02','jrd-kiosktest-a-2','pos-01','spc-01-01','shift-kiosktest-a-show',  1,1),
-  ('jrcn-kiosktest-a-d2-03','jrd-kiosktest-a-2','pos-10','spc-10-05','shift-kiosktest-a-show',  1,2),
-  ('jrcn-kiosktest-b-d1-01','jrd-kiosktest-b-1','pos-01','spc-01-01',NULL,                      1,0),
-  ('jrcn-kiosktest-b-d1-02','jrd-kiosktest-b-1','pos-04','spc-04-01',NULL,                      1,1),
-  ('jrcn-kiosktest-b-d1-03','jrd-kiosktest-b-1','pos-14','spc-14-01',NULL,                      1,2);
+  ('jrcn-kiosktest-a-d1-01','jrd-kiosktest-a-1','pos-04','spc-04-01','shift-kiosktest-a-loadin',1,0,5),
+  ('jrcn-kiosktest-a-d1-02','jrd-kiosktest-a-1','pos-01','spc-01-01','shift-kiosktest-a-loadin',1,1,5),
+  ('jrcn-kiosktest-a-d1-03','jrd-kiosktest-a-1','pos-01','spc-01-02','shift-kiosktest-a-loadin',1,2,5),
+  ('jrcn-kiosktest-a-d1-04','jrd-kiosktest-a-1','pos-03','spc-03-03','shift-kiosktest-a-loadin',1,3,5),
+  ('jrcn-kiosktest-a-d1-05','jrd-kiosktest-a-1','pos-05','spc-05-01','shift-kiosktest-a-show',  1,4,6),
+  ('jrcn-kiosktest-a-d1-06','jrd-kiosktest-a-1','pos-08','spc-08-01','shift-kiosktest-a-show',  1,5,6),
+  ('jrcn-kiosktest-a-d1-07','jrd-kiosktest-a-1','pos-10','spc-10-05','shift-kiosktest-a-show',  1,6,6),
+  ('jrcn-kiosktest-a-d2-01','jrd-kiosktest-a-2','pos-04','spc-04-01','shift-kiosktest-a-show',  1,0,8),
+  ('jrcn-kiosktest-a-d2-02','jrd-kiosktest-a-2','pos-01','spc-01-01','shift-kiosktest-a-show',  1,1,8),
+  ('jrcn-kiosktest-a-d2-03','jrd-kiosktest-a-2','pos-10','spc-10-05','shift-kiosktest-a-show',  1,2,8),
+  ('jrcn-kiosktest-b-d1-01','jrd-kiosktest-b-1','pos-01','spc-01-01',NULL,                      1,0,8),
+  ('jrcn-kiosktest-b-d1-02','jrd-kiosktest-b-1','pos-04','spc-04-01',NULL,                      1,1,8),
+  ('jrcn-kiosktest-b-d1-03','jrd-kiosktest-b-1','pos-14','spc-14-01',NULL,                      1,2,8);
 
 COMMIT;

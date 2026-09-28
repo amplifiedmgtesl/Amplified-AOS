@@ -22,6 +22,7 @@ import {
   snapshotQuoteDaysFromJob,
   snapshotQuoteDaysFromParent,
 } from "@/lib/storage/quote-days";
+import { isDayModeLine } from "@/lib/rates/line-calc";
 
 // ─── ID generation ───────────────────────────────────────────────────────────
 
@@ -852,7 +853,11 @@ function buildLineFromRate(
   // since `hours` in the new model is total person-hours not per-worker.
   const baseHourly = rate?.hourly ?? 0;
   const baseDay = rate?.day ?? 0;
-  const isDayMode = rate?.rate_mode === "day" || (baseDay > 0 && hours === 0);
+  // Same mode rule the editor and PDF use (isDayModeLine): an explicit
+  // 'hourly' row stays hourly even at 0 hours. Inferring day mode from
+  // hours=0 here priced the line as a day while labelling it hourly, so the
+  // editor re-priced it to $0 against the saved deposit (round 3, 2026-09-28).
+  const isDayMode = isDayModeLine({ rateMode: rate?.rate_mode, baseDay, hours });
   const crewCount = opts.qty || 1;
   const totalPersonHours = isDayMode ? 0 : (opts.qty || 0) * hours;
   const rawTotal = isDayMode
