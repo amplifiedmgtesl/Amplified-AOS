@@ -954,6 +954,13 @@ Nothing was changed on these cards. **Connor/John confirm the right rates**, the
 Query used: issued quote lines joined to `rate_card_profile_rows` on (card, specialty) where the hourly
 differs; defaults = `DEFAULT_RATE_ROWS` in `lib/rates/defaults.ts`.
 
+**TODO — internal rate card comparison report (John, 2026-09-28).** A printable internal report (not the
+client-facing card): one grid with **Position / Specialty down the left** and **each client card across
+the top** (client — card name — effective date), cell = rates (at least hourly; day / OT / DT as a toggle
+or sub-rows). Purpose: compare cards row by row, spot outliers and cards still on defaults (would have made
+the overwrite check above a glance). Landscape print; pick which cards to include; highlight cells equal to
+`DEFAULT_RATE_ROWS`.
+
 ## 🧭 PROJECT: Timesheet ↔ invoice linking redesign (added 2026-07-12)
 
 **Status:** design agreed, not started. Full write-up: [`docs/timesheet-invoice-linking-redesign.md`](timesheet-invoice-linking-redesign.md).
