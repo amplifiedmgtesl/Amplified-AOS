@@ -56,6 +56,14 @@ export default function RateCardEditor() {
     // Hydrate client dropdown and name from the active profile
     const activeProfile = loadedProfiles.find((p) => p.id === activeId);
     if (activeProfile) {
+      // Load the ACTIVE card's own rows/terms. The page used to open in edit
+      // mode on this card while showing the cache's working rows
+      // (DEFAULT_RATE_ROWS — $35/$52.50/$70), so Save wrote defaults over the
+      // real card. openProfile() already did this; mount didn't.
+      loadProfileIntoCurrent(activeProfile.id);
+      setRows(loadRateRows());
+      setTerms(loadTerms());
+      setClientName(loadClientName());
       setClientId(activeProfile.clientId ?? "");
       setProfileName(activeProfile.name ?? "Standard");
       setEffectiveDate(activeProfile.effectiveDate ?? "");
