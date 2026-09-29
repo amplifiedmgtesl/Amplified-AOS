@@ -917,6 +917,43 @@ Not exercised: the "open sign-in on another day" warning (would need a return af
 
 ---
 
+## 🧭 PROJECT: Rate card — one source of truth (added 2026-09-28, John: "too much to tackle now — make sure it's on the list to review")
+
+**Problem (John):** a job can pin one rate card, its quote can carry another, and nobody can say which one
+the invoice or payroll uses. What the code does today (see memory `rate-card-resolution-divergence`):
+- **Quote** snapshots `quotes.rate_card_profile_id` at creation (frozen once issued).
+- **Timekeeping grid** bill rates come from the job's **most recent quote's** card.
+- **Invoicing** (`resolveRateCardForJob`) and **payroll** use the **job pin** → else `pickRateCardForJob(client,
+  date)` → else Master Default. `pickRateCardForJob` has an unexplained case (returns Rhino Holiday where
+  real invoices priced Standard).
+- `lib/job-health/checks/consistency.ts` flags job-vs-quote divergence but nothing prevents it.
+**To decide:** which record owns the card (job? quote once issued?), and make every screen read it through
+one resolver. Pairs with #105 (day-rate source of truth) and the rate-card cleanups below.
+
+**⚠ Review first — prod cards possibly overwritten by the Rate Card page bug (fixed in prod v2.5.1,
+2026-09-28).** The page opened showing the generic default rates under the card's name; Save wrote them
+over the card, and a partial edit reverted every *other* row to the default. No audit trail exists, so this
+is inferred by comparing issued-quote rates with each card as it stands now (a mismatch can also be a
+hand-edited quote). Cards where issued quotes consistently used a non-default rate but the card now shows
+the **default**:
+
+| Card | Specialty | Quoted (lines, dates) | Card now |
+|---|---|---|---|
+| JAYSON Entertainment — Standard (saved 9/5; 26/29 rows = default) | Crew Chief | $40 (76 lines, 7/3–9/16) | $42 |
+| Loud&Clear — Standard | Stagehand/Labor | $37 (92 lines, 6/17–9/28) | $35 |
+| Loud&Clear — Standard | Crew Chief | $40 (77 lines) | $42 |
+| Loud&Clear — Standard | Stage / Steward | $50 / $40 | $35 / $34 |
+| Rhino Staging — Standard (legacy 2026-04-15) (saved 9/8) | Crew Chief | $40 (65 lines, 8/22–9/27) | $42 |
+| Solotech — Standard | Camera Tripod / Crew Chief | $54 / $45 | $50 / $42 |
+| Lighthouse Immersive Cleveland — Standard | Forklift Shop | $52 | $38 |
+| Brewco Marketing — Standard (saved 8/10) | Stagehand/Labor | $38 | $35 |
+| Lighthouse Productions — Standard | Stagehand/Labor | $38 | $35 |
+| Master Default | Stagehand/Labor / Crew Chief | $37 / $41 | $35 / $42 |
+
+Nothing was changed on these cards. **Connor/John confirm the right rates**, then fix each card by hand.
+Query used: issued quote lines joined to `rate_card_profile_rows` on (card, specialty) where the hourly
+differs; defaults = `DEFAULT_RATE_ROWS` in `lib/rates/defaults.ts`.
+
 ## 🧭 PROJECT: Timesheet ↔ invoice linking redesign (added 2026-07-12)
 
 **Status:** design agreed, not started. Full write-up: [`docs/timesheet-invoice-linking-redesign.md`](timesheet-invoice-linking-redesign.md).
