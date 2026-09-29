@@ -10,6 +10,28 @@
 > **Next:** John reviews the judgement calls below → push + merge to dev → re-seed (ask first;
 > job A is now job C — see J7) → re-test the changed screens one step at a time.
 
+## ✅ Browser check of the fix batch, 2026-09-28 night (Claude in Chrome, dev `b6679a6`, fixture job C)
+
+Passed on screen / in the DB: R2 R3 R4 (day layout), R7 (lines 8:00→02:00 end 9/29, shift filled),
+R8, R9 (qty 3 → quote **$4,007**, deposit $2,003.50), R10 (Terms collapsed, bar pinned), R11, R12,
+R13 (sheet + grid), R14, R15 ("AES_26092829_RHI_KIOSKC — Crew Sign-In Sheet — 2026-09-28"), R17,
+R18 (kiosk lists only A/B/C), R19 (manual row = planned), R21, R22 (2nd Add Row reuses the blank,
+scrolls to it), R24 tip. **R20:** first fix was the wrong diagnosis — the real cause was the locked
+box's `title=""` hiding the cell hint; fixed in `b6679a6`, DOM-verified (native tooltips don't show in
+screenshots) — **John: hover a locked time box once to confirm.**
+
+**⚠ Found while testing — PROD BUG (same code on `main`):** the Rate Card page opens in edit mode on
+the active card but shows the cache's **default rows ($35 / $350 / $52.50 / $70)**, not the card's own
+rates (Rhino Stagehand/Labor showed $35; the card is $38). **Clicking Save Rate Card writes those
+defaults over the real card.** Likely source of the 35/52/70 rows seen in prod. Fixed on dev
+(`b6679a6`: mount loads the active card like choosing it from the list does) — verified: page now opens
+at $38. **Needs a prod fix on a branch off `main` + a prod check of which cards were overwritten —
+John's call.**
+
+Also fixed in `b6679a6`: day header "N crew" counts people (qty 3 = 3), not rows (C day 1 = 9, day 2
+= 5); seed marks retired jobs **Lost** (not yet applied — next re-seed) so they leave the kiosk list
+and the duplicate-job warning.
+
 ## Re-test findings, 2026-09-28 (R1–R24)
 
 | # | Finding | Status |
