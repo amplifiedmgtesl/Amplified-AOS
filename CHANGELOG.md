@@ -2,6 +2,11 @@
 
 What changed and when. Newest entries at the top.
 
+## September 2026
+
+### September 28 — v2.5.1
+- Fixed: the Rate Card page could wipe a client's rates. When the page opened, it showed the client card's name at the top but filled the table with the generic starting rates ($35 stagehand, $50 rigger, $42 crew chief and so on) instead of that card's own rates. Clicking **Save Rate Card** then wrote those generic rates over the real card. If someone changed a couple of rows and saved, those rows kept the new numbers and everything else on the card went back to the generic rates. The page now opens showing the card's actual rates, the same as picking the card from the list. Cards that may have been affected are being checked by hand — nothing has been changed on them automatically.
+
 ## August 2026
 
 ### August 30 — v2.5.0
