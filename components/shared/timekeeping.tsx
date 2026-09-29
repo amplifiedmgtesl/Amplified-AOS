@@ -113,7 +113,9 @@ function LazyTimeSelect({
         textAlign: "center",
       }}
       aria-label={ariaLabel}
-      title={disabled ? "" : "Click to set time"}
+      // #20: undefined (not "") when disabled — an empty title hides the
+      // cell's "Set position… first" hint that should show instead.
+      title={disabled ? undefined : "Click to set time"}
     >
       {value ? formatClock(value) : <span style={{ color: "#bbb" }}>—</span>}
     </div>

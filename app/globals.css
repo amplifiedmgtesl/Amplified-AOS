@@ -1164,6 +1164,3 @@ body.show-ids .record-id::before { content: "🆔 "; }
 }
 @media print { .quote-editor-actions { position: static; } }
 
-/* Round-3 re-test #20: a disabled control swallows hover, so the "Set position
-   … first" hint on its cell never showed. Let the hover reach the cell. */
-.timesheet-grid td.time-blocked :disabled { pointer-events: none; }

@@ -470,7 +470,10 @@ export function JobRequestDaysSection({
                 >
                   <span style={{ fontSize: 12, opacity: 0.85, width: 12 }}>{isExpanded ? "▾" : "▸"}</span>
                   <strong style={{ fontSize: 14, minWidth: 140 }}>{dayLabel(d)}</strong>
-                  <span style={{ fontSize: 12, flex: 1, opacity: 0.85 }}>{daySummary(d, crew.length)}</span>
+                  <span style={{ fontSize: 12, flex: 1, opacity: 0.85 }}>
+                    {/* Round-3 re-test: people, not position rows (a qty-3 row is 3 crew). */}
+                    {daySummary(d, crew.reduce((n, c) => n + (Number(c.quantity) || 0), 0))}
+                  </span>
                 </button>
                 {isExpanded && (
                 <div style={{ padding: 10 }}>
