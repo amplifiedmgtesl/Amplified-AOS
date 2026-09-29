@@ -137,7 +137,28 @@ export default function RateCardEditor() {
     setRows(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
   }
 
+  // Round-3 re-test #22 (same as #72 on Assigned Crew): Add Row landed
+  // off-screen, so it looked like nothing happened and a second click stacked
+  // another blank. Reuse an untouched blank row, and scroll to + highlight it.
+  const [focusRowIndex, setFocusRowIndex] = useState<number | null>(null);
+  useEffect(() => {
+    if (focusRowIndex == null) return;
+    const el = document.querySelector<HTMLElement>(`[data-rate-row="${focusRowIndex}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.style.transition = "background-color 0.3s";
+    el.style.backgroundColor = "#fff3c4";
+    setTimeout(() => { el.style.backgroundColor = ""; }, 1600);
+    setFocusRowIndex(null);
+  }, [focusRowIndex, rows]);
+
   function addRateRow() {
+    const isBlank = (r: RateRow) =>
+      !(Number(r.hourly) > 0) && !(Number(r.day) > 0) && !(Number(r.otRate) > 0) && !(Number(r.dtRate) > 0)
+      && !(Number(r.payHourly) > 0) && !(Number(r.payOtRate) > 0) && !(Number(r.payDtRate) > 0);
+    const blankIdx = rows.findIndex(isBlank);
+    if (blankIdx >= 0) { setFocusRowIndex(blankIdx); return; }
+    setFocusRowIndex(rows.length);
     const posName = POSITIONS[0] || "Stagehand";
     const spcs = specialtiesForPosition(posName);
     const first = spcs[0];
@@ -466,7 +487,7 @@ export default function RateCardEditor() {
                 const spcs = specialtiesForPosition(row.position);
                 const resolvedId = resolveSpecialtyId(row);
                 return (
-                  <tr key={index}>
+                  <tr key={index} data-rate-row={index}>
                     <td><input type="checkbox" disabled={mode === "none"} checked={row.show} onChange={(e) => updateRow(index, { show: e.target.checked })} /></td>
                     <td>
                       <select disabled={mode === "none"} value={row.position} onChange={(e) => {

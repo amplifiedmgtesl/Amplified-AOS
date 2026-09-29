@@ -885,10 +885,12 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
               placeholder="(blank — populated when client signs)"
             />
           </label>
-          <label style={{ marginTop: 8 }}>
-            <div className="muted">Terms</div>
-            <textarea value={quote.terms} onChange={(e) => updateQuote({ terms: e.target.value })} rows={6} />
-          </label>
+          {/* Round-3 re-test #10: Terms are long boilerplate — collapsed by
+              default so the editor isn't dominated by them. */}
+          <details style={{ marginTop: 8 }}>
+            <summary className="muted" style={{ cursor: "pointer" }}>Terms</summary>
+            <textarea value={quote.terms} onChange={(e) => updateQuote({ terms: e.target.value })} rows={10} />
+          </details>
         </div>
       </div>
 
@@ -1019,7 +1021,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
                   <table>
                     <thead>
                       <tr>
-                        <th>Department</th><th>Specialty</th><th>Shift</th>
+                        <th>Position</th><th>Specialty</th><th>Shift</th>
                         <th title="Worker count">Crew</th>
                         <th title="Total ST person-hours">ST Hrs</th>
                         <th title="Total OT person-hours">OT Hrs</th>
@@ -1049,7 +1051,7 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
           <div style={{ overflowX: "auto" }}>
             <table>
               <thead>
-                <tr><th>Department</th><th>Specialty</th><th>Date</th><th>Crew</th><th>ST Hrs</th><th>$/hr</th><th>Total</th><th></th></tr>
+                <tr><th>Position</th><th>Specialty</th><th>Date</th><th>Crew</th><th>ST Hrs</th><th>$/hr</th><th>Total</th><th></th></tr>
               </thead>
               <tbody>
                 {unassigned.map(({ line, globalIndex }) => (
@@ -1096,7 +1098,9 @@ export default function QuoteDraftEditor({ id }: { id: string }) {
         </div>
       </div>
 
-      <div className="action-row">
+      {/* #10: pinned to the bottom of the window so Save / Issue are reachable
+          without scrolling past every line item. */}
+      <div className="action-row quote-editor-actions">
         <button onClick={onSave} disabled={saving === "saving"}>
           {saving === "saving" ? "Saving…" : "Save Draft"}
         </button>

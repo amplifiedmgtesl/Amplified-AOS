@@ -558,17 +558,26 @@ async function buildLinesFromJob(jobRequestId: string): Promise<{
           ? rateCard.rows.find((rr: any) => rr.specialty_id === need.specialty_id)
           : undefined;
         const hours = need.hours ?? day.expected_hours ?? 0;
-        lines.push(buildLineFromRate(rate, {
-          qty: need.quantity,
-          hours,
-          quoteDate: day.event_date,
-          startTime: day.start_time,
-          endTime: day.end_time,
-          positionId: need.position_id,
-          specialtyId: need.specialty_id,
-          department: positionNameById.get(need.position_id) ?? undefined,
-          specialty: specialtyNameById.get(need.specialty_id) ?? undefined,
-        }));
+        // The line spans the whole day — through block 2 when there is one —
+        // and ends the next calendar day when that end is past midnight
+        // (round-3 re-test #7: lines used to stop at block 1's end).
+        const endTime = day.start_time2 && day.end_time2 ? day.end_time2 : day.end_time;
+        const crossesMidnight = !!(day.start_time && endTime && endTime < day.start_time);
+        lines.push({
+          ...buildLineFromRate(rate, {
+            qty: need.quantity,
+            hours,
+            quoteDate: day.event_date,
+            startTime: day.start_time,
+            endTime,
+            positionId: need.position_id,
+            specialtyId: need.specialty_id,
+            department: positionNameById.get(need.position_id) ?? undefined,
+            specialty: specialtyNameById.get(need.specialty_id) ?? undefined,
+          }),
+          shiftId: need.shift_id ?? undefined,
+          endDate: crossesMidnight ? nextDay(day.event_date) : undefined,
+        });
       }
     }
   } else {
@@ -826,6 +835,13 @@ export async function deleteDraft(quoteId: string): Promise<void> {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** "YYYY-MM-DD" → the following calendar day (UTC math, no DST drift). */
+function nextDay(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
 
 function buildLineFromRate(
   rate: any | undefined,

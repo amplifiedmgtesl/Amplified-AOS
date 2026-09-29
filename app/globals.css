@@ -250,10 +250,7 @@ small,.muted{color:var(--muted)}
 }
 /* #89: no colour override on screen — #666 on the dark header row made both
    Sign IN labels unreadable. Print keeps its own grey styling below. */
-.timesheet-grid .sig-box-th{
-  font-size:11px;
-  font-style:italic;
-}
+/* Round-3 re-test #13: Sign IN headers use the normal header style (no italic/grey override). */
 
 /* Timesheet PDF header: small logo on the left, prominent event name to its right.
    Flexbox (not grid) so a narrow viewport can't collapse it into a stack. */
@@ -354,12 +351,6 @@ small,.muted{color:var(--muted)}
     border:1px solid #888 !important;
     background:#fff !important;
     padding:10px 4px !important;
-  }
-  .timesheet-grid .sig-box-th{
-    background:#e0e0e0 !important;
-    border:1px solid #888 !important;
-    font-size:10px !important;
-    text-align:center !important;
   }
   /* Override the colored alternating bands. On a sign-in sheet those
      cream/blue/green/peach colors print like a kid's coloring book.
@@ -788,6 +779,7 @@ td, th {
 .crew-sign-in-sheet .csis-table th {
   background: #e0e0e0; color: #000; text-align: left;
   padding: 4px 6px; border: 1px solid #888; font-weight: 700;
+  white-space: nowrap; /* #12 */
 }
 .crew-sign-in-sheet .csis-table td {
   padding: 6px; border: 1px solid #999; background: #fff; vertical-align: bottom;
@@ -806,10 +798,6 @@ td, th {
    .sig-box so the on-site paper and the office document read the same. */
 .crew-sign-in-sheet .csis-table td.csis-sig {
   border: 1px solid #888; background: #fff; padding: 10px 4px; min-width: 60px;
-}
-.crew-sign-in-sheet .csis-table th.csis-sig-th {
-  background: #e0e0e0; border: 1px solid #888;
-  font-size: 10px; text-align: center; font-style: italic; color: #444;
 }
 .crew-sign-in-sheet .csis-empty {
   font-size: 10pt; font-style: italic; color: #777; padding: 4px 0;
@@ -1167,3 +1155,15 @@ body.show-ids .record-id::before { content: "🆔 "; }
   margin-top: 16px; padding-top: 8px; border-top: 1px solid #ccc;
   font-size: 8pt; color: #888; text-align: center;
 }
+
+/* Round-3 re-test #10: quote editor action bar stays in reach. */
+.quote-editor-actions {
+  position: sticky; bottom: 0; z-index: 15;
+  background: var(--panel);
+  padding: 10px 0; border-top: 1px solid var(--line);
+}
+@media print { .quote-editor-actions { position: static; } }
+
+/* Round-3 re-test #20: a disabled control swallows hover, so the "Set position
+   … first" hint on its cell never showed. Let the hover reach the cell. */
+.timesheet-grid td.time-blocked :disabled { pointer-events: none; }

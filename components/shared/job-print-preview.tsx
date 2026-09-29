@@ -159,7 +159,9 @@ export default function JobPrintPreview({ id }: { id: string }) {
   function doPrint() {
     if (blocked || !job) return;
     // #83: a real filename instead of "Amplified Operations Suite.pdf".
-    printWithTitle([DOC_LABEL[doc], job.jobNo, job.eventName, day === "all" ? "All days" : day]);
+    // Round-3 re-test #15: the job number already identifies the job —
+    // no event name in the file name.
+    printWithTitle([job.jobNo || job.eventName, DOC_LABEL[doc], day === "all" ? "All days" : day]);
   }
 
   return (
@@ -174,7 +176,11 @@ export default function JobPrintPreview({ id }: { id: string }) {
         <div className="ppa-row">
           <a href={`/job-requests/${encodeURIComponent(id)}`} className="ppa-back">← Back to job</a>
           <button onClick={doPrint} className="ppa-print" disabled={blocked}
-            title={blocked ? "Set start/end times for the listed days first" : undefined}>
+            title={blocked
+              ? "Set start/end times for the listed days first"
+              // Round-3 re-test #24: Safari ignores the page's landscape
+              // setting (Chrome obeys it and hides the choice).
+              : "Prints landscape. In Safari, choose Landscape in the print dialog."}>
             Print / Save as PDF
           </button>
           <span className="ppa-title" title={DOC_PURPOSE[doc]}>{DOC_LABEL[doc]}</span>

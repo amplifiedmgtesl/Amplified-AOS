@@ -174,8 +174,24 @@ export default function TimeClockPage() {
     document.title = "Time Clock";
     try {
       const all = loadJobRequests();
-      // Most-recent event first; kiosk is opened for today's/near jobs.
-      const sorted = [...all].sort((a, b) => (b.requestDate || "").localeCompare(a.requestDate || ""));
+      // Round-3 re-test #18: only jobs running yesterday → tomorrow (on this
+      // device's calendar) — yesterday so a shift past midnight can still
+      // sign out. By DATE, not status: status is rarely advanced in prod, so
+      // "Booked only" would hide real jobs. Lost/cancelled are dropped.
+      const today = deviceLocalDate();
+      const shift = (ymd: string, n: number) => {
+        const d = new Date(`${ymd}T00:00:00Z`);
+        d.setUTCDate(d.getUTCDate() + n);
+        return d.toISOString().slice(0, 10);
+      };
+      const from = shift(today, -1), to = shift(today, 1);
+      const near = all.filter((j) => {
+        if (j.status === "lost" || j.status === "cancelled") return false;
+        const start = j.requestDate || "";
+        const end = j.endDate || start;
+        return !!start && start <= to && end >= from;
+      });
+      const sorted = near.sort((a, b) => (b.requestDate || "").localeCompare(a.requestDate || ""));
       setJobs(sorted);
     } catch { /* cache warming — StoreProvider guarantees it before render, but be safe */ }
   }, []);

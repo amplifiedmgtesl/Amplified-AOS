@@ -3,7 +3,7 @@
 --
 -- Round 4+ (backlog #85, decided 2026-09-13): TWO jobs, both seeded WITHOUT a quote.
 --
---   A  jobreq-kiosktest-a · AES_..._RHI_KIOSKA · status LEAD
+--   A  jobreq-kiosktest-c · AES_..._RHI_KIOSKC · status LEAD
 --      The full fixture (2 days, 2 shifts, midnight-crossing block, 7+3 crew).
 --      Test step 1 is in the app: Create Quote from the Daily Requirements, issue
 --      it, then Book the job. Quote pricing runs in app code, so a SQL seed can't
@@ -62,7 +62,7 @@ DECLARE locked int;
 BEGIN
   SELECT count(*) INTO locked
   FROM timesheet_entries
-  WHERE job_id IN ('jobreq-1786821000000', 'jobreq-kiosktest-a', 'jobreq-kiosktest-b')
+  WHERE job_id IN ('jobreq-1786821000000', 'jobreq-kiosktest-a', 'jobreq-kiosktest-c', 'jobreq-kiosktest-b')
     AND (status = 'approved' OR invoice_line_id IS NOT NULL);
   IF locked > 0 THEN
     RAISE EXCEPTION
@@ -71,26 +71,32 @@ BEGIN
 END $$;
 
 -- timesheet_captures cascades off timesheet_entries (FK ON DELETE CASCADE).
-DELETE FROM timesheet_entries WHERE job_id IN ('jobreq-1786821000000', 'jobreq-kiosktest-a', 'jobreq-kiosktest-b');
-DELETE FROM timesheets        WHERE job_id IN ('jobreq-1786821000000', 'jobreq-kiosktest-a', 'jobreq-kiosktest-b');
+DELETE FROM timesheet_entries WHERE job_id IN ('jobreq-1786821000000', 'jobreq-kiosktest-a', 'jobreq-kiosktest-c', 'jobreq-kiosktest-b');
+DELETE FROM timesheets        WHERE job_id IN ('jobreq-1786821000000', 'jobreq-kiosktest-a', 'jobreq-kiosktest-c', 'jobreq-kiosktest-b');
 
 -- Quotes: DRAFTS only (issued ones are frozen — see header). Job B should never
 -- have one; job A's issued quote, once the tester creates it, survives.
-DELETE FROM quotes WHERE job_request_id IN ('jobreq-kiosktest-a', 'jobreq-kiosktest-b') AND is_draft = true;
+DELETE FROM quotes WHERE job_request_id IN ('jobreq-kiosktest-c', 'jobreq-kiosktest-b') AND is_draft = true;
 
 DELETE FROM job_request_assignments
   WHERE job_request_day_id IN (SELECT id FROM job_request_days
-                               WHERE job_request_id IN ('jobreq-1786821000000', 'jobreq-kiosktest-a', 'jobreq-kiosktest-b'));
+                               WHERE job_request_id IN ('jobreq-1786821000000', 'jobreq-kiosktest-a', 'jobreq-kiosktest-c', 'jobreq-kiosktest-b'));
 DELETE FROM job_request_crew_needs
   WHERE job_request_day_id IN (SELECT id FROM job_request_days
-                               WHERE job_request_id IN ('jobreq-1786821000000', 'jobreq-kiosktest-a', 'jobreq-kiosktest-b'));
+                               WHERE job_request_id IN ('jobreq-1786821000000', 'jobreq-kiosktest-a', 'jobreq-kiosktest-c', 'jobreq-kiosktest-b'));
 DELETE FROM job_request_days
-  WHERE job_request_id IN ('jobreq-1786821000000', 'jobreq-kiosktest-a', 'jobreq-kiosktest-b');
+  WHERE job_request_id IN ('jobreq-1786821000000', 'jobreq-kiosktest-a', 'jobreq-kiosktest-c', 'jobreq-kiosktest-b');
 
 -- Retire the old job (header, shifts and frozen quote stay).
 UPDATE job_requests
-SET notes = 'RETIRED 2026-09-14: carries a frozen issued quote from round 2, so it cannot be reset to "no quote". Replaced by jobreq-kiosktest-a / -b. Safe to ignore.'
+SET notes = 'RETIRED 2026-09-14: carries a frozen issued quote from round 2, so it cannot be reset to "no quote". Replaced by jobreq-kiosktest-c / -b. Safe to ignore.'
 WHERE id = 'jobreq-1786821000000';
+
+-- Retire job A too (round-3 re-test, 2026-09-28): its quote was issued and is
+-- frozen, so it can never be "no quote" again. Job C replaces it — same fixture.
+UPDATE job_requests
+SET notes = 'RETIRED 2026-09-28: carries a frozen issued quote from the round-3 re-test. Replaced by jobreq-kiosktest-c. Safe to ignore.'
+WHERE id = 'jobreq-kiosktest-a';
 
 -- ─── 2. Job headers ─────────────────────────────────────────────────────────
 -- Client and venue copied from the old job (Rhino Staging, client code RHI).
@@ -100,11 +106,11 @@ INSERT INTO job_requests
   (id, client, client_id, event_name, venue, venue_address, city, state, city_state, venue_zip,
    request_date, end_date, status, notes, event_abbr, job_no, rate_card_profile_id, timezone,
    payroll_daily_rules_exempt, attachment_names)
-SELECT 'jobreq-kiosktest-a', o.client, o.client_id, 'KIOSK TEST A - quote from requirements',
+SELECT 'jobreq-kiosktest-c', o.client, o.client_id, 'KIOSK TEST C - quote from requirements',
        o.venue, o.venue_address, o.city, o.state, o.city_state, o.venue_zip,
        p.day1, p.day2, 'lead',
        'Seeded for Phase 0 / kiosk re-test. Step 1: Create Quote from Daily Requirements, issue, then Book. Safe to delete.',
-       'KIOSKA', 'AES_' || to_char(p.day1, 'YYMMDD') || to_char(p.day2, 'DD') || '_RHI_KIOSKA',
+       'KIOSKC', 'AES_' || to_char(p.day1, 'YYMMDD') || to_char(p.day2, 'DD') || '_RHI_KIOSKC',
        'ratecard-1776287259366', 'America/New_York', false, '[]'::jsonb
 FROM job_requests o, seed_params p WHERE o.id = 'jobreq-1786821000000'
 UNION ALL
@@ -123,21 +129,21 @@ ON CONFLICT (id) DO UPDATE SET
   -- Job A with an issued quote: keep its job number (the quote number derives
   -- from it — review call 16) and its status (see header). Otherwise reset.
   job_no = CASE
-    WHEN job_requests.id = 'jobreq-kiosktest-a'
-     AND EXISTS (SELECT 1 FROM quotes q WHERE q.job_request_id = 'jobreq-kiosktest-a' AND q.is_draft = false)
+    WHEN job_requests.id = 'jobreq-kiosktest-c'
+     AND EXISTS (SELECT 1 FROM quotes q WHERE q.job_request_id = 'jobreq-kiosktest-c' AND q.is_draft = false)
     THEN job_requests.job_no
     ELSE EXCLUDED.job_no
   END,
   status = CASE
-    WHEN job_requests.id = 'jobreq-kiosktest-a'
-     AND EXISTS (SELECT 1 FROM quotes q WHERE q.job_request_id = 'jobreq-kiosktest-a' AND q.is_draft = false)
+    WHEN job_requests.id = 'jobreq-kiosktest-c'
+     AND EXISTS (SELECT 1 FROM quotes q WHERE q.job_request_id = 'jobreq-kiosktest-c' AND q.is_draft = false)
     THEN job_requests.status
     ELSE EXCLUDED.status
   END;
 
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM quotes WHERE job_request_id = 'jobreq-kiosktest-a' AND is_draft = false) THEN
+  IF EXISTS (SELECT 1 FROM quotes WHERE job_request_id = 'jobreq-kiosktest-c' AND is_draft = false) THEN
     RAISE NOTICE 'Job A already has an issued quote (frozen) — it survives this re-seed; status left as-is.';
   END IF;
   IF EXISTS (SELECT 1 FROM quotes WHERE job_request_id = 'jobreq-kiosktest-b' AND is_draft = false) THEN
@@ -149,8 +155,8 @@ END $$;
 -- no shift is required anywhere).
 INSERT INTO job_request_shifts (id, job_request_id, label, sort_order)
 VALUES
-  ('shift-kiosktest-a-loadin', 'jobreq-kiosktest-a', 'Load In', 0),
-  ('shift-kiosktest-a-show',   'jobreq-kiosktest-a', 'Show',    1)
+  ('shift-kiosktest-c-loadin', 'jobreq-kiosktest-c', 'Load In', 0),
+  ('shift-kiosktest-c-show',   'jobreq-kiosktest-c', 'Show',    1)
 ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.sort_order;
 
 -- ─── 3. Days ────────────────────────────────────────────────────────────────
@@ -165,9 +171,9 @@ ON CONFLICT (id) DO UPDATE SET label = EXCLUDED.label, sort_order = EXCLUDED.sor
 -- rate_mode seeded explicitly as 'hourly' — the app never writes it (#105).
 INSERT INTO job_request_days
   (id, job_request_id, event_date, start_time, end_time, start_time2, end_time2, sort_order, is_holiday, rate_mode, expected_hours)
-SELECT 'jrd-kiosktest-a-1', 'jobreq-kiosktest-a', p.day1, '08:00', '13:00', '20:00', '02:00', 0, false, 'hourly', 11 FROM seed_params p
+SELECT 'jrd-kiosktest-c-1', 'jobreq-kiosktest-c', p.day1, '08:00', '13:00', '20:00', '02:00', 0, false, 'hourly', 11 FROM seed_params p
 UNION ALL
-SELECT 'jrd-kiosktest-a-2', 'jobreq-kiosktest-a', p.day2, '09:00', '17:00', NULL,    NULL,    1, false, 'hourly', 8 FROM seed_params p
+SELECT 'jrd-kiosktest-c-2', 'jobreq-kiosktest-c', p.day2, '09:00', '17:00', NULL,    NULL,    1, false, 'hourly', 8 FROM seed_params p
 UNION ALL
 SELECT 'jrd-kiosktest-b-1', 'jobreq-kiosktest-b', p.day1, '09:00', '17:00', NULL,    NULL,    0, false, 'hourly', 8 FROM seed_params p;
 
@@ -186,16 +192,16 @@ INSERT INTO job_request_assignments
   (id, job_request_day_id, employee_key, position_id, specialty_id, shift_id, confirmed,
    planned_in1, planned_out1, planned_in2, planned_out2, sort_order)
 VALUES
-  ('jra-kiosktest-a-d1-01','jrd-kiosktest-a-1','AES-00465','pos-04','spc-04-01','shift-kiosktest-a-loadin',true, '07:00','13:00','21:00','03:00',0),
-  ('jra-kiosktest-a-d1-02','jrd-kiosktest-a-1','AES-01326','pos-01','spc-01-01','shift-kiosktest-a-loadin',true, '10:00',NULL,   NULL,   NULL,   1),
-  ('jra-kiosktest-a-d1-03','jrd-kiosktest-a-1','AES-00734','pos-01','spc-01-02','shift-kiosktest-a-loadin',true, NULL,   NULL,   NULL,   NULL,   2),
-  ('jra-kiosktest-a-d1-04','jrd-kiosktest-a-1','AES-01241','pos-05','spc-05-01','shift-kiosktest-a-show',  true, '09:00','13:00',NULL,   NULL,   3),
-  ('jra-kiosktest-a-d1-05','jrd-kiosktest-a-1','AES-02081','pos-08','spc-08-01','shift-kiosktest-a-show',  true, NULL,   NULL,   NULL,   NULL,   4),
-  ('jra-kiosktest-a-d1-06','jrd-kiosktest-a-1','AES-01755','pos-10','spc-10-05','shift-kiosktest-a-show',  true, NULL,   NULL,   NULL,   NULL,   5),
-  ('jra-kiosktest-a-d1-07','jrd-kiosktest-a-1','AES-01783','pos-03','spc-03-03','shift-kiosktest-a-loadin',false,NULL,   NULL,   NULL,   NULL,   6),
-  ('jra-kiosktest-a-d2-01','jrd-kiosktest-a-2','AES-00465','pos-04','spc-04-01','shift-kiosktest-a-show',  true, NULL,   NULL,   NULL,   NULL,   0),
-  ('jra-kiosktest-a-d2-02','jrd-kiosktest-a-2','AES-01326','pos-01','spc-01-01','shift-kiosktest-a-show',  true, NULL,   NULL,   NULL,   NULL,   1),
-  ('jra-kiosktest-a-d2-03','jrd-kiosktest-a-2','AES-01755','pos-10','spc-10-05','shift-kiosktest-a-show',  true, NULL,   NULL,   NULL,   NULL,   2),
+  ('jra-kiosktest-c-d1-01','jrd-kiosktest-c-1','AES-00465','pos-04','spc-04-01','shift-kiosktest-c-loadin',true, '07:00','13:00','21:00','03:00',0),
+  ('jra-kiosktest-c-d1-02','jrd-kiosktest-c-1','AES-01326','pos-01','spc-01-01','shift-kiosktest-c-loadin',true, '10:00',NULL,   NULL,   NULL,   1),
+  ('jra-kiosktest-c-d1-03','jrd-kiosktest-c-1','AES-00734','pos-01','spc-01-02','shift-kiosktest-c-loadin',true, NULL,   NULL,   NULL,   NULL,   2),
+  ('jra-kiosktest-c-d1-04','jrd-kiosktest-c-1','AES-01241','pos-05','spc-05-01','shift-kiosktest-c-show',  true, '09:00','13:00',NULL,   NULL,   3),
+  ('jra-kiosktest-c-d1-05','jrd-kiosktest-c-1','AES-02081','pos-08','spc-08-01','shift-kiosktest-c-show',  true, NULL,   NULL,   NULL,   NULL,   4),
+  ('jra-kiosktest-c-d1-06','jrd-kiosktest-c-1','AES-01755','pos-10','spc-10-05','shift-kiosktest-c-show',  true, NULL,   NULL,   NULL,   NULL,   5),
+  ('jra-kiosktest-c-d1-07','jrd-kiosktest-c-1','AES-01783','pos-03','spc-03-03','shift-kiosktest-c-loadin',false,NULL,   NULL,   NULL,   NULL,   6),
+  ('jra-kiosktest-c-d2-01','jrd-kiosktest-c-2','AES-00465','pos-04','spc-04-01','shift-kiosktest-c-show',  true, NULL,   NULL,   NULL,   NULL,   0),
+  ('jra-kiosktest-c-d2-02','jrd-kiosktest-c-2','AES-01326','pos-01','spc-01-01','shift-kiosktest-c-show',  true, NULL,   NULL,   NULL,   NULL,   1),
+  ('jra-kiosktest-c-d2-03','jrd-kiosktest-c-2','AES-01755','pos-10','spc-10-05','shift-kiosktest-c-show',  true, NULL,   NULL,   NULL,   NULL,   2),
   ('jra-kiosktest-b-d1-01','jrd-kiosktest-b-1','AES-00001','pos-01','spc-01-01',NULL,                      true, NULL,   NULL,   NULL,   NULL,   0),
   ('jra-kiosktest-b-d1-02','jrd-kiosktest-b-1','AES-00002','pos-04','spc-04-01',NULL,                      true, NULL,   NULL,   NULL,   NULL,   1),
   ('jra-kiosktest-b-d1-03','jrd-kiosktest-b-1','AES-00003','pos-14','spc-14-01',NULL,                      true, NULL,   NULL,   NULL,   NULL,   2);
@@ -209,21 +215,22 @@ VALUES
 -- the first run left them 0 and Create Quote priced a $0 quote (round 3, 2026-09-28).
 --
 -- Only CONFIRMED crew count toward the spec and job A's ...-07 is unconfirmed on
--- purpose, so a clean re-seed reads "6/7 spec filled · −1 short" on A day 1 until
--- that box is ticked. A day 2 reads "3/3"; B reads "3/3".
+-- purpose. Stagehand / Labor is quantity 3 on both A days (round-3 re-test #9:
+-- a quote line with more than one person) but only one is assigned, so A day 1
+-- reads "6/9 spec filled · −3 short" and A day 2 "3/5 · −2 short"; B reads "3/3".
 INSERT INTO job_request_crew_needs
   (id, job_request_day_id, position_id, specialty_id, shift_id, quantity, sort_order, hours)
 VALUES
-  ('jrcn-kiosktest-a-d1-01','jrd-kiosktest-a-1','pos-04','spc-04-01','shift-kiosktest-a-loadin',1,0,5),
-  ('jrcn-kiosktest-a-d1-02','jrd-kiosktest-a-1','pos-01','spc-01-01','shift-kiosktest-a-loadin',1,1,5),
-  ('jrcn-kiosktest-a-d1-03','jrd-kiosktest-a-1','pos-01','spc-01-02','shift-kiosktest-a-loadin',1,2,5),
-  ('jrcn-kiosktest-a-d1-04','jrd-kiosktest-a-1','pos-03','spc-03-03','shift-kiosktest-a-loadin',1,3,5),
-  ('jrcn-kiosktest-a-d1-05','jrd-kiosktest-a-1','pos-05','spc-05-01','shift-kiosktest-a-show',  1,4,6),
-  ('jrcn-kiosktest-a-d1-06','jrd-kiosktest-a-1','pos-08','spc-08-01','shift-kiosktest-a-show',  1,5,6),
-  ('jrcn-kiosktest-a-d1-07','jrd-kiosktest-a-1','pos-10','spc-10-05','shift-kiosktest-a-show',  1,6,6),
-  ('jrcn-kiosktest-a-d2-01','jrd-kiosktest-a-2','pos-04','spc-04-01','shift-kiosktest-a-show',  1,0,8),
-  ('jrcn-kiosktest-a-d2-02','jrd-kiosktest-a-2','pos-01','spc-01-01','shift-kiosktest-a-show',  1,1,8),
-  ('jrcn-kiosktest-a-d2-03','jrd-kiosktest-a-2','pos-10','spc-10-05','shift-kiosktest-a-show',  1,2,8),
+  ('jrcn-kiosktest-c-d1-01','jrd-kiosktest-c-1','pos-04','spc-04-01','shift-kiosktest-c-loadin',1,0,5),
+  ('jrcn-kiosktest-c-d1-02','jrd-kiosktest-c-1','pos-01','spc-01-01','shift-kiosktest-c-loadin',3,1,5),
+  ('jrcn-kiosktest-c-d1-03','jrd-kiosktest-c-1','pos-01','spc-01-02','shift-kiosktest-c-loadin',1,2,5),
+  ('jrcn-kiosktest-c-d1-04','jrd-kiosktest-c-1','pos-03','spc-03-03','shift-kiosktest-c-loadin',1,3,5),
+  ('jrcn-kiosktest-c-d1-05','jrd-kiosktest-c-1','pos-05','spc-05-01','shift-kiosktest-c-show',  1,4,6),
+  ('jrcn-kiosktest-c-d1-06','jrd-kiosktest-c-1','pos-08','spc-08-01','shift-kiosktest-c-show',  1,5,6),
+  ('jrcn-kiosktest-c-d1-07','jrd-kiosktest-c-1','pos-10','spc-10-05','shift-kiosktest-c-show',  1,6,6),
+  ('jrcn-kiosktest-c-d2-01','jrd-kiosktest-c-2','pos-04','spc-04-01','shift-kiosktest-c-show',  1,0,8),
+  ('jrcn-kiosktest-c-d2-02','jrd-kiosktest-c-2','pos-01','spc-01-01','shift-kiosktest-c-show',  3,1,8),
+  ('jrcn-kiosktest-c-d2-03','jrd-kiosktest-c-2','pos-10','spc-10-05','shift-kiosktest-c-show',  1,2,8),
   ('jrcn-kiosktest-b-d1-01','jrd-kiosktest-b-1','pos-01','spc-01-01',NULL,                      1,0,8),
   ('jrcn-kiosktest-b-d1-02','jrd-kiosktest-b-1','pos-04','spc-04-01',NULL,                      1,1,8),
   ('jrcn-kiosktest-b-d1-03','jrd-kiosktest-b-1','pos-14','spc-14-01',NULL,                      1,2,8);
