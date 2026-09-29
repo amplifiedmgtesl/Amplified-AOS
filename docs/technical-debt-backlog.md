@@ -917,6 +917,16 @@ Not exercised: the "open sign-in on another day" warning (would need a return af
 
 ---
 
+## 🧭 TODO: "Reports" navigation section (added 2026-09-28, John)
+
+A **Reports** item in the sidebar — a home for internal reports instead of one-off exports. First
+candidates: the **Sales by State** report built 2026-09-24 (was a one-off spreadsheet,
+`~/amplified/sales-by-state-2026-09-24/Sales-by-State-2026.xlsx`), the **rate card comparison report**
+(TODO under the rate card project below), and existing report-style screens worth moving under it
+(Pre-Invoice Report, Job Costing, payroll PDFs — decide case by case). Office roles only; the crew-leader
+view (`/lead`) has its own layout and doesn't get it (memory: crew-leader-separate-layout). Each report:
+filters at the top, on-screen table, print/PDF + CSV.
+
 ## 🧭 PROJECT: Rate card — one source of truth (added 2026-09-28, John: "too much to tackle now — make sure it's on the list to review")
 
 **Problem (John):** a job can pin one rate card, its quote can carry another, and nobody can say which one
