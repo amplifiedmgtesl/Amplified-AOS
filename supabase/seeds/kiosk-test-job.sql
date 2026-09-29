@@ -89,13 +89,13 @@ DELETE FROM job_request_days
 
 -- Retire the old job (header, shifts and frozen quote stay).
 UPDATE job_requests
-SET notes = 'RETIRED 2026-09-14: carries a frozen issued quote from round 2, so it cannot be reset to "no quote". Replaced by jobreq-kiosktest-c / -b. Safe to ignore.'
+SET status = 'lost', notes = 'RETIRED 2026-09-14: carries a frozen issued quote from round 2, so it cannot be reset to "no quote". Replaced by jobreq-kiosktest-c / -b. Safe to ignore.'
 WHERE id = 'jobreq-1786821000000';
 
 -- Retire job A too (round-3 re-test, 2026-09-28): its quote was issued and is
 -- frozen, so it can never be "no quote" again. Job C replaces it — same fixture.
 UPDATE job_requests
-SET notes = 'RETIRED 2026-09-28: carries a frozen issued quote from the round-3 re-test. Replaced by jobreq-kiosktest-c. Safe to ignore.'
+SET status = 'lost', notes = 'RETIRED 2026-09-28: carries a frozen issued quote from the round-3 re-test. Replaced by jobreq-kiosktest-c. Safe to ignore.'
 WHERE id = 'jobreq-kiosktest-a';
 
 -- ─── 2. Job headers ─────────────────────────────────────────────────────────
