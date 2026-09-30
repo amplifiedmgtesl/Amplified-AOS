@@ -183,7 +183,7 @@ Chrome (chosen), paid HTML→PDF service (fallback if the spike fails).
 
 ## Setup outside the code (John / Connor)
 
-1. Create a Resend account under Amplified.
+1. Create a Resend account under Amplified. **Free plan is enough** (3,000 emails/month, 100/day; each To/CC/BCC address counts as one). Pro is $20/month for 50,000 if ever needed. Checked 2026-09-30.
 2. Add Resend's DNS records to **amplifiedesl.com** (whoever manages that domain's DNS).
 3. Add to Vercel (John runs a one-liner; Claude verifies names only): `RESEND_API_KEY`,
    `NOTIFICATIONS_FROM_EMAIL=reports@amplifiedesl.com`, `NOTIFICATIONS_ENABLED` (`true` on production
