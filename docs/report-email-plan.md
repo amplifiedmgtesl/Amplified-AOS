@@ -1,6 +1,7 @@
 # Email a Report — Plan
 
-Status: **Draft for John's review** (2026-09-29). Branch `feature/report-email`. No code yet.
+Status: **Approved by John** (2026-09-30), including every recommendation below. Branch
+`feature/report-email`. No code yet; step 0 (server PDF spike) is next.
 
 ## Goal
 
@@ -24,6 +25,17 @@ Later reports (signed Actuals, sign-in sheet, anything new) plug into the same w
 | D6 | **One report per email** in this release. No bundles. If two documents must go in one email, Connor sends it from his own mail. |
 | D7 | Sender/reply-to is a **choice in the pop-up, with a default per report**. |
 
+Approved 2026-09-30:
+
+| # | Decision |
+|---|---|
+| D8 | **PDFs are made on the server** with headless Chrome — identical to Print, crisp, small files. |
+| D9 | Reply-To defaults: Pre-Invoice → **the sender**; payroll → the **Payroll** office entry. Defaults live with each report in code. |
+| D10 | "Staff" recipients = **all AOS users with an email, grouped by role**. No job-specific staff this release. |
+| D11 | **No automatic CC to John.** The history screen covers it. |
+| D12 | Email History is **admin roles only**. |
+| D13 | Sent files are kept **indefinitely** for now. |
+
 ## What already exists (verified on `dev`, 2026-09-29)
 
 - **Sending code, built 6/16, never wired into any screen** (`lib/notifications/`, spec
@@ -38,7 +50,7 @@ Later reports (signed Actuals, sign-in sheet, anything new) plug into the same w
   `NOTIFICATIONS_ENABLED` as **on**. The moment a Resend key is added, preview deployments would send
   real email. The spec says the opposite (off unless explicitly `"true"`). Flip it.
 - **No PDF library.** Every "PDF" in AOS is the browser's print dialog (`lib/print-with-title.ts`).
-  To attach a PDF, AOS has to be able to *make* one — see Decision needed #1.
+  To attach a PDF, AOS has to be able to *make* one — D8, §3a.
 - **No shared report toolbar.** Pre-Invoice, job print preview, and payroll PDF each build their own,
   sharing only CSS (`.print-actions`, `.print-preview-page` in `globals.css`).
 - **Payroll CSV** is built in the browser (`lib/store/payroll-export.ts`) and downloaded as a file —
@@ -68,12 +80,12 @@ Print behaves exactly as today. Pages move onto the wrapper one at a time.
   - **Client contacts** — `client_contacts` for the job's client (billing contacts first for
     Pre-Invoice). Hidden for reports with no client (payroll).
   - **Office recipients** — the System Maintenance list (D2).
-  - **AOS users** — staff with a login and an email (admins, coordinators, crew leaders), so Connor
-    can send to a coordinator or lead. See Decision needed #3.
+  - **AOS users** — everyone with a login and an email, grouped by role (admins, coordinators, crew leaders), so Connor
+    can send to a coordinator or lead. See D10.
   - **Me** — the sender.
   - **Other** — type any address.
 - **Subject + message** — pre-filled per report, editable.
-- **Reply-To** — dropdown: Me / any office recipient. Default per report (D7, Decision needed #2).
+- **Reply-To** — dropdown: Me / any office recipient. Default per report (D7, D9).
 - **Send me a copy** — tick box, default on (BCC to sender).
 - **Attachment** — shows the file name and size; not editable.
 - Send → spinner → "Sent to 3 people" or the error. Nothing is sent until Send is pressed.
@@ -82,16 +94,39 @@ Print behaves exactly as today. Pages move onto the wrapper one at a time.
 
 - **From:** `"<Sender name> via Amplified" <reports@amplifiedesl.com>` — must be on the verified
   amplifiedesl.com domain. **Reply-To** carries the real person.
-- Flow: browser makes the file → uploads it to a private Storage bucket → calls a new server route
-  `POST /api/report-email` with the Storage path + recipients. The server checks the sender's login
-  and role, sends through Resend with the stored file attached, and writes the history record.
-  (Uploading first avoids Vercel's 4.5 MB request limit and guarantees the stored copy *is* the
-  attachment.)
+- Flow: the pop-up calls a new server route `POST /api/report-email` with the report type, record
+  id and recipients. The server checks the sender's login and role, **makes the PDF itself** (§3a),
+  saves it to the private `sent-reports` bucket, sends through Resend with that same file attached,
+  and writes the history record. Nothing large travels from the browser, and the stored copy *is*
+  the attachment.
+- CSV reports: the server builds the CSV with the same code the Download button uses, if that code
+  can run server-side; otherwise the browser uploads the CSV to the bucket first and passes its
+  path. Checked in step 7.
 - One email to all recipients (To + CC + BCC), not one per person. The Resend sender currently takes
   a single `to`; extend it to lists + `reply_to` + `bcc`.
 - Test mode: with `NOTIFICATIONS_ENABLED` not `"true"`, everything runs and is recorded as
   **"Not sent — test mode"**. Add `EMAIL_ALLOWLIST` for previews so real delivery can be tested to
   John's address only.
+
+### 3a. Server-side PDF (D8)
+
+- **Tools:** `puppeteer-core` + `@sparticuz/chromium` (a Chrome build packaged for serverless
+  functions), marked as server-external packages in `next.config.ts`.
+- **What it renders:** the report's existing print page (e.g. `/job-requests/<id>/pre-invoice-report`)
+  on the **same deployment**, with print CSS applied, then `page.pdf()`. One layout serves screen,
+  Print and email.
+- **Logging in as the sender:** report pages load their data in the browser with the user's session.
+  The server hands headless Chrome the sender's own session before loading the page, so the page
+  sees exactly what the sender sees, including role gates. No new service account.
+- **Knowing the page is finished:** the wrapper sets a "report ready" marker once data, signatures
+  and fonts have loaded; the server waits for it (with a timeout → clear error) before printing.
+- **Preview deployments are behind Vercel's login wall.** Headless Chrome must send the protection
+  bypass secret (already set up 8/10 for John's testing) or it will print the Vercel login page.
+- **Limits to prove in the spike (step 0):** the Chrome package fits Vercel Hobby's function size
+  limit; first-send time (cold start) is acceptable; memory and time limits are enough for a
+  multi-page report with signatures. If it can't be made to fit, fallback is a paid PDF service (C).
+- **Bonus:** the same route can back a **Download PDF** button, so Save-as-PDF from the browser is no
+  longer needed.
 
 ### 4. Data (one migration)
 
@@ -130,7 +165,7 @@ existing position maintenance list.
 
 | Step | What | Testable result |
 |---|---|---|
-| 0 | **PDF spike** (Decision needed #1) on the Pre-Invoice page | Look at a generated PDF next to a printed one |
+| 0 | **Server PDF spike** (§3a) on the Pre-Invoice page, deployed to the dev preview | A PDF made on Vercel, side by side with a printed one; size + time noted |
 | 1 | Safety flag fix + migration + bucket (dev) | Tables exist on dev |
 | 2 | Report Recipients in System Maintenance | Add Payroll / Accounting entries |
 | 3 | `/api/report-email` + Resend sender changes | Send via mock; history row written |
@@ -142,29 +177,9 @@ existing position maintenance list.
 
 ## Decisions needed
 
-1. **How AOS makes the PDF.** Today only the browser's print dialog can. Options:
-   - **A. In the browser (html2pdf / jsPDF).** Uses the exact page on screen, no server work, free.
-     But the result is an *image* of each page: text isn't selectable, files are larger
-     (roughly 0.3–1 MB a page), and page breaks need tuning.
-   - **B. On the server (headless Chrome on Vercel).** Identical to Print, crisp, small files. More
-     moving parts: a large dependency near Vercel Hobby's size limits, slower first send, and the
-     server must log in as the sender to render the page.
-   - **C. Paid HTML→PDF service (PDFShift, DocRaptor).** Crisp and simple; another vendor and bill,
-     and report data (with rates) leaves AOS.
-   - **Recommendation: spike A first (step 0).** If John is happy with how the Pre-Invoice looks,
-     go with it; if not, B. Note the storage estimate I gave earlier (50–200 KB) assumed a
-     text PDF; with A expect ~0.5–2 MB per report — still small.
-2. **Reply-To defaults.** Recommendation: Pre-Invoice → **Me** (the sender); payroll → the
-   **Payroll** office entry. Defaults live with each report in code for now; a settings screen only
-   if they change often.
-3. **"Staff on the job."** There is **no coordinator field on a job**, and crew leads are only
-   identifiable by position name ("Stagehand Lead", "Lead"). Recommendation for this release: list
-   **all AOS users with an email, grouped by role**, and skip job-specific staff. Adding a job
-   coordinator field is a separate small change if wanted.
-4. **CC John on everything?** The 6/16 spec CC'd John on all automatic emails. For report emails
-   recommend **no** — the history screen covers it — but it's one setting either way.
-5. **Who can open Email History?** Recommendation: admin roles only (it shows priced reports).
-6. **How long to keep sent files.** Recommendation: indefinitely for now.
+None open. All six were settled 2026-09-30 (D8–D13). Options considered for the PDF, for the
+record: in-browser image PDFs (html2pdf/jsPDF: free but image-only, larger files), server-side
+Chrome (chosen), paid HTML→PDF service (fallback if the spike fails).
 
 ## Setup outside the code (John / Connor)
 
