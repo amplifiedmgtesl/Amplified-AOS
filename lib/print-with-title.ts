@@ -35,3 +35,16 @@ export function printWithTitle(parts: Array<string | null | undefined>): void {
   setTimeout(restore, 60_000);
   window.print();
 }
+
+/**
+ * Round-3 re-test #24 / J6: Safari ignores `@page { size: landscape }`, so
+ * landscape documents need a "choose Landscape" note — but only where it
+ * applies. True for desktop Safari and for EVERY iPhone/iPad browser (Chrome,
+ * Firefox, Edge on iOS all run on Safari's engine). iPadOS reports itself as a
+ * Mac, so a "Mac" with a touch screen counts as an iPad.
+ */
+export function printIgnoresLandscape(ua: string, platform = "", maxTouchPoints = 0): boolean {
+  if (/iPhone|iPad|iPod/.test(ua)) return true;
+  if (platform === "MacIntel" && maxTouchPoints > 1) return true;
+  return /Safari\//.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|FxiOS|Android/.test(ua);
+}
