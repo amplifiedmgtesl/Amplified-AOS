@@ -68,6 +68,11 @@ action stays. Future ideas (backlog, not this round): quote → Job / Timesheet 
 
 ## Judgement calls in the re-test fix batch — say if any are wrong
 
+> **Reviewed with John 2026-09-29:** J2 J3 J5 J7 J8 J9 **kept** as built. J4 **deferred** to a
+> visual session. J6 **changed**: the landscape note now shows only where print ignores landscape
+> (desktop Safari + every iPhone/iPad browser), as a visible line next to Print, not a hover tip
+> (phones have no hover) — branch `fix/safari-print-note`. Blank page 2 (R23) → Safari/iPhone session.
+
 - **J1 (R7).** Quote lines now span the whole day — start of block 1 to end of block 2 — with
   `end_date` = next day when that end is past midnight, and carry the crew need's **shift**. Line
   times aren't shown on any quote screen (only passed to invoices), so the visible change is the

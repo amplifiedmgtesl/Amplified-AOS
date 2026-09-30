@@ -28,7 +28,7 @@ import { CrewScheduleReport } from "./crew-schedule-report";
 import { CrewSignInSheet } from "./crew-sign-in-sheet";
 import { JobPrintSheet } from "./job-print-sheet";
 import { TimesheetActualsSheet } from "./timesheet-actuals-sheet";
-import { printWithTitle } from "@/lib/print-with-title";
+import { printIgnoresLandscape, printWithTitle } from "@/lib/print-with-title";
 import { parsePrintSort, PRINT_SORT_LABEL, type PrintSort } from "@/lib/jobs/print-format";
 import type { JobRequest, JobRequestDay } from "@/lib/store/types";
 
@@ -147,6 +147,13 @@ export default function JobPrintPreview({ id }: { id: string }) {
     try { localStorage.setItem("aos.jobPrint.lastDoc", doc); } catch { /* storage unavailable */ }
   }, [doc]);
 
+  // J6: Safari / every iOS browser ignores @page landscape — show the note only
+  // there. Read after mount so the server render and first paint agree.
+  const [safariPrint, setSafariPrint] = useState(false);
+  useEffect(() => {
+    setSafariPrint(printIgnoresLandscape(navigator.userAgent, navigator.platform, navigator.maxTouchPoints));
+  }, []);
+
   if (loading) return <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>Loading…</div>;
   if (!job) return <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>Job not found.</div>;
 
@@ -176,13 +183,13 @@ export default function JobPrintPreview({ id }: { id: string }) {
         <div className="ppa-row">
           <a href={`/job-requests/${encodeURIComponent(id)}`} className="ppa-back">← Back to job</a>
           <button onClick={doPrint} className="ppa-print" disabled={blocked}
-            title={blocked
-              ? "Set start/end times for the listed days first"
-              // Round-3 re-test #24: Safari ignores the page's landscape
-              // setting (Chrome obeys it and hides the choice).
-              : "Prints landscape. In Safari, choose Landscape in the print dialog."}>
+            title={blocked ? "Set start/end times for the listed days first" : undefined}>
             Print / Save as PDF
           </button>
+          {/* Round-3 re-test #24: visible, not a tooltip — phones have no hover. */}
+          {landscape && safariPrint && !blocked && (
+            <span className="ppa-note">Choose Landscape when printing.</span>
+          )}
           <span className="ppa-title" title={DOC_PURPOSE[doc]}>{DOC_LABEL[doc]}</span>
         </div>
 

@@ -1044,6 +1044,7 @@ body.show-ids .record-id::before { content: "🆔 "; }
 .print-actions label { display: inline-flex; align-items: center; gap: 5px; color: #cbd5e1; }
 .print-actions select { width: auto; padding: 4px 8px; border-radius: 6px; font-size: 13px; }
 .print-actions .ppa-check input { margin: 0; }
+.print-actions .ppa-note { color: #fbbf24; font-weight: 600; }
 .print-actions .ppa-print:disabled { background: #475569; color: #cbd5e1; cursor: not-allowed; }
 .print-actions .ppa-blocked {
   margin-top: 4px; padding: 6px 10px; border-radius: 6px;
