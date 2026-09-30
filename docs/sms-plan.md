@@ -11,6 +11,20 @@ logging and history pieces with [report-email-plan.md](report-email-plan.md)). N
 | S2 | **One-way first.** Replies (e.g. "YES" to confirm) are a later phase. |
 | S3 | **Office roles send; crew leads probably too.** |
 
+## ⚠ Provider depends on Connor's phone-system choice (raised 2026-09-30)
+
+Connor is considering a mobile-app VoIP phone system. If it has a texting API — **Quo (formerly
+OpenPhone)** does (send endpoint + webhooks for incoming texts, ~$0.01 per segment, prepaid, on all
+paid plans) — AOS should text **through it** instead of Twilio:
+
+- Texts come from the **company's real number**, and **replies land in the phone app's shared inbox**
+  with no extra AOS work — covering most of the "replies" later phase (S2).
+- **Carrier registration is done once, through the phone provider**, not a second time with Twilio.
+- The AOS side is the same design; only the sender changes (a Quo sender beside the Twilio one).
+
+**Don't start Twilio registration until the phone system is chosen.** Google Voice has no public
+texting API; Zoom Phone would need checking.
+
 ## What already exists
 
 - Twilio sender built 6/16 (`lib/notifications/providers/twilio.ts`), with the mock fallback when no
