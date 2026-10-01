@@ -68,7 +68,11 @@ export async function GET(req: NextRequest) {
       html: `<!doctype html><html><body style="font-family:Arial,sans-serif;padding:40px">
         <h1>AOS server PDF self-test</h1>
         <p>Rendered ${new Date().toISOString()} on ${process.env.VERCEL_ENV ?? "local"}.</p>
-        <p style="font-family:Georgia,serif">Georgia line · <b>Arial Black line</b></p></body></html>`,
+        <p style="font-family:Arial">Arial: The quick brown fox jumps over the lazy dog 0123456789</p>
+        <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif">System stack (Pre-Invoice): The quick brown fox 0123456789</p>
+        <p style="font-family:Georgia,serif;font-style:italic;font-weight:700">Georgia bold italic: The quick brown fox</p>
+        <p style="font-family:'Arial Black',Impact,Arial,sans-serif;font-style:italic;text-transform:uppercase">Arial Black italic: Pre-Invoice Summary</p>
+        <p style="font-family:'Open Sans'">Open Sans (old fallback): The quick brown fox 0123456789</p></body></html>`,
     });
     return pdfResponse(pdf, "selftest.pdf", timings, cold);
   } catch (e: any) {

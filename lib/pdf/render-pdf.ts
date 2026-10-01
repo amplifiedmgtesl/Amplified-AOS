@@ -17,6 +17,8 @@
  * carries the automation-bypass secret so Vercel sets a bypass cookie.
  */
 
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import chromium from "@sparticuz/chromium";
 import puppeteer, { type Browser } from "puppeteer-core";
 
@@ -61,14 +63,33 @@ function sessionFromAccessToken(accessToken: string) {
   };
 }
 
+/**
+ * Point Chrome's fontconfig at our bundled Liberation fonts + Arial/Georgia
+ * aliases (lib/pdf/fonts/fonts.conf). Without this, serverless Chrome renders
+ * everything in its one built-in font (Open Sans).
+ */
+let fontsReady = false;
+function useBundledFonts() {
+  if (fontsReady) return;
+  const fontDir = join(process.cwd(), "lib/pdf/fonts");
+  const confDir = "/tmp/aos-fontconfig";
+  mkdirSync(confDir, { recursive: true });
+  const conf = readFileSync(join(fontDir, "fonts.conf"), "utf8").replace("__AOS_FONT_DIR__", fontDir);
+  writeFileSync(join(confDir, "fonts.conf"), conf);
+  process.env.FONTCONFIG_PATH = confDir;
+  fontsReady = true;
+}
+
 async function launch(): Promise<Browser> {
   const localChrome = process.env.LOCAL_CHROME_PATH;
   if (localChrome) {
     return puppeteer.launch({ executablePath: localChrome, headless: true });
   }
+  const executablePath = await chromium.executablePath();
+  useBundledFonts();
   return puppeteer.launch({
     args: chromium.args,
-    executablePath: await chromium.executablePath(),
+    executablePath,
     headless: true,
     defaultViewport: { width: 1200, height: 1600 },
   });

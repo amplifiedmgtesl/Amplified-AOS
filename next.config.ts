@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   // and make sure its compressed binaries ship with the function.
   serverExternalPackages: ["@sparticuz/chromium", "puppeteer-core"],
   outputFileTracingIncludes: {
-    "/api/report-pdf": ["./node_modules/@sparticuz/chromium/bin/**"],
+    "/api/report-pdf": ["./node_modules/@sparticuz/chromium/bin/**", "./lib/pdf/fonts/**"],
   },
 };
 export default nextConfig;
