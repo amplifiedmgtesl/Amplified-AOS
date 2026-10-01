@@ -42,10 +42,26 @@ function pdfResponse(pdf: Uint8Array, filename: string, timings: Record<string, 
 }
 
 export async function GET(req: NextRequest) {
-  if (process.env.VERCEL_ENV === "production" || req.nextUrl.searchParams.get("selftest") !== "1") {
+  const mode = req.nextUrl.searchParams.get("selftest");
+  if (process.env.VERCEL_ENV === "production" || (mode !== "1" && mode !== "page")) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const cold = !warm; warm = true;
+  if (mode === "page") {
+    // Loads a real (login) page on this deployment — proves the Vercel
+    // protection bypass works for headless Chrome. No session, no data.
+    try {
+      const { pdf, timings } = await renderPdf({
+        url: new URL("/login", req.nextUrl.origin).toString(),
+        waitForReady: false,
+      });
+      const res = pdfResponse(pdf, "selftest-page.pdf", timings, cold);
+      res.headers.set("X-Bypass-Secret-Set", String(!!process.env.VERCEL_AUTOMATION_BYPASS_SECRET));
+      return res;
+    } catch (e: any) {
+      return NextResponse.json({ error: String(e?.message ?? e), bypassSecretSet: !!process.env.VERCEL_AUTOMATION_BYPASS_SECRET }, { status: 500 });
+    }
+  }
   try {
     const { pdf, timings } = await renderPdf({
       url: "about:blank",

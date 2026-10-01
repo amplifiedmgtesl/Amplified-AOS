@@ -29,6 +29,8 @@ export interface RenderPdfInput {
   html?: string;
   /** Max wait for the page's data-report-ready marker. */
   timeoutMs?: number;
+  /** false = print as soon as the page has loaded (self-test of non-report pages). */
+  waitForReady?: boolean;
 }
 
 export interface RenderPdfResult {
@@ -99,7 +101,12 @@ export async function renderPdf(input: RenderPdfInput): Promise<RenderPdfResult>
         target.searchParams.set("x-vercel-protection-bypass", bypass);
         target.searchParams.set("x-vercel-set-bypass-cookie", "true");
       }
-      await page.goto(target.toString(), { waitUntil: "domcontentloaded", timeout: input.timeoutMs ?? 30000 });
+      await page.goto(target.toString(), {
+        waitUntil: input.waitForReady === false ? "networkidle0" : "domcontentloaded",
+        timeout: input.timeoutMs ?? 30000,
+      });
+    }
+    if (!input.html && input.waitForReady !== false) {
       const marker = await page.waitForSelector(READY_SELECTOR, { timeout: input.timeoutMs ?? 30000 });
       const err = await marker?.evaluate((el) => el.getAttribute("data-report-error"));
       if (err) throw new Error(`Report page reported an error: ${err}`);
