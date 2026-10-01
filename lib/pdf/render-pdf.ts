@@ -33,6 +33,9 @@ export interface RenderPdfInput {
   timeoutMs?: number;
   /** false = print as soon as the page has loaded (self-test of non-report pages). */
   waitForReady?: boolean;
+  /** Sender's IANA time zone. Server Chrome runs on UTC, so without this
+   *  "today" and every local time on the report can shift a day. */
+  timeZone?: string;
 }
 
 export interface RenderPdfResult {
@@ -112,6 +115,7 @@ export async function renderPdf(input: RenderPdfInput): Promise<RenderPdfResult>
     }
 
     await page.emulateMediaType("print");
+    if (input.timeZone) await page.emulateTimezone(input.timeZone);
 
     if (input.html) {
       await page.setContent(input.html, { waitUntil: "load" });
@@ -138,6 +142,10 @@ export async function renderPdf(input: RenderPdfInput): Promise<RenderPdfResult>
           img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; })));
       });
     }
+    // The app's beige page background otherwise prints around the report
+    // (browser Print leaves backgrounds off by default; we need them on for
+    // shaded table bands, so whiten just the page).
+    await page.addStyleTag({ content: "html, body { background: #fff !important; }" });
     const tLoad = Date.now();
 
     const pdf = await page.pdf({ printBackground: true, preferCSSPageSize: true });

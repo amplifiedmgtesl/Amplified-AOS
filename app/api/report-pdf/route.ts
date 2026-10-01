@@ -14,12 +14,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { renderPdf } from "@/lib/pdf/render-pdf";
+import { reportFileName } from "@/lib/print-with-title";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 // Same roles the Pre-Invoice view blocks (pre-invoice-report-view.tsx).
 const PRICING_BLOCKED_ROLES = new Set(["crew_leader", "payroll", "coordinator"]);
+
+function isValidTimeZone(tz: unknown): tz is string {
+  if (typeof tz !== "string" || !tz) return false;
+  try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true; } catch { return false; }
+}
 
 // Module-scope flag: true only on the first request a function instance serves.
 let warm = false;
@@ -29,7 +35,8 @@ function pdfResponse(pdf: Uint8Array, filename: string, timings: Record<string, 
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${filename}"`,
+      // ASCII fallback + UTF-8 name (the " — " separator isn't ASCII).
+      "Content-Disposition": `inline; filename="${filename.replace(/[^\x20-\x7e]/g, "-")}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
       "Cache-Control": "no-store",
       "X-Render-Cold": String(cold),
       "X-Render-Launch-Ms": String(timings.launchMs),
@@ -89,7 +96,7 @@ export async function POST(req: NextRequest) {
   const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(token);
   if (authErr || !user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { reportType?: string; id?: string; noShows?: boolean };
+  let body: { reportType?: string; id?: string; noShows?: boolean; timeZone?: string };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
   if (body.reportType !== "pre_invoice" || !body.id) {
     return NextResponse.json({ error: "Only reportType 'pre_invoice' with an id is supported in the spike." }, { status: 400 });
@@ -104,8 +111,12 @@ export async function POST(req: NextRequest) {
   if (body.noShows) url.searchParams.set("noshows", "1");
 
   try {
-    const { pdf, timings } = await renderPdf({ url: url.toString(), accessToken: token });
-    return pdfResponse(pdf, `pre-invoice-${body.id}.pdf`, timings, cold);
+    const timeZone = isValidTimeZone(body.timeZone) ? body.timeZone : "America/New_York";
+    const { pdf, timings } = await renderPdf({ url: url.toString(), accessToken: token, timeZone });
+    const { data: job } = await supabaseAdmin.from("job_requests").select("job_no").eq("id", body.id).maybeSingle();
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date()); // YYYY-MM-DD
+    const filename = `${reportFileName([job?.job_no || body.id, "Pre-Invoice Summary", today])}.pdf`;
+    return pdfResponse(pdf, filename, timings, cold);
   } catch (e: any) {
     console.error("[report-pdf]", e);
     return NextResponse.json({ error: String(e?.message ?? e) }, { status: 500 });

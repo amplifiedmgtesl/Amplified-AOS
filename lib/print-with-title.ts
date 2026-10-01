@@ -7,7 +7,7 @@
  * Sanitize a string for use as a filename — strip characters that
  * browsers or operating systems dislike in saved-PDF names.
  */
-function safeFileName(s: string): string {
+export function safeFileName(s: string): string {
   return (s || "")
     .replace(/[\\/:*?"<>|]+/g, " ") // disallowed on Windows / macOS
     .replace(/\s+/g, " ")
@@ -22,10 +22,19 @@ function safeFileName(s: string): string {
  * Build the title from meaningful parts: pass them in order, empty
  * strings are dropped, and they're joined with " — ".
  */
+/**
+ * The shared report file name: meaningful parts joined with " — ", empty ones
+ * dropped. Used for Print (document title), server PDFs and email attachments
+ * so the same report always gets the same name.
+ */
+export function reportFileName(parts: Array<string | null | undefined>): string {
+  return parts.map((p) => safeFileName(p || "")).filter(Boolean).join(" — ");
+}
+
 export function printWithTitle(parts: Array<string | null | undefined>): void {
   if (typeof window === "undefined") return;
   const prev = document.title;
-  const clean = parts.map((p) => safeFileName(p || "")).filter(Boolean).join(" — ");
+  const clean = reportFileName(parts);
   document.title = clean || prev;
   const restore = () => {
     document.title = prev;

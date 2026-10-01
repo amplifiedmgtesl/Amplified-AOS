@@ -25,6 +25,7 @@ import { supabase } from "@/lib/supabase/client";
 import { isDayModeLine } from "@/lib/rates/line-calc";
 import { parseMinutes } from "@/lib/time-utils";
 import { useUserRole } from "@/lib/auth/use-user-role";
+import { printWithTitle } from "@/lib/print-with-title";
 
 // Roles blocked from all pricing surfaces (Quotes/Invoices/Rate Card/…).
 // This report shows bill rates + totals, so it gets the same block. The
@@ -477,7 +478,10 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
 
       {/* Print button (hidden on print) */}
       <div className="print-actions hide-print">
-        <button onClick={() => window.print()} style={{ padding: "8px 16px", fontSize: 14 }}>
+        <button
+          onClick={() => printWithTitle([job?.job_no || jobId, "Pre-Invoice Summary", new Date().toLocaleDateString("en-CA")])}
+          style={{ padding: "8px 16px", fontSize: 14 }}
+        >
           Print / Save as PDF
         </button>
         <button
@@ -485,25 +489,35 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
           onClick={async () => {
             setServerPdfBusy(true);
             setServerPdfNote(null);
-            const tab = window.open("", "_blank");
             const t0 = performance.now();
             try {
               const { data: { session } } = await supabase.auth.getSession();
               const res = await fetch("/api/report-pdf", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
-                body: JSON.stringify({ reportType: "pre_invoice", id: jobId, noShows: includeNoShows }),
+                body: JSON.stringify({
+                  reportType: "pre_invoice", id: jobId, noShows: includeNoShows,
+                  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                }),
               });
               if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
               const blob = await res.blob();
-              if (tab) tab.location.href = URL.createObjectURL(blob);
+              // Download (not open in a tab) so the file keeps its name —
+              // a blob opened in a tab is saved as "Unknown.pdf".
+              const name = decodeURIComponent(
+                /filename\*=UTF-8''([^;]+)/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "Pre-Invoice Summary.pdf",
+              );
+              const a = document.createElement("a");
+              a.href = URL.createObjectURL(blob);
+              a.download = name;
+              a.click();
+              setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
               const h = (k: string) => res.headers.get(`X-Render-${k}`);
               setServerPdfNote(
                 `${h("Cold") === "true" ? "Cold" : "Warm"} · ${((performance.now() - t0) / 1000).toFixed(1)}s round trip ` +
                 `(launch ${h("Launch-Ms")}ms, page ${h("Load-Ms")}ms, pdf ${h("Pdf-Ms")}ms) · ${Math.round(blob.size / 1024)} KB`,
               );
             } catch (e: any) {
-              tab?.close();
               setServerPdfNote(`Failed: ${e?.message ?? e}`);
             } finally {
               setServerPdfBusy(false);
