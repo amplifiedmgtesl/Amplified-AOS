@@ -10,9 +10,11 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@sparticuz/chromium": "^153.0.0",
     "@supabase/supabase-js": "^2.49.4",
     "exceljs": "^4.4.0",
     "next": "^15.5.14",
+    "puppeteer-core": "^25.12.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

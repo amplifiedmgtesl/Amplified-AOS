@@ -147,7 +147,13 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // #92: default OFF — the client-facing report doesn't name no-shows unless asked.
-  const [includeNoShows, setIncludeNoShows] = useState(false);
+  // Server PDF render passes ?noshows=1 so the PDF matches the sender's choice.
+  const [includeNoShows, setIncludeNoShows] = useState(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("noshows") === "1",
+  );
+  // SPIKE (report-email step 0): server-rendered PDF test.
+  const [serverPdfBusy, setServerPdfBusy] = useState(false);
+  const [serverPdfNote, setServerPdfNote] = useState<string | null>(null);
   const role = useUserRole();
   const roleBlocked = role != null && PRICING_BLOCKED_ROLES.has(role);
 
@@ -201,7 +207,7 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
     );
   }
   if (loading) return <div style={{ padding: 40 }} className="muted">Building report…</div>;
-  if (error) return <div style={{ padding: 40 }} className="muted">{error}</div>;
+  if (error) return <div style={{ padding: 40 }} className="muted" data-report-error={error}>{error}</div>;
   if (!report) return null;
 
   const anyPending = report.days.some((d) => d.lines.some((l) => l.hasPendingTime));
@@ -254,7 +260,7 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
     report.warnings.plannedExcluded > 0;
 
   return (
-    <div className="preinv-pdf">
+    <div className="preinv-pdf" data-report-ready="true">
       {/* On-screen-only warnings — never printed */}
       {hasWarnings ? (
         <div className="report-warnings hide-print">
@@ -474,6 +480,40 @@ export default function PreInvoiceReportView({ jobId }: { jobId: string }) {
         <button onClick={() => window.print()} style={{ padding: "8px 16px", fontSize: 14 }}>
           Print / Save as PDF
         </button>
+        <button
+          disabled={serverPdfBusy}
+          onClick={async () => {
+            setServerPdfBusy(true);
+            setServerPdfNote(null);
+            const tab = window.open("", "_blank");
+            const t0 = performance.now();
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const res = await fetch("/api/report-pdf", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+                body: JSON.stringify({ reportType: "pre_invoice", id: jobId, noShows: includeNoShows }),
+              });
+              if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+              const blob = await res.blob();
+              if (tab) tab.location.href = URL.createObjectURL(blob);
+              const h = (k: string) => res.headers.get(`X-Render-${k}`);
+              setServerPdfNote(
+                `${h("Cold") === "true" ? "Cold" : "Warm"} · ${((performance.now() - t0) / 1000).toFixed(1)}s round trip ` +
+                `(launch ${h("Launch-Ms")}ms, page ${h("Load-Ms")}ms, pdf ${h("Pdf-Ms")}ms) · ${Math.round(blob.size / 1024)} KB`,
+              );
+            } catch (e: any) {
+              tab?.close();
+              setServerPdfNote(`Failed: ${e?.message ?? e}`);
+            } finally {
+              setServerPdfBusy(false);
+            }
+          }}
+          style={{ padding: "8px 16px", fontSize: 14, marginLeft: 8 }}
+        >
+          {serverPdfBusy ? "Making PDF…" : "Server PDF (test)"}
+        </button>
+        {serverPdfNote ? <span style={{ marginLeft: 8, fontSize: 12 }}>{serverPdfNote}</span> : null}
         {report.noShows.length > 0 && (
           <label style={{ marginLeft: 12, fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6 }}>
             <input type="checkbox" checked={includeNoShows} onChange={(e) => setIncludeNoShows(e.target.checked)} style={{ width: "auto" }} />
