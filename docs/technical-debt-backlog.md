@@ -2928,7 +2928,17 @@ update timesheet_entries
 
 The 8 forklift rows show $3,040 billed against $3,400 paid, which looks like a $360 loss. The issued invoice (`AES_26091720_LFT_FARMTOUR_INV`) actually bills forklift at $650/day, so there's no real loss. The false alarm went to Connor before this was understood.
 
-**Fix:** when the job has a quote line in day mode for the row's date and specialty, snapshot `bill_std_rate = base_day ÷ hours-per-person` (`hours ÷ qty` on the quote line, or `job_request_days.expected_hours`), with OT/DT rates derived from that. Fall back to the rate card only when there's no matching quote line. This is the same quote-vs-card divergence as #112 and the `rate-card-resolution-divergence` note. Ideally the timesheet, invoicing and payroll all resolve rates through one function.
+**⚠ OPEN — the right model isn't decided yet (John, 2026-10-04). Don't build the fix below until this is settled.**
+
+John's question: shouldn't the **rate card** carry a **daily rate for both bill and pay**, and let it flow down to the quote and the timesheet, instead of deriving rates from the quote? Points to work through:
+
+- Today `rate_card_profile_rows` has a `day` column (a **bill** day price) but no **pay** day rate. Pay is only `pay_hourly` / `pay_ot_rate` / `pay_dt_rate`.
+- A card day rate fixes the "card wasn't updated before quoting" case only if the operator updates the card. Negotiated per-job prices like FARMTOUR's flat $650 still live on the quote.
+- **Short days break any fixed divisor.** A 5-hour day on a $650 day rate isn't $65 an hour. Is a short day still a full day rate, a half day, or hourly? FARMTOUR 9/20 was billed as a half day ($325) but paid a full 10 hours.
+- `docs/day-rate-source-of-truth-design.md` (2026-08-30) already proposes moving day-rate mode and hours to the job day record (`job_request_days`) with the quote as an override. Whatever is decided here has to fit with it, or replace it.
+- Bill side and pay side should resolve through the same path (see #112 and the `rate-card-resolution-divergence` note).
+
+**Candidate fix (pending the decision above):** when the job has a quote line in day mode for the row's date and specialty, snapshot `bill_std_rate = base_day ÷ hours-per-person` (`hours ÷ qty` on the quote line, or `job_request_days.expected_hours`), with OT/DT rates derived from that. Fall back to the rate card only when there's no matching quote line. This is the same quote-vs-card divergence as #112 and the `rate-card-resolution-divergence` note. Ideally the timesheet, invoicing and payroll all resolve rates through one function.
 
 **Backfill:** after the fix, re-snapshot bill rates on existing day-rate jobs. Only rows not yet bound to an invoice are safe; for invoiced rows, update the display fields only and never touch the invoice. Farm Tour's rows have `invoice_line_id = NULL` even though the invoice is issued, so check how they were billed before touching them.
 
