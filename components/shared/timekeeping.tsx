@@ -25,6 +25,7 @@ import { EqualizerLoader } from "@/components/shared/equalizer-loader";
 import { JobHealthBanner } from "@/components/shared/job-health-banner";
 import { EmployeePicker, LazyEmployeePicker, pushEmployeeIntoCache, type PickerEmployee } from "@/components/shared/employee-picker";
 import { useUserRole } from "@/lib/auth/use-user-role";
+import { canUseTimeclock, openTimeclock } from "@/lib/timeclock/open";
 import { appendJobAuditLine } from "@/lib/jobs/job-notes-log";
 
 // Picker selection — always anchored on job_requests ("job:<jobId>").
@@ -1493,6 +1494,15 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
             {addingCrew ? "Loading…" : "Add Crew from Job"}
           </button>
           <button className="secondary" onClick={addManualCrew} disabled={!timesheet}>+ Add Crew Member</button>
+          {canUseTimeclock(viewerRole) && (
+            <button
+              className="secondary"
+              onClick={() => openTimeclock(currentJob?.id)}
+              title="Open the on-site Time Clock in its own tab, on this job"
+            >
+              ⏱️ Time Clock
+            </button>
+          )}
           {timesheet && timesheet.rows.length > 0 && (
             <>
               <span style={{ flex: 1 }} />

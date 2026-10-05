@@ -41,7 +41,7 @@
 //       displayed text and the stored value, so what was signed is what is
 //       recorded.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   loadJobRequests,
   loadSpecialties,
@@ -59,6 +59,8 @@ import { loadShifts } from "@/lib/storage/job-request-shifts";
 import { plannedBlocks, printRangeText, sortForPrint, parsePrintSort, PRINT_SORT_LABEL, type PrintSort, type PrintRange } from "@/lib/jobs/print-format";
 import { dayWindowContains } from "@/lib/jobs/planned-times";
 import { formatClock } from "@/lib/time-utils";
+import { useUserRole } from "@/lib/auth/use-user-role";
+import { timeclockHome } from "@/lib/timeclock/open";
 
 type Slot = "in1" | "out1" | "in2" | "out2";
 type SlotState = "available" | "done" | "disabled";
@@ -124,6 +126,7 @@ function formatWorkDate(ymd: string): string {
 }
 
 export default function TimeClockPage() {
+  const viewerRole = useUserRole();
   const [jobs, setJobs] = useState<JobRequest[]>([]);
   const [jobId, setJobId] = useState<string>("");
   const [timesheet, setTimesheet] = useState<Timesheet | null>(null);
@@ -193,6 +196,14 @@ export default function TimeClockPage() {
       });
       const sorted = near.sort((a, b) => (b.requestDate || "").localeCompare(a.requestDate || ""));
       setJobs(sorted);
+      // Opened from Timekeeping on a job (?job=…): land on it directly. Only
+      // if it's in the yesterday→tomorrow window — the kiosk never punches
+      // into a job that isn't running.
+      const wanted = new URLSearchParams(window.location.search).get("job");
+      if (wanted) {
+        if (sorted.some((j) => j.id === wanted)) void selectJob(wanted);
+        else flash("That job isn't running today — pick a job below.");
+      }
     } catch { /* cache warming — StoreProvider guarantees it before render, but be safe */ }
   }, []);
 
@@ -326,6 +337,15 @@ export default function TimeClockPage() {
     return gaps;
   }, [shiftCount]);
 
+  // Exit closes the kiosk tab when AOS opened it (Timekeeping / crew-leader
+  // menu), returning to the AOS tab underneath. A typed URL or a home-screen
+  // icon can't be closed by script, so fall through to the user's AOS home.
+  function exitKiosk(e: MouseEvent<HTMLAnchorElement>) {
+    e.preventDefault();
+    window.close();
+    window.setTimeout(() => { window.location.href = timeclockHome(viewerRole); }, 250);
+  }
+
   function flash(msg: string) {
     setToast(msg);
     window.setTimeout(() => setToast(""), 2600);
@@ -453,7 +473,7 @@ export default function TimeClockPage() {
           </div>
           <div style={{ color: "#94a3b8", fontSize: 13 }}>{now ? formatLongDate(now) : ""}</div>
         </div>
-        <a href="/dashboard" style={{ color: "#64748b", fontSize: 13, textDecoration: "none" }}>Exit</a>
+        <a href={timeclockHome(viewerRole)} onClick={exitKiosk} style={{ color: "#64748b", fontSize: 13, textDecoration: "none" }}>Exit</a>
       </header>
 
       {/* Job + day picker */}

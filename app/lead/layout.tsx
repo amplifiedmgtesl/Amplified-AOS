@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { openTimeclock } from "@/lib/timeclock/open";
 
 const nav = [
   ["/lead/jobs", "📨", "Jobs"],
@@ -108,6 +109,17 @@ export default function LeadLayout({ children }: { children: ReactNode }) {
             {label}
           </Link>
         ))}
+
+        {/* Opens in its own tab — the kiosk is full-screen with no menu, so
+            the crew leader keeps this AOS tab to come back to. */}
+        <a
+          href="/timeclock"
+          className="nav-link"
+          onClick={(e) => { e.preventDefault(); setNavOpen(false); openTimeclock(); }}
+        >
+          <span style={{ fontSize: 18, marginRight: 10 }}>🕒</span>
+          Time Clock
+        </a>
 
         <div style={{ marginTop: "auto", paddingTop: 24 }}>
           <button
