@@ -1489,7 +1489,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
           <button
             onClick={addCrewFromJob}
             disabled={!timesheet || addingCrew}
-            title="Seed one row per scheduled assignment from the Job Request → Assigned Crew tab. Actual times start blank — select rows and use “Copy Planned” to pre-fill."
+            title="Seed one row per scheduled assignment from the Job Request → Assigned Crew tab. Actual times start blank — enter the times actually worked."
           >
             {addingCrew ? "Loading…" : "Add Crew from Job"}
           </button>

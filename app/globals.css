@@ -1165,3 +1165,31 @@ body.show-ids .record-id::before { content: "🆔 "; }
 }
 @media print { .quote-editor-actions { position: static; } }
 
+
+/* Help — topbar button + the /help guide page (HELP.md). */
+.help-btn{margin-left:auto;flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:6px 14px;font-size:13px;font-weight:700;white-space:nowrap}
+.help-btn:hover{border-color:var(--gold-dark);color:var(--gold-dark)}
+.help-page{display:grid;grid-template-columns:240px minmax(0,1fr);gap:32px;max-width:1100px;margin:0 auto;padding:24px 16px 80px}
+.help-toc{position:sticky;top:16px;align-self:start;display:flex;flex-direction:column;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.help-toc-title{font-weight:700;margin-bottom:8px}
+.help-toc a{padding:5px 8px;border-radius:6px;font-size:13px;color:var(--muted)}
+.help-toc a:hover{background:var(--accent-soft);color:var(--ink)}
+.help-body{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 28px 28px;line-height:1.6;font-size:15px}
+.help-h1{font-size:26px;margin:20px 0 8px}
+.help-h2{font-size:20px;margin:32px 0 8px;padding-top:16px;border-top:1px solid var(--line);scroll-margin-top:16px}
+.help-h3{font-size:16px;margin:20px 0 6px}
+.help-list{padding-left:22px;margin:6px 0 14px}
+.help-list li{margin-bottom:4px}
+.help-table-wrap{overflow-x:auto;margin:8px 0 16px}
+.help-table{border-collapse:collapse;width:100%;font-size:14px}
+.help-table th,.help-table td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
+.help-table th{background:var(--accent-soft);color:var(--ink);text-transform:none;letter-spacing:normal;font-size:14px;font-weight:700}
+@media (max-width:960px){
+  .help-page{grid-template-columns:1fr;gap:16px;padding:16px 16px 60px}
+  .help-toc{position:static}
+  .help-body{padding:4px 16px 20px}
+}
+@media print{
+  .help-page{display:block;padding:0}
+  .help-body{border:none;padding:0}
+}

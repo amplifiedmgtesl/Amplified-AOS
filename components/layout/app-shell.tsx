@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { HelpButton } from "./help-button";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import pkg from "../../package.json";
@@ -307,6 +308,7 @@ export function AppShell({
             <h1 className="page-title">{title}</h1>
             {subtitle ? <div className="page-subtitle">{subtitle}</div> : null}
           </div>
+          <HelpButton />
         </div>
 
         {children}

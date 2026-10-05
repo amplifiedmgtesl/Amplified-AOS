@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { openTimeclock } from "@/lib/timeclock/open";
+import { HelpButton } from "@/components/layout/help-button";
 
 const nav = [
   ["/lead/jobs", "📨", "Jobs"],
@@ -150,6 +151,7 @@ export default function LeadLayout({ children }: { children: ReactNode }) {
           <div>
             <h1 className="page-title">{title}</h1>
           </div>
+          <HelpButton />
         </div>
 
         {children}

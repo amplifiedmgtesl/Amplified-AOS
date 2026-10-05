@@ -23,6 +23,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { HelpButton } from "@/components/layout/help-button";
 import { loadJobRequestDays } from "@/lib/storage/job-request-days";
 import { CrewScheduleReport } from "./crew-schedule-report";
 import { CrewSignInSheet } from "./crew-sign-in-sheet";
@@ -191,6 +192,7 @@ export default function JobPrintPreview({ id }: { id: string }) {
             <span className="ppa-note">Choose Landscape when printing.</span>
           )}
           <span className="ppa-title" title={DOC_PURPOSE[doc]}>{DOC_LABEL[doc]}</span>
+          <HelpButton />
         </div>
 
         <div className="ppa-row">
