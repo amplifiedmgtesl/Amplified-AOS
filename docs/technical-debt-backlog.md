@@ -2909,3 +2909,27 @@ update timesheet_entries
 1. **Surface the threshold on the row** — at minimum a read-only display ("OT after 10") so a wrong split is *visible* instead of being discovered on an invoice. Per John's standing preference this should be a value the operator can see, not an explanatory banner.
 2. **Allow a re-snapshot on an unlocked row** — an explicit "re-pull rates from the rate card" action on non-approved, non-invoice-bound rows, rather than the accidental specialty-change trigger. This is the same mechanism the propagation prompt in the std/ot/dt entry above describes; build once, use for both.
 3. **Consider a manual OT-hours override** with an audit note, for the cases where neither the card nor the clock is right. Overlaps the existing "Payroll run: no way to override pay HOURS on an entry" entry — same shape of gap on the billing side.
+
+---
+
+## #114 — Timesheet bill rate ignores the quoted day rate (added 2026-10-04)
+
+**Severity: medium.** Invoices aren't affected. Anything that reads `timesheet_entries.bill_std_rate` / `bill_total` misstates day-rate jobs: margin checks, job costing, the Timekeeping grid's displayed rate, and any future reports.
+
+**What happens:** the timesheet snapshots its bill rates from the **rate card row's `hourly`** for the row's specialty (`components/shared/timekeeping.tsx:479` and `:785`, loaded at `:670`). It never looks at the quote. When a job is quoted in `rate_mode = 'day'` with a negotiated day rate that differs from the card, the timesheet keeps the card's hourly rate. The invoice is still correct, because it bills from the quote lines' `base_day`.
+
+**Confirmed incident — `AES_26091720_LFT_FARMTOUR` (`jobreq-1783960852358`), found 2026-10-04 while checking the 10/9 payroll:** Connor quoted a flat **$650/day for every position** but didn't update the rate card first.
+
+| Specialty | Quote `base_day` | Card hourly → timesheet `bill_std_rate` | Correct (650 ÷ 10) |
+|---|---|---|---|
+| Labor | $650 | $65 | $65 ✓ |
+| Telendler (forklift) | $650 | **$38** | $65 |
+| Steward | $650 | **$34** | $65 |
+
+The 8 forklift rows show $3,040 billed against $3,400 paid, which looks like a $360 loss. The issued invoice (`AES_26091720_LFT_FARMTOUR_INV`) actually bills forklift at $650/day, so there's no real loss. The false alarm went to Connor before this was understood.
+
+**Fix:** when the job has a quote line in day mode for the row's date and specialty, snapshot `bill_std_rate = base_day ÷ hours-per-person` (`hours ÷ qty` on the quote line, or `job_request_days.expected_hours`), with OT/DT rates derived from that. Fall back to the rate card only when there's no matching quote line. This is the same quote-vs-card divergence as #112 and the `rate-card-resolution-divergence` note. Ideally the timesheet, invoicing and payroll all resolve rates through one function.
+
+**Backfill:** after the fix, re-snapshot bill rates on existing day-rate jobs. Only rows not yet bound to an invoice are safe; for invoiced rows, update the display fields only and never touch the invoice. Farm Tour's rows have `invoice_line_id = NULL` even though the invoice is issued, so check how they were billed before touching them.
+
+**Related:** the 2026-08-30 "FARMTOUR quote will overpay" entry. That's the same stale `base_hourly` on this job's quote, on the payroll side.
