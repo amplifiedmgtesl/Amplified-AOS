@@ -139,11 +139,17 @@ Status doesn't change by itself. Update it as the job moves along.
 - **Header dates don't match day rows**: the job's start/end dates disagree with the days on Daily Requirements. Fix whichever is wrong.
 - **Possible duplicate**: another job looks the same. Check you're not entering it twice.
 
-**Shifts.** If a day has separate calls (for example Load In, Show Call, Strike), open the **Shifts** tab, type a label and click **Add Shift** for each one. Do this before assigning crew. When a job has two or more shifts, every crew member must be put on a shift.
+### Shifts {#shifts}
 
-**Attachments.** Click **+ Upload File(s)**, choose the files and pick a **Type** for each. Anyone working the job can open them from here.
+If a day has separate calls (for example Load In, Show Call, Strike), open the **Shifts** tab, type a label and click **Add Shift** for each one. Do this before assigning crew. When a job has two or more shifts, every crew member must be put on a shift.
 
-**Health Check.** This tab checks the job automatically and lists anything wrong as a **Blocker**, **Warning** or **Info**. Most issues have a **→ Fix** link that takes you to the right place. "✓ No issues detected" means the job is in good shape.
+### Attachments {#attachments}
+
+Click **+ Upload File(s)**, choose the files and pick a **Type** for each. Anyone working the job can open them from here.
+
+### Health Check {#health}
+
+This tab checks the job automatically and lists anything wrong as a **Blocker**, **Warning** or **Info**. Most issues have a **→ Fix** link that takes you to the right place. "✓ No issues detected" means the job is in good shape.
 
 ## Daily Requirements: days and crew needed {#requirements}
 

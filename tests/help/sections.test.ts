@@ -27,6 +27,18 @@ describe("Help button section mapping", () => {
     expect(helpSectionFor(null)).toBe("overview");
   });
 
+  it("on a job, opens the section for the tab that's showing", () => {
+    expect(helpSectionFor("/job-requests/abc", "?tab=daily")).toBe("requirements");
+    expect(helpSectionFor("/job-requests/abc", "?tab=crew")).toBe("crew");
+    expect(helpSectionFor("/lead/jobs/abc", "?tab=shifts")).toBe("shifts");
+    expect(helpSectionFor("/job-requests/abc", "?tab=attachments")).toBe("attachments");
+    expect(helpSectionFor("/job-requests/abc", "?tab=health")).toBe("health");
+    expect(helpSectionFor("/job-requests/abc", "?tab=bogus")).toBe("jobs");
+    expect(helpSectionFor("/job-requests/abc", "")).toBe("jobs");
+    // ?tab only means something on a job page
+    expect(helpSectionFor("/timekeeping", "?tab=crew")).toBe("timekeeping");
+  });
+
   it("every section the button can open exists in HELP.md", () => {
     const md = fs.readFileSync(path.join(process.cwd(), "HELP.md"), "utf8");
     const anchors = new Set([...md.matchAll(/\{#([a-z-]+)\}\s*$/gm)].map((m) => m[1]));
@@ -35,7 +47,9 @@ describe("Help button section mapping", () => {
       "/master-calendar", "/clients", "/employee-directory", "/maintenance", "/rate-card"];
     for (const p of paths) expect(anchors.has(helpSectionFor(p))).toBe(true);
     expect(anchors.has("requirements")).toBe(true);
-    expect(anchors.has("crew")).toBe(true);
+    for (const tab of ["daily", "crew", "shifts", "attachments", "health"]) {
+      expect(md).toContain(`{#${helpSectionFor("/job-requests/x", `?tab=${tab}`)}}`);
+    }
   });
 
   it("help stays free of money figures", () => {

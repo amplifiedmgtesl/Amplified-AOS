@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ReactNode } from "react";
+import { ScrollToHash } from "./scroll-to-hash";
 
 // Renders HELP.md (repo root) — the user guide the topbar Help button opens.
 // Read at build time like /changelog, so it always matches the deployed build.
@@ -46,7 +47,8 @@ function render(md: string): { title: string; sections: Section[]; body: ReactNo
       body.push(<h2 key={key++} id={id} className="help-h2">{inline(h2[1])}</h2>);
       i++; continue;
     }
-    if (t.startsWith("### ")) { body.push(<h3 key={key++} className="help-h3">{inline(t.slice(4))}</h3>); i++; continue; }
+    const h3 = t.match(/^### (.+?)(?:\s*\{#([a-z-]+)\})?$/);
+    if (h3) { body.push(<h3 key={key++} id={h3[2]} className="help-h3">{inline(h3[1])}</h3>); i++; continue; }
 
     if (t.startsWith("|")) {
       const rows: string[] = [];
@@ -91,6 +93,7 @@ export default function HelpPage() {
         <div className="help-toc-title">{title}</div>
         {sections.map((s) => <a key={s.id} href={`#${s.id}`}>{s.title}</a>)}
       </nav>
+      <ScrollToHash />
       <main className="help-body">
         <h1 className="help-h1">{title}</h1>
         {body}

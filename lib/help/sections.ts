@@ -21,17 +21,34 @@ const ROUTES: [RegExp, string][] = [
   [/^\/job-costing/, "reports"],
 ];
 
-export function helpSectionFor(pathname: string | null | undefined): string {
+// A job page's open tab (?tab=, kept in the address by job-detail) has its
+// own section.
+const JOB_TABS: Record<string, string> = {
+  daily: "requirements",
+  crew: "crew",
+  shifts: "shifts",
+  attachments: "attachments",
+  health: "health",
+};
+
+export function helpSectionFor(pathname: string | null | undefined, search?: string | null): string {
   const p = pathname || "";
-  for (const [re, id] of ROUTES) if (re.test(p)) return id;
+  for (const [re, id] of ROUTES) {
+    if (!re.test(p)) continue;
+    if (id === "jobs") {
+      const tab = new URLSearchParams(search || "").get("tab");
+      if (tab && JOB_TABS[tab]) return JOB_TABS[tab];
+    }
+    return id;
+  }
   return "overview";
 }
 
-export function helpUrl(pathname: string | null | undefined): string {
-  return `/help#${helpSectionFor(pathname)}`;
+export function helpUrl(pathname: string | null | undefined, search?: string | null): string {
+  return `/help#${helpSectionFor(pathname, search)}`;
 }
 
 // Named target: repeated clicks reuse one Help tab instead of stacking them.
-export function openHelp(pathname: string | null | undefined): void {
-  window.open(helpUrl(pathname), "aos-help");
+export function openHelp(pathname: string | null | undefined, search?: string | null): void {
+  window.open(helpUrl(pathname, search), "aos-help");
 }

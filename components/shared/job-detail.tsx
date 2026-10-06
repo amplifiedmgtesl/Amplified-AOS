@@ -863,7 +863,14 @@ export default function JobDetail({
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  onClick={() => setSectionTab(t.id)}
+                  onClick={() => {
+                    setSectionTab(t.id);
+                    // Mirror the tab in the address so Help opens the right
+                    // section and a reload stays on this tab.
+                    const url = new URL(window.location.href);
+                    url.searchParams.set("tab", t.id);
+                    window.history.replaceState(window.history.state, "", url);
+                  }}
                   style={{
                     background: "transparent",
                     border: "none",

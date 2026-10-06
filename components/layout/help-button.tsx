@@ -9,7 +9,7 @@ export function HelpButton() {
   return (
     <a
       href={helpUrl(pathname)}
-      onClick={(e) => { e.preventDefault(); openHelp(pathname); }}
+      onClick={(e) => { e.preventDefault(); openHelp(pathname, window.location.search); }}
       className="help-btn hide-print"
       title="Instructions for this page"
     >
