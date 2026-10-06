@@ -5,10 +5,12 @@ import { rateCardChecks } from "./checks/rate-card";
 import { jobCompletenessChecks } from "./checks/job-completeness";
 import { consistencyChecks } from "./checks/consistency";
 import { timesheetInvoiceChecks } from "./checks/timesheet-invoice";
+import { crewTimesheetChecks } from "./checks/crew-timesheet";
 
 export const CHECKS: CheckFn[] = [
   ...rateCardChecks,
   ...jobCompletenessChecks,
   ...consistencyChecks,
   ...timesheetInvoiceChecks,
+  ...crewTimesheetChecks,
 ];

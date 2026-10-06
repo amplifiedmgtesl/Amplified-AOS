@@ -90,6 +90,7 @@ export const jobCompletenessChecks: CheckFn[] = [
     }
     const assignBy = new Map<string, number>();
     for (const a of ctx.assignments) {
+      if (!a.employeeKey) continue;   // an open spot isn't a filled one
       assignBy.set(needKey(a), (assignBy.get(needKey(a)) ?? 0) + 1);
     }
     const dayDateById = new Map(ctx.days.map((d) => [d.id, d.eventDate] as const));
@@ -107,6 +108,7 @@ export const jobCompletenessChecks: CheckFn[] = [
         title: `Under-staffed: ${dayDate} · ${label}`,
         detail: `${filled} of ${needed} crew assigned.`,
         downstream: "Day will go into call with empty slots — operator needs to fill before showtime.",
+        fixHref: `/job-requests/${encodeURIComponent(ctx.jobRequest.id)}?tab=crew`,
         fixLabel: "Assign crew on the Assigned Crew tab",
       });
     }
@@ -115,53 +117,33 @@ export const jobCompletenessChecks: CheckFn[] = [
 
   // 6. Every day has a time window (#38)
   //
-  // Days are already mandatory for crew — the Assigned Crew tab blocks at zero
-  // days and assignments are FK'd to job_request_day_id — but a day with NULL
-  // start_time/end_time is allowed, and it degrades silently rather than
-  // loudly: the Assigned Crew window renders empty, per-worker planned times
-  // have nothing to fall back to, "Copy planned → actual" copies nothing, and
-  // the printed sign-in sheet's Expected column goes blank. That last one is
-  // the real harm — a sheet goes on-site with no expected times on it.
-  //
-  // Deliberately a WARNING, not a blocker (John's call): jobs legitimately
-  // exist as leads before the schedule is known, and a hard requirement would
-  // just push people to type fake times to get past it.
+  // A day with no start/end times can't print its schedule or sign-in sheet,
+  // is skipped by "Add Crew from Job", and gives the Time Clock and Assigned
+  // Crew nothing to show as planned. With crew already assigned that is a
+  // BLOCKER (category "crew", so it never gates issuing a quote). Without
+  // crew it stays a warning — leads legitimately exist before the schedule
+  // is known (John's call), and a hard rule just invites fake times.
   (ctx) => {
     const findings: Finding[] = [];
-    const assignedDayIds = new Set(ctx.assignments.map((a) => a.jobRequestDayId));
+    const assignedDayIds = new Set(ctx.assignments.filter((a) => a.employeeKey).map((a) => a.jobRequestDayId));
     for (const d of ctx.days) {
       if (d.startTime || d.endTime || d.startTime2 || d.endTime2) continue;
       const hasCrew = assignedDayIds.has(d.id);
       findings.push({
         id: `job.day_no_time_window:${d.id}`,
-        severity: "warning",
-        category: "job",
-        title: `No time window on ${d.eventDate}`,
+        severity: hasCrew ? "blocker" : "warning",
+        category: hasCrew ? "crew" : "job",
+        title: `No start/end times on ${d.eventDate}`,
         detail: hasCrew
-          ? "The day has crew assigned but no start/end times, so there is no schedule for them to fall back to."
-          : "The day has no start/end times set.",
+          ? "Crew are assigned to this day but it has no start or end time."
+          : "The day has no start or end time yet.",
         downstream:
-          "The printed sign-in sheet's Expected column prints blank for anyone without their own planned times, " +
-          "and \"Copy planned → actual\" has nothing to copy.",
+          "The crew schedule and sign-in sheet for this day won't print, Add Crew from Job skips it, "
+          + "and nobody has planned times.",
+        fixHref: `/job-requests/${encodeURIComponent(ctx.jobRequest.id)}?tab=daily`,
         fixLabel: "Set start/end times on the Daily Requirements tab",
       });
     }
     return findings;
-  },
-
-  // 7. Job requirements / packet notes — the user-specified example
-  (ctx) => {
-    const hasNotes = (ctx.jobRequest.notes ?? "").trim().length > 0;
-    const hasPacket = (ctx.jobRequest.packetNotes ?? "").trim().length > 0;
-    if (hasNotes || hasPacket) return [];
-    return [{
-      id: "job.no_requirements",
-      severity: "info",
-      category: "job",
-      title: "Job requirements are empty",
-      detail: "Neither Notes nor packet notes have been filled in.",
-      downstream: "Quote lines can't be generated automatically — manual entry only. Crew won't see show-specific details on the printed sheet.",
-      fixLabel: "Fill in the Notes field on the job header",
-    }];
   },
 ];

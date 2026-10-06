@@ -11,7 +11,7 @@ import { loadQuotes, resolveRateCardForJob } from "@/lib/store/quotes";
 import { loadInvoices } from "@/lib/store/invoices";
 import { getRateCardProfiles, getSpecialties } from "@/lib/store/db";
 import type { JobRequest, TimeEntry } from "@/lib/store/types";
-import type { Finding, HealthContext } from "./types";
+import type { CaptureLite, Finding, HealthContext } from "./types";
 import { CHECKS } from "./registry";
 
 async function loadTimesheetEntriesForJob(jobId: string): Promise<TimeEntry[]> {
@@ -65,6 +65,29 @@ async function loadTimesheetEntriesForJob(jobId: string): Promise<TimeEntry[]> {
   } as TimeEntry));
 }
 
+// Which kiosk punches were captured for these entries. Chunked so a big job
+// can't hit the request size / 1000-row limits.
+async function loadCapturesForEntries(entryIds: string[]): Promise<CaptureLite[]> {
+  const out: CaptureLite[] = [];
+  for (let i = 0; i < entryIds.length; i += 200) {
+    const { data, error } = await supabase
+      .from("timesheet_captures")
+      .select("timesheet_entry_id, actual_in1, actual_out1, actual_in2, actual_out2")
+      .in("timesheet_entry_id", entryIds.slice(i, i + 200));
+    if (error) {
+      console.error("[job-health] loadCapturesForEntries:", error);
+      return out;
+    }
+    for (const r of data ?? []) {
+      out.push({
+        timesheetEntryId: r.timesheet_entry_id,
+        in1: !!r.actual_in1, out1: !!r.actual_out1, in2: !!r.actual_in2, out2: !!r.actual_out2,
+      });
+    }
+  }
+  return out;
+}
+
 export async function buildHealthContext(jobRequest: JobRequest): Promise<HealthContext> {
   const jobId = jobRequest.id;
   const [
@@ -98,6 +121,8 @@ export async function buildHealthContext(jobRequest: JobRequest): Promise<Health
     ? "effective_lookup"
     : "none";
 
+  const captures = await loadCapturesForEntries(timesheetEntries.map((e) => e.id));
+
   return {
     jobRequest,
     days,
@@ -110,6 +135,8 @@ export async function buildHealthContext(jobRequest: JobRequest): Promise<Health
     invoices,
     timesheetEntries,
     specialties: getSpecialties(),
+    captures,
+    now: new Date(),
   };
 }
 

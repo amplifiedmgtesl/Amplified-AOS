@@ -158,13 +158,14 @@ export const rateCardChecks: CheckFn[] = [
         severity: "info",
         category: "rate_card",
         title: `Uneven day/hourly ratio: ${row.position} / ${row.specialty}`,
+        // No dollar figures: findings are shown to every role.
         detail:
-          `Day $${day.toFixed(2)} ÷ hourly $${hourly.toFixed(2)} = ${ratio.toFixed(2)} hrs, `
+          `The day rate divided by the hourly rate is ${ratio.toFixed(2)} hrs, `
           + `so the day rate is treated as covering ${floor} hr${floor === 1 ? "" : "s"} per worker.`,
         downstream:
           `On day-rate timesheet billing, overflow hours start after ${floor} hrs — not `
-          + `${ratio.toFixed(2)}. If the contract says a different number, the rates need to `
-          + `divide evenly (e.g. ${(hourly * floor).toFixed(2)} day at $${hourly.toFixed(2)}/hr).`,
+          + `${ratio.toFixed(2)}. If the contract says a different number, the day and hourly `
+          + `rates need to divide evenly.`,
         fixHref: "/rate-card",
         fixLabel: "Review row",
       });

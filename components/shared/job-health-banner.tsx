@@ -7,6 +7,8 @@
 // Categories let each page show only what matters to it — e.g. the quote
 // page doesn't need to surface invoice $0-line findings.
 
+import { fixLinkFor } from "@/lib/job-health/fix-link";
+import { useUserRole } from "@/lib/auth/use-user-role";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { runHealthChecksByJobId } from "@/lib/job-health/runner";
@@ -27,6 +29,7 @@ const SEV_COLOR: Record<Severity, { bg: string; border: string; icon: string }> 
 };
 
 export function JobHealthBanner({ jobRequestId, categories, pageContext }: Props) {
+  const role = useUserRole();
   const [findings, setFindings] = useState<Finding[] | null>(null);
 
   useEffect(() => {
@@ -45,6 +48,9 @@ export function JobHealthBanner({ jobRequestId, categories, pageContext }: Props
   }, [jobRequestId, categories]);
 
   if (!jobRequestId || !findings || findings.length === 0) return null;
+
+  const link = fixLinkFor(`/job-requests?id=${encodeURIComponent(jobRequestId)}&tab=health`, role);
+  const reviewHref = link && "href" in link ? link.href : `/job-requests?id=${encodeURIComponent(jobRequestId)}&tab=health`;
 
   const blockers = findings.filter((f) => f.severity === "blocker").length;
   const warnings = findings.filter((f) => f.severity === "warning").length;
@@ -73,7 +79,7 @@ export function JobHealthBanner({ jobRequestId, categories, pageContext }: Props
       <strong>{s.icon} Health Check:</strong>
       <span>{parts.join(" · ")}{ctx}.</span>
       <Link
-        href={`/job-requests?id=${encodeURIComponent(jobRequestId)}&tab=health`}
+        href={reviewHref}
         style={{ marginLeft: "auto", fontWeight: 500 }}
       >
         Review on Job →

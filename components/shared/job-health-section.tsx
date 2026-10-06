@@ -5,6 +5,8 @@ import Link from "next/link";
 import type { JobRequest } from "@/lib/store/types";
 import { runHealthChecks } from "@/lib/job-health/runner";
 import type { Finding, Severity } from "@/lib/job-health/types";
+import { fixLinkFor } from "@/lib/job-health/fix-link";
+import { useUserRole } from "@/lib/auth/use-user-role";
 
 type Props = { jobRequest: JobRequest; refreshKey?: number };
 
@@ -17,6 +19,7 @@ const SEV_STYLE: Record<Severity, { label: string; bg: string; border: string; i
 const SEV_ORDER: Severity[] = ["blocker", "warning", "info"];
 
 export function JobHealthSection({ jobRequest, refreshKey = 0 }: Props) {
+  const role = useUserRole();
   const [loading, setLoading] = useState(true);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -83,17 +86,28 @@ export function JobHealthSection({ jobRequest, refreshKey = 0 }: Props) {
                 <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
                   <strong>Downstream:</strong> {f.downstream}
                 </div>
-                {f.fixHref ? (
-                  <div style={{ marginTop: 6 }}>
-                    <Link href={f.fixHref} style={{ fontSize: 12, fontWeight: 500 }}>
-                      → {f.fixLabel ?? "Fix"}
-                    </Link>
-                  </div>
-                ) : f.fixLabel ? (
+                {(() => {
+                  const link = fixLinkFor(f.fixHref, role);
+                  if (!link) return null;
+                  if ("adminOnly" in link) {
+                    return (
+                      <div className="muted" style={{ marginTop: 6, fontSize: 12, fontStyle: "italic" }}>
+                        An admin needs to fix this.
+                      </div>
+                    );
+                  }
+                  return (
+                    <div style={{ marginTop: 6 }}>
+                      <Link href={link.href} style={{ fontSize: 12, fontWeight: 500 }}>
+                        → {f.fixLabel ?? "Fix"}
+                      </Link>
+                    </div>
+                  );
+                })() ?? (f.fixLabel ? (
                   <div className="muted" style={{ marginTop: 6, fontSize: 12, fontStyle: "italic" }}>
                     {f.fixLabel}
                   </div>
-                ) : null}
+                ) : null)}
               </div>
             ))}
           </div>

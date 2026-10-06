@@ -147,9 +147,9 @@ If a day has separate calls (for example Load In, Show Call, Strike), open the *
 
 Click **+ Upload File(s)**, choose the files and pick a **Type** for each. Anyone working the job can open them from here.
 
-### Health Check {#health}
+### Health Check
 
-This tab checks the job automatically and lists anything wrong as a **Blocker**, **Warning** or **Info**. Most issues have a **→ Fix** link that takes you to the right place. "✓ No issues detected" means the job is in good shape.
+This tab checks the job automatically and lists anything that needs fixing. See *Health Check* below for what each check means.
 
 ## Daily Requirements: days and crew needed {#requirements}
 
@@ -348,7 +348,7 @@ It opens full screen in its own tab, signed in as you. The crew don't need login
 
 **Signed timesheet.** From the job's **Print** button, choose **Timesheet — Actuals (after)** for the record of hours worked with the crew's signatures.
 
-**Health Check.** Look at the job's **Health Check** tab before invoicing and fix anything listed.
+**Health Check.** Look at the job's **Health Check** tab before invoicing and fix anything listed (see *Health Check*).
 
 **Job Costing.** **Job Costing** in the menu tracks a job's costs. **Sync Timekeeping Actuals** brings in the latest hours.
 
@@ -384,6 +384,76 @@ Once time is on an invoice, it shows **🔒 Billed** on Timekeeping and can't be
 7. Use the export button on the run to download the file for the payroll provider.
 
 Time that's in a payroll run is locked on Timekeeping. To change it, the run must be **Void**ed first.
+
+## Health Check {#health}
+
+**What it is:** AOS checks every job automatically for problems that would cause trouble later: missing times, crew who aren't set up properly, gaps in the rate card. You'll see the results in two places:
+
+- The **Health Check** tab on the job lists every problem.
+- A coloured strip at the top of **Timekeeping**, **Quotes** and **Invoices** shows the problems that affect that screen. Click **Review on Job →** to see them all.
+
+**How serious is it?**
+
+- **⛔ Blocker**: something is wrong that will give a wrong result. Fix it first. When you issue a quote or invoice with a blocker on the job, AOS asks you to confirm.
+- **⚠ Warning**: probably a problem. Check it.
+- **ℹ Info**: worth knowing; often nothing to do.
+
+Each problem says what's wrong, what it affects (**Downstream**) and, where possible, has a **→ Fix** link to the right screen. If it says **An admin needs to fix this**, the fix is on a screen only admins can open; let an admin know.
+
+### Setting up the job
+
+| Check | Level | What it means and what to do |
+|---|---|---|
+| **No days defined on this job** | Blocker | Daily Requirements is empty. Add the job's days. |
+| **No crew needs on [date]** | Warning | A day has no positions or quantities. Add the crew needed for that day. |
+| **No start/end times on [date]** | Blocker if crew are assigned, otherwise Warning | The day has no times, so its schedule and sign-in sheet won't print and Add Crew from Job skips it. Set the times on Daily Requirements. |
+| **No shifts defined on this job** | Warning | Fine if each day is one continuous call. If a day has separate calls, add them on the Shifts tab. |
+| **Header dates don't match day rows** | Warning | The job's start/end dates disagree with its days. Fix whichever is wrong. |
+
+### Planning the crew
+
+| Check | Level | What it means and what to do |
+|---|---|---|
+| **Under-staffed: [date] · [specialty]** | Warning | Fewer people assigned than needed. Assign more crew on Assigned Crew. Open spots don't count. |
+| **Timesheet has crew but Assigned Crew is empty** | Warning | People were added straight to Timekeeping without being planned. Plan the crew on Assigned Crew so the paperwork and Time Clock work. |
+| **[n] assigned crew members have no shift** | Warning | The job has more than one shift and someone isn't on one. Their Timekeeping rows stay locked until a shift is set. |
+| **[n] assigned crew not yet confirmed** | Info | The job is within two days and some crew haven't confirmed. Check they're coming, then tick Confirmed. |
+| **[n] timesheet rows aren't on Assigned Crew** | Info | Someone worked who wasn't planned, usually a walk-up added on site. Nothing to do unless it's a mistake. |
+
+### Recording time
+
+| Check | Level | What it means and what to do |
+|---|---|---|
+| **No time entered: [n] people on [date]** | Warning | The day is over and these people still have no times. Enter their actual times, or mark them **No Show**. |
+| **Missing Time Out on [date]** | Warning | Someone has a Time In with no Time Out. Enter the Time Out. |
+| **[n] timesheet rows waiting for approval** | Warning | Time from past days hasn't been approved. Approve it on Timesheet Review. |
+| **Time Clock punch not on the timesheet** | Blocker | Someone clocked in or out at the Time Clock, but the time didn't save. Enter it by hand on Timekeeping. |
+| **[n] timesheet rows are missing a position, specialty or shift** | Warning | These rows are locked until they're filled in. Set them on Timekeeping. |
+| **Missing specialty: [name] · [date]** | Blocker | An approved row has no specialty, so it can't be priced or paid correctly. Unlock it, set the specialty, approve again. |
+| **Timesheet has rows on a date not on the job** | Warning | Usually a day copied to the wrong date. Fix the date, or add the day to Daily Requirements. |
+| **Duplicate employee: [name]** | Warning | The same person appears under two employee records. Tell an admin so the records can be merged. |
+
+A day counts as **over** at noon the next day, so overnight shifts aren't flagged while they're still running.
+
+### Rates, quotes and invoices
+
+These are usually for admins to fix.
+
+| Check | Level | What it means |
+|---|---|---|
+| **No rate card resolves for this job** | Blocker | The job has no rate card, so nothing can be priced. |
+| **Rate card missing specialty: [name]** | Blocker | The job needs a specialty that isn't on its rate card. |
+| **Missing bill rate: [position] / [specialty]** | Blocker | The rate card row has no client rate, so those lines would bill at zero. |
+| **Missing pay rate: [position] / [specialty]** | Warning | The rate card row has no pay rate. |
+| **No OT/DT threshold: [position] / [specialty]** | Info | No overtime rule is set for that row. |
+| **Uneven day/hourly ratio: [position] / [specialty]** | Info | The day rate doesn't divide evenly by the hourly rate, so the hours a day rate covers are rounded. |
+| **Rate card has no holiday multiplier** | Info | Holiday days will use the default. |
+| **Timesheet uses specialty not on rate card** | Blocker | Time was recorded under a specialty the rate card doesn't have. |
+| **Job and quote reference different rate cards** | Warning | The quote was priced from a different rate card than the job's current one. |
+| **Quote and invoice reference different rate cards** | Warning | The invoice may not match what the client was quoted. |
+| **Quote covers [n] days but the job has [n]** | Warning | A day is missing from the quote, or the job has an extra day. |
+| **[n] approved days not yet on an invoice** | Warning | Approved work that hasn't been billed yet. |
+| **Invoice [#] has zero-value lines** | Blocker | Some lines on an issued invoice came out at zero. Revise the invoice once the rate card is fixed. |
 
 ## Users (admins) {#users}
 

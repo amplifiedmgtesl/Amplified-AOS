@@ -20,9 +20,20 @@ export type Severity = "blocker" | "warning" | "info";
 export type FindingCategory =
   | "rate_card"
   | "job"
+  | "crew"        // Assigned Crew (the plan) — never gates a quote/invoice issue
   | "consistency"
   | "timesheet"
   | "invoice";
+
+/** Time Clock audit row for a timesheet entry (timesheet_captures). Only the
+ *  fields the checks need: did a punch get captured for each slot? */
+export type CaptureLite = {
+  timesheetEntryId: string;
+  in1: boolean;
+  out1: boolean;
+  in2: boolean;
+  out2: boolean;
+};
 
 export type Finding = {
   /** Stable id e.g. "rate_card.no_profile" or "timesheet.missing_specialty:<entryId>". */
@@ -57,6 +68,10 @@ export type HealthContext = {
   timesheetEntries: TimeEntry[];
   /** Specialty master — for name lookups in messages. */
   specialties: Specialty[];
+  /** Time Clock captures for this job's timesheet entries. */
+  captures: CaptureLite[];
+  /** Evaluation time. Checks never read the clock themselves. */
+  now: Date;
 };
 
 export type CheckFn = (ctx: HealthContext) => Finding[];

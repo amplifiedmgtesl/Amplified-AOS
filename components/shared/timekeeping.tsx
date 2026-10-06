@@ -1600,7 +1600,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
 
       <JobHealthBanner
         jobRequestId={currentJob?.id}
-        categories={["rate_card", "job", "timesheet"]}
+        categories={["rate_card", "job", "crew", "timesheet"]}
         pageContext="timesheet"
       />
 
