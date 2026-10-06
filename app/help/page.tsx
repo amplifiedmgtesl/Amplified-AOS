@@ -89,7 +89,7 @@ export default function HelpPage() {
   const { title, sections, body } = render(md);
   return (
     <div className="help-page">
-      <nav className="help-toc hide-print">
+      <nav id="contents" className="help-toc hide-print">
         <div className="help-toc-title">{title}</div>
         {sections.map((s) => <a key={s.id} href={`#${s.id}`}>{s.title}</a>)}
       </nav>
@@ -98,6 +98,9 @@ export default function HelpPage() {
         <h1 className="help-h1">{title}</h1>
         {body}
       </main>
+      {/* Phones: the contents list sits at the top, not beside the guide,
+          so keep a way back to it on screen. Hidden on wide screens. */}
+      <a href="#contents" className="help-to-contents hide-print">↑ Contents</a>
     </div>
   );
 }

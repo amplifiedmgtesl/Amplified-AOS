@@ -1184,8 +1184,10 @@ body.show-ids .record-id::before { content: "🆔 "; }
 .help-table{border-collapse:collapse;width:100%;font-size:14px}
 .help-table th,.help-table td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
 .help-table th{background:var(--accent-soft);color:var(--ink);text-transform:none;letter-spacing:normal;font-size:14px;font-weight:700}
+.help-to-contents{display:none}
 @media (max-width:960px){
   .help-page{grid-template-columns:1fr;gap:16px;padding:16px 16px 60px}
+  .help-to-contents{display:block;position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:20;background:var(--dark);color:#fff;border:1px solid var(--gold-dark);border-radius:999px;padding:10px 16px;font-size:14px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.25)}
   .help-toc{position:static}
   .help-body{padding:4px 16px 20px}
 }
