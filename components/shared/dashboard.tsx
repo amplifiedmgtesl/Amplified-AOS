@@ -298,7 +298,6 @@ export default function Dashboard() {
         <Link href="/timekeeping"><button type="button" className="secondary">
           Approve Timesheets{pendingRows.length > 0 ? ` (${pendingRows.length})` : ""}
         </button></Link>
-        <Link href="/job-sheets"><button type="button" className="secondary">Today&apos;s Job Sheet</button></Link>
         <Link href="/master-calendar"><button type="button" className="secondary">Open Calendar</button></Link>
       </div>
 

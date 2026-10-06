@@ -90,6 +90,15 @@ export function AppShell({
         return;
       }
 
+      // Staff (and any account with no recognised role) use the Staff Portal,
+      // never AOS. The login page already refuses them; this catches a session
+      // that arrived another way (e.g. a password-reset link).
+      if (!["admin", "coordinator", "payroll"].includes(profile?.role ?? "")) {
+        await supabase.auth.signOut();
+        window.location.href = "/login";
+        return;
+      }
+
       // Payroll role: confined to /payroll/*, /employee-directory, and
       // /job-requests (read-only). Employee directory access is required
       // for the Rippling Emp No field and for setting pay rates per

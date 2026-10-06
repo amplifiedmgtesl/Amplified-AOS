@@ -937,11 +937,13 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
     }
   }
 
-  // Copy every entry from the previous day-group into the given day. New rows
-  // get fresh ids, workDate/endDate retargeted to the current day, status
-  // reset to 'submitted', invoice binding cleared, and holiday flags
-  // recomputed from the target day's holiday status. Matches the pattern on
-  // job-request crew assignments (the "Copy ↑" button there).
+  // Copy every PERSON from the previous day-group into the given day. New rows
+  // get fresh ids, workDate/endDate retargeted to the target day, invoice /
+  // payroll / staff-app state cleared, and holiday flags recomputed from the
+  // target day. Actual times start BLANK and the row is 'planned' — copying
+  // one day's actual times onto another day would invent hours nobody
+  // recorded (same rule as Add Crew from Job). Mirrors the "Copy ↑" button on
+  // job-request crew assignments.
   function duplicateDay(sourceDay: string, targetDay: string) {
     if (!timesheet) return;
     const sourceRows = timesheet.rows.filter((r) => (r.workDate || "no-date") === sourceDay);
@@ -949,7 +951,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
       alert(`${sourceDay} has no entries to copy.`);
       return;
     }
-    if (!confirm(`Copy ${sourceRows.length} entr${sourceRows.length === 1 ? "y" : "ies"} from ${sourceDay} to ${targetDay}?`)) return;
+    if (!confirm(`Copy ${sourceRows.length} ${sourceRows.length === 1 ? "person" : "people"} from ${sourceDay} to ${targetDay}? Times start blank.`)) return;
     const isHol = targetDay !== "no-date" && holidayDateSet.has(targetDay);
     const stamp = Date.now();
     const copies = sourceRows.map((r, i) => computeTimeEntry({
@@ -959,8 +961,15 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
       endDate:  targetDay === "no-date" ? undefined : targetDay,
       isHoliday: isHol,
       holidayMultiplier: isHol ? effectiveHolidayMultiplier : null,
-      status: "submitted",
+      timeIn1: "", timeOut1: "", timeIn2: "", timeOut2: "",
+      mealBreak1Minutes: 0, mealBreak2Minutes: 0,
+      status: "planned",
       invoiceLineId: null,
+      payrollRunId: null,
+      userId: null,
+      staffFinalized: false,
+      staffFinalizedAt: null,
+      payrollDailyRulesExempt: false,
     }));
     persist({ ...timesheet, rows: [...timesheet.rows, ...copies] });
     // Force-expand the target day so the operator sees the freshly-copied

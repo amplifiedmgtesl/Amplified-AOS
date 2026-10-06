@@ -284,7 +284,7 @@ A time past midnight shows **(+1)**, meaning the next day.
 - **🔒 Billed**: on an invoice and locked for good.
 - **Rejected**: sent back for correction.
 
-**Copying days.** **Copy ↑ prev day** and **Copy → new day…** copy a day's rows to another day **with their times**. Check and correct every copied time. Usually it's better to use **Add Crew from Job**.
+**Copying days.** **Copy ↑ prev day** and **Copy → new day…** copy the **people** from one day to another. Times start blank, so enter each person's actual times as usual.
 
 **The Time Clock.** Crew leaders and admins can open the **⏱️ Time Clock** from here (see *Time Clock*).
 

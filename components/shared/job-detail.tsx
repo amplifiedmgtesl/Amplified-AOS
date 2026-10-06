@@ -531,9 +531,10 @@ export default function JobDetail({
             background: "#eef5ff", border: "1px solid #b6cdf0", borderRadius: 8,
             padding: "8px 14px", marginBottom: 12, fontSize: 13, color: "#1e3a8a",
           }}>
-            🔒 This job is <strong>{statusLabel}</strong>. Status and the <strong>Assigned Crew</strong> tab
-            stay editable{form.status === "booked" ? " (booked jobs still need crew scheduling)" : ""};
-            everything else is locked. Switch back to <strong>Lead</strong> to edit other fields.
+            🔒 This job is <strong>{statusLabel}</strong>.{isCrewLocked
+              ? <> Only Status can be changed.</>
+              : <> Status, <strong>Daily Requirements</strong> and <strong>Assigned Crew</strong> stay editable; the job details above are locked.</>}
+            {" "}Switch back to <strong>Lead</strong> to edit them.
           </div>
         )}
 
