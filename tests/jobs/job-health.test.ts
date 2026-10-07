@@ -160,3 +160,26 @@ describe("fix links by role", () => {
     expect(fixLinkFor("/timekeeping", "coordinator")).toEqual({ href: "/timekeeping" });
   });
 });
+
+describe("day rate: quote vs job day (#105)", () => {
+  const quote = (lines: Record<string, unknown>[]) =>
+    [{ id: "q1", isDraft: false, issuedAt: "2026-09-01", lines }] as any;
+
+  it("warns when the quote sells a day rate on an Hourly day", () => {
+    const c = ctx({ quotes: quote([{ quoteDate: "2026-09-12", rateMode: "day" }]) });
+    expect(ids(c)).toContain("consistency.day_rate_quoted_day_hourly");
+  });
+
+  it("is quiet when the day is set to Day Rate, or the quote line is hourly", () => {
+    const days = [{ id: "d1", eventDate: "2026-09-12", startTime: "08:00", endTime: "17:00", rateMode: "day", dayRateHours: 10 }] as any;
+    expect(ids(ctx({ days, quotes: quote([{ quoteDate: "2026-09-12", rateMode: "day" }]) })))
+      .not.toContain("consistency.day_rate_quoted_day_hourly");
+    expect(ids(ctx({ quotes: quote([{ quoteDate: "2026-09-12", rateMode: "hourly" }]) })))
+      .not.toContain("consistency.day_rate_quoted_day_hourly");
+  });
+
+  it("warns when a quoted day-rate date has no job day at all", () => {
+    const c = ctx({ quotes: quote([{ quoteDate: "2026-09-20", rateMode: "day" }]) });
+    expect(ids(c)).toContain("consistency.day_rate_quoted_no_day");
+  });
+});

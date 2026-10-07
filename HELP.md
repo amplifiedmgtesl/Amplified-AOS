@@ -163,7 +163,8 @@ This tab checks the job automatically and lists anything that needs fixing. See 
 2. Click **+ Add Day**.
 3. Set the **Date**, **Call Time**, **Start Time** and **End Time**.
 4. If the crew works, takes a meal break, then works again, enter the second stretch in **2nd Start** and **2nd End**.
-5. Add a note if it helps (for example "Load-in day").
+5. Set **Rate**: **Hourly** (the default) pays crew by the clock. **Day Rate** pays each worker a flat block of hours for the day, however long they actually work. Enter that block in **Day Rate Hrs**; it starts at the day's **Exp Hrs**, but changing Exp Hrs later never changes pay.
+6. Add a note if it helps (for example "Load-in day").
 
 **Adding the crew needed**
 
@@ -175,8 +176,10 @@ This tab checks the job automatically and lists anything that needs fixing. See 
 
 **Shortcuts and tips**
 
-- **Dup ↑** copies the day above, times and crew needed included. It's the quickest way to build a multi-day job; then adjust what differs.
+- **Dup ↑** copies the day above, times, Rate and crew needed included. It's the quickest way to build a multi-day job; then adjust what differs.
 - Tick **Holiday** if the day is a holiday.
+- **+ Add Day** gives the new day the same Rate as the last day, so a day-rate job stays day-rate as you add days.
+- **Rate matters for payroll.** If the quote prices a role at a day rate, that role is paid the day rate. Anyone working a role the quote doesn't list is paid by the day's Rate. Set it to match how the job was sold.
 - **Every day needs a start and end time.** Without them, the paperwork for that day won't print and the crew can't be brought into Timekeeping.
 - **Delete day** removes a day. Once anyone has time recorded on a day, it can't be deleted or moved to another date.
 
@@ -452,6 +455,8 @@ These are usually for admins to fix.
 | **Job and quote reference different rate cards** | Warning | The quote was priced from a different rate card than the job's current one. |
 | **Quote and invoice reference different rate cards** | Warning | The invoice may not match what the client was quoted. |
 | **Quote covers [n] days but the job has [n]** | Warning | A day is missing from the quote, or the job has an extra day. |
+| **Quote has a day rate on [date] but the day is set to Hourly** | Warning | Roles on the quote get the day rate, but anyone in a role the quote doesn't list is paid by the clock. Set the day's Rate to Day Rate on Daily Requirements. |
+| **Quote has a day rate on [date] but the job has no day for it** | Warning | Payroll can't build a run that includes this date. Add the day on Daily Requirements and set its Rate to Day Rate. |
 | **[n] approved days not yet on an invoice** | Warning | Approved work that hasn't been billed yet. |
 | **Invoice [#] has zero-value lines** | Blocker | Some lines on an issued invoice came out at zero. Revise the invoice once the rate card is fixed. |
 

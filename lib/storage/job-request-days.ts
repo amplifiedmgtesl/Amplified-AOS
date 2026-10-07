@@ -28,6 +28,8 @@ function rowToDay(r: any): JobRequestDay {
     notes: r.notes ?? undefined,
     sortOrder: r.sort_order ?? 0,
     isHoliday: !!r.is_holiday,
+    rateMode: r.rate_mode === "day" ? "day" : "hourly",
+    dayRateHours: r.day_rate_hours == null ? undefined : Number(r.day_rate_hours),
   };
 }
 
@@ -59,6 +61,11 @@ function dayToRow(d: JobRequestDay): Record<string, unknown> {
     notes: d.notes || null,
     sort_order: d.sortOrder ?? 0,
     is_holiday: !!d.isHoliday,
+    // #105: always written, so no day is left without an answer. Hours only
+    // travel with a day rate — an hourly day stores NULL (DB check requires
+    // hours > 0 when the mode is 'day').
+    rate_mode: d.rateMode === "day" ? "day" : "hourly",
+    day_rate_hours: d.rateMode === "day" ? (d.dayRateHours ?? null) : null,
   };
 }
 

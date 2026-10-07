@@ -80,4 +80,48 @@ export const consistencyChecks: CheckFn[] = [
       fixLabel: "Open quote",
     }];
   },
+
+  // 4. #105: the quote sells a day rate on a date the job day doesn't match.
+  //    Payroll lets the quote line win for the roles it prices, then falls
+  //    back to the day's Rate for everyone else — so a day-rate quote on an
+  //    Hourly day pays the quoted roles a flat block and the rest by the clock
+  //    (the Neon Nights split). A quoted date with no day at all makes the
+  //    payroll run refuse to build.
+  (ctx) => {
+    const q = activeQuote(ctx);
+    if (!q) return [];
+    const quotedDayRateDates = new Set<string>();
+    for (const ln of q.lines) {
+      if (ln.rateMode === "day" && ln.quoteDate) quotedDayRateDates.add(ln.quoteDate.slice(0, 10));
+    }
+    const findings: Finding[] = [];
+    const fixHref = `/job-requests/${encodeURIComponent(ctx.jobRequest.id)}?tab=daily`;
+    for (const date of [...quotedDayRateDates].sort()) {
+      const day = ctx.days.find((d) => d.eventDate === date);
+      if (!day) {
+        findings.push({
+          id: `consistency.day_rate_quoted_no_day:${date}`,
+          severity: "warning",
+          category: "consistency",
+          title: `Quote has a day rate on ${date} but the job has no day for it`,
+          detail: "The quote prices this date as a day rate, and Daily Requirements has no day with that date.",
+          downstream: "Payroll can't build a run that includes this date until the day exists with its Rate set to Day Rate.",
+          fixHref,
+          fixLabel: "Add the day on the Daily Requirements tab",
+        });
+      } else if (day.rateMode !== "day") {
+        findings.push({
+          id: `consistency.day_rate_quoted_day_hourly:${date}`,
+          severity: "warning",
+          category: "consistency",
+          title: `Quote has a day rate on ${date} but the day is set to Hourly`,
+          detail: "The quote prices this date as a day rate; the job day's Rate is Hourly.",
+          downstream: "Roles on the quote get paid the day rate, but anyone working a role the quote doesn't list is paid by the clock.",
+          fixHref,
+          fixLabel: "Set Rate to Day Rate on the Daily Requirements tab",
+        });
+      }
+    }
+    return findings;
+  },
 ];

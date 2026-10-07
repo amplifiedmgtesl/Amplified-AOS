@@ -210,6 +210,9 @@ export function JobRequestDaysSection({
       flash(`A day with date ${proposed} already exists.`, false);
       return;
     }
+    // #105: a new day takes the last day's Rate (a day-rate job stays
+    // day-rate as days are added); the first day starts Hourly.
+    const last = days.length > 0 ? days[days.length - 1] : null;
     const newDay: JobRequestDay = {
       id: newDayId(jobRequestId, proposed),
       jobRequestId,
@@ -217,6 +220,8 @@ export function JobRequestDaysSection({
       sortOrder: days.length,
       expectedHours: 10,
       isHoliday: false,
+      rateMode: last?.rateMode === "day" ? "day" : "hourly",
+      dayRateHours: last?.rateMode === "day" ? last.dayRateHours : undefined,
     };
     try {
       const persisted = await upsertJobRequestDay(newDay);
@@ -255,6 +260,7 @@ export function JobRequestDaysSection({
     if (pair1) bits.push(pair1);
     if (pair2) bits.push(pair2);
     if (d.expectedHours) bits.push(`${d.expectedHours}h`);
+    if (d.rateMode === "day") bits.push(`Day rate ${d.dayRateHours ?? "?"}h`);
     bits.push(`${crewCount} crew`);
     if (d.notes) bits.push(d.notes);
     return bits.join(" · ");
@@ -346,6 +352,8 @@ export function JobRequestDaysSection({
       startTime2: prev.startTime2,
       endTime2: prev.endTime2,
       expectedHours: prev.expectedHours,
+      rateMode: prev.rateMode,
+      dayRateHours: prev.dayRateHours,
     };
     await patchDay(d, patch);
     const prevCrew = crewByDayId[prev.id] ?? [];
@@ -572,6 +580,41 @@ export function JobRequestDaysSection({
                       {TIMES.map((t) => <option key={t} value={t}>{t ? formatClock(t) : "—"}</option>)}
                     </select>
                   </div>
+                  {/* #105: how this day is paid. Payroll reads it for every
+                      role the quote doesn't price per specialty, so it must
+                      always have an answer — the DB refuses a NULL. */}
+                  <div style={{ gridColumn: "5 / 7", display: "flex", gap: 8, alignItems: "end" }}>
+                    <div style={{ width: 110 }}
+                         title="Day Rate pays each worker a flat block of hours for the day, however long they work. Hourly pays clock time.">
+                      <small>Rate</small>
+                      <select
+                        disabled={disabled}
+                        value={d.rateMode === "day" ? "day" : "hourly"}
+                        onChange={(e) => {
+                          if (e.target.value === "day") {
+                            const exp = Number(d.expectedHours) || 0;
+                            patchDay(d, { rateMode: "day", dayRateHours: d.dayRateHours ?? (exp > 0 && exp <= 24 ? exp : 10) });
+                          } else {
+                            patchDay(d, { rateMode: "hourly", dayRateHours: undefined });
+                          }
+                        }}
+                      >
+                        <option value="hourly">Hourly</option>
+                        <option value="day">Day Rate</option>
+                      </select>
+                    </div>
+                    {d.rateMode === "day" && (
+                      <div style={{ width: 90 }}
+                           title="Hours the day rate pays each worker. Separate from Exp Hrs — changing Exp Hrs never changes pay.">
+                        <small>Day Rate Hrs</small>
+                        <DayRateHoursInput
+                          disabled={disabled}
+                          value={d.dayRateHours}
+                          onCommit={(h) => patchDay(d, { dayRateHours: h })}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Round-3 re-test #2: day notes get a full-width row — they
@@ -731,6 +774,40 @@ export function JobRequestDaysSection({
         </>
       )}
     </SectionFrame>
+  );
+}
+
+/** Day Rate Hrs box. Saves on blur / Enter, and only a value the DB accepts
+ *  (more than 0, at most 24) — saving every keystroke would send the blank
+ *  in-between states, which the day-rate check refuses. Anything else snaps
+ *  back to the stored value. */
+function DayRateHoursInput({ value, disabled, onCommit }: {
+  value: number | undefined;
+  disabled: boolean;
+  onCommit: (hours: number) => void;
+}) {
+  const [draft, setDraft] = useState(value == null ? "" : String(value));
+  useEffect(() => { setDraft(value == null ? "" : String(value)); }, [value]);
+  function commit() {
+    const h = Number(draft);
+    if (draft.trim() !== "" && Number.isFinite(h) && h > 0 && h <= 24) {
+      if (h !== value) onCommit(h);
+    } else {
+      setDraft(value == null ? "" : String(value));
+    }
+  }
+  return (
+    <input
+      type="number"
+      min={0.5}
+      max={24}
+      step={0.5}
+      disabled={disabled}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+    />
   );
 }
 

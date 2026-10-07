@@ -538,6 +538,15 @@ export type JobRequestDay = {
   /** Operator-flagged holiday. Source of truth; snapshotted into quote_days
    *  and invoice_days on draft creation (Phase 2/3). 2.0× rate at calc time. */
   isHoliday: boolean;
+  /** How the day is paid (and, later, billed): a flat block of
+   *  `dayRateHours`, or clock time. Payroll reads this for any role the
+   *  quote doesn't price per specialty — see lib/store/payroll-day-rate.ts.
+   *  Never NULL in the DB since 20261006a; undefined here means "not loaded
+   *  yet" and saves as hourly. */
+  rateMode?: "day" | "hourly";
+  /** Hours a Day Rate day pays per worker. Required when rateMode is "day"
+   *  (DB check). Deliberately separate from expectedHours. */
+  dayRateHours?: number;
 };
 
 export type JobRequestCrewNeed = {

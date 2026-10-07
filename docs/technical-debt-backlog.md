@@ -863,6 +863,12 @@ the job (#98); explanations move to hover + a help guide, not on-screen text (#9
   Rate / Hourly per day on Daily Requirements (hours box pre-filled from Expected Hours, then
   independent), carried by add/copy day, default Hourly, Health Check for day-rate-no-hours and
   quote-day-vs-record-hourly, backfill the NULL rows; open question — editable on Booked jobs.
+  **BUILT on dev 2026-10-06** (branch `fix/day-rate-mode`, John: build on dev and ship with the dev→prod
+  promotion; separate `main` branch only if the promotion keeps slipping). Prod check that day: 78 NULL days,
+  and all 12 upcoming issued quotes are hourly (0 day-rate lines, every line = hours × hourly, terms hourly
+  only). Rate + Day Rate Hrs per day on Daily Requirements (Booked jobs editable per #68); + Add Day and
+  Dup ↑ carry it; migration `20261006a` backfills NULLs, DEFAULT 'hourly', NOT NULL; Health Check warns on
+  a quoted day-rate date whose day is Hourly or missing; Help updated. **Prod: apply 20261006a on promotion.**
 
 - **Adoption note (prod, 2026-09-13):** Assigned Crew is mostly skipped since late August — of 14 jobs
   with timesheets since 8/24 only 2 used it properly; 9 had zero assignments. FARMTOUR has 196 crew-day
