@@ -2943,3 +2943,66 @@ John's question: shouldn't the **rate card** carry a **daily rate for both bill 
 **Backfill:** after the fix, re-snapshot bill rates on existing day-rate jobs. Only rows not yet bound to an invoice are safe; for invoiced rows, update the display fields only and never touch the invoice. Farm Tour's rows have `invoice_line_id = NULL` even though the invoice is issued, so check how they were billed before touching them.
 
 **Related:** the 2026-08-30 "FARMTOUR quote will overpay" entry. That's the same stale `base_hourly` on this job's quote, on the payroll side.
+
+---
+
+## #115 — Paychex payroll export + payroll mapping table (added 2026-10-10)
+
+**Status: waiting on Connor/Paychex. Don't build until the open questions below are answered.** Amplified moved payroll from Rippling to Paychex in Oct 2026. Paychex's import format came from Connor on 10/8 (`~/Downloads/NEW Payroll CSV Format .csv`). John's reply with questions went out 10/10, in the "Re: New CSV Template" thread.
+
+### The format
+Paychex Standard Payroll Import (SPI), a 46-column template. Only six columns are filled in. The layout can't be changed, so column order stays in code; copy the header exactly, including the **trailing space in `Job Name `**.
+
+| Column | Source in AOS |
+|---|---|
+| Company ID | settings: `70400794` |
+| Worker ID | `employees.rippling_employee_id` (Paychex reused the Rippling numbers). Relabel it "Payroll ID". |
+| Job Name | the job's **Event Name**, so it's readable if it prints on the paystub. Event Abbr is capped at 8 chars (`WAREHOUSE` → `WAREHOUS`). Pending Paychex's answer on length and paystub printing. |
+| Job Number | blank, like Paychex's sample. Put the AOS `job_no` here only if Paychex confirms Job Costing is off. Paychex Job Costing needs jobs created in advance, and one bad line fails the whole check. |
+| Pay Component | from the mapping table below, keyed on worker type and pay type |
+| Rate | the rate the payroll run already computed (`payroll_run_entries.std_rate`, or the OT/DT equivalents) |
+| Hours | summed per worker × job × component × rate across the pay period. No Line Date; weeks are combined. |
+
+**OT must be worked out by week before the weeks are combined.** AOS owns OT, and Paychex must not recalculate it.
+
+### Payroll mapping table (provider-agnostic)
+Replace the Rippling-only setup (hardcoded `RIPPLING_EARNING_TYPES` plus `positions/specialties.rippling_earning_type`) with one maintenance table:
+
+`payroll_component_map(provider, worker_type, pay_type [REG/OT/DT], position_id NULL, specialty_id NULL, component_name, active)`
+
+Known Paychex rows: Employee/REG → `Day Rate 1`; Contractor/REG → `1099 - Day Rate 1`. Employee OT/DT names are **pending Connor**. The optional position/specialty columns leave room to send positions separately later without a schema change. Editable on a "Payroll Mapping" screen, so Connor can maintain components himself and a future payroll switch is a data change, not a rebuild.
+
+Plus a few **payroll settings** (one row, not a table): active provider, company ID, and which job field goes in Job Name (event name vs abbr).
+
+**Deliberately not in the table:**
+- **Rates.** The payroll run's computed rate (rate card `pay_hourly` or the person's pay override) is the only source. A separate "export rate" would create a second place pay rates live; see `rate-card-resolution-divergence` and #112/#114.
+- **A configurable file layout.** The SPI layout is fixed by Paychex.
+- **A job code table.** Only needed if Paychex Job Costing turns out to be on.
+
+### Export safeguards
+Refuse to export, listing who or what needs fixing, if any line on the run has:
+- no Payroll ID
+- an employment type that isn't Employee or Contractor
+- no component mapping for its worker type and pay type
+- (if Job Number is used) a job with no `job_no`
+
+### Employment type cleanup (prerequisite)
+The component comes from `employees.employment_type`, which is free text in prod. On 2026-10-10 it was 363 "Employee", 716 "Independent Contractor", 2 "Contractor", and about 1,900 blank or empty. Blank counts as a contractor, so a W-2 with a blank type would be paid as a 1099. Connor says only about 6 people are real employees, so the 363 "Employee" rows need checking against a Paychex roster too. The profile dropdown also offers "W2" and "1099", which the OT engine treats as contractor. Lock the field to Employee and Contractor, and fold in the "New employee records must default to Contractor, not blank" entry (2026-08-30).
+
+### Worker ID backfill
+16 people on the 10/9 run have no ID in AOS. Paychex's sample filled in 15 of them, but there are no names in the file, so they can't be matched safely. Backfill from a Paychex worker export (ID, name, W-2/1099). John asked for his own Paychex Flex login for this. Paychex put Cameron Pasley under #12 (Camran Paisley), which confirms they're the same person; merge them (see `duplicate-employee-records`).
+
+### Sample data errors (reported to Connor 10/10)
+Paychex's sample swapped Rate and Hours on two rows: #15 Devan Keska (8 hrs @ $30) and #79, probably Sean Brown (40 hrs @ $45). The total stays $55,765, but hours read 1,456 instead of 1,429. Use the corrected file as the test baseline.
+
+### Open questions (sent 10/10)
+1. Pay component names for Employee OT and DT.
+2. Is it OK to send no dates (hours totaled for the period)?
+3. Is the Payroll API available on our plan, at what cost, and how long does approval take? Later goal: AOS pulls the worker roster automatically.
+4. Does Job Name print on the paystub, and what's the length limit? Is Job Costing on, and can the AOS job number go in Job Number for reference?
+
+### Done when
+- A "Paychex CSV" button sits next to the Rippling one.
+- The export matches a corrected 10/9 run line for line (1,429 hrs / $55,765).
+- The mapping screen is in place, with Help updated.
+- The Rippling export is retired or hidden once Paychex is live.
