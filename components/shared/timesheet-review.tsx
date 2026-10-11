@@ -38,6 +38,16 @@ function FilterDateInput({ value, onChange }: { value: string; onChange: (v: str
   );
 }
 
+// Employee filter matches on the employee record. The ~180 legacy entries that
+// predate employee_key fall back to email, then name. (Matching on email alone
+// hid everyone whose entries have no email — about half the crew.)
+function employeeFilterKey(r: StaffEntryReviewRow): string {
+  if (r.employeeKey) return `emp:${r.employeeKey}`;
+  if (r.email) return `email:${r.email.toLowerCase()}`;
+  const name = `${r.firstName} ${r.lastName}`.trim().toLowerCase();
+  return name ? `name:${name}` : "";
+}
+
 function fullName(r: StaffEntryReviewRow) {
   return `${r.firstName} ${r.lastName}`.trim() || r.email || "—";
 }
@@ -93,7 +103,7 @@ export default function TimesheetReview() {
   const [rows, setRows] = useState<StaffEntryReviewRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<StatusFilter>("pending");
-  const [employeeEmail, setEmployeeEmail] = useState<string>("");
+  const [employeeFilter, setEmployeeFilter] = useState<string>("");
   // Phase 1: filter key is either a jobId ("job:…"), a legacy jobSheetId
   // ("legacy:…"), "" (all), or "__none__" (office/remote, no job link).
   const [jobFilter, setJobFilter] = useState<string>("");
@@ -125,10 +135,10 @@ export default function TimesheetReview() {
   const employees = useMemo(() => {
     const map = new Map<string, string>();
     for (const r of rows) {
-      const key = r.email || `${r.firstName} ${r.lastName}`.trim();
+      const key = employeeFilterKey(r);
       if (key && !map.has(key)) map.set(key, fullName(r));
     }
-    return Array.from(map, ([email, name]) => ({ email, name })).sort((a, b) => a.name.localeCompare(b.name));
+    return Array.from(map, ([key, name]) => ({ key, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [rows]);
 
   // Group the unique jobs that show up in the review rows. Prefer the
@@ -155,7 +165,7 @@ export default function TimesheetReview() {
       if (status === "no_show"  && r.status !== "no_show") return false;
       if (status === "approved" && r.status !== "approved") return false;
       if (status === "rejected" && r.status !== "rejected") return false;
-      if (employeeEmail && (r.email || "") !== employeeEmail) return false;
+      if (employeeFilter && employeeFilterKey(r) !== employeeFilter) return false;
       if (jobFilter === "__none__" && (r.jobSheetId || r.jobId)) return false;
       if (jobFilter && jobFilter !== "__none__") {
         const rowKey = r.jobId ? `job:${r.jobId}` : (r.jobSheetId ? `legacy:${r.jobSheetId}` : "");
@@ -165,7 +175,7 @@ export default function TimesheetReview() {
       if (dateTo   && (r.workDate ?? "") > dateTo)   return false;
       return true;
     }).sort(byDateThenName);
-  }, [rows, status, employeeEmail, jobFilter, dateFrom, dateTo]);
+  }, [rows, status, employeeFilter, jobFilter, dateFrom, dateTo]);
 
   const totals = useMemo(() => {
     return filtered.reduce(
@@ -332,11 +342,11 @@ export default function TimesheetReview() {
 
   // Clear selection whenever filters change — otherwise an offscreen row
   // could end up acted on without the operator seeing it.
-  useEffect(() => { setSelectedIds(new Set()); }, [status, employeeEmail, jobFilter, dateFrom, dateTo]);
+  useEffect(() => { setSelectedIds(new Set()); }, [status, employeeFilter, jobFilter, dateFrom, dateTo]);
 
   function clearFilters() {
     setStatus("pending");
-    setEmployeeEmail("");
+    setEmployeeFilter("");
     setJobFilter("");
     setDateFrom("");
     setDateTo("");
@@ -358,9 +368,9 @@ export default function TimesheetReview() {
         </div>
         <div>
           <small>Employee</small>
-          <select value={employeeEmail} onChange={(e) => setEmployeeEmail(e.target.value)}>
+          <select value={employeeFilter} onChange={(e) => setEmployeeFilter(e.target.value)}>
             <option value="">— All employees —</option>
-            {employees.map((e) => <option key={e.email} value={e.email}>{e.name}</option>)}
+            {employees.map((e) => <option key={e.key} value={e.key}>{e.name}</option>)}
           </select>
         </div>
         <div>
