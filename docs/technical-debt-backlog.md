@@ -2998,11 +2998,21 @@ The component comes from `employees.employment_type`, which is free text in prod
 ### Worker ID backfill
 16 people on the 10/9 run have no ID in AOS. Paychex's sample filled in 15 of them, but there are no names in the file, so they can't be matched safely. Backfill from a Paychex worker export (ID, name, W-2/1099). John asked for his own Paychex Flex login for this. Paychex put Cameron Pasley under #12 (Camran Paisley), which confirms they're the same person; merge them (see `duplicate-employee-records`).
 
+### What Paychex's onboarding thread showed (forwarded by Connor 2026-10-10)
+The thread is between Connor and **Danielle King** (Paychex Client Experience Onboarding, dlking@paychex.com, 800-865-8959). John is asking Connor whether he can email her directly with Connor cc'd.
+- **Danielle hand-built the sample file on 10/6** for the second Paychex payroll. That explains the swapped rows below.
+- **The import failed on one missing space.** She typed `1099- Day Rate 1` instead of `1099 - Day Rate 1`. Her rule: the pay component "must match exactly what is in Flex." Copy component names from Flex into the mapping table once; never retype them. Worth a test that the export's component strings match the table byte for byte, including spaces. After the failure, Connor entered every worker by hand.
+- **Error vs warning:** an import *error* stops that one employee, so that person isn't paid until it's fixed. A *warning* doesn't stop the import. This is why the export safeguards above refuse bad lines before the file ever reaches Paychex.
+- **AOS names ≠ Paychex legal names, and Paychex has duplicate worker records too.** She couldn't place 6 people. Connor's answers: Fox Vaughn = **Peter** Vaughn; Hank Hawkins = **Henry** Hawkins; Maxwell Sebastian = **Maxwell S Kilcup**; Paul B Dunbar is **W-2** (probably the sample's #21); Shelby Bowman is 1099; Evelyn Royce was still being set up. **Match on Payroll ID only, never name.** The backfill needs a Paychex roster plus a human check of these aliases.
+- **OT:** on 10/10 Connor asked Danielle whether OT rate/hours *columns* can be added. No answer yet. The SPI layout is fixed, so expect OT to be a separate row with its own OT component (question 1 below).
+- **Paychex offered an Excel converter** that reshapes a timekeeping export into their template. It's not the long-term answer, because name→ID matching and component choice would live outside AOS and it breaks whenever the AOS export changes. It's acceptable as a **stopgap** for a payroll or two if this export isn't ready, so nobody re-keys payroll by hand.
+- Connor's original CSV and Paychex's error report were mentioned but weren't in the forward. Ask for them if the exact failure lines matter.
+
 ### Sample data errors (reported to Connor 10/10)
-Paychex's sample swapped Rate and Hours on two rows: #15 Devan Keska (8 hrs @ $30) and #79, probably Sean Brown (40 hrs @ $45). The total stays $55,765, but hours read 1,456 instead of 1,429. Use the corrected file as the test baseline.
+Paychex's sample (hand-built by Danielle) swapped Rate and Hours on two rows: #15 Devan Keska (8 hrs @ $30) and #79, probably Sean Brown (40 hrs @ $45). The total stays $55,765, but hours read 1,456 instead of 1,429. Use the corrected file as the test baseline.
 
 ### Open questions (sent 10/10)
-1. Pay component names for Employee OT and DT.
+1. Pay component names for Employee OT and DT. (Connor also asked Danielle on 10/10, still unanswered.)
 2. Is it OK to send no dates (hours totaled for the period)?
 3. Is the Payroll API available on our plan, at what cost, and how long does approval take? Later goal: AOS pulls the worker roster automatically.
 4. Does Job Name print on the paystub, and what's the length limit? Is Job Costing on, and can the AOS job number go in Job Number for reference?
