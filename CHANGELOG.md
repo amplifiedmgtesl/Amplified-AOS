@@ -2,6 +2,12 @@
 
 What changed and when. Newest entries at the top.
 
+## October 2026
+
+### October 11 — v2.5.2
+- Fixed: on **Timesheet Review**, picking a name in the **Employee** filter showed nothing for about half the crew (Mike Lawler and Sean Mooney, for example), even with every status, job and date selected. The filter matched people by email, so anyone whose entries had no email on file never matched. It now matches on the person's employee record. Only the old entries from before every entry was tied to an employee record still match by email or name.
+- Fixed: Timesheet Review only loaded the 1,000 most recently changed entries, out of about 3,750. Everything older was quietly left off the page, including about 740 entries still marked Submitted, all from July or earlier. The page now loads every entry. Expect those older Submitted entries to show up under **Pending**.
+
 ## September 2026
 
 ### September 28 — v2.5.1

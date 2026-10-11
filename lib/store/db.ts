@@ -538,46 +538,64 @@ export interface StaffEntryReviewRow {
   payrollRunId: string | null;
 }
 
+// Run an `.in()` lookup in chunks — thousands of ids in one GET overflow the
+// URL, and a single response is still capped at 1000 rows.
+async function selectInChunks(table: string, columns: string, column: string, ids: string[]): Promise<{ data: any[]; error: any }> {
+  const CHUNK = 200;
+  let all: any[] = [];
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { data, error } = await supabase.from(table).select(columns).in(column, ids.slice(i, i + CHUNK));
+    if (error) return { data: all, error };
+    all = all.concat(data ?? []);
+  }
+  return { data: all, error: null };
+}
+
 export async function getAllStaffReviewEntries(): Promise<StaffEntryReviewRow[]> {
-  const { data, error } = await supabase
-    .from("timesheet_entries")
-    .select(`
-      id, work_date, position, first_name, last_name, email, employee_key, user_id,
-      job_sheet_id, job_id, invoice_line_id, timesheet_id, time_in1, time_out1, time_in2, time_out2,
-      meal_break_1_minutes, meal_break_2_minutes,
-      std_hours, ot_hours, dt_hours, total_hours, bill_total,
-      status, notes, updated_at
-    `)
-    .order("updated_at", { ascending: false });
-  if (error) { console.error("[db] getAllStaffReviewEntries:", error); return []; }
+  // Supabase caps a select at 1000 rows; timesheet_entries is well past that,
+  // so a single query silently dropped everything but the 1000 most recently
+  // updated entries. Page through all of them.
+  const PAGE = 1000;
+  let data: any[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data: page, error } = await supabase
+      .from("timesheet_entries")
+      .select(`
+        id, work_date, position, first_name, last_name, email, employee_key, user_id,
+        job_sheet_id, job_id, invoice_line_id, timesheet_id, time_in1, time_out1, time_in2, time_out2,
+        meal_break_1_minutes, meal_break_2_minutes,
+        std_hours, ot_hours, dt_hours, total_hours, bill_total,
+        status, notes, updated_at
+      `)
+      .order("updated_at", { ascending: false })
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) { console.error("[db] getAllStaffReviewEntries:", error); return []; }
+    data = data.concat(page ?? []);
+    if (!page || page.length < PAGE) break;
+  }
 
   // Lookup: which entries are currently in a payroll run? Used to badge
   // them as locked in the review UI.
-  const entryIds = (data ?? []).map((r: any) => r.id);
+  const entryIds = data.map((r: any) => r.id);
   const payrollRunByEntry = new Map<string, string>();
   if (entryIds.length > 0) {
-    const { data: pre, error: preErr } = await supabase
-      .from("payroll_run_entries")
-      .select("timesheet_entry_id, payroll_run_id")
-      .in("timesheet_entry_id", entryIds);
+    const { data: pre, error: preErr } = await selectInChunks("payroll_run_entries", "timesheet_entry_id, payroll_run_id", "timesheet_entry_id", entryIds);
     if (preErr) { console.error("[db] getAllStaffReviewEntries payroll lookup:", preErr); }
-    for (const r of pre ?? []) payrollRunByEntry.set((r as any).timesheet_entry_id, (r as any).payroll_run_id);
+    for (const r of pre) payrollRunByEntry.set((r as any).timesheet_entry_id, (r as any).payroll_run_id);
   }
 
-  const jobIds = Array.from(new Set((data ?? []).map((r: any) => r.job_sheet_id).filter(Boolean)));
+  const jobIds = Array.from(new Set(data.map((r: any) => r.job_sheet_id).filter(Boolean))) as string[];
   const jobMap = new Map<string, { client: string; eventName: string; date: string }>();
   if (jobIds.length > 0) {
-    const { data: jobs, error: jobsErr } = await supabase
-      .from("job_sheets")
-      .select("id, client, event_name, date")
-      .in("id", jobIds);
+    const { data: jobs, error: jobsErr } = await selectInChunks("job_sheets", "id, client, event_name, date", "id", jobIds);
     if (jobsErr) { console.error("[db] getAllStaffReviewEntries jobs:", jobsErr); }
-    for (const j of (jobs ?? []) as any[]) {
+    for (const j of jobs as any[]) {
       jobMap.set(j.id, { client: j.client ?? "", eventName: j.event_name ?? "", date: j.date ?? "" });
     }
   }
 
-  return (data ?? []).map((r: any) => ({
+  return data.map((r: any) => ({
     id: r.id,
     workDate: r.work_date ?? null,
     position: r.position ?? "",
