@@ -7,7 +7,7 @@
 // Categories let each page show only what matters to it — e.g. the quote
 // page doesn't need to surface invoice $0-line findings.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { runHealthChecksByJobId } from "@/lib/job-health/runner";
 import type { Finding, FindingCategory, Severity } from "@/lib/job-health/types";
@@ -18,6 +18,9 @@ type Props = {
   categories?: FindingCategory[];
   /** Free-text noun for the message — e.g. "quote", "invoice", "timekeeping". */
   pageContext?: string;
+  /** Change it to re-run the checks — e.g. when the people on the page
+   *  change. Re-runs are delayed slightly so autosave lands first. */
+  refreshKey?: string | number;
 };
 
 const SEV_COLOR: Record<Severity, { bg: string; border: string; icon: string }> = {
@@ -26,13 +29,19 @@ const SEV_COLOR: Record<Severity, { bg: string; border: string; icon: string }> 
   info:    { bg: "#eff6ff", border: "#2563eb", icon: "ℹ" },
 };
 
-export function JobHealthBanner({ jobRequestId, categories, pageContext }: Props) {
+export function JobHealthBanner({ jobRequestId, categories, pageContext, refreshKey }: Props) {
   const [findings, setFindings] = useState<Finding[] | null>(null);
+  // Callers pass categories inline, so key the effect on its contents rather
+  // than the array identity (which changes every render).
+  const categoriesKey = categories?.join(",") ?? "";
+  const firstRun = useRef(true);
 
   useEffect(() => {
     if (!jobRequestId) { setFindings(null); return; }
     let cancelled = false;
-    runHealthChecksByJobId(jobRequestId)
+    const delay = firstRun.current ? 0 : 1500;
+    firstRun.current = false;
+    const timer = setTimeout(() => runHealthChecksByJobId(jobRequestId)
       .then((res) => {
         if (cancelled || !res) return;
         const filtered = categories
@@ -40,9 +49,10 @@ export function JobHealthBanner({ jobRequestId, categories, pageContext }: Props
           : res.findings;
         setFindings(filtered);
       })
-      .catch(() => { if (!cancelled) setFindings([]); });
-    return () => { cancelled = true; };
-  }, [jobRequestId, categories]);
+      .catch(() => { if (!cancelled) setFindings([]); }), delay);
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobRequestId, categoriesKey, refreshKey]);
 
   if (!jobRequestId || !findings || findings.length === 0) return null;
 

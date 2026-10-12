@@ -10,6 +10,7 @@ What changed and when. Newest entries at the top.
 - Anyone missing a **Payroll ID**, or not marked Employee or Contractor, is left out of the file. Before downloading you get a list of who was left out, with their hours and pay, so they can be entered in Paychex by hand.
 - New **Maintenance → Payroll Export** tab: the Paychex Company ID, what goes in the Job Name column (the job's short Event Abbr for now), and the exact Paychex pay component names. Copy and paste those from Paychex. They have to match exactly, or Paychex rejects the line.
 - **Employment Type** on an employee is now just **Employee** (W-2) or **Contractor**. The old mix of values ("Independent Contractor", "W2", blank) has been cleaned up, and only the people on the W-2 payroll are marked Employee. This also decides who gets weekly overtime.
+- Payroll problems now show up as soon as someone is added to a job, instead of on payday. When someone is picked for a crew assignment or a timekeeping row and has no Payroll ID or no Employee/Contractor setting, a small red note appears next to their name. The job's **Health Check** and the timekeeping banner list them too, along with any timekeeping rows not linked to an employee and W-2 overtime that has no Paychex pay component yet. These are warnings only: nothing stops you from scheduling or entering time.
 - "Rippling Emp No" is now called **Payroll ID**. It's the same number, since Paychex kept the Rippling numbers. The missing Payroll IDs that were worked out in September have been filled in.
 
 ### October 11 — v2.5.2

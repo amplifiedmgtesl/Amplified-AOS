@@ -14,6 +14,14 @@ import type {
   Specialty,
 } from "@/lib/store/types";
 import type { RateCardProfile } from "@/lib/rates/defaults";
+import type { ComponentMapRow } from "@/lib/store/paychex-export";
+
+/** What the payroll checks need about each person on the job. */
+export type HealthEmployee = {
+  name: string;
+  payrollId: number | null;
+  employmentType: string | null;
+};
 
 export type Severity = "blocker" | "warning" | "info";
 
@@ -22,7 +30,8 @@ export type FindingCategory =
   | "job"
   | "consistency"
   | "timesheet"
-  | "invoice";
+  | "invoice"
+  | "payroll";
 
 export type Finding = {
   /** Stable id e.g. "rate_card.no_profile" or "timesheet.missing_specialty:<entryId>". */
@@ -57,6 +66,17 @@ export type HealthContext = {
   timesheetEntries: TimeEntry[];
   /** Specialty master — for name lookups in messages. */
   specialties: Specialty[];
+  /** Employee records for everyone assigned to or timekept on this job,
+   *  keyed by employee_key. A key missing here = no employee record. */
+  employeesByKey: Map<string, HealthEmployee>;
+  /** false when the employee lookup failed — payroll checks then stay quiet
+   *  rather than report everyone as having no employee record. */
+  payrollDataLoaded: boolean;
+  /** Paychex pay components + company ID (Maintenance → Payroll Export).
+   *  null when they couldn't be loaded — payroll checks then skip the
+   *  setting-dependent findings rather than guess. */
+  payrollComponents: ComponentMapRow[] | null;
+  payrollCompanyId: string | null;
 };
 
 export type CheckFn = (ctx: HealthContext) => Finding[];

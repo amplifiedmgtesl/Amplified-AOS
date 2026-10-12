@@ -11,7 +11,8 @@ import { loadQuotes, resolveRateCardForJob } from "@/lib/store/quotes";
 import { loadInvoices } from "@/lib/store/invoices";
 import { getRateCardProfiles, getSpecialties } from "@/lib/store/db";
 import type { JobRequest, TimeEntry } from "@/lib/store/types";
-import type { Finding, HealthContext } from "./types";
+import type { Finding, HealthContext, HealthEmployee } from "./types";
+import { loadComponentMap, loadPayrollExportSettings } from "@/lib/store/payroll-export-settings";
 import { CHECKS } from "./registry";
 
 async function loadTimesheetEntriesForJob(jobId: string): Promise<TimeEntry[]> {
@@ -65,6 +66,31 @@ async function loadTimesheetEntriesForJob(jobId: string): Promise<TimeEntry[]> {
   } as TimeEntry));
 }
 
+// Payroll ID + employment type for the people on this job, straight from the
+// DB (not the app cache) so a Payroll ID added a moment ago counts.
+async function loadEmployeesForHealth(keys: string[]): Promise<Map<string, HealthEmployee>> {
+  const m = new Map<string, HealthEmployee>();
+  const ids = [...new Set(keys.filter(Boolean))];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await supabase
+      .from("employees")
+      .select("employee_key, full_name, first_name, last_name, rippling_employee_id, employment_type")
+      .in("employee_key", ids.slice(i, i + 200));
+    if (error) {
+      console.error("[job-health] loadEmployeesForHealth:", error);
+      throw error; // caller turns this into payrollDataLoaded = false
+    }
+    for (const r of data ?? []) {
+      m.set(r.employee_key, {
+        name: (r.full_name || [r.first_name, r.last_name].filter(Boolean).join(" ") || r.employee_key).trim(),
+        payrollId: r.rippling_employee_id == null ? null : Number(r.rippling_employee_id),
+        employmentType: r.employment_type ?? null,
+      });
+    }
+  }
+  return m;
+}
+
 export async function buildHealthContext(jobRequest: JobRequest): Promise<HealthContext> {
   const jobId = jobRequest.id;
   const [
@@ -85,6 +111,16 @@ export async function buildHealthContext(jobRequest: JobRequest): Promise<Health
     loadQuotes({ jobRequestId: jobId, hideSuperseded: true }),
     loadInvoices({ jobRequestId: jobId, hideSupersededAndVoid: true }),
     loadTimesheetEntriesForJob(jobId),
+  ]);
+
+  const employeeKeys = [
+    ...assignments.map((a) => a.employeeKey ?? ""),
+    ...timesheetEntries.map((e) => e.employeeKey ?? ""),
+  ];
+  const [employeesByKey, payrollComponents, payrollSettings] = await Promise.all([
+    loadEmployeesForHealth(employeeKeys).catch(() => null),
+    loadComponentMap().catch(() => null),
+    loadPayrollExportSettings().catch(() => null),
   ]);
 
   // The lightweight rate card returned by resolveRateCardForJob doesn't carry
@@ -110,6 +146,10 @@ export async function buildHealthContext(jobRequest: JobRequest): Promise<Health
     invoices,
     timesheetEntries,
     specialties: getSpecialties(),
+    employeesByKey: employeesByKey ?? new Map(),
+    payrollComponents,
+    payrollCompanyId: payrollSettings ? payrollSettings.companyId : null,
+    payrollDataLoaded: employeesByKey != null,
   };
 }
 
