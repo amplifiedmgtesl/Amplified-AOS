@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { upsertJobRequest, deleteJobRequest, loadJobRequests, setJobPayrollExempt } from "@/lib/store/app-store";
+import { upsertJobRequest, deleteJobRequest, loadJobRequests, setJobPayrollExempt, setActiveJob } from "@/lib/store/app-store";
 import { createDraftFromJob, pickRateCardForJob, loadJobQuoteState } from "@/lib/store/quotes";
 import { googleCalendarLink } from "@/lib/store/calendar";
 import { timeOptions } from "@/lib/store/timekeeping";
@@ -780,7 +780,11 @@ export default function JobDetail({
           {editingId && !isPayroll && (
             <button
               className="secondary"
-              onClick={() => { window.location.href = timesheetHref; }}
+              onClick={() => {
+                // Timekeeping reopens the last-picked job; make that this one.
+                setActiveJob(editingId);
+                window.location.href = timesheetHref;
+              }}
               title="Open the timesheet for this job"
             >
               Timesheet

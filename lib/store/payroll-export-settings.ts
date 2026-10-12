@@ -4,6 +4,7 @@
  */
 
 import { supabase } from "@/lib/supabase/client";
+import type { EmployeeRecord } from "./types";
 import type {
   ComponentMapRow,
   JobNameSource,
@@ -68,6 +69,34 @@ export async function saveComponentName(id: string, componentName: string): Prom
     .update({ component_name: componentName.trim() })
     .eq("id", id);
   return error ? error.message : null;
+}
+
+/** Payroll ID + employment type for just the people on a run, read straight
+ *  from the DB. The app's employee cache is loaded when the page opens, so an
+ *  ID added in another tab or by someone else wouldn't be seen until a
+ *  refresh — and the export would wrongly leave that person out. */
+export async function loadEmployeesForExport(employeeKeys: string[]): Promise<EmployeeRecord[]> {
+  const out: EmployeeRecord[] = [];
+  const ids = [...new Set(employeeKeys.filter(Boolean))];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await supabase
+      .from("employees")
+      .select("employee_key, full_name, first_name, last_name, rippling_employee_id, employment_type")
+      .in("employee_key", ids.slice(i, i + 200));
+    if (error) throw new Error(`Couldn't load employees: ${error.message}`);
+    for (const r of data ?? []) {
+      out.push({
+        employeeKey: r.employee_key,
+        fullName: r.full_name ?? "",
+        firstName: r.first_name ?? "",
+        lastName: r.last_name ?? "",
+        employmentType: r.employment_type ?? undefined,
+        type: r.employment_type === "Employee" ? "staff" : "contractor",
+        ripplingEmployeeId: r.rippling_employee_id == null ? null : Number(r.rippling_employee_id),
+      });
+    }
+  }
+  return out;
 }
 
 /** Event abbr + name for just the jobs on a run, read straight from the DB

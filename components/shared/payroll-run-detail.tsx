@@ -26,7 +26,8 @@ import {
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "@/lib/store/types";
 import { loadJobRequests, loadEmployees } from "@/lib/store/app-store";
 import { buildPaychexCsv, paychexCsvFilename } from "@/lib/store/paychex-export";
-import { loadComponentMap, loadJobsForExport, loadPayrollExportSettings } from "@/lib/store/payroll-export-settings";
+import { loadComponentMap, loadEmployeesForExport, loadJobsForExport, loadPayrollExportSettings } from "@/lib/store/payroll-export-settings";
+import type { EmployeeRecord } from "@/lib/store/types";
 import { useUserEmail } from "@/lib/auth/use-user-email";
 
 // IT-only recovery actions (e.g. "Apply daily rules") are gated to this
@@ -325,6 +326,9 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
   const [periodEnd, setPeriodEnd] = useState("");
   const [notes, setNotes] = useState("");
 
+  // Employees on this run, read fresh from the DB (null until loaded / on error).
+  const [runEmployees, setRunEmployees] = useState<EmployeeRecord[] | null>(null);
+
   async function load() {
     setLoading(true);
     const [r, es] = await Promise.all([
@@ -333,6 +337,10 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
     ]);
     setRun(r);
     setEntries(es);
+    // Fresh Payroll IDs for the badges (the app cache can be stale).
+    loadEmployeesForExport(es.map((e) => e.employeeKey ?? ""))
+      .then(setRunEmployees)
+      .catch(() => setRunEmployees(null));
     if (r) {
       setPayDate(r.payDate);
       setPeriodStart(r.periodStart ?? "");
@@ -361,11 +369,11 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
   // it'll match cleanly in the Rippling CSV.
   const ripplingIdByEmpKey = useMemo(() => {
     const m = new Map<string, number | null>();
-    for (const emp of loadEmployees()) {
+    for (const emp of runEmployees ?? loadEmployees()) {
       m.set(emp.employeeKey, emp.ripplingEmployeeId ?? null);
     }
     return m;
-  }, [entries]);
+  }, [entries, runEmployees]);
 
   // Group entries by employee.
   const grouped = useMemo(() => {
@@ -595,13 +603,15 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
     setBusy("export");
     let built: ReturnType<typeof buildPaychexCsv>;
     try {
-      const [settings, componentMap, jobs] = await Promise.all([
+      const [settings, componentMap, jobs, employees] = await Promise.all([
         loadPayrollExportSettings(),
         loadComponentMap(),
         loadJobsForExport(entries.map((e) => e.jobId ?? "")),
+        loadEmployeesForExport(entries.map((e) => e.employeeKey ?? "")),
       ]);
       if (!settings || !componentMap) throw new Error("Couldn't load the Paychex settings (Maintenance → Payroll Export).");
-      built = buildPaychexCsv(run, entries, loadEmployees(), jobs, settings, componentMap);
+      setRunEmployees(employees);
+      built = buildPaychexCsv(run, entries, employees, jobs, settings, componentMap);
     } catch (e: any) {
       alert(`Export failed: ${e?.message ?? "unknown error"}`);
       return;
