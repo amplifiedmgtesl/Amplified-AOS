@@ -3038,10 +3038,24 @@ Paychex's sample (hand-built by Danielle) swapped Rate and Hours on two rows: #1
 - **A Merge button existed for clients**, not employees. `mergeClients` in `lib/store/db.ts` (~line 1980) is still there; the UI was hidden on 4/29 (commit c19f949). Its pattern (re-point every referencing table, then soft-delete the source) is the model, but it runs as separate client-side updates with no transaction. The employee version should be a single DB function so a half-finished merge can't happen.
 
 ### 1. Merge tool (build first; test on dev; run on prod only after Connor's file is back)
-- Shared merge function: move `timesheet_entries`, `job_request_assignments`, `payroll_run_entries`, employee documents, and any other `employee_key` reference onto the kept record. Fill the kept record's blanks (phone, email, address, Payroll ID) from the duplicate. Then soft-delete the duplicate (`is_deleted`) and leave a note pointing to the kept key. Never hard-delete. Moving a Payroll ID has to clear it from the duplicate first (unique constraint).
-- Two ways in: a **batch run** from Connor's marked-up CSV, and an admin **"Merge into…"** action on the employee profile for one-offs.
-- Check every table/column that references `employee_key` before writing it (FKs plus text columns). Payroll runs already finalized keep their snapshot names, so only the key changes.
-- Afterwards: give the 4 W-2 people's kept records their IDs where they're still missing, and recheck the left-out list.
+
+**Approach agreed with John 2026-10-12: move everything, then HARD-delete the duplicate (with a backup copy).** Soft-delete/Inactive is what failed on 8/30. Once the history has moved there's no reason to keep the duplicate around cluttering the list.
+
+One DB function (`merge_employee(dup_key, keep_key)`), **all-or-nothing in a single transaction**:
+1. **Move** every reference to the duplicate onto the kept record: `timesheet_entries`, `job_request_assignments`, `payroll_run_entries`, `employee_documents`, plus any other `employee_key` column (check the full list when building, including text columns with no FK).
+2. **Fill blanks** on the kept record from the duplicate (phone, email, address, city/state/zip, Payroll ID). Never overwrite a value the kept record already has. That matches the rule Connor was given: the X row wins. If the Payroll ID moves, clear it on the duplicate first (unique constraint).
+3. **Back up** the duplicate's full row into a backup table (e.g. `employees_merged_backup`, with `merged_into` and `merged_at`) so a wrong merge can be undone.
+4. **Hard-delete** the duplicate. **The delete is the safety check:** `timesheet_entries` and `job_request_assignments` have NO ACTION foreign keys, so if step 1 missed anything the delete fails and the whole merge rolls back.
+
+**Locks found on prod (2026-10-12), and what to do about them:**
+| Lock | Effect on merge | Handling |
+|---|---|---|
+| `timesheet_entries_freeze_check`: invoice-bound entries can't change `employee_key` | **Blocks step 1** for invoiced rows | Add ONE narrow exception: allow `employee_key` (and only that) to change when the merge function sets a transaction-local flag (e.g. `set_config('app.employee_merge','on', true)`). Hours, rates, dates, status and names stay locked. Normal editing is unchanged. |
+| `payroll_run_entries_freeze_check`: finalized/exported runs | Doesn't block. The lock covers hours/rates/pay, not `employee_key` | None |
+| `employee_documents` FK is **ON DELETE CASCADE** | A hard delete would **delete the duplicate's documents** | Step 1 must move documents BEFORE step 4 |
+| `payroll_run_entries.employee_key` has **no FK** | The delete won't catch leftovers there | Step 1 checks/moves it explicitly, and the function asserts none remain before deleting |
+
+Two ways in: a **batch run** from Connor's marked-up CSV (X = keep, NO = skip the group), and an admin **"Merge into…"** action on the employee profile for one-offs. Afterwards, give the W-2 people's kept records their Payroll IDs where they're still missing, and recheck the export's left-out list.
 
 ### 2. Prevent new duplicates
 - Every "add a person" path checks for a match first (name rule plus phone) and makes you pick the existing person. Creating a second record takes a deliberate override. Paths: Timekeeping inline create (today it creates without checking), the crew assignment picker, crew roster import (already asks), Employee Directory add/CSV import, the Rippling/coordinator backfills.
