@@ -6,6 +6,7 @@ import { jobCompletenessChecks } from "./checks/job-completeness";
 import { consistencyChecks } from "./checks/consistency";
 import { timesheetInvoiceChecks } from "./checks/timesheet-invoice";
 import { crewTimesheetChecks } from "./checks/crew-timesheet";
+import { payrollReadinessChecks } from "./checks/payroll-readiness";
 
 export const CHECKS: CheckFn[] = [
   ...rateCardChecks,
@@ -13,4 +14,5 @@ export const CHECKS: CheckFn[] = [
   ...consistencyChecks,
   ...timesheetInvoiceChecks,
   ...crewTimesheetChecks,
+  ...payrollReadinessChecks,
 ];

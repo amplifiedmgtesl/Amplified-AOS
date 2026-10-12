@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { upsertJobRequest, deleteJobRequest, loadJobRequests, setJobPayrollExempt } from "@/lib/store/app-store";
+import { upsertJobRequest, deleteJobRequest, loadJobRequests, setJobPayrollExempt, setActiveJob } from "@/lib/store/app-store";
 import { createDraftFromJob, pickRateCardForJob, loadJobQuoteState } from "@/lib/store/quotes";
 import { googleCalendarLink } from "@/lib/store/calendar";
 import { timeOptions } from "@/lib/store/timekeeping";
@@ -174,7 +174,10 @@ export default function JobDetail({
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
   const [sectionTab, setSectionTab] = useState<SectionTab>("daily");
-  const healthCounts = useJobHealthCount(editingId ? form : null, refreshKey);
+  // Bumped by the crew tab after any assignment change so the health check
+  // (payroll readiness) re-runs without a full page refresh.
+  const [crewHealthKey, setCrewHealthKey] = useState(0);
+  const healthCounts = useJobHealthCount(editingId ? form : null, refreshKey + crewHealthKey);
   const role = useUserRole();
   const isCrewLeader = role === "crew_leader";
   // Payroll gets a read-only view: every field disabled, no save/delete/quote
@@ -778,7 +781,11 @@ export default function JobDetail({
           {editingId && !isPayroll && (
             <button
               className="secondary"
-              onClick={() => { window.location.href = timesheetHref; }}
+              onClick={() => {
+                // Timekeeping reopens the last-picked job; make that this one.
+                setActiveJob(editingId);
+                window.location.href = timesheetHref;
+              }}
               title="Open the timesheet for this job"
             >
               Timesheet
@@ -916,7 +923,7 @@ export default function JobDetail({
 
           {sectionTab === "crew" && (
             editingId
-              ? <JobRequestCrewSection jobRequestId={editingId} disabled={isCrewLocked} hideHeader />
+              ? <JobRequestCrewSection jobRequestId={editingId} disabled={isCrewLocked} hideHeader onChanged={() => setCrewHealthKey((k) => k + 1)} />
               : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
                   Save the job first to start assigning crew.
                 </div>
@@ -940,7 +947,7 @@ export default function JobDetail({
 
           {sectionTab === "health" && (
             editingId
-              ? <JobHealthSection jobRequest={form} refreshKey={refreshKey} />
+              ? <JobHealthSection jobRequest={form} refreshKey={refreshKey + crewHealthKey} />
               : <div className="muted" style={{ fontSize: 13, padding: "8px 0" }}>
                   Save the job first to run the health check.
                 </div>

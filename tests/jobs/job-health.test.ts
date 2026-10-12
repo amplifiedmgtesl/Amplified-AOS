@@ -23,6 +23,11 @@ function ctx(over: Partial<HealthContext> = {}): HealthContext {
     specialties: [],
     captures: [],
     now: new Date(2026, 8, 14, 15, 0),
+    // Payroll-readiness checks (v2.6.0) stay quiet here; they have their own tests.
+    employeesByKey: new Map(),
+    payrollDataLoaded: false,
+    payrollComponents: null,
+    payrollCompanyId: null,
     ...over,
   };
 }

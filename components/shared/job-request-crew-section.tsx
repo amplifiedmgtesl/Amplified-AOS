@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { PayrollReadinessFlag } from "./payroll-readiness-flag";
 import { supabase } from "@/lib/supabase/client";
 import {
   loadJobRequestDays,
@@ -137,10 +138,14 @@ export function JobRequestCrewSection({
   jobRequestId,
   disabled = false,
   hideHeader = false,
+  onChanged,
 }: {
   jobRequestId: string;
   disabled?: boolean;
   hideHeader?: boolean;
+  /** Fired after any assignment is added, changed, removed or copied, so the
+   *  parent can re-run the job health check (payroll readiness). */
+  onChanged?: () => void;
 }) {
   const [days, setDays] = useState<JobRequestDay[]>([]);
   const [assignmentsByDay, setAssignmentsByDay] = useState<Record<string, JobRequestAssignment[]>>({});
@@ -288,6 +293,7 @@ export function JobRequestCrewSection({
       const persisted = await upsertAssignment(next);
       setAssignmentsByDay((cur) => ({ ...cur, [dayId]: [...(cur[dayId] ?? []), persisted] }));
       setFocusAssignmentId(persisted.id);
+      onChanged?.();
     } catch (err: any) {
       flash(`Add failed: ${err?.message ?? err}`, false);
     }
@@ -301,6 +307,7 @@ export function JobRequestCrewSection({
     }));
     try {
       await upsertAssignment(next);
+      onChanged?.();
     } catch (err: any) {
       flash(`Save failed: ${err?.message ?? err}`, false);
     }
@@ -313,6 +320,7 @@ export function JobRequestCrewSection({
         ...cur,
         [dayId]: (cur[dayId] ?? []).filter((x) => x.id !== a.id),
       }));
+      onChanged?.();
     } catch (err: any) {
       flash(`Delete failed: ${err?.message ?? err}`, false);
     }
@@ -336,6 +344,7 @@ export function JobRequestCrewSection({
       }
       setAssignmentsByDay((cur) => ({ ...cur, [dayId]: [...(cur[dayId] ?? []), ...created] }));
       flash(`Copied ${created.length} assignment(s).`);
+      onChanged?.();
     } catch (err: any) {
       flash(`Copy failed: ${err?.message ?? err}`, false);
     }
@@ -726,6 +735,7 @@ export function JobRequestCrewSection({
                                     disabled={disabled}
                                     onSelect={(emp) => patchAssignment(d.id, a, { employeeKey: emp.employeeKey })}
                                   />
+                                  <PayrollReadinessFlag employeeKey={a.employeeKey} />
                                 </td>
                                 <td>
                                   <select

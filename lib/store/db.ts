@@ -990,7 +990,14 @@ export function getDeletedEmployeeKeys() { return _cache.deletedEmployeeKeys; }
 // callers, and its un-awaited per-row sync was the same FK-race shape that
 // lost Brent's entries. Use upsertEmployee (awaitable) or bulkUpsertEmployees.
 
-export function upsertEmployee(row: EmployeeRecord): Promise<{ error: unknown | null }> {
+export function upsertEmployee(input: EmployeeRecord): Promise<{ error: unknown | null }> {
+  // The DB normalizes employment_type to Employee/Contractor on every write
+  // (20261012a); mirror that here so the cache doesn't show a blank type the
+  // database no longer has.
+  const isEmployee = ["employee", "w2", "w-2", "w 2", "staff"].includes((input.employmentType ?? "").trim().toLowerCase());
+  const row: EmployeeRecord = isEmployee
+    ? { ...input, employmentType: "Employee", type: "staff" }
+    : { ...input, employmentType: "Contractor", type: "contractor" };
   _cache.employees = [..._cache.employees.filter((r) => r.employeeKey !== row.employeeKey), row];
   // Returns the sync promise so callers that are about to write rows
   // referencing this employee_key (FK) can await the insert commit first.

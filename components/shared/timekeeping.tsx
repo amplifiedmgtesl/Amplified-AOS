@@ -23,6 +23,7 @@ import { resolvePlannedTimes } from "@/lib/jobs/planned-times";
 import type { EmployeeRecord, JobRequest, TimeEntry, Timesheet } from "@/lib/store/types";
 import { EqualizerLoader } from "@/components/shared/equalizer-loader";
 import { JobHealthBanner } from "@/components/shared/job-health-banner";
+import { PayrollReadinessFlag } from "@/components/shared/payroll-readiness-flag";
 import { EmployeePicker, LazyEmployeePicker, pushEmployeeIntoCache, type PickerEmployee } from "@/components/shared/employee-picker";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { canUseTimeclock, openTimeclock } from "@/lib/timeclock/open";
@@ -1600,8 +1601,9 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
 
       <JobHealthBanner
         jobRequestId={currentJob?.id}
-        categories={["rate_card", "job", "crew", "timesheet"]}
+        categories={["rate_card", "job", "crew", "timesheet", "payroll"]}
         pageContext="timesheet"
+        refreshKey={(timesheet?.rows ?? []).map((r) => r.employeeKey ?? "").join("|")}
       />
 
       <div className="invoice-shell">
@@ -1897,6 +1899,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                               }}
                             />
                             {unlinked ? <div className="unlinked-hint">⚠ Link an employee to enable this row</div> : null}
+                            <PayrollReadinessFlag employeeKey={row.employeeKey} />
                             </div>
                           </>
                         )}

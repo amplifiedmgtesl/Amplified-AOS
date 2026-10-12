@@ -78,7 +78,9 @@ Jobs appear on the calendar when **Show in app calendar** is set to **Yes** on t
 
 1. Click **+ Add Crew Manually**. A new blank profile opens.
 2. Fill in their **Full Name**, **First Name**, **Last Name**, **Phone**, **Email**, **City** and **State**.
-3. There is no Save button: changes save as you type.
+3. Set **Employment Type**: **Employee** for W-2 staff (they get weekly overtime), **Contractor** for everyone else.
+4. Enter their **Payroll ID**, their Paychex worker number. Without it they're left out of the Paychex file, and a red **no Payroll ID** note shows next to their name on crew and timekeeping screens.
+5. There is no Save button: changes save as you type.
 
 **Before adding someone, search first.** The same person entered twice causes problems on timesheets. If you find a duplicate, tell an admin rather than deleting it.
 
@@ -384,7 +386,12 @@ Once time is on an invoice, it shows **🔒 Billed** on Timekeeping and can't be
 4. Set the pay date and click **Create draft run**.
 5. Open the run and check **Included entries**. Add anything missed under **Add more entries**.
 6. Click **Finalize**.
-7. Use the export button on the run to download the file for the payroll provider.
+7. Click **📥 Paychex CSV** to download the import file. In Paychex Flex, go to **Payroll Center**, click the arrow next to **Begin** and choose **Import**.
+
+**About the Paychex file:**
+- Each person gets one line per job, pay type and rate, with hours added up for the whole pay run. Overtime and double time go on their own lines, with **OT** or **DT** after the job name.
+- Anyone without a **Payroll ID**, or not marked Employee or Contractor, is **left out**. Before the file downloads you get a list of them with their hours and pay. Enter those people in Paychex by hand, or fix them in AOS and export again.
+- If a Paychex pay code is missing in **Maintenance → Payroll Export**, the file isn't created and the message says what to fill in.
 
 Time that's in a payroll run is locked on Timekeeping. To change it, the run must be **Void**ed first.
 
@@ -438,6 +445,18 @@ Each problem says what's wrong, what it affects (**Downstream**) and, where poss
 
 A day counts as **over** at noon the next day, so overnight shifts aren't flagged while they're still running.
 
+### Payroll
+
+These show as soon as someone is put on the job, so they can be fixed before payday. A red note also appears next to the person's name on Assigned Crew and Timekeeping.
+
+| Check | Level | What it means and what to do |
+|---|---|---|
+| **[n] people have no Payroll ID** | Warning | They'll be left out of the Paychex file. Add their Payroll ID on their employee record. |
+| **[n] people aren't marked Employee or Contractor** | Warning | Paychex needs to know W-2 vs 1099. Set Employment Type on their employee record. |
+| **[n] crew rows aren't linked to an employee** | Warning | Pick the person from the employee list on that row. Otherwise they're left out of the Paychex file. |
+| **W-2 overtime has no Paychex pay component** | Warning | An admin needs to fill in the pay code in **Maintenance → Payroll Export**. Until then the Paychex file won't be created. |
+| **No Paychex Company ID is set** | Warning | An admin needs to set it in **Maintenance → Payroll Export**. |
+
 ### Rates, quotes and invoices
 
 These are usually for admins to fix.
@@ -471,3 +490,10 @@ These are usually for admins to fix.
 5. Click **Create User**, and give them their email and password.
 
 To change someone's role or reset their password, click **Edit** next to them. Leave the password blank to keep the current one.
+
+### Payroll Export settings
+
+**Maintenance → Payroll Export** holds what the Paychex file needs:
+- **Paychex Company ID**
+- **Job Name column**: what goes in Paychex's Job Name (the job's Event Abbr, its full Event Name, or blank)
+- **Pay components**: the Paychex pay code for W-2 and 1099 regular, overtime and double-time hours. **Copy and paste these from Paychex.** They must match exactly, spaces included, or Paychex rejects the line.

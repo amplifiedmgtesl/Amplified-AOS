@@ -4,6 +4,16 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 12 — v2.6.0
+- Payroll now exports to **Paychex**. On a payroll run, the **📥 Paychex CSV** button (it replaces the Rippling button) downloads a file ready for Paychex Flex: Payroll Center → arrow next to Begin → Import. Each person gets one line per job, per pay type and per rate, with the hours added up for the whole pay period. Rates come straight from the payroll run, so the file adds up to the same total as the Payroll Report.
+- W-2 employees are sent as **Day Rate 1** and contractors as **1099 - Day Rate 1**. Overtime and double time go on their own lines under the same code at the overtime or double-time rate, with **OT** or **DT** added to the job name (for example "LBFT OT") so they're easy to spot.
+- Anyone missing a **Payroll ID**, or not marked Employee or Contractor, is left out of the file. Before downloading you get a list of who was left out, with their hours and pay, so they can be entered in Paychex by hand.
+- New **Maintenance → Payroll Export** tab: the Paychex Company ID, what goes in the Job Name column (the job's short Event Abbr for now), and the exact Paychex pay component names. Copy and paste those from Paychex. They have to match exactly, or Paychex rejects the line.
+- **Employment Type** on an employee is now just **Employee** (W-2) or **Contractor**. The old mix of values ("Independent Contractor", "W2", blank) has been cleaned up, and only the people on the W-2 payroll are marked Employee. This also decides who gets weekly overtime.
+- Payroll problems now show up as soon as someone is added to a job, instead of on payday. When someone is picked for a crew assignment or a timekeeping row and has no Payroll ID or no Employee/Contractor setting, a small red note appears next to their name. The job's **Health Check** and the timekeeping banner list them too, along with any timekeeping rows not linked to an employee. These are warnings only: nothing stops you from scheduling or entering time.
+- "Rippling Emp No" is now called **Payroll ID**. It's the same number, since Paychex kept the Rippling numbers. The missing Payroll IDs that were worked out in September have been filled in.
+- Fixed: the **Timesheet** button on a job opened Timekeeping on whichever job was used last, not the job you were on. It now opens that job's timesheet.
+
 ### October 11 — v2.5.2
 - Fixed: on **Timesheet Review**, picking a name in the **Employee** filter showed nothing for about half the crew (Mike Lawler and Sean Mooney, for example), even with every status, job and date selected. The filter matched people by email, so anyone whose entries had no email on file never matched. It now matches on the person's employee record. Only the old entries from before every entry was tied to an employee record still match by email or name.
 - Fixed: Timesheet Review only loaded the 1,000 most recently changed entries, out of about 3,750. Everything older was quietly left off the page, including about 740 entries still marked Submitted, all from July or earlier. The page now loads every entry. Expect those older Submitted entries to show up under **Pending**.

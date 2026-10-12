@@ -27,6 +27,10 @@ async function fetchAll(): Promise<{ positions: Position[]; specialties: Special
 // Valid Rippling earning types (the columns in Rippling's custom-earnings
 // import). A position/specialty with no mapping falls back to "Day Rate 1"
 // in the export. Keep in sync with lib/store/rippling-headers.ts.
+// Rippling pay-type pickers are hidden since the move to Paychex (v2.6.0).
+// Flip back to true if the Rippling export is ever brought back.
+const SHOW_RIPPLING_PAY_TYPES = false;
+
 const RIPPLING_EARNING_TYPES = [
   "Rigger", "Fork", "Lead", "Day Rate 1", "Climber", "Coordinator", "Contractor Hourly",
 ];
@@ -269,8 +273,10 @@ export default function PositionMaintenance() {
               </div>
 
               {/* Rippling pay type for the position itself (used when an entry
-                  has this position but no specialty). */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }} title="Rippling earning column this position's hours are paid under when the entry has no specialty.">
+                  has this position but no specialty). Hidden since the move to
+                  Paychex (v2.6.0) — Paychex components are per worker type,
+                  set in Maintenance → Payroll Export. */}
+              {SHOW_RIPPLING_PAY_TYPES && <div style={{ display: "flex", alignItems: "center", gap: 8 }} title="Rippling earning column this position's hours are paid under when the entry has no specialty.">
                 <small className="muted" style={{ minWidth: 110 }}>Rippling pay type</small>
                 <select
                   value={p.ripplingEarningType ?? ""}
@@ -280,7 +286,7 @@ export default function PositionMaintenance() {
                   <option value="">— not set —</option>
                   {RIPPLING_EARNING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
-              </div>
+              </div>}
 
               <hr style={{ margin: 0, borderColor: "#e8dfd0" }} />
 
@@ -305,7 +311,7 @@ export default function PositionMaintenance() {
                         <span style={{ fontSize: 13 }}>{s.name}</span>
                       )}
                     </div>
-                    <select
+                    {SHOW_RIPPLING_PAY_TYPES && <select
                       value={s.ripplingEarningType ?? ""}
                       onChange={(e) => setSpcEarning(s, e.target.value)}
                       title="Rippling earning type this specialty is paid under."
@@ -313,7 +319,7 @@ export default function PositionMaintenance() {
                     >
                       <option value="">— not set —</option>
                       {RIPPLING_EARNING_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                    </select>}
                     <div className="action-row" style={{ gap: 4 }}>
                       {editingSpcId === s.id ? (
                         <>
