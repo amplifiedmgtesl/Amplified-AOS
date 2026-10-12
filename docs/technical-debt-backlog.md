@@ -3033,6 +3033,10 @@ Paychex's sample (hand-built by Danielle) swapped Rate and Hours on two rows: #1
 
 **Known people:** Connor = David Connor Strang (AES-27858, emp-1780196912009, AES-01816 dcstrange66), group 67. His father is also David Strang ("David M", AES-02326; strang@ohio.edu AES-01815), group 74.
 
+### Lessons from earlier attempts (read before building)
+- **8/30 "retirement" didn't hold.** 44 duplicate records were set to `status = Inactive` (plan and rollback in `~/amplified/rippling-reconcile-2026-08-29/10-retire-plan.csv`, `A2-rollback-retire.sql`). No history was moved, and the **employee picker filters `is_deleted` but not status** (`components/shared/employee-picker.tsx:65`), so the retired copies kept getting picked. As of 10/12, **10 of the 44 had new timesheet rows or crew assignments after 8/30** (e.g. Chris Travis emp-1784912488771: 36 rows through 10/9; Cameron Pasley, Shelby Bowman, Paul Dunbar). A merge must move the history AND hide the duplicate (`is_deleted`), not just change its status.
+- **A Merge button existed for clients**, not employees. `mergeClients` in `lib/store/db.ts` (~line 1980) is still there; the UI was hidden on 4/29 (commit c19f949). Its pattern (re-point every referencing table, then soft-delete the source) is the model, but it runs as separate client-side updates with no transaction. The employee version should be a single DB function so a half-finished merge can't happen.
+
 ### 1. Merge tool (build first; test on dev; run on prod only after Connor's file is back)
 - Shared merge function: move `timesheet_entries`, `job_request_assignments`, `payroll_run_entries`, employee documents, and any other `employee_key` reference onto the kept record. Fill the kept record's blanks (phone, email, address, Payroll ID) from the duplicate. Then soft-delete the duplicate (`is_deleted`) and leave a note pointing to the kept key. Never hard-delete. Moving a Payroll ID has to clear it from the duplicate first (unique constraint).
 - Two ways in: a **batch run** from Connor's marked-up CSV, and an admin **"Merge into…"** action on the employee profile for one-offs.
