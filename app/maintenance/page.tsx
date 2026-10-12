@@ -6,14 +6,16 @@ import { UserManagement } from "@/components/shared/user-management";
 import PositionMaintenance from "@/components/shared/position-maintenance";
 import MasterRateCardEditor from "@/components/shared/master-rate-card-editor";
 import CompanySettingsEditor from "@/components/shared/company-settings-editor";
+import PayrollExportEditor from "@/components/shared/payroll-export-editor";
 
-type Tab = "users" | "positions" | "master_rate_card" | "company_settings";
+type Tab = "users" | "positions" | "master_rate_card" | "company_settings" | "payroll_export";
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "users",             label: "Users",             icon: "🔐" },
   { id: "positions",         label: "Positions",         icon: "🏷️" },
   { id: "master_rate_card",  label: "Master Rate Card",  icon: "🔧" },
   { id: "company_settings",  label: "Company Info",      icon: "🏢" },
+  { id: "payroll_export",    label: "Payroll Export",    icon: "💵" },
 ];
 
 export default function MaintenancePage() {
@@ -41,6 +43,7 @@ export default function MaintenancePage() {
       {tab === "positions"         && <PositionMaintenance />}
       {tab === "master_rate_card"  && <MasterRateCardEditor />}
       {tab === "company_settings"  && <CompanySettingsEditor />}
+      {tab === "payroll_export"    && <PayrollExportEditor />}
     </AppShell>
   );
 }

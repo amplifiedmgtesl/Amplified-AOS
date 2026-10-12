@@ -24,8 +24,9 @@ import {
   type PayrollCandidateRow,
 } from "@/lib/store/payroll";
 import type { PayrollRun, PayrollRunEntry, PayrollRunStatus } from "@/lib/store/types";
-import { loadJobRequests, loadEmployees, loadPositions, loadSpecialties } from "@/lib/store/app-store";
-import { buildRipplingCsv, ripplingCsvFilename } from "@/lib/store/payroll-export";
+import { loadJobRequests, loadEmployees } from "@/lib/store/app-store";
+import { buildPaychexCsv, paychexCsvFilename } from "@/lib/store/paychex-export";
+import { loadComponentMap, loadJobsForExport, loadPayrollExportSettings } from "@/lib/store/payroll-export-settings";
 import { useUserEmail } from "@/lib/auth/use-user-email";
 
 // IT-only recovery actions (e.g. "Apply daily rules") are gated to this
@@ -586,10 +587,55 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
     finally { setBusy(null); }
   }
 
-  function handleExportRipplingCsv() {
+  // Paychex export (v2.6.0). The Rippling export (lib/store/payroll-export.ts)
+  // is kept in the codebase but no longer offered — Amplified moved to
+  // Paychex in Oct 2026.
+  async function handleExportPaychexCsv() {
     if (!run) return;
-    const csv = buildRipplingCsv(run, entries, loadEmployees(), loadPositions(), loadSpecialties());
-    const filename = ripplingCsvFilename(run);
+    setBusy("export");
+    let built: ReturnType<typeof buildPaychexCsv>;
+    try {
+      const [settings, componentMap, jobs] = await Promise.all([
+        loadPayrollExportSettings(),
+        loadComponentMap(),
+        loadJobsForExport(entries.map((e) => e.jobId ?? "")),
+      ]);
+      if (!settings || !componentMap) throw new Error("Couldn't load the Paychex settings (Maintenance → Payroll Export).");
+      built = buildPaychexCsv(run, entries, loadEmployees(), jobs, settings, componentMap);
+    } catch (e: any) {
+      alert(`Export failed: ${e?.message ?? "unknown error"}`);
+      return;
+    } finally {
+      setBusy(null);
+    }
+
+    if (built.blockers.length > 0) {
+      alert(`The Paychex file can't be created yet:\n\n• ${built.blockers.join("\n• ")}`);
+      return;
+    }
+    if (Math.abs(built.totalPay - built.expectedPay) > 0.01) {
+      alert(
+        `The Paychex file doesn't add up: rate × hours comes to $${built.totalPay.toFixed(2)} but this run pays ` +
+        `$${built.expectedPay.toFixed(2)} for the same people. Nothing was downloaded — let John know.`,
+      );
+      return;
+    }
+    const money = (n: number) => `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const summary =
+      `${built.lines.length} line${built.lines.length === 1 ? "" : "s"} · ${built.totalHours} hrs · ${money(built.totalPay)}`;
+    if (built.excluded.length > 0) {
+      const list = built.excluded
+        .map((x) => `• ${x.name} — ${x.reason} (${x.hours} hrs, ${money(x.pay)})`)
+        .join("\n");
+      const ok = confirm(
+        `${built.excluded.length} ${built.excluded.length === 1 ? "person is" : "people are"} left out of the Paychex file. ` +
+        `Enter them in Paychex by hand, or fix them in AOS and export again:\n\n${list}\n\n` +
+        `File: ${summary}\n\nDownload the file without them?`,
+      );
+      if (!ok) return;
+    }
+    const csv = built.csv;
+    const filename = paychexCsvFilename(run);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -652,13 +698,13 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
           </button>
           <button
             className="secondary"
-            onClick={handleExportRipplingCsv}
+            onClick={handleExportPaychexCsv}
             disabled={!!busy || entries.length === 0}
             title={entries.length === 0
               ? "No entries to export"
-              : "Download a Rippling-format CSV of this run. Upload via Rippling → Payroll → Run Payroll → Earnings → Import CSV."}
+              : "Download this run as a Paychex import file. In Paychex Flex: Payroll Center → arrow next to Begin → Import."}
           >
-            📥 Rippling CSV
+            {busy === "export" ? "Building…" : "📥 Paychex CSV"}
           </button>
           {isDraft && (
             <>
@@ -833,9 +879,9 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                         return (
                           <span
                             style={{ marginLeft: 8, color: "#c0392b", fontWeight: "normal", fontSize: 12, fontStyle: "italic" }}
-                            title="No Rippling Emp No on this employee — set it on the Employee Directory page so the payroll CSV export can match this row to Rippling."
+                            title="No Payroll ID on this employee — set it on the Employee Directory page, or they'll be left out of the Paychex file."
                           >
-                            no Rippling #
+                            no Payroll ID
                           </span>
                         );
                       }
@@ -843,9 +889,9 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                         <span
                           className="badge"
                           style={{ marginLeft: 8, background: "#eaf2fb", color: "#1a4a7a", fontWeight: "normal", fontSize: 11 }}
-                          title="Rippling Emp No — used by the payroll CSV export to match this employee."
+                          title="Payroll ID — the worker's Paychex number, used by the Paychex CSV export."
                         >
-                          Rippling #{ripp}
+                          Payroll ID {ripp}
                         </span>
                       );
                     })()}

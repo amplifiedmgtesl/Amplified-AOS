@@ -31,6 +31,7 @@ untested in `lib/store/invoices.ts`, `lib/storage/invoice-days.ts`,
 
 | `rates/day-floor.test.ts` | `deriveDayFloor`, `dayFloorIsExact`, `suggestedDayRate` |
 | `store/payroll-rules.test.ts` | the 5-hour daily minimum, whole-hour round-up, exemptions, weekly 40-hr OT spill, shift grouping and bump allocation, pay-rate recompute |
+| `store/paychex-export.test.ts` | `buildPaychexCsv` — Paychex's exact header, grouping per worker × job × component × rate, contractor vs W-2 overtime, holiday rate, who gets left out, totals matching the run |
 
 **Not yet covered, but testable:** `lib/time-utils.ts` (overnight shifts,
 midnight rollover) and `lib/jobs/job-no.ts`. Both pure.

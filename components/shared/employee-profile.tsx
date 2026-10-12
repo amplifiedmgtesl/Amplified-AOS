@@ -30,7 +30,10 @@ function activeEmployees() {
 // Common employment-type choices + any distinct values already saved in the
 // directory. Lets the profile dropdown pick from a clean list while still
 // honoring any legacy values that happen to exist.
-const COMMON_EMPLOYMENT_TYPES = ["Employee", "Contractor", "W2", "1099", "Full-Time", "Part-Time", "Seasonal"];
+// Exactly two values (20261012a normalizes anything else on save). "Employee"
+// means W-2: weekly overtime applies and the Paychex export sends the W-2 pay
+// component. Everyone else is a contractor.
+const EMPLOYMENT_TYPES = ["Employee", "Contractor"];
 
 /**
  * Standalone employee profile — the full-page detail view for one employee,
@@ -63,14 +66,6 @@ export default function EmployeeProfile({
   const employees = useMemo(() => activeEmployees(), [refreshKey]);
   const activeEmployee = employees.find((e) => e.employeeKey === employeeKey) || null;
 
-  const types = useMemo(
-    () => Array.from(new Set(employees.map((e) => e.employmentType || "").filter(Boolean))).sort(),
-    [employees],
-  );
-  const employmentTypeOptions = useMemo(
-    () => Array.from(new Set([...COMMON_EMPLOYMENT_TYPES, ...types])).sort(),
-    [types],
-  );
 
   // Load this employee's documents when the selection changes.
   useEffect(() => {
@@ -219,10 +214,12 @@ export default function EmployeeProfile({
             <div><small>Zip</small><input value={activeEmployee.zip || ""} onChange={(e)=>updateActiveField("zip", e.target.value)} /></div>
             <div><small>Status</small><input value={activeEmployee.status || ""} onChange={(e)=>updateActiveField("status", e.target.value)} /></div>
             <div>
-              <small>Employment Type</small>
+              <small title="Employee = W-2 (weekly overtime applies; paid as an employee in Paychex). Contractor = 1099.">Employment Type</small>
               <select value={activeEmployee.employmentType || ""} onChange={(e)=>updateActiveField("employmentType", e.target.value)}>
-                <option value="">— Select —</option>
-                {employmentTypeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                {!EMPLOYMENT_TYPES.includes(activeEmployee.employmentType || "") && (
+                  <option value={activeEmployee.employmentType || ""}>{activeEmployee.employmentType ? `${activeEmployee.employmentType} (old — pick one)` : "— Select —"}</option>
+                )}
+                {EMPLOYMENT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>
@@ -236,8 +233,8 @@ export default function EmployeeProfile({
               />
             </div>
             <div>
-              <small title="Rippling employee number. Used by the payroll CSV export to match this person to their Rippling pay run row. Leave blank if not in Rippling.">
-                Rippling Emp No
+              <small title="This person's Paychex worker number (the same numbers Rippling used). The Paychex payroll export matches on this — anyone without one is left out of the file.">
+                Payroll ID
               </small>
               <input
                 type="number"
