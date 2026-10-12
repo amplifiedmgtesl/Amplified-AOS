@@ -14,19 +14,17 @@ const RUN = { id: "run-1", payDate: "2026-10-16", payWeekStart: "sun" } as Payro
 
 const SETTINGS: PayrollExportSettings = { provider: "paychex", companyId: "70400794", jobNameSource: "event_abbr" };
 
-// The seed in 20261012a: Employee OT/DT still unknown.
+// The seed in 20261012a: one pay code per worker type; OT/DT differ by rate.
 const MAP: ComponentMapRow[] = [
   { workerType: "Employee", payType: "REG", componentName: "Day Rate 1" },
-  { workerType: "Employee", payType: "OT", componentName: "" },
-  { workerType: "Employee", payType: "DT", componentName: "" },
+  { workerType: "Employee", payType: "OT", componentName: "Day Rate 1" },
+  { workerType: "Employee", payType: "DT", componentName: "Day Rate 1" },
   { workerType: "Contractor", payType: "REG", componentName: "1099 - Day Rate 1" },
   { workerType: "Contractor", payType: "OT", componentName: "1099 - Day Rate 1" },
   { workerType: "Contractor", payType: "DT", componentName: "1099 - Day Rate 1" },
 ];
-const MAP_WITH_OT = MAP.map((m) =>
-  m.workerType === "Employee" && m.payType !== "REG"
-    ? { ...m, componentName: m.payType === "OT" ? "Day Rate 1 OT" : "Day Rate 1 DT" }
-    : m,
+const MAP_OT_BLANK = MAP.map((m) =>
+  m.workerType === "Employee" && m.payType !== "REG" ? { ...m, componentName: "" } : m,
 );
 
 const JOBS = new Map<string, ExportJobInfo>([
@@ -157,39 +155,47 @@ describe("Job Name source", () => {
 });
 
 describe("overtime", () => {
-  it("sends contractor OT and DT under the 1099 component at the OT/DT rate", () => {
+  it("sends contractor OT and DT on their own lines, same code, OT/DT rate, OT/DT on the job name", () => {
     const r = buildPaychexCsv(RUN, [
       entry({ employeeKey: "k-ann", jobId: "job-tour", payStdHours: 10, payOtHours: 2, payDtHours: 1, stdRate: 40 }),
     ], EMPLOYEES, JOBS, SETTINGS, MAP);
     expect(r.blockers).toEqual([]);
-    expect(r.lines.map((l) => [l.component, l.rate, l.hours])).toEqual([
-      ["1099 - Day Rate 1", 40, 10], ["1099 - Day Rate 1", 60, 2], ["1099 - Day Rate 1", 80, 1],
+    expect(r.lines.map((l) => [l.jobName, l.component, l.rate, l.hours])).toEqual([
+      ["LBFT", "1099 - Day Rate 1", 40, 10], ["LBFT DT", "1099 - Day Rate 1", 80, 1], ["LBFT OT", "1099 - Day Rate 1", 60, 2],
     ]);
   });
 
-  it("stops the export when a W-2 has OT and no OT component is set yet", () => {
+  it("marks OT with just 'OT' when Job Name is set to blank", () => {
+    const r = buildPaychexCsv(RUN, [
+      entry({ employeeKey: "k-ann", jobId: "job-tour", payStdHours: 10, payOtHours: 2, stdRate: 40 }),
+    ], EMPLOYEES, JOBS, { ...SETTINGS, jobNameSource: "none" }, MAP);
+    expect(r.lines.map((l) => l.jobName)).toEqual(["", "OT"]);
+  });
+
+  it("stops the export if the W-2 OT code is ever blanked out", () => {
     const r = buildPaychexCsv(RUN, [
       entry({ employeeKey: "k-bob", jobId: "job-tour", payStdHours: 40, payOtHours: 5, stdRate: 40 }),
-    ], EMPLOYEES, JOBS, SETTINGS, MAP);
+    ], EMPLOYEES, JOBS, SETTINGS, MAP_OT_BLANK);
     expect(r.blockers).toHaveLength(1);
     expect(r.blockers[0]).toContain("Employee OT");
   });
 
-  it("does not block a W-2 with no overtime", () => {
+  it("does not block a W-2 with no overtime, even with the OT code blank", () => {
     const r = buildPaychexCsv(RUN, [entry({ employeeKey: "k-bob", jobId: "job-tour", payStdHours: 40, stdRate: 40 })],
-      EMPLOYEES, JOBS, SETTINGS, MAP);
+      EMPLOYEES, JOBS, SETTINGS, MAP_OT_BLANK);
     expect(r.blockers).toEqual([]);
     expect(r.lines[0]).toMatchObject({ workerId: "15", component: "Day Rate 1", hours: 40 });
   });
 
-  it("sends W-2 OT on its own line once the component is filled in", () => {
+  it("sends W-2 OT on its own line under Day Rate 1 at the OT rate", () => {
     const r = buildPaychexCsv(RUN, [
       entry({ employeeKey: "k-bob", jobId: "job-tour", payStdHours: 40, payOtHours: 5, stdRate: 40 }),
-    ], EMPLOYEES, JOBS, SETTINGS, MAP_WITH_OT);
+    ], EMPLOYEES, JOBS, SETTINGS, MAP);
     expect(r.blockers).toEqual([]);
-    expect(r.lines.map((l) => [l.component, l.rate, l.hours])).toEqual([
-      ["Day Rate 1", 40, 40], ["Day Rate 1 OT", 60, 5],
+    expect(r.lines.map((l) => [l.jobName, l.component, l.rate, l.hours])).toEqual([
+      ["LBFT", "Day Rate 1", 40, 40], ["LBFT OT", "Day Rate 1", 60, 5],
     ]);
+    expect(r.totalPay).toBe(r.expectedPay);
   });
 });
 

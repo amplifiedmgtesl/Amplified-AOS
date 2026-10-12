@@ -77,13 +77,13 @@ CREATE TRIGGER payroll_component_map_audit_trg
   BEFORE INSERT OR UPDATE ON payroll_component_map
   FOR EACH ROW EXECUTE FUNCTION set_audit_columns();
 
--- Known from Paychex's 10/6 sample. Contractors have no legal overtime, so
--- their OT/DT hours go under the same 1099 component at the OT/DT rate.
--- Employee OT/DT names are still pending from Paychex — left blank on purpose.
+-- Known from Paychex's 10/6 sample. Paychex confirmed (via Connor, 10/12)
+-- that OT and DT go on their own line under the SAME pay code at the OT/DT
+-- rate — there's no separate overtime code, since AOS sends the rate.
 INSERT INTO payroll_component_map (provider, worker_type, pay_type, component_name) VALUES
   ('paychex', 'Employee',   'REG', 'Day Rate 1'),
-  ('paychex', 'Employee',   'OT',  ''),
-  ('paychex', 'Employee',   'DT',  ''),
+  ('paychex', 'Employee',   'OT',  'Day Rate 1'),
+  ('paychex', 'Employee',   'DT',  'Day Rate 1'),
   ('paychex', 'Contractor', 'REG', '1099 - Day Rate 1'),
   ('paychex', 'Contractor', 'OT',  '1099 - Day Rate 1'),
   ('paychex', 'Contractor', 'DT',  '1099 - Day Rate 1')

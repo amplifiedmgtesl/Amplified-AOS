@@ -13,9 +13,10 @@
 //   • Pay component comes from payroll_component_map, keyed on worker type
 //     (Employee / Contractor) and pay type (REG / OT / DT). It must match
 //     Flex EXACTLY — never trimmed or re-cased here.
-//   • Employee OT/DT with a blank component STOPS the export (blocker).
-//     Contractor OT/DT normally map to the same 1099 component at the OT/DT
-//     rate.
+//   • OT and DT go on their own line, under the same pay code as regular
+//     time (Paychex, 10/12), at the OT/DT rate, with " OT" / " DT" added to
+//     the Job Name so they stand out (Connor's request). A blank component
+//     in the map STOPS the export (blocker).
 //   • Holiday entries pay all hours at base × holiday multiplier under the
 //     REG component, so the dollars match AOS's total_pay.
 //   • Anyone with no Payroll ID, or no clear Employee/Contractor setting, is
@@ -192,8 +193,9 @@ export function buildPaychexCsv(
         );
         continue;
       }
-      const key = `${workerId}|${jobName}|${comp}|${num(p.rate)}`;
-      const line = lineByKey.get(key) ?? { workerId, name, jobName, component: comp, rate: p.rate, hours: 0 };
+      const lineJob = p.payType === "REG" ? jobName : [jobName, p.payType].filter(Boolean).join(" ");
+      const key = `${workerId}|${lineJob}|${comp}|${num(p.rate)}`;
+      const line = lineByKey.get(key) ?? { workerId, name, jobName: lineJob, component: comp, rate: p.rate, hours: 0 };
       line.hours += p.hours;
       lineByKey.set(key, line);
     }
