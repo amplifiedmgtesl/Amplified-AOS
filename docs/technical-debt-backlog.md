@@ -3022,3 +3022,29 @@ Paychex's sample (hand-built by Danielle) swapped Rate and Hours on two rows: #1
 - The export matches a corrected 10/9 run line for line (1,429 hrs / $55,765).
 - The mapping screen is in place, with Help updated.
 - The Rippling export is retired or hidden once Paychex is live.
+
+---
+
+## #116 — One record per person: merge duplicates, prevent new ones, Pay & Hours summary (added 2026-10-12)
+
+**Why (John, 2026-10-12):** we need to see one person's total hours, pay and overtime in one place. Eventually **crew will see their own hours and pay**, and that can't be pieced together from several employee records. One person = one `employees` row that everything points to: timesheets, crew assignments, payroll entries, Payroll ID, and later the crew app login.
+
+**Size of the problem (prod, 2026-10-12):** 223 duplicate groups, 474 of 3,041 active records. In 46 groups, 2+ records have hours; in 34, 2+ have been paid. 89 pairs have back-to-back AES keys, meaning the original roster import created people twice. Weekly OT is counted per record, so split hours can hide overtime. `employees.rippling_employee_id` is UNIQUE, so only one record per person can carry the Payroll ID, and hours on the other records get left out of the Paychex export. The list is with Connor: `~/amplified/paychex/employee-duplicates-2026-10-12.csv`. X = keep, NO = not the same person, and the contact info on the X row wins. Built by a script that matches on phone with a compatible first name, the add-screen name rule (`crew-roster-import.ts` scoreName), nicknames and near spellings. Jr/Sr/II differences are marked Possible (could be father and son).
+
+**Known people:** Connor = David Connor Strang (AES-27858, emp-1780196912009, AES-01816 dcstrange66), group 67. His father is also David Strang ("David M", AES-02326; strang@ohio.edu AES-01815), group 74.
+
+### 1. Merge tool (build first; test on dev; run on prod only after Connor's file is back)
+- Shared merge function: move `timesheet_entries`, `job_request_assignments`, `payroll_run_entries`, employee documents, and any other `employee_key` reference onto the kept record. Fill the kept record's blanks (phone, email, address, Payroll ID) from the duplicate. Then soft-delete the duplicate (`is_deleted`) and leave a note pointing to the kept key. Never hard-delete. Moving a Payroll ID has to clear it from the duplicate first (unique constraint).
+- Two ways in: a **batch run** from Connor's marked-up CSV, and an admin **"Merge into…"** action on the employee profile for one-offs.
+- Check every table/column that references `employee_key` before writing it (FKs plus text columns). Payroll runs already finalized keep their snapshot names, so only the key changes.
+- Afterwards: give the 4 W-2 people's kept records their IDs where they're still missing, and recheck the left-out list.
+
+### 2. Prevent new duplicates
+- Every "add a person" path checks for a match first (name rule plus phone) and makes you pick the existing person. Creating a second record takes a deliberate override. Paths: Timekeeping inline create (today it creates without checking), the crew assignment picker, crew roster import (already asks), Employee Directory add/CSV import, the Rippling/coordinator backfills.
+
+### 3. Pay & Hours summary (built once, used by both screens)
+- One DB view/function per employee: **MTD / YTD / Lifetime** hours (reg/OT/DT), **pay from payroll runs** (actual paid), jobs worked, positions/specialties with hours, last worked.
+- Show it on the employee profile. It **replaces the "Total Pay" metric, which today sums `billTotal`** (what the client was billed, not pay) at `components/shared/employee-profile.tsx:363`.
+- Later: a crew self-view in the staff app that reads the same view. That needs the crew login linked to the employee record (today the staff app logs time by `user_id`; see the coordinator→crew-leader link note).
+
+**Order:** merge tool → run Connor's file → prevention → summary → crew view.
