@@ -3066,3 +3066,35 @@ Two ways in: a **batch run** from Connor's marked-up CSV (X = keep, NO = skip th
 - Later: a crew self-view in the staff app that reads the same view. That needs the crew login linked to the employee record (today the staff app logs time by `user_id`; see the coordinator→crew-leader link note).
 
 **Order:** merge tool → run Connor's file → prevention → summary → crew view.
+
+---
+
+## #117 — Paychex worker sync (nightly check of IDs, W-2/1099, status) (added 2026-10-12)
+
+**Why:** AOS's Payroll IDs drifted badly from Paychex. "Paychex kept the Rippling numbers" was only partly true. On 10/12 a manual export-and-compare found 55 old Rippling numbers, 84 missing IDs, 8 IDs that belonged to a **different person** in Paychex (wrong-pay risk), and Paychex-side duplicates. Paychex became the source of truth for Payroll ID, address, phone and email (John, 10/12), and a one-off correction was applied to prod (backup table `employees_backup_20261012_paychex`; files in `~/amplified/paychex/`). This item replaces that manual export with an automatic check.
+
+**API access exists (created by John 10/12):** Paychex Flex → Company Settings → Integrated apps → "Amplified AOS". **Company and worker APIs = Read only (GET); Payroll and check APIs = OFF.** Creds are on John's Mac in `~/amplified/.paychex-api.env` (and his password manager); they still need to go into Vercel server env for this. Tested: token via `POST https://api.paychex.com/auth/oauth/v2/token` (client_credentials) → `GET /companies` (1 company, displayId 70400794; use its opaque `companyId`) → `GET /companies/{companyId}/workers?offset=&limit=50` (**max page 50**). 469 workers (458 IC / 11 EMPLOYEE; 134 ACTIVE / 325 INACTIVE / 10 TERMINATED). The calls run as the app, not as John's login (a retest didn't log him out of Flex).
+
+**⚠ The worker records include `legalId` (SSN), `birthDate` and `sex`, even with read-only access.** The sync must drop them at the moment of parsing: never log, store or display them. Keep only `employeeId`, `workerId`, `workerType`, `name`, `currentStatus`, `hireDate`. Contact info (email/phone/address) isn't in the list; it's a per-worker sub-resource, fetched only if needed.
+
+**Shape:**
+- A server-side job (Vercel cron / API route, secret in env), nightly plus an on-demand "check now".
+- Match Paychex workers to AOS records by Payroll ID first, then email/phone/address, then name (same rules as `~/amplified/paychex` scripts / scratchpad pxmatch2.py).
+- **Report, don't auto-change payroll data.** Show new Paychex IDs AOS doesn't have, ID/name mismatches, W-2/1099 differences, status changes (Inactive/Terminated), and AOS IDs that don't exist in Paychex. Surface them in the Health Check / a short admin list. Possibly auto-fill only blank fields on certain matches; decide when building.
+- Known oddities: people paid both ways have two Paychex IDs (Chris Travis 13 W-2 / 526 1099; Ryan Andrews 129 / 525; Lauren Honore 532 W-2 / 533 + 247 1099). John *guesses* they're 1099s converted to W-2, unconfirmed and pending Connor. Paychex also has its own duplicates (Paul Brennan 510/535, Jalaya Frisella Kunst 440/553, Precious Jewett 511/549…).
+
+**Depends on:** #116 (one AOS record per person) to be fully useful, since otherwise one Paychex worker maps to several AOS records.
+
+---
+
+## #118 — Send payroll to Paychex through the API instead of the CSV (added 2026-10-12)
+
+**Idea (John, 10/12):** instead of downloading the Paychex CSV and importing it in the Payroll Center, AOS sends the run's lines straight into Paychex. Paychex's Payroll API can add hours/earnings to **unprocessed checks** for a pay period. Someone still reviews and submits the payroll in Flex.
+
+**Not yet:** the CSV export (v2.6.0, shipped 10/12) needs to run cleanly for a few payrolls first. Today the API app has **Payroll and check APIs OFF**; turning it on is a deliberate step when this is built.
+
+**Notes for when it's picked up:**
+- Same line rules as the CSV (`lib/store/paychex-export.ts`): worker × job × component × rate, OT/DT on their own lines with " OT"/" DT" on the job name, components from `payroll_component_map`, rates from the run, left-out list + blockers.
+- Needs the right pay period from `GET /companies/{companyId}/payperiods` and the pay component IDs from the API rather than names.
+- Must be safe to re-run: never double-add a run. Track what was sent per payroll run, and check before sending.
+- Read the official Paychex developer docs at build time. The paths above are from the 10/12 test and third-party summaries.
