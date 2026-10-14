@@ -236,5 +236,22 @@ describe("planPaychexSync", () => {
     expect(plan.changes).toEqual([]);
     expect(plan.reports.map((r) => r.kind)).toEqual(["ambiguous", "ambiguous"]);
   });
+
+  it("accepts the Payroll Name as a match (legal name vs the name they go by)", () => {
+    const plan = planPaychexSync(
+      [px({ employeeId: "2", firstName: "David", lastName: "Strang", workerType: "EMPLOYEE" })],
+      [aos({ employeeKey: "AES-27858", fullName: "Connor Strang", payrollName: "Strang, David", payrollId: 2, employmentType: "Employee" })],
+    );
+    expect(plan.reports).toEqual([]);
+  });
+
+  it("does not link a name-only match when AOS contact info disagrees", () => {
+    const plan = planPaychexSync(
+      [px({ employeeId: "561", firstName: "Joshua Williams", email: "smailliwhsoj62@gmail.com", phone: "9375550000" })],
+      [aos({ employeeKey: "AES-02072", fullName: "Joshua Williams", email: "joshuawilliams246@gmail.com", phone: "6155551111" })],
+    );
+    expect(plan.changes).toEqual([]);
+    expect(plan.reports.map((r) => r.kind)).toEqual(["ambiguous"]);
+  });
 });
 

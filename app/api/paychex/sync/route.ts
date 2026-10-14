@@ -27,7 +27,7 @@ async function requireAdmin(req: NextRequest): Promise<string | null> {
   return profile?.role === "admin" ? user.id : null;
 }
 
-const EMP_COLS = "employee_key, full_name, first_name, last_name, rippling_employee_id, employment_type, phone, email, address, city, state_code, zip, is_deleted";
+const EMP_COLS = "employee_key, full_name, first_name, last_name, payroll_name, rippling_employee_id, employment_type, phone, email, address, city, state_code, zip, is_deleted";
 
 /** All employees, paged — PostgREST caps a select at 1,000 rows. */
 async function loadEmployees(): Promise<{ live: AosEmployee[]; reservedIds: Set<number> }> {
@@ -46,6 +46,7 @@ async function loadEmployees(): Promise<{ live: AosEmployee[]; reservedIds: Set<
     if (r.is_deleted) { if (payrollId != null) reservedIds.add(payrollId); continue; }
     live.push({
       employeeKey: r.employee_key, fullName: r.full_name ?? "", firstName: r.first_name ?? "", lastName: r.last_name ?? "",
+      payrollName: r.payroll_name ?? "",
       payrollId, employmentType: r.employment_type ?? "", phone: r.phone ?? "", email: r.email ?? "",
       address: r.address ?? "", city: r.city ?? "", stateCode: r.state_code ?? "", zip: r.zip ?? "",
     });

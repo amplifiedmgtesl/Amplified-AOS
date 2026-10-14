@@ -37,6 +37,8 @@ export type AosEmployee = {
   fullName: string;
   firstName: string;
   lastName: string;
+  /** Legal / payroll name, usually "Last, First". Optional. */
+  payrollName?: string;
   payrollId: number | null;
   employmentType: string;
   phone: string;
@@ -134,6 +136,16 @@ export function looseNameMatch(a: string, b: string): boolean {
   const fa = ta[0], fb = tb[0], la = ta[ta.length - 1], lb = tb[tb.length - 1];
   if (levenshtein(`${fa} ${la}`, `${fb} ${lb}`) <= 2) return true;
   return la === lb && (fa.includes(fb) || fb.includes(fa));
+}
+
+/** Every name an AOS record goes by: display name, plus Payroll Name
+ *  ("Strang, David" → "David Strang"). A Paychex name matching either is
+ *  not a name difference. */
+export function aosNames(e: Pick<AosEmployee, "fullName" | "firstName" | "lastName" | "payrollName">): string[] {
+  const out = [e.fullName || `${e.firstName} ${e.lastName}`];
+  const pn = (e.payrollName ?? "").trim();
+  if (pn) out.push(pn.includes(",") ? pn.split(",").map((x) => x.trim()).reverse().join(" ") : pn);
+  return out;
 }
 
 export function digits10(phone: string): string {
@@ -237,7 +249,7 @@ export function planPaychexSync(
         changes.push({ id: `update:${existing.employeeKey}`, kind: "update", employeeKey: existing.employeeKey,
           payrollId, name: existing.fullName, fields });
       }
-      if (nameKey(existing.fullName) !== nameKey(pxName) && tokens(pxName).length >= 2) {
+      if (!aosNames(existing).some((n) => nameKey(n) === nameKey(pxName)) && tokens(pxName).length >= 2) {
         reports.push({ kind: "name", payrollId, employeeKey: existing.employeeKey,
           message: `#${payrollId}: AOS has "${existing.fullName}", Paychex has "${pxName}".` });
       }
@@ -300,6 +312,19 @@ export function planPaychexSync(
           plausible.map((h) => `${h.e.fullName} with no ID`).join(", ") +
           ". Same person under two Paychex IDs, or two people? Not linked." });
       continue;
+    }
+    if (plausible.length === 1 && plausible[0].on.length === 1 && plausible[0].on[0] === "name") {
+      // Name-only match: if AOS has contact info and none of it agrees with
+      // Paychex, it's probably a different person with the same name
+      // (Joshua Williams TN vs OH, 10/14).
+      const e = plausible[0].e;
+      const aosEmail = (e.email ?? "").trim().toLowerCase();
+      const aosPhone = digits10(e.phone);
+      if ((aosEmail || aosPhone) && !(aosEmail && aosEmail === email) && !(aosPhone && aosPhone === phone)) {
+        reports.push({ kind: "ambiguous", payrollId, employeeKey: e.employeeKey,
+          message: `#${payrollId} ${pxName} is new in Paychex. AOS has ${e.fullName} (${e.employeeKey}) with different contact info. Same person? Not linked.` });
+        continue;
+      }
     }
     if (plausible.length === 1) {
       const { e, on } = plausible[0];
