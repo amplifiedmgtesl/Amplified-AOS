@@ -75,7 +75,7 @@ describe("planPaychexSync", () => {
   it("updates contact info on the record holding the Payroll ID", () => {
     const plan = planPaychexSync(
       [px({ employeeId: "79", firstName: "Sean", lastName: "Brown", email: "new@x.com" })],
-      [aos({ employeeKey: "AES-00640", fullName: "Sean Brown", payrollId: 79, email: "old@x.com" })],
+      [aos({ employeeKey: "AES-00640", fullName: "Sean Brown", payrollName: "Brown, Sean", payrollId: 79, email: "old@x.com" })],
     );
     expect(plan.changes).toEqual([{ id: "update:AES-00640", kind: "update", employeeKey: "AES-00640", payrollId: 79,
       name: "Sean Brown", fields: [{ field: "email", from: "old@x.com", to: "new@x.com" }] }]);
@@ -88,19 +88,20 @@ describe("planPaychexSync", () => {
     expect(plan.activeWorkers).toBe(0);
   });
 
-  it("reports a name difference but never changes the name", () => {
+  it("keeps the Payroll Name an exact copy of Paychex and never touches the display name", () => {
     const plan = planPaychexSync(
       [px({ employeeId: "12", firstName: "Cameron", lastName: "Pasley" })],
-      [aos({ employeeKey: "AES-49541", fullName: "Camran Paisley", payrollId: 12 })],
+      [aos({ employeeKey: "AES-49541", fullName: "Camran Paisley", payrollName: "Pasley, Cameron R", payrollId: 12 })],
     );
-    expect(plan.changes).toEqual([]);
-    expect(plan.reports.map((r) => r.kind)).toEqual(["name"]);
+    expect(plan.changes).toEqual([{ id: "update:AES-49541", kind: "update", employeeKey: "AES-49541", payrollId: 12,
+      name: "Camran Paisley", fields: [{ field: "payrollName", from: "Pasley, Cameron R", to: "Pasley, Cameron" }] }]);
+    expect(plan.reports).toEqual([]);
   });
 
   it("reports a W-2 / 1099 difference without changing it", () => {
     const plan = planPaychexSync(
       [px({ employeeId: "13", firstName: "Chris", lastName: "Travis", workerType: "EMPLOYEE" })],
-      [aos({ employeeKey: "AES-01853", fullName: "Christopher Travis", payrollId: 13, employmentType: "Contractor" })],
+      [aos({ employeeKey: "AES-01853", fullName: "Christopher Travis", payrollName: "Travis, Chris", payrollId: 13, employmentType: "Contractor" })],
     );
     expect(plan.changes).toEqual([]);
     expect(plan.reports.map((r) => r.kind)).toEqual(["type"]);
@@ -113,7 +114,7 @@ describe("planPaychexSync", () => {
     );
     expect(plan.changes).toEqual([{ id: "link:emp-1791400273282:575", kind: "link", employeeKey: "emp-1791400273282",
       payrollId: 575, name: "Adam Kaiser", paychexName: "Adam Kaiser", matchedOn: "name",
-      fields: [{ field: "phone", from: "", to: "(513) 555-1234" }] }]);
+      fields: [{ field: "payrollName", from: "", to: "Kaiser, Adam" }, { field: "phone", from: "", to: "(513) 555-1234" }] }]);
   });
 
   it("does not link on a shared phone when the last name differs", () => {
@@ -150,7 +151,7 @@ describe("planPaychexSync", () => {
     );
     expect(plan.changes).toEqual([{ id: "create:577", kind: "create", payrollId: 577, name: "Melissa Mcwilliams",
       firstName: "Melissa", lastName: "Mcwilliams", employmentType: "Contractor", hireDate: "2026-10-13",
-      contact: { phone: "", email: "m@x.com", address: "", city: "Dayton", stateCode: "OH", zip: "" } }]);
+      contact: { payrollName: "Mcwilliams, Melissa", phone: "", email: "m@x.com", address: "", city: "Dayton", stateCode: "OH", zip: "" } }]);
   });
 
   it("links nobody when Paychex has the same person twice (Paychex duplicate)", () => {

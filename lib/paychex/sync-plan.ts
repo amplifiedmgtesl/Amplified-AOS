@@ -49,7 +49,7 @@ export type AosEmployee = {
   zip: string;
 };
 
-export type ContactField = "phone" | "email" | "address" | "city" | "stateCode" | "zip";
+export type ContactField = "payrollName" | "phone" | "email" | "address" | "city" | "stateCode" | "zip";
 
 export type FieldChange = { field: ContactField; from: string; to: string };
 
@@ -62,7 +62,7 @@ export type SyncChange =
       employmentType: "Employee" | "Contractor"; hireDate: string | null; contact: Record<ContactField, string> };
 
 export type SyncReport = {
-  kind: "name" | "type" | "ambiguous" | "id_mismatch";
+  kind: "type" | "ambiguous" | "id_mismatch";
   payrollId: number;
   employeeKey?: string;
   message: string;
@@ -138,16 +138,6 @@ export function looseNameMatch(a: string, b: string): boolean {
   return la === lb && (fa.includes(fb) || fb.includes(fa));
 }
 
-/** Every name an AOS record goes by: display name, plus Payroll Name
- *  ("Strang, David" → "David Strang"). A Paychex name matching either is
- *  not a name difference. */
-export function aosNames(e: Pick<AosEmployee, "fullName" | "firstName" | "lastName" | "payrollName">): string[] {
-  const out = [e.fullName || `${e.firstName} ${e.lastName}`];
-  const pn = (e.payrollName ?? "").trim();
-  if (pn) out.push(pn.includes(",") ? pn.split(",").map((x) => x.trim()).reverse().join(" ") : pn);
-  return out;
-}
-
 export function digits10(phone: string): string {
   const d = (phone ?? "").replace(/\D/g, "");
   return d.length >= 10 ? d.slice(-10) : "";
@@ -161,9 +151,19 @@ export function formatPhone(phone: string): string {
 const squash = (s: string) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
 function sameValue(field: ContactField, a: string, b: string): boolean {
+  // Payroll Name is an exact copy of Paychex — spelling and case matter.
+  if (field === "payrollName") return (a ?? "").trim() === (b ?? "").trim();
   if (field === "phone") return digits10(a) === digits10(b);
   if (field === "zip") return (a ?? "").trim().slice(0, 5) === (b ?? "").trim().slice(0, 5);
   return squash(a) === squash(b);
+}
+
+/** Paychex's name in AOS's Payroll Name format: "Last, First Middle". */
+export function paychexPayrollName(w: Pick<PaychexWorker, "firstName" | "middleName" | "lastName">): string {
+  const { first, last } = splitPaychexName(w.firstName, w.middleName, w.lastName);
+  const middle = (w.middleName ?? "").trim();
+  if (!last) return first;
+  return `${last}, ${first}${middle ? " " + middle : ""}`;
 }
 
 export function paychexEmploymentType(workerType: string): "Employee" | "Contractor" {
@@ -172,6 +172,7 @@ export function paychexEmploymentType(workerType: string): "Employee" | "Contrac
 
 function paychexContact(w: PaychexWorker): Record<ContactField, string> {
   return {
+    payrollName: paychexPayrollName(w),
     phone: formatPhone(w.phone),
     email: (w.email ?? "").trim().toLowerCase(),
     address: (w.street ?? "").trim(),
@@ -185,9 +186,9 @@ function paychexContact(w: PaychexWorker): Record<ContactField, string> {
 export function contactChanges(w: PaychexWorker, e: AosEmployee): FieldChange[] {
   const px = paychexContact(w);
   const out: FieldChange[] = [];
-  for (const field of ["phone", "email", "address", "city", "stateCode", "zip"] as ContactField[]) {
+  for (const field of ["payrollName", "phone", "email", "address", "city", "stateCode", "zip"] as ContactField[]) {
     const to = px[field];
-    const from = (e[field] ?? "").trim();
+    const from = ((e as Record<string, unknown>)[field] as string ?? "").trim();
     if (!to) continue;
     if (sameValue(field, from, to)) continue;
     out.push({ field, from, to });
@@ -248,10 +249,6 @@ export function planPaychexSync(
       if (fields.length) {
         changes.push({ id: `update:${existing.employeeKey}`, kind: "update", employeeKey: existing.employeeKey,
           payrollId, name: existing.fullName, fields });
-      }
-      if (!aosNames(existing).some((n) => nameKey(n) === nameKey(pxName)) && tokens(pxName).length >= 2) {
-        reports.push({ kind: "name", payrollId, employeeKey: existing.employeeKey,
-          message: `#${payrollId}: AOS has "${existing.fullName}", Paychex has "${pxName}".` });
       }
       if ((existing.employmentType || "Contractor") !== type) {
         reports.push({ kind: "type", payrollId, employeeKey: existing.employeeKey,

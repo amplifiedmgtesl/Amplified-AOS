@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
 }
 
 const COLUMN: Record<FieldChange["field"], string> = {
-  phone: "phone", email: "email", address: "address", city: "city", stateCode: "state_code", zip: "zip",
+  payrollName: "payroll_name", phone: "phone", email: "email", address: "address", city: "city", stateCode: "state_code", zip: "zip",
 };
 
 function patchFor(fields: FieldChange[]): Record<string, string> {
@@ -97,7 +97,7 @@ async function applyOne(c: SyncChange, runId: string, userId: string, seq: numbe
       after = {
         employee_key: employeeKey, full_name: c.name, first_name: c.firstName, last_name: c.lastName,
         employment_type: c.employmentType, rippling_employee_id: c.payrollId, status: "Active",
-        source: "paychex-sync", hire_date: c.hireDate, is_deleted: false,
+        source: "paychex-sync", hire_date: c.hireDate, is_deleted: false, payroll_name: c.contact.payrollName || null,
         phone: c.contact.phone || null, email: c.contact.email || null, address: c.contact.address || null,
         city: c.contact.city || null, state_code: c.contact.stateCode || null, state: c.contact.stateCode || null,
         zip: c.contact.zip || null,

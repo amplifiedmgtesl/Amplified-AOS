@@ -13,7 +13,7 @@ type Preview = { changes: SyncChange[]; reports: SyncReport[]; activeWorkers: nu
 type ApplyResult = { applied: number; failed: { id: string; error: string }[]; skipped: number };
 
 const LABEL: Record<FieldChange["field"], string> = {
-  phone: "Phone", email: "Email", address: "Address", city: "City", stateCode: "State", zip: "Zip",
+  payrollName: "Payroll name", phone: "Phone", email: "Email", address: "Address", city: "City", stateCode: "State", zip: "Zip",
 };
 
 async function call(method: "GET" | "POST", body?: unknown) {
@@ -149,7 +149,7 @@ export default function PaychexSync() {
             <small>{preview.activeWorkers} active in Paychex · {preview.changes.length} change{preview.changes.length === 1 ? "" : "s"} · {preview.reports.length} to check by hand</small>
           </p>
 
-          {section("Contact updates", groups.update, ["Employee", "Payroll ID", "Changes"], (c) => {
+          {section("Updates from Paychex", groups.update, ["Employee", "Payroll ID", "Changes"], (c) => {
             const u = c as Extract<SyncChange, { kind: "update" }>;
             return [u.name, `#${u.payrollId}`, <Fields key="f" fields={u.fields} />];
           })}
