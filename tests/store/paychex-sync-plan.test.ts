@@ -40,6 +40,8 @@ describe("nameKey", () => {
   it("matches Chris/Christopher and ignores case, middle names and suffixes", () => {
     expect(nameKey("Chris Travis")).toBe(nameKey("christopher A Travis"));
     expect(nameKey("Jeffrey Williamson Jr")).toBe("jef williamson");
+    expect(nameKey("Bob Burke")).toBe(nameKey("Robert Leroy Burke"));
+    expect(nameKey("Hank Hawkins")).toBe(nameKey("Henry Hawkins"));
   });
 });
 

@@ -90,12 +90,23 @@ function tokens(name: string): string[] {
     .filter((t) => t && !SUFFIXES.has(t));
 }
 
+// Common short forms, so "Bob Burke" meets "Robert Leroy Burke" (10/14 dry run).
+const NICK: Record<string, string> = {
+  bob: "robert", rob: "robert", robbie: "robert", bobby: "robert", bill: "william", will: "william", billy: "william",
+  mike: "michael", jim: "james", jimmy: "james", tom: "thomas", tommy: "thomas", dick: "richard", rick: "richard",
+  ricky: "richard", tony: "anthony", joe: "joseph", joey: "joseph", dan: "daniel", danny: "daniel", dave: "david",
+  steve: "steven", stephen: "steven", matt: "matthew", nick: "nicholas", sam: "samuel", ben: "benjamin",
+  alex: "alexander", andy: "andrew", drew: "andrew", greg: "gregory", jeff: "jeffrey", jon: "jonathan",
+  john: "jonathan", johnny: "jonathan", kate: "katherine", katie: "katherine", kathy: "katherine", hank: "henry",
+  liz: "elizabeth", beth: "elizabeth", jen: "jennifer", jenny: "jennifer", abby: "abigail", abbey: "abigail",
+};
+
 /** First 3 letters of the first name + the whole last name. Catches
  *  Chris/Christopher and lower-case entries; middle initials ignored. */
 export function nameKey(name: string): string {
   const t = tokens(name);
   if (t.length < 2) return t.join(" ");
-  return `${t[0].slice(0, 3)} ${t[t.length - 1]}`;
+  return `${(NICK[t[0]] ?? t[0]).slice(0, 3)} ${t[t.length - 1]}`;
 }
 
 function levenshtein(a: string, b: string): number {
