@@ -398,7 +398,8 @@ Once time is on an invoice, it shows **🔒 Billed** on Timekeeping and can't be
 - **Contact updates:** Paychex's phone, email or address replaces what AOS has. A blank in Paychex never wipes out an AOS value.
 - **New Payroll IDs:** a new Paychex worker who matches one AOS person with no Payroll ID gets the ID on that existing record.
 - **New people:** Paychex workers with no match in AOS are added as new employees.
-- **To check by hand:** name differences, W-2 vs 1099 differences, and possible duplicates are listed but never changed. Fix those on the employee record.
+- **Payroll Name** always holds the name exactly as Paychex has it. The name shown everywhere else in AOS is the name the crew goes by, and the sync never changes it.
+- **To check by hand:** W-2 vs 1099 differences and possible duplicates are listed but never changed. Fix those on the employee record, or in Paychex.
 - Only **active** Paychex workers are read.
 
 Time that's in a payroll run is locked on Timekeeping. To change it, the run must be **Void**ed first.
