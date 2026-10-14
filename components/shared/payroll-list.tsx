@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { listPayrollRuns } from "@/lib/store/payroll";
 import type { PayrollRun, PayrollRunStatus } from "@/lib/store/types";
+import { useUserRole } from "@/lib/auth/use-user-role";
+import PaychexSync from "./paychex-sync";
 
 function statusBadge(s: PayrollRunStatus) {
   const map: Record<PayrollRunStatus, { bg: string; fg: string; label: string }> = {
@@ -22,6 +24,7 @@ export default function PayrollList() {
   const [rows, setRows] = useState<PayrollRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("active");
+  const role = useUserRole();
 
   async function load() {
     setLoading(true);
@@ -50,7 +53,8 @@ export default function PayrollList() {
             <option value="all">All</option>
           </select>
         </div>
-        <Link href="/payroll/new" className="button">+ New Payroll Run</Link>
+        <Link href="/payroll/new" className="button" style={{ marginLeft: "auto" }}>+ New Payroll Run</Link>
+        {role === "admin" && <PaychexSync />}
       </div>
 
       <div className="table-scroll">

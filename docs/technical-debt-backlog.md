@@ -1510,3 +1510,663 @@ Four items captured from John on 2026-07-14. Each starts on its own branch off `
 - Read-only keep/remove report first (never bulk-delete blind), then a guarded cleanup — respecting the freeze/lock rules (approved / invoice-bound / payroll-locked rows must not be deleted; see `deleteTimesheetEntries()` safety + the freeze-trigger denylist entry).
 - Add a dedup guard on `(employee_key, work_date, shift_id)` across all add paths so the mess doesn't recur.
 - Define what "reset" means operationally: per-job re-import? clear-and-reload from a signed sheet? Clarify with Connor. Coordinate with the planned-vs-actual redesign so a reset doesn't wipe planned crew assignments.
+
+## Password change kills the admin's own session silently — "Unauthorized" everywhere for up to 1 hour (added 2026-08-30)
+
+**Why:** CONFIRMED PROD DEFECT, diagnosed 2026-08-29 against prod logs. Hit John and Connor. When an admin changes their **own** password in User Maintenance, GoTrue revokes every session that user has, server-side. The browser keeps holding the already-issued JWT, and since this project's `jwt_exp` is **3600s**, `supabase.auth.getSession()` keeps handing that token out for up to an hour without ever asking the server. The app looks fully logged in, but every server call sends a token GoTrue has already discarded → 403 → `requireAdmin()` in `app/api/users/route.ts` returns null → `401 {"error":"Unauthorized"}`.
+
+Two compounding failures:
+1. **Silent dead session, but only on the admin API routes.** A revoked JWT is still cryptographically valid and un-expired, so PostgREST (signature + `exp` only) keeps accepting it — normal app usage carries on working. Only GoTrue's `/auth/v1/user` checks whether the session still exists, and that is the call `requireAdmin()` makes. So `/api/users` and `/api/notifications` fail while the rest of the app looks perfectly healthy. **This is what makes it read as a permissions bug rather than a login bug.** Verified: in the 23:11:46 → 23:35:07 dead window there were 5 requests total — 3x `GET /auth/v1/user` 403 (the guard, rejected every time), 1x `POST /rest/v1/profiles` **200** (PostgREST accepting the same dead token), 1x failed login. Zero `PUT /auth/v1/admin/users`: no password change of any kind occurred, for any user, including the caller's own.
+2. **Wrong error word.** "Unauthorized" reads as "you lack permission" when it means "your session is dead." This is what sent both John and Connor hunting for a rights problem; both were `admin` in `profiles` the whole time.
+
+Verified sequence from prod `edge_logs` + `auth.users` (2026-08-29):
+```
+23:11:00  POST /auth/v1/token              200   login → JWT issued, exp 00:11:00
+23:11:45  PUT  /auth/v1/admin/users/ce1c…  200   self password change SUCCEEDS
+23:11:46  GET  /auth/v1/user               403   session revoked; "Unauthorized" banner
+23:34:04  GET  /auth/v1/user               403   later edit of ANOTHER user dies here
+                                                 ← no PUT follows. Write never happened.
+```
+The second attempt (changing test account `jobrien882@gmail.com`) was rejected at the guard 22 minutes into the dead-token window and **silently made no change** — the user then could not log in with the password they thought they had set. Note the first-order symptom is also misleading in the opposite direction: a *successful* self-change still paints "Unauthorized", because `handleSave()` ends with `await loadUsers()`, which refetches using the token that was just revoked.
+
+**Confirmed 2026-08-30 (prod logs):** the other-user path is NOT broken — with a live caller token it works end to end. John logged out, logged back in at 23:41:30, and immediately changed `jobrien882@gmail.com`'s password:
+```
+23:41:30  POST /auth/v1/token                  200   fresh login
+23:41:35  GET  /auth/v1/admin/users            200   User Maintenance loads
+23:41:56  GET  /auth/v1/user                   200   requireAdmin passes
+23:41:56  PUT  /auth/v1/admin/users/8f503c16   200   password change succeeds
+23:41:56  GET  /auth/v1/user                   200   post-save loadUsers() SUCCEEDS
+23:41:57  GET  /auth/v1/admin/users            200   list reloads - no error banner
+23:42:14  POST /auth/v1/token                  200   target logs in on the NEW password
+```
+So scope the fix to the dead-session window only. `requireAdmin`, the admin endpoint, and the post-save refresh are all correct when the caller's token is live; do not rework them.
+
+**How to apply (to scope during design):**
+- **Route self-edits through the user endpoint, not the admin one.** For `editingId === current user`, use `supabase.auth.updateUser({ password })` — the user-scoped `PUT /user` is expected to keep the *current* session alive while revoking the others. Keep `auth.admin.updateUserById` for editing other people (revoking only the target's sessions is correct there). **Verify the session-survival behaviour on dev before relying on it** — this is the load-bearing assumption of the whole fix.
+- **Treat any 401 from `apiFetch` as a dead session, not a permissions failure.** Force `supabase.auth.signOut()` and redirect to login with "Your session expired — please sign in again." Applies to the shared helper in `components/shared/user-management.tsx`, so it covers PATCH/POST/DELETE/GET uniformly.
+- **Don't let a failed post-save refresh look like a failed save.** `handleSave()` currently closes the modal then calls `loadUsers()`, whose error lands in the page-level red banner — indistinguishable from the save being rejected. Separate the two error surfaces.
+- Consider having `requireAdmin()` distinguish "token invalid/expired" (401, session-dead) from "valid token, not an admin" (403, genuine permissions) so the client can react correctly instead of guessing from one opaque string.
+- Sweep for the same pattern elsewhere: any other route using the `requireAdmin()` + `Bearer` shape (`app/api/notifications/route.ts` has its own copy) will mislabel a dead session the same way.
+- Smoke checklist to add to [`docs/end-to-end-smoke-test.md`](end-to-end-smoke-test.md): (a) admin changes own password → stays usable or is cleanly bounced to login, never silently broken; (b) admin changes another user's password → caller's session survives, target's password actually changes and the target can log in with it; (c) confirm the new password works before the old session's JWT would have expired.
+
+---
+
+## Store day-rate covered hours as a field — SEE #36 (added 2026-08-30, merged 2026-08-30)
+
+**Duplicate — folded into #36** ("DECIDE: the day-rate hour floor is derived by division, not stored"), which already carries the full prod analysis and the pending A/B decision. Do not track separately.
+
+Two things learned on 2026-08-30 that #36 should be read alongside:
+
+1. **The derivation now drives PAY, not just billing.** Day-rate payroll (v2.4.0) pays the derived block of hours. So #36 stopped being a latent billing question and became a live payroll one — the same number now decides what people are paid.
+2. **The floor-of-0 case is now guarded.** `dayRateCoveredHours` (`lib/rates/day-rate.ts`) returns the fallback of 10 rather than 0 when the ratio rounds to zero — the BUYOUT case #36 flagged. Deliberate: a 0-hour block on the pay side pays someone nothing for a day they worked, which is worse than the billing overflow. Verified harmless in billing: 0 of 363 day-rate quote lines in prod can reach it (min ratio 50/33).
+
+**John's framing when this was raised (2026-08-30):** the stored field should be a plain **number of hours** — "day hours" / "flat hours" — not a day/half-day enum, so Connor can key 10, 5, 8 or 6 and sell any block. Keep Day / Half Day as UI labels; the stored value is just hours. That makes half-day stop being a special case. This is effectively **option A** in #36, and it needs to cover quoting and invoicing as well as payroll, which is why it was deferred out of the v2.4.0 emergency fix.
+
+## Payroll run: no way to override pay HOURS on an entry (only the rate) (added 2026-08-30)
+
+**Why:** A payroll run entry stores actual hours (`std_hours`/`ot_hours`/`dt_hours`) separately from paid hours (`pay_std_hours`/`pay_ot_hours`/`pay_dt_hours`), and pay is computed off the pay buckets. But **nothing in the UI can edit the pay buckets.** Verified 2026-08-30:
+
+- No file under `components/` or `app/` references `pay_std_hours` at all. The run detail renders it as read-only text (`payroll-run-detail.tsx:922`).
+- The only exported mutators on a run entry are `updatePayrollRunEntryBaseRate`, `removeEntryFromRun`, `removeZeroHourEntriesFromRun`.
+- `pay_std_hours` is written only at run creation, by add-entries, and by the weekly spill inside `finalizePayrollRun`.
+
+So the only lever is the **base rate**, and using it to force a total is harmful: `buildRipplingCsv` exports hours and rates as separate columns, so a fudged rate pushes both a wrong rate and wrong hours into actual payroll processing, and the AOS row then misstates the person's real rate.
+
+**Why it matters now:** the 2026-08-30 decision is that the weekly 40-hour OT rule applies to **employees only**, contractors exempt, with exceptions (state law, individual contract) handled by manually overriding hours on the run. That policy has no mechanism behind it today.
+
+**Interim workaround (John, 2026-08-30):** overrides are done in **Rippling directly**. Acceptable short-term. Note the tradeoff to evaluate when this is picked up — an override applied only in Rippling means AOS and Rippling permanently disagree about what was paid, so AOS labour-cost and margin reporting silently drifts from reality, and there is no audit trail in AOS explaining why.
+
+**Confirmed again 2026-09-18 (John), now also covering OT *thresholds*.** The rate card splits every rate into a bill/pay pair (`hourly`/`pay_hourly` etc.) but keeps ONE set of triggers (`ot_after`/`dt_after`), shared between billing and payroll — payroll inherits the split via `payOtHours: e.otHours`. John's decision: do NOT add `pay_ot_after`/`pay_dt_after`. On the rare job where the client's OT trigger differs from what's owed the worker, handle it manually in AOS or directly in Rippling. **That lands on this same missing mechanism** — the AOS half still doesn't exist, so today these are Rippling-only, with the AOS/Rippling drift noted above. Context: the BMI_CONCERT OT incident, items #112/#113.
+
+**Likely shape when built:** mirror `BaseRateInput` with a `PayHoursInput`; add `updatePayrollRunEntryPayHours` recomputing through `recomputePayFromBase`; stamp `pay_adjustment_reason` (the column already exists and is already used by the 5-hour minimum / round-up reasons). Draft-only, blocked by the existing freeze trigger on finalized/exported runs.
+
+**Analyse before building:** whether AOS should own the override at all, or whether Rippling stays the system of record for exceptions and AOS just needs to record that an override happened.
+
+**Related:** `docs/day-rate-payroll-plan.md` (Blocker 1).
+
+---
+
+## Reports — new top-level nav item (added 2026-08-30)
+
+**Why:** Needed for **tax purposes**, and Connor expects it to grow. There is no general reporting area today — reporting is scattered per-screen (crew roster export, pre-invoice report, Rippling CSV).
+
+**Decision (John, 2026-08-30):** its own **top-level nav item**, not buried under Maintenance/Admin. Expected to grow, and **different people will need access to different reports** — so build role-gating per report from the start, rather than one blanket permission.
+
+**First report: jobs by state, filtered by date range.** Required for **sales tax**.
+
+Feasible with existing data — `job_requests` carries `state`, `state_code`, `city_state`, `venue_zip`, plus `request_date` / `end_date` for the range.
+
+Open design questions, to answer when the report is designed (per John, not now):
+- Venue state or client billing state?
+- Which date drives the range — start, end, or any overlap? (Matters for jobs straddling a quarter boundary, which is when it will be run.)
+- Job counts or **invoiced dollars**? Sales tax almost certainly needs revenue, which means joining invoices.
+
+**Note:** `request_date` / `end_date` are stored as **text**, not dates — range filtering needs a cast or a column-type cleanup.
+
+## Sales tax — analyse whether/how we charge it (added 2026-08-30) — LOWEST PRIORITY
+
+**Why:** Raised alongside the jobs-by-state report. **Nothing in the system handles sales tax today.** Confirmed 2026-08-30: the only tax-related column anywhere in the schema is `clients.tax_id`. Quotes and invoices carry `subtotal`, `deposit`, `amount_due` and no tax field, no tax rate, no per-line taxability flag.
+
+**Needs analysis before any build**, because this is a compliance question first and a software question second:
+- Which states create nexus / a filing obligation, given crews travel (the jobs-by-state report is the input to answering this).
+- Is labour taxable in those states? Rules differ sharply state to state and often by service type.
+- Are any clients exempt, and do we need to store exemption certificates?
+- Where does tax attach — per line, per invoice, per job?
+- Retroactive exposure on jobs already invoiced without tax.
+
+Do not start schema work until Connor and his accountant have answered the above.
+
+**Priority (John, 2026-08-30): lowest.** Needs substantial analysis and input from outside sources, but must stay on the list — the jobs-by-state report is the first input to it.
+
+---
+
+## Payroll runs are per-job — align the whole flow around that (added 2026-08-30)
+
+**Why:** Connor confirmed 2026-08-30 they run payroll **by job**, not by pay period. The UI still assumes generic period-based runs, so it offers filters nobody uses and makes the job-based flow clumsy.
+
+**No hard link between run and job (John, 2026-08-30).** `payroll_runs` has no `job_id` and **is not getting one**. The run's job is **derived** from its entries (`payroll_run_entries.job_id`), which works now that they do one job per run. This avoids a schema link, a migration, and a constraint that would fight the legacy data.
+
+**Legacy multi-job runs: leave them alone.** Measured 2026-08-30 — of 13 runs, 9 are single-job, **3 span two jobs, 1 spans four**. Those are historical; the team has since standardised on per-job. Derivation should tolerate a run resolving to more than one job rather than assuming exactly one.
+
+Sub-items:
+
+**a. Drop the unused run filters.** Runs are created by job; the other filter choices are noise.
+
+**b. Add a "Payroll Complete" flag on the job.** Label confirmed by John 2026-08-30 — avoids confusion with *the client paid us*.
+
+**Semantics are deliberately minimal: the flag does nothing except remove the job from the dropdown on the payroll run screen.** No side effects, no locking, no bearing on invoices or job status.
+
+**Must be editable — including unchecking**, so they can run a second payroll for a job.
+
+*Possible refinement John floated:* have it set itself when someone who worked that job is actually paid, rather than requiring a manual tick — i.e. creating a payroll run containing entries for that job marks the job complete. Still no hard link; just a side effect of the run existing. Manual uncheck brings the job back into the list, and a later run would set it again. Worth designing this way if it is cheap — a flag that maintains itself is far more reliable here than one that depends on someone remembering.
+
+**c. Exclude the flag from edit locks.** Today `job-detail.tsx:403` sets `isLocked = (!isNew && form.status !== "lead") || isPayroll` — a job locks the moment it leaves `lead`, which is nearly all of them, and there is already an `isPayroll` term in that expression. The flag must stay editable on a locked job or requirement (b) fails.
+
+**d. Filter the payroll job picker.** Exclude jobs marked Payroll Complete, **and filter to `booked` status** (John 2026-08-30 — same rule as the timekeeping pickers).
+
+⚠ Watch the interaction: if a job is moved to `completed` before payroll is run, a `booked`-only filter hides it and nobody can be paid. Since moving to `completed` is manual and prompted by the weekly digest, sequence the digest's nagging so it does not push jobs out of `booked` before payroll happens.
+
+**e. Name payroll runs.** `payroll_runs` has `notes` but no name column. Default the name to the **job name**, editable. Where a job already has a run, default subsequent ones to "2nd run", "3rd run", etc.
+
+**Sequence number lives in the name text** (John 2026-08-30), not a separate field — and the whole name is overridable. Simple; accepts that renaming can break the numbering, which is fine because the name is free-form by design.
+
+## Timekeeping + Timesheet Approval job pickers — show only `booked` jobs, sorted by start date (added 2026-08-30)
+
+**Why:** Both pickers currently list **every** job, including dead leads and quotes never won, so finding a live job is slow and mis-selection is easy.
+
+**Rule (John, 2026-08-30): show only jobs with status `booked`.** Applies to both pickers:
+- `components/shared/timekeeping.tsx`
+- `components/shared/timesheet-review.tsx` (approval, `app/timekeeping/review`)
+
+Sort by **job start date**, future and current at top, oldest at the bottom.
+
+### ⚠ HARD DEPENDENCY — do not ship before Connor's status cleanup is finished
+
+Measured in prod 2026-08-30:
+
+| Status | Jobs | ...with timesheets |
+|---|---|---|
+| quoted | 44 | **31** |
+| lead | 40 | **26** |
+| **booked** | **6** | **4** |
+| cancelled | 4 | 0 |
+
+**Only 4 of the 61 jobs that have timekeeping data are actually `booked`.** Filtering to `booked` today would empty both pickers and hide 57 jobs with live data — timekeeping would effectively stop working.
+
+The filter is a one-line change; the cleanup is the whole job. Ship the filter **only after** the cleanup is verified, and confirm the count of `booked` jobs looks sane before enabling it.
+
+### Second-order effect to accept or handle
+
+Once a job moves off `booked` (to `completed`), it **disappears from both pickers**. Fixing a timesheet after a job completes then requires flipping the status back to `booked` temporarily — same pattern as the payroll "paid" flag. John has accepted jobs dropping off once closed; just be aware this is the consequence, and it will come up.
+
+### Status vocabulary — for reference
+
+Actual list (`lib/constants.ts:13`, `JOB_REQUEST_STATUSES`): `lead`, `quoted`, `booked`, `completed`, `lost`. There is **no `invoiced` and no `closed`**.
+
+Also: **`cancelled` exists in prod data (4 jobs) but is not in the constant** — an orphan the UI cannot label. Fix or migrate as part of the cleanup.
+
+**Note on sorting:** `request_date` / `end_date` are stored as **text**, not dates. Sorting works by luck on `YYYY-MM-DD` strings but is fragile; worth casting or migrating the column type.
+
+---
+
+## Weekly data-hygiene digest email to Connor ("nag report") (added 2026-08-30)
+
+**Why:** Nothing in AOS that requires a human to advance it gets advanced. Measured in prod 2026-08-30: 44 jobs sit in `quoted` of which **38 have issued invoices**; 40 sit in `lead` of which 26 have timesheets; only **6 jobs have ever reached `booked`**; 8 of 158 invoices are marked paid; 1 payroll run has ever been finalised.
+
+This is not a training problem — the labels do not stop anyone getting paid, so nobody touches them. But several planned features now **depend** on that data being right:
+- The timekeeping / timesheet-approval / payroll job pickers filter on `booked` status.
+- Jobs need to reach `completed` to fall out of those pickers.
+
+So the data has to be nudged, on a schedule, by the system. A weekly email to Connor listing what needs attention.
+
+**Proposed sections (John, 2026-08-30):**
+- *N jobs have had no activity and should be marked completed*
+- *Outstanding time awaiting approval*
+- *Leads that need to be quoted*
+- *A lead or quote is past its event start date — was it booked, or lost?*
+- (more as patterns emerge)
+
+Each section should be a short list with counts and direct links, not a data dump — it is a nag, and it stops working the moment it becomes noise.
+
+### Infrastructure already exists — this is an extension, not a new build
+
+Confirmed 2026-08-30:
+- **Email sending:** `lib/notifications/providers/resend.ts` (plus a `mock` provider and a provider registry in `providers/index.ts`).
+- **Logging + idempotency:** `notification_log` already carries `event_type`, `channel`, `entity_type`/`entity_id`, `to_address`, `subject`, `status`, `skip_reason`, `provider`, `provider_message_id`, `idempotency_key`, `sent_at`.
+- **API route:** `app/api/notifications`.
+- **Spec:** `docs/notifications-spec.md`.
+
+Use the existing `idempotency_key` so a retry or double-trigger cannot send the digest twice.
+
+### Scheduling — decide the mechanism
+
+There is **no scheduler configured for the app today**: no `vercel.json`, so no Vercel Cron. The only scheduled job anywhere is `monitoring-capture-15m` in **pg_cron** on the Supabase side.
+
+Two options:
+1. **Vercel Cron** — natural fit (it calls the app route directly), but note the account is **Hobby** (see the Vercel access notes): cron frequency is limited and capped in count. A weekly digest may need a daily trigger that no-ops six days a week.
+2. **pg_cron + `pg_net`** — already present and can express a weekly schedule natively, but it has to reach out to the app route, which means an auth mechanism for that call.
+
+Pick one before building; it shapes where the digest logic lives.
+
+### Design notes
+
+- Make the recipient list configurable rather than hardcoding Connor — Andie and others will likely want sections of it.
+- Consider suppressing empty sections entirely, and skipping the send altogether when everything is clean. A weekly "nothing to do" email trains people to ignore it.
+- Each item should link straight to the record that needs fixing.
+
+**Related:** the picker-filter entries above depend on this actually working.
+
+---
+
+## New employee records must default to Contractor, not blank (added 2026-08-30)
+
+**Why:** As of 2026-08-30 the weekly 40-hour OT rule is gated on `employees.employment_type` — it applies to **employees only**, contractors never spill into overtime. Blank counts as contractor.
+
+That makes the default on record creation a money decision. Today `lib/store/db.ts:1714` writes `employment_type: e.employmentType ?? null`, so a record created without one lands **NULL**. It happens to behave correctly under the new rule (NULL → contractor → no OT), but only by accident, and the intent is invisible to anyone reading the row.
+
+**Wanted:** new employee records default explicitly to **Independent Contractor**. In the real world nearly everyone is one — Connor says roughly **6** people are actual employees — so contractor is the correct default and being an employee should be the deliberate, explicit act.
+
+**Covers all creation paths**, not just the UI:
+- `lib/store/db.ts` (`saveEmployee` / upsert path)
+- `lib/storage/crew-roster-import.ts` — bulk import
+- any future import or API route
+
+**Consider a DB-level default** on the column as the backstop, so a path nobody remembered still lands on contractor rather than NULL.
+
+**Related, being handled separately (John, 2026-08-30):** existing blank records are being backfilled to contractor in another session. Once that lands, `employment_type` becomes trustworthy for the first time and every blank row should be gone — after which a NOT NULL constraint is worth considering so it cannot regress.
+
+**Note:** the rest of the codebase already reads this column the same way — `lib/store/db.ts:1413` derives `type = employment_type === "Employee" ? "staff" : "contractor"`. The payroll gate is consistent with that, not a new interpretation.
+
+**Related:** `docs/day-rate-payroll-plan.md`.
+
+---
+
+## HARD BLOCK: a specialty with no pay rate must not be selectable (added 2026-08-30)
+
+**Why:** On 2026-08-29 the payroll run for Neon Nights came out with 11 rows at **$0**, including Connor's own. Cause: `spc-11-01` (Lead) and `spc-02-01` (Stagehand Lead) exist as specialties but appear on **none of the 28 rate cards**, so payroll resolves no `pay_hourly` and snapshots zero.
+
+**Connor did nothing wrong.** He picked the canonical entries in the structured numbering (`spc-01-01` Labor, `spc-02-01` Stagehand Lead, … `spc-11-01` Lead) and has used them consistently — 24 uses across 6 jobs, and 11 across 5, since May. The system offered a valid, correct choice that silently pays nothing and said nothing until payroll.
+
+**No guard exists today.** `components/shared/timekeeping.tsx:191` loads every active specialty and filters only by position:
+
+```
+const allSpecialties = useMemo(() => loadSpecialties().filter((s) => s.isActive !== false), []);
+```
+
+No rate-card check anywhere in the picker path, nor on the crew-assignment side.
+
+**Decision (John, 2026-08-30): hard blocks, not warnings.** Warnings do not work with this user base. Specialties are chosen early enough in the process — `job_request_crew_needs` and `job_request_assignments` both carry `specialty_id`, so the choice happens when crew is booked, not on the day — that a block cannot strand anyone onsite.
+
+### Proposed layers
+
+1. **Prevent creation.** A specialty with no `pay_hourly` on any rate card is not selectable when booking crew (`job_request_crew_needs` / `job_request_assignments`). This is the real fix — the bad state never exists.
+2. **Gate the job.** A job cannot move to `booked` while any crew need references an unpayable specialty. Directly serves the goal: the job cannot go live with crew nobody can pay.
+3. **Backstop at finalize.** Already exists — payroll refuses to finalize while any entry has `std_rate = 0` (`unratedCount` / `finalizeBlocked`). Keep it.
+
+Consider also blocking a **null** specialty. The 11th zero-rate row on the 2026-08-29 run was Samuel Shephard's 8/17 entry with `specialty_id` NULL — `lib/store/payroll.ts` bails on the first line (`if (!specialtyId) return { stdRate: 0, ... }`) before it ever reaches a rate card. Same class of problem.
+
+### Blast radius is small — this is turn-on-able
+
+Every specialty currently in use with no pay rate on any card (measured 2026-08-30):
+
+| Specialty | Timesheet rows | Jobs |
+|---|---|---|
+| `spc-02-01` Stagehand Lead | 24 | 6 |
+| `spc-11-01` Lead | 11 | 5 |
+| `spc-15-01` Other | 5 | 1 |
+| `spc-1780061974393` Hand | 3 | 1 |
+| `spc-1780061979504` Hand | 1 | 1 |
+
+**Five specialties, 44 rows.** Three need pricing; the two "Hand" entries are duplicates to retire.
+
+Also unpriced but never used, so harmless until someone picks them: Heavy Equipment Op, Aerial Lift Operator, General Labor, plus a further duplicate "Lead" (`spc-1780061939961`).
+
+### Enabling cleanup — duplicate specialties
+
+There are **six** specialties named "Lead" and **three** named "Hand". Four of the Leads (`spc-1780061932927`, `…948144`, `…953477`, `…965222`) carry pay rates but sit on only two rate cards ("Standard" `ratecard-1780062039174` and "Teddy Swims") and have **never been used on a timesheet**. The canonical `spc-11-01` — the one actually used — has no rates.
+
+So the priced duplicates are junk and the used original is unpriced: exactly backwards. Retire the duplicates and price the canonical entries as part of this work.
+
+**Likely mechanism worth confirming:** the rate-card editor appears to create a NEW specialty when a name is typed rather than matching an existing one — which would explain six identically-named Leads appearing on two cards on the same day. If so, that is the upstream bug and blocking selection alone will not stop it recurring.
+
+**Related:** `docs/day-rate-payroll-plan.md`, and the entry on duplicate employee records.
+
+---
+
+## Move the payroll void cascade from BEFORE UPDATE to AFTER UPDATE (added 2026-08-30)
+
+**Why:** Voiding a payroll run was broken from the day it was written and nobody had ever noticed, because nobody had ever voided a run. Discovered 2026-08-30 when Connor tried to void the 8/29 Neon Nights run and got:
+
+```
+tuple to be updated was already modified by an operation triggered by the current command
+```
+
+**The collision:**
+
+1. `payroll_runs_void_trg` — **BEFORE UPDATE** on `payroll_runs` — deletes that run's `payroll_run_entries`.
+2. `payroll_run_entries_refresh_totals` — **AFTER DELETE** on `payroll_run_entries` — runs `UPDATE payroll_runs SET entry_count/…, total_pay = … WHERE id = v_run_id`.
+3. That target row is the one the outer statement is already modifying, so Postgres rejects it.
+
+Voiding therefore only ever worked on a run with zero entries. Confirmed against prod: 12 draft, 1 finalized, **0 voided**, ever.
+
+**What shipped in v2.4.1 is a workaround, not the fix.** `voidPayrollRun` now performs the cascade itself in separate statements — release `timesheet_entries.payroll_run_id`, delete `payroll_run_entries`, then flip status — so the BEFORE trigger's DELETE matches zero rows and nothing nests. That unblocks the app but leaves the trigger itself broken.
+
+**The trigger is still a landmine for anyone who updates status directly** — the Supabase SQL editor, a future API route, a migration, a bulk script. Any of those will hit the original error.
+
+**Proper fix:** split the trigger. Keep a BEFORE UPDATE that only stamps `voided_at` (it needs `NEW`), and move the cascade — the `timesheet_entries` release and the `payroll_run_entries` delete — into an **AFTER UPDATE** trigger. By then the outer statement has finished with the `payroll_runs` row, so the totals refresh can update it freely. Once that lands, the app-side cascade in `voidPayrollRun` becomes redundant and can be reduced back to a single status update.
+
+**Also worth checking while in there:** `refresh_payroll_run_totals` is `FOR EACH ROW`, so deleting a 138-entry run fires 138 separate `UPDATE payroll_runs` statements that all compute the same (eventually zero) totals. A statement-level trigger would do it once. Not causing a problem at current volumes, but it is pure waste.
+
+**Related:** the void path has no test coverage — it is a DB-trigger interaction, which the current pure-function test suite explicitly does not cover (see `tests/README.md`). This is the class of bug unit tests were never going to catch.
+
+---
+
+## Branch protection on `main` + get CI onto `main` (added 2026-08-30)
+
+**Why:** CI landed 2026-08-30 (`.github/workflows/test.yml` — `npm ci`, typecheck, `npm test`) and is green on `dev`. Two follow-ups were deliberately deferred.
+
+### 1. The workflow is on `dev` only
+
+It was pushed to `main` and **failed immediately**: `npm error Missing script: "test"`. The vitest setup arrived on dev via the `invoicing-unit-tests` merge and has never been promoted, so `main` has no test script, no vitest devDependency and no `tests/`.
+
+Promoting the tests to `main` on their own is not the fix — that merge also carries `lib/store/invoice-math.ts`, changes to `lib/store/invoices.ts` and `lib/store/types.ts`, the #36 option-B rate-card editor warnings, a job-health check and two migrations (`20260708a`, `20260708c`). Those must cross as a deliberate promotion with the checklist followed, not as a side effect of wanting CI.
+
+So the workflow was removed from `main` again (`dc35ccd`) and **returns with the promotion that carries the test suite.** `CLAUDE.md` and the updated `docs/promote-to-prod-checklist.md` were left on `main` — they are docs and useful there regardless.
+
+**⚠ Do not enable the required status check before the workflow is back on `main`.** A hotfix branched off `main` would produce no `Tests` check and the PR would block indefinitely — precisely the flow used in an emergency.
+
+### 2. Branch protection — deferred on purpose
+
+**Decision (John, 2026-08-30): leave it off for now and let CI soak first**, to see whether it produces false failures or friction before anything is gated on it. The failure above is a fair example of why.
+
+When it goes on, the agreed shape is **`main` only, not `dev`**:
+
+- Requiring a status check effectively bans direct pushes — GitHub evaluates required checks against a commit already on the remote, so a fresh direct push has nothing to point at. Protecting a branch therefore means PRs for every change to it.
+- On `main` that is cheap: promotions are deliberate and infrequent and already follow a checklist.
+- On `dev` it would be permanent friction for a solo developer pushing many times a day, guarding a failure that is recoverable in one commit.
+
+Settings → Branches → require the `Tests` check on `main`.
+
+**Side benefit:** PR merges create a distinct merge SHA, which avoids the Vercel duplicate-commit gotcha documented in the checklist (skipped production builds, hit 2026-06-11 and 2026-07-21).
+
+---
+
+## ⚠ FARMTOUR quote will overpay ~$3,400 — fix before 17 September (added 2026-08-30)
+
+**Why:** `AES_26091720_LFT_FARMTOUR` runs **17–20 September 2026** and every line on the issued quote (`AES_26091720_LFT_FARMTOUR_EST_REV2`) is `rate_mode = 'day'`. A flat **$650/day** was quoted across the board, but `base_hourly` was left at each role's rate-card default instead of being raised to $65 like Labor:
+
+| Role | base_day | base_hourly | Block derived | Intended |
+|---|---|---|---|---|
+| Labor | $650 | **$65** | 10 ✓ | 10 |
+| Telendler | $650 | **$38** | **17** ✗ | 10 |
+| Steward | $650 | **$34** | **19** ✗ | 10 |
+| BUS STOCK | $400 | $40 | 10 ✓ | 10 |
+
+Day-rate payroll (v2.4.0) derives the paid block as `round(base_day / base_hourly)`, so when this job runs it will pay **17-hour and 19-hour blocks**:
+
+- 3 Telendlers × 4 days × 7 extra hrs = **84 hrs**
+- 1 Steward × 4 days × 9 extra hrs = **36 hrs**
+
+**≈ $3,400 overpaid**, and invisible in review — the rows just look like long days.
+
+**The intended block is unambiguously 10**, confirmed three ways: `job_request_days.expected_hours` = 10 for all four dates; the quote's own `hours` field (30 ÷ 3 crew, 10 ÷ 1 crew); and Labor on the identical $650 deriving 10.
+
+**Also note** the 2026-09-20 Labor line has `base_hourly = 0`, so it falls through to the hardcoded fallback of 10 — right by luck, not by data.
+
+**Fix, either:**
+1. Correct `base_hourly` to $65 on the Telendler and Steward lines. It is an issued quote, so this likely means a revision — and it changes no billed total, since day-mode billing uses `base_day`.
+2. Or ship `docs/day-rate-source-of-truth-design.md` first, which makes payroll read `expected_hours` and never divide.
+
+**This is exactly what #36 option B was built to catch** — the uneven-ratio warning in the rate-card editor. It fires on rate cards, not on hand-edited quote lines, which is where this one came from. Worth extending the check to quote lines.
+
+---
+
+## Constrain `rate_mode` to a dropdown + DB check — day vs hourly, no free text (added 2026-08-30)
+
+**Why:** the planned `rate_mode` field on `job_request_days` (see `docs/day-rate-source-of-truth-design.md`) decides whether a day is paid as a flat day-rate block or by the clock. A wrong or unrecognised value silently means "hourly", so a typo pays a whole crew the wrong way with no error.
+
+**This has already happened on the existing field.** `quote_lines.rate_mode` was never constrained and has drifted to **three** values:
+
+| Value | Rows |
+|---|---|
+| `hourly` | 1,424 |
+| `day` | 363 |
+| **`day_rate`** | **19** |
+
+The code tests `rate_mode === "day"`, so those 19 would be treated as hourly. They happen to be harmless — all on **superseded** quotes with `specialty_id` NULL, and `loadQuoteRateHints` skips any line without a specialty — but nothing prevented them and nothing flagged them. `invoice_lines` is clean (`hourly` 1,038 / `day` 260), which is luck, not enforcement.
+
+**Wanted (John, 2026-08-30):**
+
+1. **Dropdown in the UI**, not a text input. The user picks Day Rate or Hourly; there is no way to type a third thing.
+2. **A DB `CHECK` constraint** as the backstop — `rate_mode in ('day','hourly')`. The dropdown covers the screen; the constraint covers imports, API routes, SQL-editor edits and future code. Per John's standing preference (2026-08-30) for **hard blocks over warnings**, the database should refuse the value outright rather than let it land and warn later.
+3. **Apply the same constraint to `quote_lines` and `invoice_lines`** while in there, and normalise or delete the 19 `day_rate` rows first so the constraint can be added.
+
+**Naming note:** the stored values stay `day` / `hourly` to match the existing columns — do not introduce a fourth spelling. The dropdown's *labels* can read "Day Rate" and "Hourly"; only the labels differ from the stored value.
+
+**Related:** `docs/day-rate-source-of-truth-design.md`, and the entry on hard-blocking unpayable specialties — same principle, that invalid data should be impossible to create rather than detected afterwards.
+
+---
+
+## #112 — Quote revision silently inherits the parent's rate card (added 2026-09-18)
+
+**Severity: high.** This one is live on every job in the system and is invisible to the operator.
+
+`createDraftFromRevision` (`lib/store/quotes.ts:713`) builds the new draft with `{ ...parent }`, which copies `rateCardProfileId` verbatim. It never re-resolves against the client's *current* rate card. So a job first quoted before its client rate card existed keeps the Master Default card through unlimited revisions, and nothing on screen says which card is in play.
+
+**Confirmed incident — AES_260903_BMI_CONCERT (`jobreq-1788404361084`), reported by Connor 2026-09-17:**
+
+| Quote | Created | Rate card |
+|---|---|---|
+| `_EST` (rev 1) | 2026-09-03 03:00 | `ratecard-master-default` |
+| `_EST_REV1` (rev 2) | 2026-09-03 03:09 | `ratecard-master-default` |
+| `_EST_REV2` (rev 3) | **2026-09-18 01:44** | `ratecard-master-default` |
+
+The client's own card (`ratecard-1788656271691`, Boomerang, effective 2026-08-30, `ot_after = none`) was created 2026-09-06 00:57. REV2 was revised **twelve days later** and still inherited Master Default, which carries `ot_after = 10` / `dt_after = 15`.
+
+Result: a job contracted for no daily OT billed and would have paid 2 hrs OT per head. Connor revised the quote repeatedly trying to clear it ("I know we've done this a few times so not sure what I'm missing") and it came back every time. He was doing the right thing; Revise just undid it.
+
+**Contributing factor:** Timekeeping resolves rates through the *quote's* pinned card (`components/shared/timekeeping.tsx:628-650`), while payroll and invoicing use `resolveRateCardForJob` (the job pin → client+date → master chain). Pinning the job does **not** help while the quote carries a stale card — the quote wins on the Timekeeping screen. See the `rate-card-resolution-divergence` memory note.
+
+**Fix options (decide which):**
+1. **Re-resolve on revise.** `createDraftFromRevision` calls `resolveRateCardForJob` and, if it returns a different card than the parent's, either switches automatically or prompts: "The client's rate card has changed since this quote was issued. Use *Standard (2026-08-30)* instead of *Master Default*?" Prompting is safer — silently re-pricing a revision is its own footgun.
+2. **Show the card, always.** The rate card name belongs on the quote detail view and the Timekeeping header, not just inside the draft editor's dropdown. Today there is no way to see which card a job is priced from without opening a draft or querying the DB.
+3. **Converge the two resolution chains** so Timekeeping, invoicing and payroll can't disagree about which card applies. This is the real fix and the biggest one.
+
+**Workaround until then:** in the revision draft editor, the "Rate Card Profile" dropdown (`quote-draft-editor.tsx:792`) *does* change it — `changeRateCard` re-prices every line. The operator must actively pick the right card; Revise alone won't. Note the freeze trigger blocks fixing this by SQL on an issued quote (`rate_card_profile_id` is in the frozen column list in `quotes_freeze_check()`), which is correct — it must go through Revise.
+
+**Related:** the "Timesheet std/ot/dt split should derive from the job's billing rule" entry above — same family, different root cause. That one is about rate-card *edits* not propagating; this one is about revisions re-pinning a stale card.
+
+---
+
+## #113 — Timekeeping has no visibility or control over the snapshotted OT/DT threshold (added 2026-09-18)
+
+**Severity: high**, and it is what made #112 unfixable from the UI.
+
+`bill_ot_after` / `bill_dt_after` are snapshotted onto each timesheet row at creation (migration `20260606a`). The snapshot is correct by design — threshold changes must not retroactively re-split approved or invoiced entries. The problem is that **once a row is wrong, nothing in the app can correct it**:
+
+- there is no UI field for either threshold, and no display of them anywhere;
+- the ST/OT/DT hour cells are computed by `computeTimeEntry`, not typed, so the operator cannot override the split;
+- editing the times just recomputes from the same stale threshold;
+- deleting and re-adding the row re-reads the same quote and reproduces it.
+
+The **only** in-app path that re-snapshots is changing the row's specialty (`components/shared/timekeeping.tsx:472`), which fires only when `specialtyId` actually changes. That is an undiscoverable side effect, not a feature — and it still pulls from the quote's card, so it reproduces the wrong value until #112 is fixed.
+
+On the BMI job this left two rows frozen at `bill_ot_after = 10` with no operator remedy. Fixing it required direct SQL against prod:
+
+```sql
+update timesheet_entries
+   set bill_ot_after = 0, bill_dt_after = 0,
+       std_hours = total_hours, ot_hours = 0, dt_hours = 0,
+       bill_total = round(total_hours * bill_std_rate, 2)
+ where job_id = 'jobreq-1788404361084';
+```
+
+**Wanted:**
+1. **Surface the threshold on the row** — at minimum a read-only display ("OT after 10") so a wrong split is *visible* instead of being discovered on an invoice. Per John's standing preference this should be a value the operator can see, not an explanatory banner.
+2. **Allow a re-snapshot on an unlocked row** — an explicit "re-pull rates from the rate card" action on non-approved, non-invoice-bound rows, rather than the accidental specialty-change trigger. This is the same mechanism the propagation prompt in the std/ot/dt entry above describes; build once, use for both.
+3. **Consider a manual OT-hours override** with an audit note, for the cases where neither the card nor the clock is right. Overlaps the existing "Payroll run: no way to override pay HOURS on an entry" entry — same shape of gap on the billing side.
+
+---
+
+## #114 — Timesheet bill rate ignores the quoted day rate (added 2026-10-04)
+
+**Severity: medium.** Invoices aren't affected. Anything that reads `timesheet_entries.bill_std_rate` / `bill_total` misstates day-rate jobs: margin checks, job costing, the Timekeeping grid's displayed rate, and any future reports.
+
+**What happens:** the timesheet snapshots its bill rates from the **rate card row's `hourly`** for the row's specialty (`components/shared/timekeeping.tsx:479` and `:785`, loaded at `:670`). It never looks at the quote. When a job is quoted in `rate_mode = 'day'` with a negotiated day rate that differs from the card, the timesheet keeps the card's hourly rate. The invoice is still correct, because it bills from the quote lines' `base_day`.
+
+**Confirmed incident — `AES_26091720_LFT_FARMTOUR` (`jobreq-1783960852358`), found 2026-10-04 while checking the 10/9 payroll:** Connor quoted a flat **$650/day for every position** but didn't update the rate card first.
+
+| Specialty | Quote `base_day` | Card hourly → timesheet `bill_std_rate` | Correct (650 ÷ 10) |
+|---|---|---|---|
+| Labor | $650 | $65 | $65 ✓ |
+| Telendler (forklift) | $650 | **$38** | $65 |
+| Steward | $650 | **$34** | $65 |
+
+The 8 forklift rows show $3,040 billed against $3,400 paid, which looks like a $360 loss. The issued invoice (`AES_26091720_LFT_FARMTOUR_INV`) actually bills forklift at $650/day, so there's no real loss. The false alarm went to Connor before this was understood.
+
+**⚠ OPEN — the right model isn't decided yet (John, 2026-10-04). Don't build the fix below until this is settled.**
+
+John's question: shouldn't the **rate card** carry a **daily rate for both bill and pay**, and let it flow down to the quote and the timesheet, instead of deriving rates from the quote? Points to work through:
+
+- Today `rate_card_profile_rows` has a `day` column (a **bill** day price) but no **pay** day rate. Pay is only `pay_hourly` / `pay_ot_rate` / `pay_dt_rate`.
+- A card day rate fixes the "card wasn't updated before quoting" case only if the operator updates the card. Negotiated per-job prices like FARMTOUR's flat $650 still live on the quote.
+- **Short days break any fixed divisor.** A 5-hour day on a $650 day rate isn't $65 an hour. Is a short day still a full day rate, a half day, or hourly? FARMTOUR 9/20 was billed as a half day ($325) but paid a full 10 hours.
+- `docs/day-rate-source-of-truth-design.md` (2026-08-30) already proposes moving day-rate mode and hours to the job day record (`job_request_days`) with the quote as an override. Whatever is decided here has to fit with it, or replace it.
+- Bill side and pay side should resolve through the same path (see #112 and the `rate-card-resolution-divergence` note).
+
+**Candidate fix (pending the decision above):** when the job has a quote line in day mode for the row's date and specialty, snapshot `bill_std_rate = base_day ÷ hours-per-person` (`hours ÷ qty` on the quote line, or `job_request_days.expected_hours`), with OT/DT rates derived from that. Fall back to the rate card only when there's no matching quote line. This is the same quote-vs-card divergence as #112 and the `rate-card-resolution-divergence` note. Ideally the timesheet, invoicing and payroll all resolve rates through one function.
+
+**Backfill:** after the fix, re-snapshot bill rates on existing day-rate jobs. Only rows not yet bound to an invoice are safe; for invoiced rows, update the display fields only and never touch the invoice. Farm Tour's rows have `invoice_line_id = NULL` even though the invoice is issued, so check how they were billed before touching them.
+
+**Related:** the 2026-08-30 "FARMTOUR quote will overpay" entry. That's the same stale `base_hourly` on this job's quote, on the payroll side.
+
+---
+
+## #115 — Paychex payroll export + payroll mapping table (added 2026-10-10)
+
+**Status: waiting on Connor/Paychex. Don't build until the open questions below are answered.** Amplified moved payroll from Rippling to Paychex in Oct 2026. Paychex's import format came from Connor on 10/8 (`~/Downloads/NEW Payroll CSV Format .csv`). John's reply with questions went out 10/10, in the "Re: New CSV Template" thread.
+
+### The format
+Paychex Standard Payroll Import (SPI), a 46-column template. Only six columns are filled in. The layout can't be changed, so column order stays in code; copy the header exactly, including the **trailing space in `Job Name `**.
+
+| Column | Source in AOS |
+|---|---|
+| Company ID | settings: `70400794` |
+| Worker ID | `employees.rippling_employee_id` (Paychex reused the Rippling numbers). Relabel it "Payroll ID". |
+| Job Name | the job's **Event Name**, so it's readable if it prints on the paystub. Event Abbr is capped at 8 chars (`WAREHOUSE` → `WAREHOUS`). Pending Paychex's answer on length and paystub printing. |
+| Job Number | blank, like Paychex's sample. Put the AOS `job_no` here only if Paychex confirms Job Costing is off. Paychex Job Costing needs jobs created in advance, and one bad line fails the whole check. |
+| Pay Component | from the mapping table below, keyed on worker type and pay type |
+| Rate | the rate the payroll run already computed (`payroll_run_entries.std_rate`, or the OT/DT equivalents) |
+| Hours | summed per worker × job × component × rate across the pay period. No Line Date; weeks are combined. |
+
+**OT must be worked out by week before the weeks are combined.** AOS owns OT, and Paychex must not recalculate it.
+
+### Payroll mapping table (provider-agnostic)
+Replace the Rippling-only setup (hardcoded `RIPPLING_EARNING_TYPES` plus `positions/specialties.rippling_earning_type`) with one maintenance table:
+
+`payroll_component_map(provider, worker_type, pay_type [REG/OT/DT], position_id NULL, specialty_id NULL, component_name, active)`
+
+Known Paychex rows: Employee/REG → `Day Rate 1`; Contractor/REG → `1099 - Day Rate 1`. Employee OT/DT names are **pending Connor**. The optional position/specialty columns leave room to send positions separately later without a schema change. Editable on a "Payroll Mapping" screen, so Connor can maintain components himself and a future payroll switch is a data change, not a rebuild.
+
+Plus a few **payroll settings** (one row, not a table): active provider, company ID, and which job field goes in Job Name (event name vs abbr).
+
+**Deliberately not in the table:**
+- **Rates.** The payroll run's computed rate (rate card `pay_hourly` or the person's pay override) is the only source. A separate "export rate" would create a second place pay rates live; see `rate-card-resolution-divergence` and #112/#114.
+- **A configurable file layout.** The SPI layout is fixed by Paychex.
+- **A job code table.** Only needed if Paychex Job Costing turns out to be on.
+
+### Export safeguards
+Refuse to export, listing who or what needs fixing, if any line on the run has:
+- no Payroll ID
+- an employment type that isn't Employee or Contractor
+- no component mapping for its worker type and pay type
+- (if Job Number is used) a job with no `job_no`
+
+### Employment type cleanup (prerequisite)
+The component comes from `employees.employment_type`, which is free text in prod. On 2026-10-10 it was 363 "Employee", 716 "Independent Contractor", 2 "Contractor", and about 1,900 blank or empty. Blank counts as a contractor, so a W-2 with a blank type would be paid as a 1099. Connor says only about 6 people are real employees, so the 363 "Employee" rows need checking against a Paychex roster too. The profile dropdown also offers "W2" and "1099", which the OT engine treats as contractor. Lock the field to Employee and Contractor, and fold in the "New employee records must default to Contractor, not blank" entry (2026-08-30).
+
+### Worker ID backfill
+16 people on the 10/9 run have no ID in AOS. Paychex's sample filled in 15 of them, but there are no names in the file, so they can't be matched safely. Backfill from a Paychex worker export (ID, name, W-2/1099). John asked for his own Paychex Flex login for this. Paychex put Cameron Pasley under #12 (Camran Paisley), which confirms they're the same person; merge them (see `duplicate-employee-records`).
+
+### What Paychex's onboarding thread showed (forwarded by Connor 2026-10-10)
+The thread is between Connor and **Danielle King** (Paychex Client Experience Onboarding, dlking@paychex.com, 800-865-8959). John is asking Connor whether he can email her directly with Connor cc'd.
+- **Danielle hand-built the sample file on 10/6** for the second Paychex payroll. That explains the swapped rows below.
+- **The import failed on one missing space.** She typed `1099- Day Rate 1` instead of `1099 - Day Rate 1`. Her rule: the pay component "must match exactly what is in Flex." Copy component names from Flex into the mapping table once; never retype them. Worth a test that the export's component strings match the table byte for byte, including spaces. After the failure, Connor entered every worker by hand.
+- **Error vs warning:** an import *error* stops that one employee, so that person isn't paid until it's fixed. A *warning* doesn't stop the import. This is why the export safeguards above refuse bad lines before the file ever reaches Paychex.
+- **AOS names ≠ Paychex legal names, and Paychex has duplicate worker records too.** She couldn't place 6 people. Connor's answers: Fox Vaughn = **Peter** Vaughn; Hank Hawkins = **Henry** Hawkins; Maxwell Sebastian = **Maxwell S Kilcup**; Paul B Dunbar is **W-2** (probably the sample's #21); Shelby Bowman is 1099; Evelyn Royce was still being set up. **Match on Payroll ID only, never name.** The backfill needs a Paychex roster plus a human check of these aliases.
+- **OT:** on 10/10 Connor asked Danielle whether OT rate/hours *columns* can be added. No answer yet. The SPI layout is fixed, so expect OT to be a separate row with its own OT component (question 1 below).
+- **Paychex offered an Excel converter** that reshapes a timekeeping export into their template. It's not the long-term answer, because name→ID matching and component choice would live outside AOS and it breaks whenever the AOS export changes. It's acceptable as a **stopgap** for a payroll or two if this export isn't ready, so nobody re-keys payroll by hand.
+- Connor's original CSV and Paychex's error report were mentioned but weren't in the forward. Ask for them if the exact failure lines matter.
+
+### Sample data errors (reported to Connor 10/10)
+Paychex's sample (hand-built by Danielle) swapped Rate and Hours on two rows: #15 Devan Keska (8 hrs @ $30) and #79, probably Sean Brown (40 hrs @ $45). The total stays $55,765, but hours read 1,456 instead of 1,429. Use the corrected file as the test baseline.
+
+### Open questions (sent 10/10)
+1. Pay component names for Employee OT and DT. (Connor also asked Danielle on 10/10, still unanswered.)
+2. Is it OK to send no dates (hours totaled for the period)?
+3. Is the Payroll API available on our plan, at what cost, and how long does approval take? Later goal: AOS pulls the worker roster automatically.
+4. Does Job Name print on the paystub, and what's the length limit? Is Job Costing on, and can the AOS job number go in Job Number for reference?
+
+### Done when
+- A "Paychex CSV" button sits next to the Rippling one.
+- The export matches a corrected 10/9 run line for line (1,429 hrs / $55,765).
+- The mapping screen is in place, with Help updated.
+- The Rippling export is retired or hidden once Paychex is live.
+
+---
+
+## #116 — One record per person: merge duplicates, prevent new ones, Pay & Hours summary (added 2026-10-12)
+
+**Why (John, 2026-10-12):** we need to see one person's total hours, pay and overtime in one place. Eventually **crew will see their own hours and pay**, and that can't be pieced together from several employee records. One person = one `employees` row that everything points to: timesheets, crew assignments, payroll entries, Payroll ID, and later the crew app login.
+
+**Size of the problem (prod, 2026-10-12):** 223 duplicate groups, 474 of 3,041 active records. In 46 groups, 2+ records have hours; in 34, 2+ have been paid. 89 pairs have back-to-back AES keys, meaning the original roster import created people twice. Weekly OT is counted per record, so split hours can hide overtime. `employees.rippling_employee_id` is UNIQUE, so only one record per person can carry the Payroll ID, and hours on the other records get left out of the Paychex export. The list is with Connor: `~/amplified/paychex/employee-duplicates-2026-10-12.csv`. X = keep, NO = not the same person, and the contact info on the X row wins. Built by a script that matches on phone with a compatible first name, the add-screen name rule (`crew-roster-import.ts` scoreName), nicknames and near spellings. Jr/Sr/II differences are marked Possible (could be father and son).
+
+**Known people:** Connor = David Connor Strang (AES-27858, emp-1780196912009, AES-01816 dcstrange66), group 67. His father is also David Strang ("David M", AES-02326; strang@ohio.edu AES-01815), group 74.
+
+### Lessons from earlier attempts (read before building)
+- **8/30 "retirement" didn't hold.** 44 duplicate records were set to `status = Inactive` (plan and rollback in `~/amplified/rippling-reconcile-2026-08-29/10-retire-plan.csv`, `A2-rollback-retire.sql`). No history was moved, and the **employee picker filters `is_deleted` but not status** (`components/shared/employee-picker.tsx:65`), so the retired copies kept getting picked. As of 10/12, **10 of the 44 had new timesheet rows or crew assignments after 8/30** (e.g. Chris Travis emp-1784912488771: 36 rows through 10/9; Cameron Pasley, Shelby Bowman, Paul Dunbar). A merge must move the history AND hide the duplicate (`is_deleted`), not just change its status.
+- **A Merge button existed for clients**, not employees. `mergeClients` in `lib/store/db.ts` (~line 1980) is still there; the UI was hidden on 4/29 (commit c19f949). Its pattern (re-point every referencing table, then soft-delete the source) is the model, but it runs as separate client-side updates with no transaction. The employee version should be a single DB function so a half-finished merge can't happen.
+
+### 1. Merge tool (build first; test on dev; run on prod only after Connor's file is back)
+
+**Approach agreed with John 2026-10-12: move everything, then HARD-delete the duplicate (with a backup copy).** Soft-delete/Inactive is what failed on 8/30. Once the history has moved there's no reason to keep the duplicate around cluttering the list.
+
+One DB function (`merge_employee(dup_key, keep_key)`), **all-or-nothing in a single transaction**:
+1. **Move** every reference to the duplicate onto the kept record: `timesheet_entries`, `job_request_assignments`, `payroll_run_entries`, `employee_documents`, plus any other `employee_key` column (check the full list when building, including text columns with no FK).
+2. **Fill blanks** on the kept record from the duplicate (phone, email, address, city/state/zip, Payroll ID). Never overwrite a value the kept record already has. That matches the rule Connor was given: the X row wins. If the Payroll ID moves, clear it on the duplicate first (unique constraint).
+3. **Back up** the duplicate's full row into a backup table (e.g. `employees_merged_backup`, with `merged_into` and `merged_at`) so a wrong merge can be undone.
+4. **Hard-delete** the duplicate. **The delete is the safety check:** `timesheet_entries` and `job_request_assignments` have NO ACTION foreign keys, so if step 1 missed anything the delete fails and the whole merge rolls back.
+
+**Locks found on prod (2026-10-12), and what to do about them:**
+| Lock | Effect on merge | Handling |
+|---|---|---|
+| `timesheet_entries_freeze_check`: invoice-bound entries can't change `employee_key` | **Blocks step 1** for invoiced rows | Add ONE narrow exception: allow `employee_key` (and only that) to change when the merge function sets a transaction-local flag (e.g. `set_config('app.employee_merge','on', true)`). Hours, rates, dates, status and names stay locked. Normal editing is unchanged. |
+| `payroll_run_entries_freeze_check`: finalized/exported runs | Doesn't block. The lock covers hours/rates/pay, not `employee_key` | None |
+| `employee_documents` FK is **ON DELETE CASCADE** | A hard delete would **delete the duplicate's documents** | Step 1 must move documents BEFORE step 4 |
+| `payroll_run_entries.employee_key` has **no FK** | The delete won't catch leftovers there | Step 1 checks/moves it explicitly, and the function asserts none remain before deleting |
+
+Two ways in: a **batch run** from Connor's marked-up CSV (X = keep, NO = skip the group), and an admin **"Merge into…"** action on the employee profile for one-offs. Afterwards, give the W-2 people's kept records their Payroll IDs where they're still missing, and recheck the export's left-out list.
+
+### 2. Prevent new duplicates
+- Every "add a person" path checks for a match first (name rule plus phone) and makes you pick the existing person. Creating a second record takes a deliberate override. Paths: Timekeeping inline create (today it creates without checking), the crew assignment picker, crew roster import (already asks), Employee Directory add/CSV import, the Rippling/coordinator backfills.
+
+### 3. Pay & Hours summary (built once, used by both screens)
+- One DB view/function per employee: **MTD / YTD / Lifetime** hours (reg/OT/DT), **pay from payroll runs** (actual paid), jobs worked, positions/specialties with hours, last worked.
+- Show it on the employee profile. It **replaces the "Total Pay" metric, which today sums `billTotal`** (what the client was billed, not pay) at `components/shared/employee-profile.tsx:363`.
+- Later: a crew self-view in the staff app that reads the same view. That needs the crew login linked to the employee record (today the staff app logs time by `user_id`; see the coordinator→crew-leader link note).
+
+**Order:** merge tool → run Connor's file → prevention → summary → crew view.
+
+---
+
+## #117 — Paychex worker sync (nightly check of IDs, W-2/1099, status) (added 2026-10-12)
+
+**BUILT 2026-10-14 (branch `feature/paychex-sync`), on-demand only, no nightly job.** John's calls: preview then Apply; active Paychex workers only; names are report only. Paychex wins on phone/email/address (blanks never overwrite). New Paychex ID → linked to the single AOS person with that name/email/phone and no ID; otherwise created as a new employee; near-typo names and "same name already has another ID" are reported, not acted on. Code: `lib/paychex/sync-plan.ts` (pure, tested), `lib/paychex/api.ts` (server, drops SSN/DOB/sex), `app/api/paychex/sync/route.ts`, `components/shared/paychex-sync.tsx`; log table `paychex_sync_log` (migration 20261014a). Needs `PAYCHEX_API_KEY` / `PAYCHEX_API_SECRET` in Vercel (production + preview). Dry run on real data 10/14: 26 contact updates, 9 new IDs, 3 new people, 25 to check by hand.
+
+**Why:** AOS's Payroll IDs drifted badly from Paychex. "Paychex kept the Rippling numbers" was only partly true. On 10/12 a manual export-and-compare found 55 old Rippling numbers, 84 missing IDs, 8 IDs that belonged to a **different person** in Paychex (wrong-pay risk), and Paychex-side duplicates. Paychex became the source of truth for Payroll ID, address, phone and email (John, 10/12), and a one-off correction was applied to prod (backup table `employees_backup_20261012_paychex`; files in `~/amplified/paychex/`). This item replaces that manual export with an automatic check.
+
+**API access exists (created by John 10/12):** Paychex Flex → Company Settings → Integrated apps → "Amplified AOS". **Company and worker APIs = Read only (GET); Payroll and check APIs = OFF.** Creds are on John's Mac in `~/amplified/.paychex-api.env` (and his password manager); they still need to go into Vercel server env for this. Tested: token via `POST https://api.paychex.com/auth/oauth/v2/token` (client_credentials) → `GET /companies` (1 company, displayId 70400794; use its opaque `companyId`) → `GET /companies/{companyId}/workers?offset=&limit=50` (**max page 50**). 469 workers (458 IC / 11 EMPLOYEE; 134 ACTIVE / 325 INACTIVE / 10 TERMINATED). The calls run as the app, not as John's login (a retest didn't log him out of Flex).
+
+**⚠ The worker records include `legalId` (SSN), `birthDate` and `sex`, even with read-only access.** The sync must drop them at the moment of parsing: never log, store or display them. Keep only `employeeId`, `workerId`, `workerType`, `name`, `currentStatus`, `hireDate`. Contact info (email/phone/address) isn't in the list; it's a per-worker sub-resource, fetched only if needed.
+
+**Shape:**
+- A server-side job (Vercel cron / API route, secret in env), nightly plus an on-demand "check now".
+- Match Paychex workers to AOS records by Payroll ID first, then email/phone/address, then name (same rules as `~/amplified/paychex` scripts / scratchpad pxmatch2.py).
+- **Report, don't auto-change payroll data.** Show new Paychex IDs AOS doesn't have, ID/name mismatches, W-2/1099 differences, status changes (Inactive/Terminated), and AOS IDs that don't exist in Paychex. Surface them in the Health Check / a short admin list. Possibly auto-fill only blank fields on certain matches; decide when building.
+- Known oddities: people paid both ways have two Paychex IDs (Chris Travis 13 W-2 / 526 1099; Ryan Andrews 129 / 525; Lauren Honore 532 W-2 / 533 + 247 1099). John *guesses* they're 1099s converted to W-2, unconfirmed and pending Connor. Paychex also has its own duplicates (Paul Brennan 510/535, Jalaya Frisella Kunst 440/553, Precious Jewett 511/549…).
+
+**Depends on:** #116 (one AOS record per person) to be fully useful, since otherwise one Paychex worker maps to several AOS records.
+
+---
+
+## #118 — Send payroll to Paychex through the API instead of the CSV (added 2026-10-12)
+
+**Idea (John, 10/12):** instead of downloading the Paychex CSV and importing it in the Payroll Center, AOS sends the run's lines straight into Paychex. Paychex's Payroll API can add hours/earnings to **unprocessed checks** for a pay period. Someone still reviews and submits the payroll in Flex.
+
+**Not yet:** the CSV export (v2.6.0, shipped 10/12) needs to run cleanly for a few payrolls first. Today the API app has **Payroll and check APIs OFF**; turning it on is a deliberate step when this is built.
+
+**Notes for when it's picked up:**
+- Same line rules as the CSV (`lib/store/paychex-export.ts`): worker × job × component × rate, OT/DT on their own lines with " OT"/" DT" on the job name, components from `payroll_component_map`, rates from the run, left-out list + blockers.
+- Needs the right pay period from `GET /companies/{companyId}/payperiods` and the pay component IDs from the API rather than names.
+- Must be safe to re-run: never double-add a run. Track what was sent per payroll run, and check before sending.
+- Read the official Paychex developer docs at build time. The paths above are from the 10/12 test and third-party summaries.
