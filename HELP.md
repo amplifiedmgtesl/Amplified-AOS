@@ -385,13 +385,21 @@ Once time is on an invoice, it shows **🔒 Billed** on Timekeeping and can't be
 3. Under **Review entries to include**, check the list.
 4. Set the pay date and click **Create draft run**.
 5. Open the run and check **Included entries**. Add anything missed under **Add more entries**.
-6. Click **Finalize**.
-7. Click **📥 Paychex CSV** to download the import file. In Paychex Flex, go to **Payroll Center**, click the arrow next to **Begin** and choose **Import**.
+6. Click **Finalize**. This works out weekly overtime for W-2 employees and locks the run.
+7. Click **📥 Paychex CSV** to download the import file. The button only works on a finalized run. In Paychex Flex, go to **Payroll Center**, click the arrow next to **Begin** and choose **Import**.
 
 **About the Paychex file:**
 - Each person gets one line per job, pay type and rate, with hours added up for the whole pay run. Overtime and double time go on their own lines, with **OT** or **DT** after the job name.
 - Anyone without a **Payroll ID**, or not marked Employee or Contractor, is **left out**. Before the file downloads you get a list of them with their hours and pay. Enter those people in Paychex by hand, or fix them in AOS and export again.
 - If a Paychex pay code is missing in **Maintenance → Payroll Export**, the file isn't created and the message says what to fill in.
+
+**Sync from Paychex** (admins): crew can update their own phone, email and address in Paychex, and new hires get their Payroll ID there. Click **🔄 Sync from Paychex** on the Payroll page to bring that into AOS.
+- You get a preview first. Nothing changes until you click **Apply**. Untick anything you don't want.
+- **Contact updates:** Paychex's phone, email or address replaces what AOS has. A blank in Paychex never wipes out an AOS value.
+- **New Payroll IDs:** a new Paychex worker who matches one AOS person with no Payroll ID gets the ID on that existing record.
+- **New people:** Paychex workers with no match in AOS are added as new employees.
+- **To check by hand:** name differences, W-2 vs 1099 differences, and possible duplicates are listed but never changed. Fix those on the employee record.
+- Only **active** Paychex workers are read.
 
 Time that's in a payroll run is locked on Timekeeping. To change it, the run must be **Void**ed first.
 
