@@ -13,7 +13,12 @@ export type PickerEmployee = {
   phone?: string;
   city?: string;
   state?: string;
+  /** Employee Status. "Terminated" people are left out of search results
+   *  (still loaded, so a terminated person already on a row shows by name). */
+  status?: string;
 };
+
+const isTerminated = (e: PickerEmployee) => (e.status ?? "").trim().toLowerCase() === "terminated";
 
 // Module-level cache so multiple EmployeePicker instances on the same page
 // share one load (a multi-day job's Assigned Crew tab can have dozens).
@@ -61,7 +66,7 @@ async function loadAllEmployees(): Promise<PickerEmployee[]> {
     while (true) {
       const { data, error } = await supabase
         .from("employees")
-        .select("employee_key, full_name, first_name, last_name, email, phone, city, state")
+        .select("employee_key, full_name, first_name, last_name, email, phone, city, state, status")
         .eq("is_deleted", false)
         .order("full_name")
         .range(start, start + PAGE - 1);
@@ -81,6 +86,7 @@ async function loadAllEmployees(): Promise<PickerEmployee[]> {
       phone: r.phone ?? "",
       city: r.city ?? "",
       state: r.state ?? "",
+      status: r.status ?? "",
     }));
     // Wake up any LazyEmployeePicker cells that fell through to the full
     // picker while the cache was loading, so they can drop back to the
@@ -223,8 +229,9 @@ export function EmployeePicker({
   // button to open EmployeeSearchModal.
   const results = useMemo(() => {
     if (!employees) return [];
+    const pool = employees.filter((e) => !isTerminated(e));
     const q = query.trim().toLowerCase();
-    if (!q) return employees.slice(0, RESULT_CAP);
+    if (!q) return pool.slice(0, RESULT_CAP);
     const tokens = q.split(/\s+/).filter(Boolean);
 
     function tokenScore(t: string, e: PickerEmployee): number {
@@ -237,7 +244,7 @@ export function EmployeePicker({
 
     type Scored = { e: PickerEmployee; score: number };
     const scored: Scored[] = [];
-    for (const e of employees) {
+    for (const e of pool) {
       let total = 0;
       let matchedAll = true;
       for (const t of tokens) {
@@ -253,10 +260,11 @@ export function EmployeePicker({
 
   const totalMatches = useMemo(() => {
     if (!employees) return 0;
+    const pool = employees.filter((e) => !isTerminated(e));
     const q = query.trim().toLowerCase();
-    if (!q) return employees.length;
+    if (!q) return pool.length;
     const tokens = q.split(/\s+/).filter(Boolean);
-    return employees.filter((e) => {
+    return pool.filter((e) => {
       const fullLower = e.fullName.toLowerCase();
       return tokens.every((t) => fullLower.includes(t));
     }).length;
@@ -639,6 +647,7 @@ function EmployeeSearchModal({
   const [state, setState] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [includeTerminated, setIncludeTerminated] = useState(false);
 
   // ESC closes
   useEffect(() => {
@@ -653,13 +662,14 @@ function EmployeeSearchModal({
       return (haystack || "").toLowerCase().includes(needle.trim().toLowerCase());
     }
     return employees.filter((e) =>
+      (includeTerminated || !isTerminated(e)) &&
       matches(e.fullName, name) &&
       matches(e.city, city) &&
       matches(e.state, state) &&
       matches((e.phone || "").replace(/[^0-9]/g, ""), phone.replace(/[^0-9]/g, "")) &&
       matches(e.email, email)
     ).slice(0, 200);
-  }, [employees, name, city, state, phone, email]);
+  }, [employees, name, city, state, phone, email, includeTerminated]);
 
   return (
     <div
@@ -688,6 +698,10 @@ function EmployeeSearchModal({
           <div><small>State</small><input value={state} onChange={(e) => setState(e.target.value)} placeholder="OH" maxLength={4} /></div>
           <div><small>Phone</small><input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="any part" /></div>
           <div><small>Email</small><input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="any part" /></div>
+          <label style={{ gridColumn: "1 / -1", fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+            <input type="checkbox" checked={includeTerminated} onChange={(e) => setIncludeTerminated(e.target.checked)} style={{ width: "auto" }} />
+            Include terminated
+          </label>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "0 18px" }}>
@@ -722,7 +736,10 @@ function EmployeeSearchModal({
                     onMouseEnter={(ev) => { (ev.currentTarget as HTMLElement).style.background = "#fbf6ee"; }}
                     onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = ""; }}
                   >
-                    <td style={{ padding: "8px 8px 8px 0", fontWeight: 600 }}>{e.fullName}</td>
+                    <td style={{ padding: "8px 8px 8px 0", fontWeight: 600 }}>
+                      {e.fullName}
+                      {isTerminated(e) && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 500, color: "#a00" }}>terminated</span>}
+                    </td>
                     <td style={{ padding: "8px 8px 8px 0", color: "#444" }}>{e.email || "—"}</td>
                     <td style={{ padding: "8px 8px 8px 0", color: "#444" }}>{e.phone || "—"}</td>
                     <td style={{ padding: "8px 8px 8px 0", color: "#444" }}>{e.city || "—"}</td>

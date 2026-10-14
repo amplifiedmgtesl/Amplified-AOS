@@ -13,7 +13,7 @@ type Preview = { changes: SyncChange[]; reports: SyncReport[]; activeWorkers: nu
 type ApplyResult = { applied: number; failed: { id: string; error: string }[]; skipped: number };
 
 const LABEL: Record<FieldChange["field"], string> = {
-  payrollName: "Payroll name", phone: "Phone", email: "Email", address: "Address", city: "City", stateCode: "State", zip: "Zip",
+  status: "Status", payrollName: "Payroll name", phone: "Phone", email: "Email", address: "Address", city: "City", stateCode: "State", zip: "Zip",
 };
 
 async function call(method: "GET" | "POST", body?: unknown) {

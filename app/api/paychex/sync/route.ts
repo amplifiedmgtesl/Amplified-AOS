@@ -27,7 +27,7 @@ async function requireAdmin(req: NextRequest): Promise<string | null> {
   return profile?.role === "admin" ? user.id : null;
 }
 
-const EMP_COLS = "employee_key, full_name, first_name, last_name, payroll_name, rippling_employee_id, employment_type, phone, email, address, city, state_code, zip, is_deleted";
+const EMP_COLS = "employee_key, full_name, first_name, last_name, payroll_name, status, rippling_employee_id, employment_type, phone, email, address, city, state_code, zip, is_deleted";
 
 /** All employees, paged — PostgREST caps a select at 1,000 rows. */
 async function loadEmployees(): Promise<{ live: AosEmployee[]; reservedIds: Set<number> }> {
@@ -47,6 +47,7 @@ async function loadEmployees(): Promise<{ live: AosEmployee[]; reservedIds: Set<
     live.push({
       employeeKey: r.employee_key, fullName: r.full_name ?? "", firstName: r.first_name ?? "", lastName: r.last_name ?? "",
       payrollName: r.payroll_name ?? "",
+      status: r.status ?? "",
       payrollId, employmentType: r.employment_type ?? "", phone: r.phone ?? "", email: r.email ?? "",
       address: r.address ?? "", city: r.city ?? "", stateCode: r.state_code ?? "", zip: r.zip ?? "",
     });
@@ -75,7 +76,7 @@ export async function GET(req: NextRequest) {
 }
 
 const COLUMN: Record<FieldChange["field"], string> = {
-  payrollName: "payroll_name", phone: "phone", email: "email", address: "address", city: "city", stateCode: "state_code", zip: "zip",
+  status: "status", payrollName: "payroll_name", phone: "phone", email: "email", address: "address", city: "city", stateCode: "state_code", zip: "zip",
 };
 
 function patchFor(fields: FieldChange[]): Record<string, string> {
@@ -96,7 +97,7 @@ async function applyOne(c: SyncChange, runId: string, userId: string, seq: numbe
       employeeKey = `emp-${Date.now() + seq}`;
       after = {
         employee_key: employeeKey, full_name: c.name, first_name: c.firstName, last_name: c.lastName,
-        employment_type: c.employmentType, rippling_employee_id: c.payrollId, status: "Active",
+        employment_type: c.employmentType, rippling_employee_id: c.payrollId, status: c.contact.status || "Active",
         source: "paychex-sync", hire_date: c.hireDate, is_deleted: false, payroll_name: c.contact.payrollName || null,
         phone: c.contact.phone || null, email: c.contact.email || null, address: c.contact.address || null,
         city: c.contact.city || null, state_code: c.contact.stateCode || null, state: c.contact.stateCode || null,

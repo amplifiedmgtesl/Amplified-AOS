@@ -39,6 +39,8 @@ export type AosEmployee = {
   lastName: string;
   /** Legal / payroll name, usually "Last, First". Optional. */
   payrollName?: string;
+  /** AOS Status: "Active" / "Terminated" (pickers hide Terminated). */
+  status?: string;
   payrollId: number | null;
   employmentType: string;
   phone: string;
@@ -49,7 +51,7 @@ export type AosEmployee = {
   zip: string;
 };
 
-export type ContactField = "payrollName" | "phone" | "email" | "address" | "city" | "stateCode" | "zip";
+export type ContactField = "status" | "payrollName" | "phone" | "email" | "address" | "city" | "stateCode" | "zip";
 
 export type FieldChange = { field: ContactField; from: string; to: string };
 
@@ -152,7 +154,7 @@ const squash = (s: string) => (s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 
 function sameValue(field: ContactField, a: string, b: string): boolean {
   // Payroll Name is an exact copy of Paychex — spelling and case matter.
-  if (field === "payrollName") return (a ?? "").trim() === (b ?? "").trim();
+  if (field === "payrollName" || field === "status") return (a ?? "").trim() === (b ?? "").trim();
   if (field === "phone") return digits10(a) === digits10(b);
   if (field === "zip") return (a ?? "").trim().slice(0, 5) === (b ?? "").trim().slice(0, 5);
   return squash(a) === squash(b);
@@ -170,8 +172,15 @@ export function paychexEmploymentType(workerType: string): "Employee" | "Contrac
   return workerType === "EMPLOYEE" ? "Employee" : "Contractor";
 }
 
+/** AOS Status for a Paychex status. Paychex "Inactive" means on hold
+ *  (contract on hold), not let go — those stay Active in AOS. */
+export function aosStatusFor(paychexStatus: string): string {
+  return paychexStatus === "TERMINATED" ? "Terminated" : "Active";
+}
+
 function paychexContact(w: PaychexWorker): Record<ContactField, string> {
   return {
+    status: aosStatusFor(w.status),
     payrollName: paychexPayrollName(w),
     phone: formatPhone(w.phone),
     email: (w.email ?? "").trim().toLowerCase(),
@@ -186,7 +195,7 @@ function paychexContact(w: PaychexWorker): Record<ContactField, string> {
 export function contactChanges(w: PaychexWorker, e: AosEmployee): FieldChange[] {
   const px = paychexContact(w);
   const out: FieldChange[] = [];
-  for (const field of ["payrollName", "phone", "email", "address", "city", "stateCode", "zip"] as ContactField[]) {
+  for (const field of ["status", "payrollName", "phone", "email", "address", "city", "stateCode", "zip"] as ContactField[]) {
     const to = px[field];
     const from = ((e as Record<string, unknown>)[field] as string ?? "").trim();
     if (!to) continue;
@@ -384,6 +393,15 @@ export function planPaychexSync(
     for (const w of allPaychex) {
       if (w.status === "ACTIVE" || !/^\d+$/.test(w.employeeId ?? "")) continue;
       const payrollId = Number(w.employeeId);
+      const holder = byPayrollId.get(payrollId);
+      if (holder) {
+        // Only status and Payroll Name — contact info isn't read for
+        // inactive workers, and blanks never overwrite anyway.
+        const fields = contactChanges(w, holder);
+        if (fields.length) changes.push({ id: `update:${holder.employeeKey}`, kind: "update", employeeKey: holder.employeeKey,
+          payrollId, name: holder.fullName, fields });
+        continue;
+      }
       if (givenOut.has(payrollId)) continue;
       const pxName = named(w);
       const nk = nameKey(pxName);
