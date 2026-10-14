@@ -3100,3 +3100,23 @@ Two ways in: a **batch run** from Connor's marked-up CSV (X = keep, NO = skip th
 - Needs the right pay period from `GET /companies/{companyId}/payperiods` and the pay component IDs from the API rather than names.
 - Must be safe to re-run: never double-add a run. Track what was sent per payroll run, and check before sending.
 - Read the official Paychex developer docs at build time. The paths above are from the 10/12 test and third-party summaries.
+
+---
+
+## #119 — System-wide Health page: current problems only (added 2026-10-14)
+
+**Why:** Health checks only run per job (job Health tab, timekeeping banner). Problems that span jobs or aren't tied to one, like crew working with no Payroll ID or approved time never put in a payroll run, have no home. They only surface when Connor exports payroll (e.g. the 9/21 run's left-out list) or when someone digs. John wants one place that shows what's wrong right now and drops items once they're fixed. No history of old, already-fixed problems.
+
+**To do:**
+- [ ] **Health** page in the main menu (admins and payroll).
+- [ ] Run the existing job checks across current work only: jobs with days in roughly the last 2 weeks and the next 2 weeks. Group the findings by job, each linking to the job.
+- [ ] Company-wide checks:
+  - [ ] Crew with no Payroll ID who have recent unpaid hours or are booked on an upcoming job (the 10/14 cleanup found 15 people / 175 hrs).
+  - [ ] Approved time not in any payroll run (Mike Lawler: 93 hrs, 9/9–10/7).
+  - [ ] Open draft payroll runs with people who'd be left out of the Paychex file.
+  - [ ] Possibly: Paychex sync has pending changes (a count, and when it was last run).
+- [ ] Computed live, not stored, so fixed items disappear with no clean-up step.
+- [ ] Each line says what's wrong and links to where to fix it. Keep on-screen text minimal (see the "minimal on-screen text" rule).
+- [ ] Update Help (`HELP.md`) with the new page.
+
+**Notes:** reuse `lib/job-health/runner.ts` (`runHealthChecks`) and the registry; the payroll-readiness check already has the Payroll ID / Employee-vs-Contractor rules. Watch performance: running every check for ~4 weeks of jobs may need batching or a server route.
