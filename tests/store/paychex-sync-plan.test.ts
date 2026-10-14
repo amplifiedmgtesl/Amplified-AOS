@@ -153,24 +153,24 @@ describe("planPaychexSync", () => {
       contact: { phone: "", email: "m@x.com", address: "", city: "Dayton", stateCode: "OH", zip: "" } }]);
   });
 
-  it("never links the same AOS record to two Paychex workers", () => {
+  it("links nobody when Paychex has the same person twice (Paychex duplicate)", () => {
     const plan = planPaychexSync(
       [px({ employeeId: "510", firstName: "Paul", lastName: "Brennan" }),
        px({ employeeId: "535", firstName: "Paul", lastName: "Brennan" })],
       [aos({ employeeKey: "emp-p", fullName: "Paul Brennan" })],
     );
-    expect(plan.changes.map((c) => c.kind)).toEqual(["link"]);
-    expect(plan.reports.map((r) => r.kind)).toEqual(["id_mismatch"]);
+    expect(plan.changes).toEqual([]);
+    expect(plan.reports.map((r) => r.kind)).toEqual(["ambiguous", "ambiguous"]);
   });
 
-  it("creates only one record when Paychex has the same new person twice", () => {
+  it("creates nobody when Paychex has the same new person twice", () => {
     const plan = planPaychexSync(
       [px({ employeeId: "511", firstName: "Precious", lastName: "Jewett" }),
        px({ employeeId: "549", firstName: "Precious", lastName: "Jewett" })],
       [],
     );
-    expect(plan.changes.map((c) => c.kind)).toEqual(["create"]);
-    expect(plan.reports.map((r) => r.kind)).toEqual(["id_mismatch"]);
+    expect(plan.changes).toEqual([]);
+    expect(plan.reports.map((r) => r.kind)).toEqual(["ambiguous", "ambiguous"]);
   });
 
   it("reports an ID still held by a deleted AOS record instead of reusing it", () => {
@@ -193,6 +193,45 @@ describe("planPaychexSync", () => {
     const plan = planPaychexSync(
       [px({ employeeId: "541", firstName: "Justin Alllen" }), px({ employeeId: "532", firstName: "DLauren", lastName: "Honore" })],
       [aos({ employeeKey: "emp-j", fullName: "Justin Allen" }), aos({ employeeKey: "emp-l", fullName: "Lauren Honore", payrollId: 443 })],
+    );
+    expect(plan.changes).toEqual([]);
+    expect(plan.reports.map((r) => r.kind)).toEqual(["ambiguous", "ambiguous"]);
+  });
+
+  it("treats curly and straight apostrophes as the same name", () => {
+    expect(nameKey("Le’Andray Thompson")).toBe(nameKey("Le'Andray Thompson"));
+  });
+
+  it("swaps an AOS Payroll ID Paychex doesn't have for Paychex's number for that person", () => {
+    const all = [px({ employeeId: "499", firstName: "Joel", lastName: "Archey", status: "INACTIVE" })];
+    const plan = planPaychexSync([], [aos({ employeeKey: "emp-j", fullName: "Joel Archey", payrollId: 348 })], new Set(), all);
+    expect(plan.changes).toEqual([{ id: "reid:emp-j:499", kind: "reid", employeeKey: "emp-j", payrollId: 499,
+      fromPayrollId: 348, name: "Joel Archey", paychexName: "Joel Archey", paychexStatus: "INACTIVE" }]);
+  });
+
+  it("blanks an AOS Payroll ID when Paychex has no such number and no such person", () => {
+    const plan = planPaychexSync([], [aos({ employeeKey: "emp-m", fullName: "Morgan McCabe", payrollId: 450 })], new Set(), []);
+    expect(plan.changes).toEqual([{ id: "clear:emp-m:450", kind: "clear", employeeKey: "emp-m", payrollId: 450, name: "Morgan McCabe" }]);
+  });
+
+  it("blanks and reports when Paychex has the name under two numbers", () => {
+    const all = [px({ employeeId: "511", firstName: "Precious", lastName: "Jewett" }), px({ employeeId: "549", firstName: "Precious", lastName: "Jewett" })];
+    const plan = planPaychexSync([], [aos({ employeeKey: "emp-p", fullName: "Precious Jewett", payrollId: 432 })], new Set(), all);
+    expect(plan.changes.map((c) => c.kind)).toEqual(["clear"]);
+    expect(plan.reports.map((r) => r.kind)).toEqual(["ambiguous"]);
+  });
+
+  it("leaves an AOS Payroll ID alone when Paychex has it", () => {
+    const all = [px({ employeeId: "79", firstName: "Sean", lastName: "Brown" })];
+    const plan = planPaychexSync([], [aos({ employeeKey: "AES-00640", fullName: "Sean Brown", payrollId: 79 })], new Set(), all);
+    expect(plan.changes).toEqual([]);
+  });
+
+  it("reports instead of linking when Paychex has the same person more than once", () => {
+    const plan = planPaychexSync(
+      [px({ employeeId: "247", firstName: "Lauren", lastName: "Honore" }),
+       px({ employeeId: "532", firstName: "DLauren", lastName: "Honore", workerType: "EMPLOYEE" })],
+      [aos({ employeeKey: "rip-443", fullName: "Lauren Honore" })],
     );
     expect(plan.changes).toEqual([]);
     expect(plan.reports.map((r) => r.kind)).toEqual(["ambiguous", "ambiguous"]);

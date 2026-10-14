@@ -86,8 +86,8 @@ async function addContact(token: string, w: PaychexWorker): Promise<void> {
   }
 }
 
-/** Every ACTIVE Paychex worker, with contact info. */
-export async function fetchActivePaychexWorkers(): Promise<PaychexWorker[]> {
+/** Every Paychex worker (names/IDs only), plus the ACTIVE ones with contact info. */
+export async function fetchPaychexWorkers(): Promise<{ active: PaychexWorker[]; all: PaychexWorker[] }> {
   const token = await getToken();
   const companies = await get(token, "/companies");
   const companyId = companies?.content?.[0]?.companyId;
@@ -110,5 +110,5 @@ export async function fetchActivePaychexWorkers(): Promise<PaychexWorker[]> {
     }
   });
   await Promise.all(workers);
-  return active;
+  return { active, all };
 }

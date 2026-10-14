@@ -80,6 +80,7 @@ export default function PaychexSync() {
       update: c.filter((x) => x.kind === "update"),
       link: c.filter((x) => x.kind === "link"),
       create: c.filter((x) => x.kind === "create"),
+      ids: c.filter((x) => x.kind === "reid" || x.kind === "clear"),
     };
   }, [preview]);
 
@@ -156,6 +157,12 @@ export default function PaychexSync() {
           {section("New Payroll IDs", groups.link, ["AOS employee", "Paychex name", "Payroll ID", "Matched on", "Changes"], (c) => {
             const l = c as Extract<SyncChange, { kind: "link" }>;
             return [l.name, l.paychexName, `#${l.payrollId}`, l.matchedOn, <Fields key="f" fields={l.fields} />];
+          })}
+
+          {section("Payroll IDs not in Paychex", groups.ids, ["Employee", "AOS Payroll ID", "Change to"], (c) => {
+            if (c.kind === "reid") return [c.name, `#${c.fromPayrollId}`, `#${c.payrollId} (${c.paychexName}${c.paychexStatus !== "ACTIVE" ? ", inactive" : ""})`];
+            const x = c as Extract<SyncChange, { kind: "clear" }>;
+            return [x.name, `#${x.payrollId}`, "blank"];
           })}
 
           {section("New people", groups.create, ["Name", "Payroll ID", "Type", "Contact"], (c) => {

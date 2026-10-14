@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { fetchActivePaychexWorkers, PaychexConfigError } from "@/lib/paychex/api";
+import { fetchPaychexWorkers, PaychexConfigError } from "@/lib/paychex/api";
 import { planPaychexSync, type AosEmployee, type SyncChange, type FieldChange } from "@/lib/paychex/sync-plan";
 
 export const dynamic = "force-dynamic";
@@ -54,8 +54,8 @@ async function loadEmployees(): Promise<{ live: AosEmployee[]; reservedIds: Set<
 }
 
 async function buildPlan() {
-  const [workers, { live, reservedIds }] = await Promise.all([fetchActivePaychexWorkers(), loadEmployees()]);
-  return planPaychexSync(workers, live, reservedIds);
+  const [{ active, all }, { live, reservedIds }] = await Promise.all([fetchPaychexWorkers(), loadEmployees()]);
+  return planPaychexSync(active, live, reservedIds, all);
 }
 
 function errorResponse(e: unknown) {
@@ -103,6 +103,19 @@ async function applyOne(c: SyncChange, runId: string, userId: string, seq: numbe
       };
       const { error } = await supabaseAdmin.from("employees").insert(after);
       if (error) throw new Error(error.message);
+    } else if (c.kind === "reid" || c.kind === "clear") {
+      // Swap or blank a Payroll ID Paychex doesn't have. Only lands if the
+      // record still holds the old number.
+      employeeKey = c.employeeKey;
+      const fromId = c.kind === "reid" ? c.fromPayrollId : c.payrollId;
+      const { data, error: readErr } = await supabaseAdmin.from("employees").select("*").eq("employee_key", c.employeeKey).single();
+      if (readErr) throw new Error(readErr.message);
+      before = data;
+      after = { rippling_employee_id: c.kind === "reid" ? c.payrollId : null };
+      const { data: updated, error } = await supabaseAdmin.from("employees").update(after)
+        .eq("employee_key", c.employeeKey).eq("rippling_employee_id", fromId).select("employee_key");
+      if (error) throw new Error(error.message);
+      if (!updated?.length) throw new Error("Record changed since the preview — run the sync again.");
     } else {
       employeeKey = c.employeeKey;
       const { data, error: readErr } = await supabaseAdmin.from("employees").select("*").eq("employee_key", c.employeeKey).single();

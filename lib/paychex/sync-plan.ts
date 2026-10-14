@@ -54,6 +54,8 @@ export type FieldChange = { field: ContactField; from: string; to: string };
 export type SyncChange =
   | { id: string; kind: "update"; employeeKey: string; payrollId: number; name: string; fields: FieldChange[] }
   | { id: string; kind: "link"; employeeKey: string; payrollId: number; name: string; paychexName: string; matchedOn: string; fields: FieldChange[] }
+  | { id: string; kind: "reid"; employeeKey: string; payrollId: number; fromPayrollId: number; name: string; paychexName: string; paychexStatus: string }
+  | { id: string; kind: "clear"; employeeKey: string; payrollId: number; name: string }
   | { id: string; kind: "create"; payrollId: number; name: string; firstName: string; lastName: string;
       employmentType: "Employee" | "Contractor"; hireDate: string | null; contact: Record<ContactField, string> };
 
@@ -84,6 +86,7 @@ export function splitPaychexName(first: string, middle: string, last: string): {
 function tokens(name: string): string[] {
   return (name ?? "")
     .toLowerCase()
+    .replace(/[‘’ʼ]/g, "'")
     .replace(/[^a-z\s'-]/g, " ")
     .replace(/['-]/g, "")
     .split(/\s+/)
@@ -189,6 +192,9 @@ export function planPaychexSync(
   workers: PaychexWorker[],
   employees: AosEmployee[],
   reservedIds: Set<number> = new Set(),
+  /** Every Paychex worker, any status (names only). Used to catch AOS
+   *  Payroll IDs that don't exist in Paychex. Omit to skip that check. */
+  allPaychex?: PaychexWorker[],
 ): SyncPlan {
   const changes: SyncChange[] = [];
   const reports: SyncReport[] = [];
@@ -248,10 +254,25 @@ export function planPaychexSync(
       continue;
     }
 
+    const nk = nameKey(pxName);
+    // Paychex itself has this person more than once (W-2 + 1099 records, or
+    // a duplicate setup). Which number is theirs is a human call.
+    const twins = active.filter((o) => o !== w && (() => {
+      const n = splitPaychexName(o.firstName, o.middleName, o.lastName);
+      const on = `${n.first} ${n.last}`.trim();
+      return nameKey(on) === nk || looseNameMatch(on, pxName);
+    })());
+    if (twins.length) {
+      reports.push({ kind: "ambiguous", payrollId,
+        message: `#${payrollId} ${pxName}: Paychex has this person more than once (` +
+          [payrollId, ...twins.map((o) => Number(o.employeeId))].sort((a, b) => a - b).map((i) => "#" + i).join(", ") +
+          "). Decide which number is theirs, then add it by hand." });
+      continue;
+    }
+
     // No AOS record holds this ID. Look for the person among records with no ID.
     const email = (w.email ?? "").trim().toLowerCase();
     const phone = digits10(w.phone);
-    const nk = nameKey(pxName);
     const hits = new Map<string, { e: AosEmployee; on: string[] }>();
     const add = (list: AosEmployee[] | undefined, on: string) => {
       for (const e of list ?? []) {
@@ -324,6 +345,41 @@ export function planPaychexSync(
     // A second Paychex worker with the same name is then reported, not created.
     push(withIdByName, nk, { employeeKey: `(new #${payrollId})`, fullName: pxName, firstName: first, lastName: last,
       payrollId, employmentType: type, phone: "", email: "", address: "", city: "", stateCode: "", zip: "" });
+  }
+
+  // AOS Payroll IDs Paychex doesn't have at all (old Rippling numbers).
+  // Paychex is the source of truth: use Paychex's number for the person if
+  // exactly one Paychex worker (any status) matches and the number is free,
+  // otherwise blank it so the export flags them instead of sending a number
+  // Paychex will reject.
+  if (allPaychex) {
+    const pxIds = new Set(allPaychex.map((w) => w.employeeId));
+    const taken = new Set<number>([...byPayrollId.keys(), ...reservedIds]);
+    for (const c of changes) if (c.kind === "link" || c.kind === "create") taken.add(c.payrollId);
+    for (const e of employees) {
+      if (e.payrollId == null || pxIds.has(String(e.payrollId))) continue;
+      const name = e.fullName || `${e.firstName} ${e.lastName}`;
+      const matches = allPaychex.filter((w) => {
+        const { first, last } = splitPaychexName(w.firstName, w.middleName, w.lastName);
+        const pn = `${first} ${last}`.trim();
+        return /^\d+$/.test(w.employeeId) && (nameKey(pn) === nameKey(name) || looseNameMatch(pn, name));
+      });
+      const ids = [...new Set(matches.map((w) => Number(w.employeeId)))];
+      if (ids.length === 1 && !taken.has(ids[0])) {
+        const w = matches[0];
+        const { first, last } = splitPaychexName(w.firstName, w.middleName, w.lastName);
+        taken.add(ids[0]);
+        changes.push({ id: `reid:${e.employeeKey}:${ids[0]}`, kind: "reid", employeeKey: e.employeeKey, payrollId: ids[0],
+          fromPayrollId: e.payrollId, name, paychexName: `${first} ${last}`.trim(), paychexStatus: w.status });
+      } else {
+        changes.push({ id: `clear:${e.employeeKey}:${e.payrollId}`, kind: "clear", employeeKey: e.employeeKey,
+          payrollId: e.payrollId, name });
+        if (ids.length > 1) {
+          reports.push({ kind: "ambiguous", payrollId: e.payrollId, employeeKey: e.employeeKey,
+            message: `${name}: AOS #${e.payrollId} isn't in Paychex, and Paychex has ${ids.map((i) => "#" + i).join(" and ")} for that name. Pick one by hand.` });
+        }
+      }
+    }
   }
 
   return { changes, reports, activeWorkers: active.length };
