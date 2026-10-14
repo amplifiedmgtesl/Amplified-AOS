@@ -84,6 +84,8 @@ Jobs appear on the calendar when **Show in app calendar** is set to **Yes** on t
 
 **Before adding someone, search first.** The same person entered twice causes problems on timesheets. If you find a duplicate, tell an admin rather than deleting it.
 
+**Terminated people** don't appear when you pick someone for a crew or timesheet row. If you really need one, use the 🔍 search and tick **Include terminated**. A terminated person already on a job still shows there by name. Status is kept in step with Paychex by **Sync from Paychex**.
+
 **On a profile** you'll also find **Notes**, uploaded **Certificates / ID / Files**, and their **Job History** and **Timesheet History**.
 
 **Adding many at once:** **⇪ Import from CSV** lets you paste rows copied from a spreadsheet.
@@ -400,7 +402,8 @@ Once time is on an invoice, it shows **🔒 Billed** on Timekeeping and can't be
 - **New people:** Paychex workers with no match in AOS are added as new employees.
 - **Payroll Name** always holds the name exactly as Paychex has it. The name shown everywhere else in AOS is the name the crew goes by, and the sync never changes it.
 - **To check by hand:** W-2 vs 1099 differences and possible duplicates are listed but never changed. Fix those on the employee record, or in Paychex.
-- Only **active** Paychex workers are read.
+- **Status** follows Paychex: terminated in Paychex means **Terminated** in AOS; active or on hold means **Active**.
+- Paychex workers who are active are read in full. Inactive and terminated ones are only used to keep Status in step and to give an AOS person their existing Payroll ID.
 
 Time that's in a payroll run is locked on Timekeeping. To change it, the run must be **Void**ed first.
 

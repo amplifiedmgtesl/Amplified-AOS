@@ -18,7 +18,7 @@ function px(p: Partial<PaychexWorker>): PaychexWorker {
 }
 function aos(p: Partial<AosEmployee>): AosEmployee {
   return {
-    employeeKey: "emp-1", fullName: "", firstName: "", lastName: "", payrollId: null, employmentType: "Contractor",
+    employeeKey: "emp-1", fullName: "", firstName: "", lastName: "", payrollId: null, employmentType: "Contractor", status: "Active",
     phone: "", email: "", address: "", city: "", stateCode: "", zip: "", ...p,
   };
 }
@@ -151,7 +151,7 @@ describe("planPaychexSync", () => {
     );
     expect(plan.changes).toEqual([{ id: "create:577", kind: "create", payrollId: 577, name: "Melissa Mcwilliams",
       firstName: "Melissa", lastName: "Mcwilliams", employmentType: "Contractor", hireDate: "2026-10-13",
-      contact: { payrollName: "Mcwilliams, Melissa", phone: "", email: "m@x.com", address: "", city: "Dayton", stateCode: "OH", zip: "" } }]);
+      contact: { status: "Active", payrollName: "Mcwilliams, Melissa", phone: "", email: "m@x.com", address: "", city: "Dayton", stateCode: "OH", zip: "" } }]);
   });
 
   it("links nobody when Paychex has the same person twice (Paychex duplicate)", () => {
@@ -279,6 +279,19 @@ describe("planPaychexSync", () => {
       [aos({ employeeKey: "AES-01277", fullName: "Paul Dunbar", payrollName: "Dunbar, Paul", payrollId: 21, employmentType: "Employee" }),
        aos({ employeeKey: "AES-01278", fullName: "Paul B Dunbar", employmentType: "Employee" })], new Set(), all);
     expect(plan.changes).toEqual([]);
+  });
+
+  it("marks someone Terminated in AOS when Paychex has terminated them", () => {
+    const all = [px({ employeeId: "524", firstName: "Paul", lastName: "Dunbar", status: "TERMINATED" })];
+    const plan = planPaychexSync([], [aos({ employeeKey: "emp-x", fullName: "Paul Dunbar", payrollName: "Dunbar, Paul", payrollId: 524 })], new Set(), all);
+    expect(plan.changes).toEqual([{ id: "update:emp-x", kind: "update", employeeKey: "emp-x", payrollId: 524, name: "Paul Dunbar",
+      fields: [{ field: "status", from: "Active", to: "Terminated" }] }]);
+  });
+
+  it("keeps someone on hold in Paychex (Inactive) Active in AOS", () => {
+    const all = [px({ employeeId: "416", firstName: "Cameron", lastName: "Lee", status: "INACTIVE" })];
+    const plan = planPaychexSync([], [aos({ employeeKey: "emp-c", fullName: "Cameron Lee", payrollName: "Lee, Cameron", payrollId: 416, status: "Terminated" })], new Set(), all);
+    expect(plan.changes.map((c) => c.kind === "update" ? c.fields : [])).toEqual([[{ field: "status", from: "Terminated", to: "Active" }]]);
   });
 });
 
