@@ -254,5 +254,15 @@ describe("planPaychexSync", () => {
     expect(plan.changes).toEqual([]);
     expect(plan.reports.map((r) => r.kind)).toEqual(["ambiguous"]);
   });
+
+  it("ignores an extra Paychex record when AOS already uses another of that person's numbers", () => {
+    const plan = planPaychexSync(
+      [px({ employeeId: "510", firstName: "Paul", lastName: "Brennan" }),
+       px({ employeeId: "535", firstName: "Paul Brennan" })],
+      [aos({ employeeKey: "AES-01128", fullName: "Paul Brennan", payrollName: "Brennan, Paul", payrollId: 510 })],
+    );
+    expect(plan.changes).toEqual([]);
+    expect(plan.reports).toEqual([]);
+  });
 });
 

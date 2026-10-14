@@ -271,6 +271,9 @@ export function planPaychexSync(
       const on = `${n.first} ${n.last}`.trim();
       return nameKey(on) === nk || looseNameMatch(on, pxName);
     })());
+    // AOS already uses one of Paychex's numbers for this person: the extra
+    // Paychex record doesn't matter to AOS, so say nothing (John, 10/14).
+    if (twins.some((o) => byPayrollId.has(Number(o.employeeId)))) continue;
     if (twins.length) {
       reports.push({ kind: "ambiguous", payrollId,
         message: `#${payrollId} ${pxName}: Paychex has this person more than once (` +
