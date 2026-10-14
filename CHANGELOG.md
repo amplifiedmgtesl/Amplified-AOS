@@ -4,6 +4,14 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 14 — v2.7.0
+- New **🔄 Sync from Paychex** button on the Payroll page (admins only). Paychex is now the source of truth for each person's Payroll ID, phone, email and address, and crew can update their own details in Paychex. The button reads Paychex and shows what would change in AOS before anything happens. Untick anything you don't want, then click **Apply**.
+- What the sync can do: update contact info, give someone the Payroll ID Paychex has for them, add new Paychex hires to AOS, and fix an AOS Payroll ID that doesn't exist in Paychex. A blank in Paychex never wipes out what AOS has. Every change is logged with the record as it was before.
+- Each employee's **Payroll Name** now holds their name exactly as Paychex has it. The name shown everywhere else in AOS is still the name they go by, so legal names and spelling differences no longer cause mismatches.
+- **Status** now follows Paychex: terminated in Paychex means **Terminated** in AOS; active or on hold means **Active**.
+- Terminated people no longer appear when you pick someone for a crew or timesheet row. To find one anyway, use the 🔍 search and tick **Include terminated**. Someone already on a job still shows by name.
+- Anything the sync can't decide by itself is listed for a person to check, such as someone Paychex has under two numbers. Nothing on that list is changed.
+
 ### October 14 — v2.6.1
 - The **📥 Paychex CSV** button now only works once a payroll run is **Finalized**. On a draft run it's greyed out. Weekly overtime for W-2 employees (hours over 40 in a Sunday–Saturday week) is only worked out when a run is finalized, and Paychex pays the file exactly as sent. A draft export would have paid those overtime hours at straight time. Finalize first, then download the file.
 
