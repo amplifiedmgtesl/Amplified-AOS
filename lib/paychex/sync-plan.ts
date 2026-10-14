@@ -72,7 +72,7 @@ export type SyncPlan = { changes: SyncChange[]; reports: SyncReport[]; activeWor
 
 // ── Normalising helpers ─────────────────────────────────────────────────────
 
-const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
+const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "llc", "inc"]);
 
 /** Paychex sometimes stores the whole name in the first-name field (47 of
  *  471 workers on 2026-10-14, every recent hire). Split it back out. */
@@ -370,6 +370,37 @@ export function planPaychexSync(
     // A second Paychex worker with the same name is then reported, not created.
     push(withIdByName, nk, { employeeKey: `(new #${payrollId})`, fullName: pxName, firstName: first, lastName: last,
       payrollId, employmentType: type, phone: "", email: "", address: "", city: "", stateCode: "", zip: "" });
+  }
+
+  // Inactive / terminated Paychex workers: used only to give an AOS person
+  // who has no Payroll ID the Paychex number they already have (10/14:
+  // Cameron Lee, Nate Berndt-Chromulak, David Lipsey were missed because
+  // they're inactive in Paychex). One clear match or nothing — these never
+  // create records or reports.
+  if (allPaychex) {
+    const named = (w: PaychexWorker) => { const n = splitPaychexName(w.firstName, w.middleName, w.lastName); return `${n.first} ${n.last}`.trim(); };
+    const givenOut = new Set<number>([...byPayrollId.keys(), ...reservedIds]);
+    for (const c of changes) if (c.kind === "link" || c.kind === "create") givenOut.add(c.payrollId);
+    for (const w of allPaychex) {
+      if (w.status === "ACTIVE" || !/^\d+$/.test(w.employeeId ?? "")) continue;
+      const payrollId = Number(w.employeeId);
+      if (givenOut.has(payrollId)) continue;
+      const pxName = named(w);
+      const nk = nameKey(pxName);
+      if (!nk.includes(" ")) continue;
+      // Paychex has this name under another number too, or AOS already has
+      // this name with an ID — not a clear match.
+      if (allPaychex.some((o) => o !== w && (nameKey(named(o)) === nk || looseNameMatch(named(o), pxName)))) continue;
+      if ((withIdByName.get(nk) ?? []).length) continue;
+      const cands = (noIdByName.get(nk) ?? []).filter((e) => !claimed.has(e.employeeKey));
+      if (cands.length !== 1) continue;
+      const e = cands[0];
+      claimed.add(e.employeeKey);
+      givenOut.add(payrollId);
+      changes.push({ id: `link:${e.employeeKey}:${payrollId}`, kind: "link", employeeKey: e.employeeKey, payrollId,
+        name: e.fullName, paychexName: pxName, matchedOn: `name (inactive in Paychex)`,
+        fields: [{ field: "payrollName", from: e.payrollName ?? "", to: paychexPayrollName(w) }].filter((f) => f.from !== f.to) as FieldChange[] });
+    }
   }
 
   // AOS Payroll IDs Paychex doesn't have at all (old Rippling numbers).

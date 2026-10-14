@@ -264,5 +264,21 @@ describe("planPaychexSync", () => {
     expect(plan.changes).toEqual([]);
     expect(plan.reports).toEqual([]);
   });
+
+  it("gives an AOS person with no ID their number from an inactive Paychex record", () => {
+    const all = [px({ employeeId: "416", firstName: "Cameron", lastName: "Lee", status: "INACTIVE" })];
+    const plan = planPaychexSync([], [aos({ employeeKey: "emp-c", fullName: "Cameron Lee" })], new Set(), all);
+    expect(plan.changes.map((c) => [c.kind, c.payrollId])).toEqual([["link", 416]]);
+    expect(plan.reports).toEqual([]);
+  });
+
+  it("leaves an inactive Paychex record alone when AOS already has that name with an ID", () => {
+    const all = [px({ employeeId: "21", firstName: "Paul", lastName: "Dunbar", workerType: "EMPLOYEE" }),
+                 px({ employeeId: "524", firstName: "Paul", lastName: "Dunbar", status: "TERMINATED" })];
+    const plan = planPaychexSync([all[0]],
+      [aos({ employeeKey: "AES-01277", fullName: "Paul Dunbar", payrollName: "Dunbar, Paul", payrollId: 21, employmentType: "Employee" }),
+       aos({ employeeKey: "AES-01278", fullName: "Paul B Dunbar", employmentType: "Employee" })], new Set(), all);
+    expect(plan.changes).toEqual([]);
+  });
 });
 
