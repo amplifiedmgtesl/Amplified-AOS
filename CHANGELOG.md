@@ -4,6 +4,9 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 14 — v2.6.1
+- The **📥 Paychex CSV** button now only works once a payroll run is **Finalized**. On a draft run it's greyed out. Weekly overtime for W-2 employees (hours over 40 in a Sunday–Saturday week) is only worked out when a run is finalized, and Paychex pays the file exactly as sent. A draft export would have paid those overtime hours at straight time. Finalize first, then download the file.
+
 ### October 12 — v2.6.0
 - Payroll now exports to **Paychex**. On a payroll run, the **📥 Paychex CSV** button (it replaces the Rippling button) downloads a file ready for Paychex Flex: Payroll Center → arrow next to Begin → Import. Each person gets one line per job, per pay type and per rate, with the hours added up for the whole pay period. Rates come straight from the payroll run, so the file adds up to the same total as the Payroll Report.
 - W-2 employees are sent as **Day Rate 1** and contractors as **1099 - Day Rate 1**. Overtime and double time go on their own lines under the same code at the overtime or double-time rate, with **OT** or **DT** added to the job name (for example "LBFT OT") so they're easy to spot.

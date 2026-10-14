@@ -393,6 +393,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
   const isDraft = run.status === "draft";
   const isFinalized = run.status === "finalized";
   const isVoided = run.status === "voided";
+  const canExportPaychex = run.status === "finalized" || run.status === "exported";
 
   // Count entries with no pay rate set — derived locally from the loaded
   // entries. Used to surface the "needs rates" banner and disable Finalize.
@@ -600,6 +601,10 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
   // Paychex in Oct 2026.
   async function handleExportPaychexCsv() {
     if (!run) return;
+    // Weekly W-2 overtime is only worked out at Finalize, and Paychex pays
+    // the file as sent — so a draft export would pay overtime hours at
+    // straight time. The button is disabled on drafts; this is the backstop.
+    if (run.status !== "finalized" && run.status !== "exported") return;
     setBusy("export");
     let built: ReturnType<typeof buildPaychexCsv>;
     try {
@@ -709,10 +714,12 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
           <button
             className="secondary"
             onClick={handleExportPaychexCsv}
-            disabled={!!busy || entries.length === 0}
+            disabled={!!busy || entries.length === 0 || !canExportPaychex}
             title={entries.length === 0
               ? "No entries to export"
-              : "Download this run as a Paychex import file. In Paychex Flex: Payroll Center → arrow next to Begin → Import."}
+              : !canExportPaychex
+                ? "Finalize this run first. Finalize works out W-2 weekly overtime and locks the run."
+                : "Download this run as a Paychex import file. In Paychex Flex: Payroll Center → arrow next to Begin → Import."}
           >
             {busy === "export" ? "Building…" : "📥 Paychex CSV"}
           </button>
