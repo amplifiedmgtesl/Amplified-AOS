@@ -1010,9 +1010,12 @@ export function upsertEmployee(input: EmployeeRecord): Promise<{ error: unknown 
  *  from a possibly stale cache copy. Keeps the cache entry in step. */
 export async function patchEmployeeFields(
   employeeKey: string,
-  patch: { email?: string; phone?: string; employmentType?: "Employee" | "Contractor" },
+  patch: { email?: string; phone?: string; employmentType?: "Employee" | "Contractor"; fullName?: string; firstName?: string; lastName?: string },
 ): Promise<{ error: unknown | null }> {
   const row: Record<string, unknown> = {};
+  if (patch.fullName !== undefined) row.full_name = patch.fullName.trim();
+  if (patch.firstName !== undefined) row.first_name = patch.firstName.trim();
+  if (patch.lastName !== undefined) row.last_name = patch.lastName.trim();
   if (patch.email !== undefined) row.email = patch.email.trim() || null;
   if (patch.phone !== undefined) row.phone = patch.phone.trim() || null;
   if (patch.employmentType !== undefined) row.employment_type = patch.employmentType;
@@ -1020,6 +1023,9 @@ export async function patchEmployeeFields(
   if (error) return { error };
   _cache.employees = _cache.employees.map((e) => e.employeeKey !== employeeKey ? e : {
     ...e,
+    ...(patch.fullName !== undefined ? { fullName: patch.fullName.trim() } : {}),
+    ...(patch.firstName !== undefined ? { firstName: patch.firstName.trim() } : {}),
+    ...(patch.lastName !== undefined ? { lastName: patch.lastName.trim() } : {}),
     ...(patch.email !== undefined ? { email: patch.email.trim() } : {}),
     ...(patch.phone !== undefined ? { phone: patch.phone.trim() } : {}),
     ...(patch.employmentType !== undefined

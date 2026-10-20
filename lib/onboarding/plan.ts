@@ -223,3 +223,38 @@ export function splitForPaychex(first: string, last: string, full: string): { gi
   const s = splitPaychexName(full, "", "");
   return { given: s.first, family: s.last };
 }
+
+// ── Merge: values to choose between ─────────────────────────────────────────
+
+export type MergeSide = { employeeKey: string; fullName: string; firstName: string; lastName: string; email: string; phone: string };
+export type MergeField = "name" | "email" | "phone";
+
+const sideName = (s: MergeSide) => (s.fullName || `${s.firstName} ${s.lastName}`).trim();
+
+/** Fields where both records have a value and they differ — the merge would
+ *  otherwise silently keep the kept record's value. Blanks aren't listed:
+ *  the merge already fills a blank from the other record. */
+export function mergeConflicts(a: MergeSide, b: MergeSide): MergeField[] {
+  const out: MergeField[] = [];
+  const na = sideName(a), nb = sideName(b);
+  if (na && nb && na.replace(/\s+/g, " ").toLowerCase() !== nb.replace(/\s+/g, " ").toLowerCase()) out.push("name");
+  const ea = cleanEmail(a.email), eb = cleanEmail(b.email);
+  if (ea && eb && ea !== eb) out.push("email");
+  const pa = digits10(a.phone) || a.phone.trim(), pb = digits10(b.phone) || b.phone.trim();
+  if (pa && pb && pa !== pb) out.push("phone");
+  return out;
+}
+
+/** What to write onto the kept record after the merge, for each field where
+ *  the admin picked the other record's value. */
+export function mergeOverrides(
+  keep: MergeSide, other: MergeSide, picks: Partial<Record<MergeField, string>>,
+): { fullName?: string; firstName?: string; lastName?: string; email?: string; phone?: string } {
+  const o: ReturnType<typeof mergeOverrides> = {};
+  if (picks.name === other.employeeKey) {
+    o.fullName = sideName(other); o.firstName = other.firstName.trim(); o.lastName = other.lastName.trim();
+  }
+  if (picks.email === other.employeeKey) o.email = other.email.trim();
+  if (picks.phone === other.employeeKey) o.phone = other.phone.trim();
+  return o;
+}
