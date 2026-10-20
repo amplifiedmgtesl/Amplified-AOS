@@ -69,12 +69,22 @@ export function closeness(typed: string, fullName: string): number | null {
 
 export const looksLike = (typed: string, fullName: string) => closeness(typed, fullName) != null;
 
-/** People whose name looks like what was typed, closest first, at most `cap`. */
-export function similarNames<T extends { fullName: string }>(typed: string, people: T[], cap = 5): T[] {
+/** People whose name looks like what was typed, closest first. Whole
+ *  closeness groups are kept together (8 equally close Brandons all show):
+ *  groups are added until at least `min` people are listed, never more
+ *  than `max` (John, 10/20). */
+export function similarNames<T extends { fullName: string }>(typed: string, people: T[], min = 5, max = 20): T[] {
   const scored: { p: T; s: number }[] = [];
   for (const p of people) {
     const s = closeness(typed, p.fullName);
     if (s != null) scored.push({ p, s });
   }
-  return scored.sort((a, b) => a.s - b.s || a.p.fullName.localeCompare(b.p.fullName)).slice(0, cap).map((x) => x.p);
+  scored.sort((a, b) => a.s - b.s || a.p.fullName.localeCompare(b.p.fullName));
+  const out: T[] = [];
+  for (let i = 0; i < scored.length && out.length < min; ) {
+    const group = scored.filter((x) => x.s === scored[i].s);
+    out.push(...group.map((x) => x.p));
+    i += group.length;
+  }
+  return out.slice(0, max);
 }

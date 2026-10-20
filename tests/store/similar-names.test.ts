@@ -45,4 +45,16 @@ describe("similarNames", () => {
     expect(similarNames("Mike Jones", people)).toEqual([{ fullName: "Michael Jones" }]);
     expect(similarNames("Totally New", people)).toEqual([]);
   });
+  it("keeps whole groups of equally close names, up to 20", () => {
+    const brandons = Array.from({ length: 8 }, (_, i) => ({ fullName: `Brandon Person${String.fromCharCode(65 + i)}` }));
+    expect(similarNames("branden", brandons)).toHaveLength(8);
+    const mixed = [
+      ...Array.from({ length: 3 }, (_, i) => ({ fullName: `Brandon A${i}x` })),        // sounds same, 1 off
+      ...Array.from({ length: 4 }, (_, i) => ({ fullName: `Brandin B${i}x` })),        // sounds same, 1 off too
+      { fullName: "Brandeen Cx" },                                                     // 2 off
+    ];
+    expect(similarNames("branden", mixed).length).toBeGreaterThanOrEqual(5);
+    const many = Array.from({ length: 30 }, (_, i) => ({ fullName: `Brandon Q${i}x` }));
+    expect(similarNames("branden", many)).toHaveLength(20);
+  });
 });
