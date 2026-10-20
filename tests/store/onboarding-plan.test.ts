@@ -221,7 +221,11 @@ describe("clearMatch", () => {
     expect(run(person, [w("W1")], [], new Set([458]))).toBeNull();
     expect(run(person, [w("W1", { employeeId: "" })])).toBeNull();
   });
-  it("not for a name-only match with a terminated worker", () => {
+  it("not for a name-only match with an inactive or terminated worker", () => {
+    expect(run(person, [w("W1", { status: "INACTIVE" })])).toBeNull();
     expect(run(person, [w("W1", { status: "TERMINATED" })])).toBeNull();
+  });
+  it("an email match still links an inactive worker", () => {
+    expect(run(person, [w("W1", { status: "INACTIVE", email: "jp@x.com" })])?.payrollId).toBe(458);
   });
 });

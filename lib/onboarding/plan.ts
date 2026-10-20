@@ -268,8 +268,10 @@ export function mergeOverrides(
 //   • Paychex has exactly one possible match, and it has a Payroll ID;
 //   • it matched on the worker AOS sent, email, phone, or the exact name
 //     (a "similar name" typo match never counts);
-//   • a name-only match isn't contradicted: if both sides have contact
-//     info, some of it agrees, and the worker isn't terminated;
+//   • a name-only match is with an ACTIVE worker (Paychex only gives us
+//     contact info for active workers) and isn't contradicted: if both
+//     sides have contact info, some of it agrees. An inactive name-only
+//     match (Evelyn Adams #206, prod dry run 10/20) waits for a person;
 //   • no other AOS record (deleted ones included) holds that Payroll ID.
 
 const CLEAR_REASONS = new Set(["Sent from AOS", "Same email", "Same phone", "Same name"]);
@@ -285,7 +287,7 @@ export function clearMatch(
   const m = matches[0];
   if (m.payrollId == null || !CLEAR_REASONS.has(m.reason) || takenIds.has(m.payrollId)) return null;
   if (m.reason === "Same name") {
-    if (m.status === "TERMINATED") return null;
+    if (m.status !== "ACTIVE") return null;
     const w = worker(m.workerId);
     const aosEmail = cleanEmail(person.email), aosPhone = digits10(person.phone);
     const pxEmail = cleanEmail(w?.email ?? ""), pxPhone = digits10(w?.phone ?? "");
