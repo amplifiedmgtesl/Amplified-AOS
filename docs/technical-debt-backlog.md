@@ -3135,10 +3135,12 @@ Two ways in: a **batch run** from Connor's marked-up CSV (X = keep, NO = skip th
 
 ---
 
-## #121 — Website applicants into the Employee list (JotForm webhook + one-time load) (added 2026-10-20)
+## #121 — Website applicants into the Employee list (JotForm webhook + one-time load) (added 2026-10-20) — ✅ DONE 2026-10-20
 
-**Plan:** `docs/jotform-applicants-plan.md`. Plan only, waiting for John's OK.
+**Shipped:** v2.10.0 (webhook, Onboarding/profile "Applied with", Applied Online filter, column sort) and v2.10.1 (load page removed). Prod load: 85 new, 262 already there, 158 filled blanks, 101 older, 5 several. Webhook live in JotForm and tested. Follow-on v2.11.0/v2.11.1: sound-alike "Did you mean" and Payroll ✓ in the employee search. Build notes: `docs/jotform-applicants-review.md`.
+
+**Plan:** `docs/jotform-applicants-plan.md`.
 
 **What:** each Employee Application submitted on amplifiedesl.com (a JotForm form) comes into AOS through a **webhook** (no API key, because the JotForm account also holds bank and SSN forms). It's matched to an existing Employee first (email → phone → exact name), so people a crew lead already added get their blanks filled, not a duplicate. Otherwise a new Contractor record is created, with source "Website application". Junk is skipped, nothing AOS already has is overwritten, and everything is logged. Plus a one-time load of the 611 past submissions from John's CSV export (514 people, 72 new, 44 of the 99 on the Onboarding list get an email).
 
-**Open decision:** whether to store the SMS-consent answer.
+**SMS-consent answer:** stored (John, 10/20).
