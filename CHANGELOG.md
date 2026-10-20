@@ -4,6 +4,9 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 20 — v2.11.1
+- **Did you mean:** now works from 3 letters, so short last names are caught too ("dow" finds Doe).
+
 ### October 20 — v2.11.0
 - **Fewer duplicate employees.** When you search for a person (Timekeeping, **+ Add Crew Member**, crew screens), a new **Did you mean:** list under the results shows people whose name *sounds* like what you typed: a misspelling ("bowmen" finds Bowman), a nickname ("Mike" finds Michael) or first and last name swapped. It shows even when there are exact matches, because "Branden" may really be the Brandon you meant. If nothing matches, **+ Create employee** becomes **None of these — create**, so picking the existing person comes first.
 - People who are set up in Paychex (they have a Payroll ID) show a green **Payroll ✓** next to their name in the search, so you can tell the real record from a duplicate.
