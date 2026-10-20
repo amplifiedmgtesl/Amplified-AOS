@@ -11,6 +11,10 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { mergeEmployees, patchEmployeeFields } from "@/lib/store/db";
 import { canSend, defaultKeep, type DupMatch, type OnboardingRow, type PaychexMatch } from "@/lib/onboarding/plan";
+import type { SendOutcome } from "@/lib/onboarding/send";
+
+// The send API takes at most 15 people per request.
+const CHUNK = 15;
 
 async function api(path: string, method: "GET" | "POST" = "GET", body?: unknown) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -126,6 +130,8 @@ export default function Onboarding() {
   const [pxBusy, setPxBusy] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [merge, setMerge] = useState<MergePick | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [batchBusy, setBatchBusy] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -179,24 +185,76 @@ export default function Onboarding() {
     setRows((rs) => rs?.filter((x) => x.employeeKey !== row.employeeKey) ?? rs);
   }
 
-  async function send(row: OnboardingRow, ignoreMatches = false) {
-    if (!ignoreMatches && !confirm(
-      `Send to Paychex?\n\n${row.name}\n${row.email}\n${row.employmentType === "Employee" ? "Employee (W-2)" : "Contractor (1099)"}\n\nPaychex will email them an onboarding invite.`,
-    )) return;
-    setBusyKey(row.employeeKey);
-    const r = await api("/api/onboarding/send", "POST", { employeeKey: row.employeeKey, ignoreMatches });
-    setBusyKey(null);
-    if (r.status === 409 && r.json?.needsConfirm) {
-      const list = (r.json.matches as PaychexMatch[]).map((m) => `• ${m.name}${m.payrollId != null ? ` #${m.payrollId}` : ""} (${m.status.toLowerCase()}) — ${m.reason}`).join("\n");
-      setPx((p) => ({ ...(p ?? {}), [row.employeeKey]: r.json.matches }));
-      if (confirm(`Paychex may already have this person:\n\n${list}\n\nSend a new worker anyway?`)) await send(row, true);
-      return;
+  // Apply what the server says happened to each person.
+  function applyOutcomes(results: SendOutcome[]) {
+    for (const r of results) {
+      if (r.kind === "sent") {
+        if (r.payrollId != null) setRows((rs) => rs?.filter((x) => x.employeeKey !== r.employeeKey) ?? rs);
+        else update(r.employeeKey, { paychexWorkerId: r.workerId, paychexInvitedAt: new Date().toISOString() });
+      } else if (r.kind === "needsConfirm") {
+        setPx((p) => ({ ...(p ?? {}), [r.employeeKey]: r.matches }));
+      }
     }
-    if (!r.ok) { alert(r.json?.error ?? "Send failed"); load(); return; }
-    if (r.json.dryRun) { alert("Preview only — nothing was sent to Paychex. Sending works on the live site."); return; }
-    if (!r.json.emailOnFile) alert("Created in Paychex, but Paychex shows no email on the worker — the invite may not have gone out. Check the worker in Flex.");
-    if (r.json.payrollId != null) setRows((rs) => rs?.filter((x) => x.employeeKey !== row.employeeKey) ?? rs);
-    else update(row.employeeKey, { paychexWorkerId: r.json.workerId, paychexInvitedAt: new Date().toISOString() });
+  }
+
+  function summary(results: SendOutcome[]): string {
+    const lines: string[] = [];
+    const sent = results.filter((r) => r.kind === "sent");
+    const dry = results.filter((r) => r.kind === "dryRun");
+    const held = results.filter((r) => r.kind === "needsConfirm");
+    const failed = results.filter((r) => r.kind === "error");
+    if (dry.length) lines.push(`Preview only — nothing was sent to Paychex (${dry.length}). Sending works on the live site.`);
+    if (sent.length) lines.push(`Sent: ${sent.length}`);
+    const noEmail = sent.filter((r) => r.kind === "sent" && !r.emailOnFile);
+    if (noEmail.length) lines.push(`Paychex shows no email on these, so the invite may not have gone out. Check them in Flex:\n${noEmail.map((r) => `• ${r.name}`).join("\n")}`);
+    if (held.length) lines.push(`Not sent — Paychex may already have them. Check the Paychex column and send them one at a time:\n${held.map((r) => `• ${r.name}`).join("\n")}`);
+    if (failed.length) lines.push(`Failed:\n${failed.map((r) => `• ${r.name}: ${r.kind === "error" ? r.error : ""}`).join("\n")}`);
+    return lines.join("\n\n");
+  }
+
+  async function postSend(keys: string[], ignoreMatches = false): Promise<SendOutcome[] | null> {
+    const r = await api("/api/onboarding/send", "POST", { employeeKeys: keys, ignoreMatches });
+    if (!r.ok) { alert(r.json?.error ?? "Send failed"); return null; }
+    return r.json.results as SendOutcome[];
+  }
+
+  const typeLabel = (t: string) => (t === "Employee" ? "Employee (W-2)" : "Contractor (1099)");
+
+  async function send(row: OnboardingRow) {
+    if (!confirm(`Send to Paychex?\n\n${row.name}\n${row.email}\n${typeLabel(row.employmentType)}\n\nPaychex will email them an onboarding invite.`)) return;
+    setBusyKey(row.employeeKey);
+    let results = await postSend([row.employeeKey]);
+    const held = results?.[0];
+    if (held?.kind === "needsConfirm") {
+      applyOutcomes(results!);
+      const list = held.matches.map((m) => `• ${m.name}${m.payrollId != null ? ` #${m.payrollId}` : ""} (${m.status.toLowerCase()}) — ${m.reason}`).join("\n");
+      results = confirm(`Paychex may already have this person:\n\n${list}\n\nSend a new worker anyway?`)
+        ? await postSend([row.employeeKey], true) : null;
+    }
+    setBusyKey(null);
+    if (!results) return;
+    applyOutcomes(results);
+    const r = results[0];
+    if (r.kind !== "sent" || !r.emailOnFile) alert(summary(results));
+    if (r.kind === "error" && r.unknown) load();
+  }
+
+  async function sendSelected() {
+    const list = (rows ?? []).filter((x) => picked.has(x.employeeKey) && canSend(x));
+    if (!list.length) return;
+    if (!confirm(`Send ${list.length} to Paychex?\n\n${list.map((x) => `• ${x.name} — ${x.email} — ${typeLabel(x.employmentType)}`).join("\n")}\n\nPaychex will email each of them an onboarding invite. Anyone Paychex may already have is skipped.`)) return;
+    setBatchBusy(true);
+    const all: SendOutcome[] = [];
+    for (let i = 0; i < list.length; i += CHUNK) {
+      const results = await postSend(list.slice(i, i + CHUNK).map((x) => x.employeeKey));
+      if (!results) break;
+      applyOutcomes(results);
+      all.push(...results);
+    }
+    setBatchBusy(false);
+    setPicked(new Set());
+    if (all.length) alert(summary(all));
+    if (all.some((r) => r.kind === "error" && r.unknown)) load();
   }
 
   function paychexCell(row: OnboardingRow) {
@@ -225,11 +283,18 @@ export default function Onboarding() {
   if (error && !rows) return <div className="card"><div style={{ color: "#b00" }}>{error}</div></div>;
   if (!rows) return <div className="card"><div className="muted">Loading…</div></div>;
 
+  const sendable = rows.filter(canSend);
+  const allPicked = sendable.length > 0 && sendable.every((x) => picked.has(x.employeeKey));
+  const togglePick = (k: string) => setPicked((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+
   return (
     <div className="card">
       <div className="action-row" style={{ justifyContent: "space-between" }}>
         <h3 style={{ margin: 0 }}>{rows.length} without a Payroll ID</h3>
         <span>
+          <button onClick={sendSelected} disabled={batchBusy || !sendable.some((x) => picked.has(x.employeeKey))}>
+            {batchBusy ? "Sending…" : `Send selected (${sendable.filter((x) => picked.has(x.employeeKey)).length})`}
+          </button>{" "}
           <button className="secondary" onClick={load}>Refresh</button>{" "}
           <button onClick={checkPaychex} disabled={pxBusy || !rows.length} title="Look each person up in Paychex">
             {pxBusy ? "Checking Paychex…" : "Check Paychex"}
@@ -241,6 +306,10 @@ export default function Onboarding() {
         <table>
           <thead>
             <tr>
+              <th style={{ width: 32 }}>
+                <input type="checkbox" checked={allPicked} disabled={!sendable.length} title="Select everyone who can be sent"
+                  onChange={() => setPicked(allPicked ? new Set() : new Set(sendable.map((x) => x.employeeKey)))} />
+              </th>
               <th>Name</th><th>Email</th><th>Phone</th><th>Type</th><th>Worked</th><th>Hours</th>
               <th>AOS duplicates</th><th>Paychex</th><th />
             </tr>
@@ -248,6 +317,10 @@ export default function Onboarding() {
           <tbody>
             {rows.map((row) => (
               <tr key={row.employeeKey}>
+                <td>
+                  <input type="checkbox" checked={picked.has(row.employeeKey)} disabled={!canSend(row)}
+                    onChange={() => togglePick(row.employeeKey)} />
+                </td>
                 <td><Link href={`/employee-directory/${encodeURIComponent(row.employeeKey)}`}>{row.name}</Link></td>
                 <td><EditCell value={row.email} placeholder="email" onSave={(v) => saveField(row, "email", v)} /></td>
                 <td><EditCell value={row.phone} placeholder="phone" onSave={(v) => saveField(row, "phone", v)} /></td>
@@ -275,7 +348,7 @@ export default function Onboarding() {
                 <td>{paychexCell(row)}</td>
                 <td>
                   <button
-                    disabled={!canSend(row) || busyKey === row.employeeKey}
+                    disabled={!canSend(row) || busyKey === row.employeeKey || batchBusy}
                     title={row.paychexWorkerId ? "Already sent" : canSend(row) ? "Create in Paychex and email the onboarding invite" : "Needs an email"}
                     onClick={() => send(row)}
                   >
