@@ -86,6 +86,8 @@ Jobs appear on the calendar when **Show in app calendar** is set to **Yes** on t
 
 **Before adding someone, search first.** The same person entered twice causes problems on timesheets. If you find a duplicate, tell an admin rather than deleting it.
 
+**Did you mean:** when you search for someone to put on a crew or timesheet, the list under the results shows people whose name *sounds* like what you typed: a misspelling, a nickname (Mike / Michael) or first and last swapped. Check it before using **+ Create employee**; if nothing matches, that button reads **None of these — create**. A green **Payroll ✓** next to a name means that person is set up in Paychex, so it's usually the right record to pick.
+
 **Terminated people** don't appear when you pick someone for a crew or timesheet row. If you really need one, use the 🔍 search and tick **Include terminated**. A terminated person already on a job still shows there by name. Status is kept in step with Paychex by **Sync from Paychex**.
 
 **On a profile** you'll also find **Notes**, uploaded **Certificates / ID / Files**, and their **Job History** and **Timesheet History**. If they applied on the website, **Applied on website** shows the date: click it to open their application and résumé in JotForm (you need to be signed in to JotForm). **Texts** is their answer to the text-message question. **Applied with: …** under Phone or Email means their application has a different one; click it to use that instead.
