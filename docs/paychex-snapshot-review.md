@@ -35,6 +35,7 @@ Tests: 268 pass, typecheck clean. The DB writes, the refresh and the pages haven
 6. **Onboarding's Check Paychex button became "Refresh now":** a re-check against the copy would show nothing new.
 7. **Before the first refresh there's no copy:** Onboarding shows "No copy of Paychex yet"; **Add to Paychex** is greyed out with "click Refresh now"; Sync from Paychex says to click Refresh now.
 8. **The light profile check from the first build** (`fetchPaychexWorkerList`) was removed; the profile reads the copy like everything else.
+10. **Catch-up on open (John, 10/20):** opening Onboarding or the Payroll page (admins) runs the process step only if the last refresh left work undone: the newest pull isn't processed yet, or the last process stopped early or failed. Usually that's a quick AOS-only check. When it does run, Onboarding waits for it (up to ~45 s, rare) so the list is up to date; Payroll runs it in the background.
 9. **Contact info is only in the copy for active workers,** as before; inactive and terminated workers have names and status only.
 
 ## Needed from John

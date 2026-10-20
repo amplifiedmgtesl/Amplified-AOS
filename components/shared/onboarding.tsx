@@ -232,6 +232,8 @@ export default function Onboarding() {
 
   const load = useCallback(async () => {
     setError(null);
+    // Finish anything the last Paychex refresh left undone (usually nothing).
+    await api("/api/paychex/snapshot?step=catchup", "POST");
     const r = await api("/api/onboarding");
     if (!r.ok) { setError(r.json?.error ?? `HTTP ${r.status}`); return; }
     setRows(r.json.rows);

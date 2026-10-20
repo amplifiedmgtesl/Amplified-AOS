@@ -171,3 +171,19 @@ export async function processSnapshot(runBy: string | null): Promise<ProcessSumm
     throw e;
   }
 }
+
+/** Did the last refresh leave work undone? True when the newest pull hasn't
+ *  been processed yet, or the last process stopped early or failed. Reads
+ *  AOS only. */
+export async function processPending(): Promise<boolean> {
+  const { data, error } = await supabaseAdmin.from("paychex_snapshot_runs")
+    .select("trigger, ok, finished_at, summary").not("finished_at", "is", null)
+    .order("finished_at", { ascending: false }).limit(20);
+  if (error) throw new Error(error.message);
+  const runs = data ?? [];
+  const lastPull = runs.find((r) => r.trigger !== "process" && r.ok);
+  const lastProcess = runs.find((r) => r.trigger === "process");
+  if (!lastPull) return false;
+  if (!lastProcess || lastProcess.finished_at < lastPull.finished_at) return true;
+  return !lastProcess.ok || Number(lastProcess.summary?.leftForNextRun ?? 0) > 0;
+}

@@ -9,11 +9,13 @@
  *        process 30 minutes later). Vercel sends "Authorization: Bearer
  *        <CRON_SECRET>"; refused when CRON_SECRET isn't set.
  * POST → "Refresh now" (admins): the page calls pull, then process.
+ *        ?step=catchup: Onboarding and Payroll call this when they open; it
+ *        processes only if the last refresh left work undone.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { PaychexConfigError } from "@/lib/paychex/api";
-import { processSnapshot, pullSnapshot } from "@/lib/paychex/snapshot";
+import { processPending, processSnapshot, pullSnapshot } from "@/lib/paychex/snapshot";
 import { requireAdmin } from "@/lib/onboarding/server";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +29,10 @@ function errorResponse(e: unknown) {
 async function run(step: string | null, trigger: "schedule" | "manual", runBy: string | null) {
   if (step === "pull") return NextResponse.json(await pullSnapshot(trigger, runBy));
   if (step === "process") return NextResponse.json(await processSnapshot(runBy));
+  // Opening Onboarding or Payroll: finish anything the last refresh left.
+  if (step === "catchup") {
+    return NextResponse.json((await processPending()) ? { ran: true, ...(await processSnapshot(runBy)) } : { ran: false });
+  }
   return NextResponse.json({ error: "step must be pull or process" }, { status: 400 });
 }
 

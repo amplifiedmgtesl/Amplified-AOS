@@ -8,7 +8,7 @@
 // Names, W-2/1099 differences and anything ambiguous are listed for a person
 // to handle — never changed here.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import type { SyncChange, SyncReport, FieldChange } from "@/lib/paychex/sync-plan";
 import PaychexAsOf from "@/components/shared/paychex-as-of";
@@ -55,6 +55,15 @@ export default function PaychexSync() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<ApplyResult | null>(null);
+
+  // Opening the Payroll page finishes anything the last Paychex refresh
+  // left undone (usually nothing, and no Paychex calls either way).
+  useEffect(() => {
+    void (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch("/api/paychex/snapshot?step=catchup", { method: "POST", headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } }).catch(() => {});
+    })();
+  }, []);
 
   async function load() {
     setOpen(true); setBusy("load"); setError(null); setResult(null);
