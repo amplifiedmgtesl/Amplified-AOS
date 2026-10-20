@@ -16,6 +16,7 @@ describe("Help button section mapping", () => {
     expect(helpSectionFor("/quotes/q1")).toBe("quotes");
     expect(helpSectionFor("/invoices")).toBe("invoicing");
     expect(helpSectionFor("/payroll/run-1")).toBe("payroll");
+    expect(helpSectionFor("/onboarding")).toBe("onboarding");
     expect(helpSectionFor("/job-requests")).toBe("jobs-list");
     expect(helpSectionFor("/lead/jobs")).toBe("jobs-list");
     expect(helpSectionFor("/dashboard")).toBe("dashboard");
@@ -43,7 +44,7 @@ describe("Help button section mapping", () => {
     const md = fs.readFileSync(path.join(process.cwd(), "HELP.md"), "utf8");
     const anchors = new Set([...md.matchAll(/\{#([a-z-]+)\}\s*$/gm)].map((m) => m[1]));
     const paths = ["/timekeeping", "/timekeeping/review", "/timeclock", "/job-requests/x/print",
-      "/job-requests/x/pre-invoice-report", "/job-requests", "/quotes", "/invoices", "/payroll", "/dashboard",
+      "/job-requests/x/pre-invoice-report", "/job-requests", "/quotes", "/invoices", "/payroll", "/onboarding", "/dashboard",
       "/master-calendar", "/clients", "/employee-directory", "/maintenance", "/rate-card"];
     for (const p of paths) expect(anchors.has(helpSectionFor(p))).toBe(true);
     expect(anchors.has("requirements")).toBe(true);

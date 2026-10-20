@@ -18,6 +18,7 @@ const ROUTES: [RegExp, string][] = [
   [/^\/quotes/, "quotes"],
   [/^\/invoices/, "invoicing"],
   [/^\/payroll/, "payroll"],
+  [/^\/onboarding/, "onboarding"],
   [/^\/job-costing/, "reports"],
 ];
 

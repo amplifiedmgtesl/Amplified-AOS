@@ -407,6 +407,20 @@ Once time is on an invoice, it shows **🔒 Billed** on Timekeeping and can't be
 
 Time that's in a payroll run is locked on Timekeeping. To change it, the run must be **Void**ed first.
 
+## Onboarding: new crew into Paychex {#onboarding}
+
+**Who:** Admins.
+
+**What it's for:** getting new crew set up in Paychex before payday. The page lists everyone on a confirmed crew assignment or a timesheet from 30 days back to 30 days ahead who has no **Payroll ID**. Without one they're left out of the Paychex file. People with hours are at the top.
+
+- **Email / Phone:** type straight into the box; it saves when you click away. Blanks are outlined in red.
+- **Employee / Contractor:** click to switch between W-2 and 1099.
+- **AOS duplicates:** other AOS records that look like the same person (same email, same phone, or the same or a very similar name). **Merge** opens both side by side; pick the one to keep. Everything (crew assignments, timesheets, payroll entries) moves to it and the other record is deleted, with a backup kept. **Not same** stops flagging that pair.
+- **Check Paychex:** looks everyone up in Paychex (takes about 30 seconds). The Paychex column shows every Paychex worker who might be them. Paychex has its own duplicates, so there can be more than one. **Use ID** puts that worker's Payroll ID on the AOS record, and the person drops off the list. Nothing in Paychex changes.
+- **Send to Paychex:** adds the person to Paychex, and Paychex emails them an invite to finish their own setup (SSN, address, tax forms, direct deposit). It needs an email. Check the name, email and Employee/Contractor in the confirm box first, because that's what Paychex gets. If Paychex already seems to have them, you're shown who and asked before anything is sent.
+- **Send selected:** tick several people (the top box ticks everyone who can be sent) and send them together. Anyone Paychex may already have is skipped and listed afterwards, to check and send one at a time.
+- After a send the row shows **Sent**. Once they finish onboarding and Paychex gives them a Payroll ID, click **Check Paychex** and **Use ID**.
+
 ## Health Check {#health}
 
 **What it is:** AOS checks every job automatically for problems that would cause trouble later: missing times, crew who aren't set up properly, gaps in the rate card. You'll see the results in two places:
