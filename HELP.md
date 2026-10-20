@@ -90,6 +90,8 @@ Jobs appear on the calendar when **Show in app calendar** is set to **Yes** on t
 
 **Terminated people** don't appear when you pick someone for a crew or timesheet row. If you really need one, use the 🔍 search and tick **Include terminated**. A terminated person already on a job still shows there by name. Status is kept in step with Paychex by **Sync from Paychex**.
 
+**Paychex section on a profile** (admins): for someone with no Payroll ID it lists possible duplicates in AOS (**Merge** / **Not same**) and possible matches in Paychex (**Use ID**), and has **Add to Paychex**. That button stays greyed out until there's an email and nothing left to sort out; hover over it to see why. For someone with a Payroll ID, **Sync from Paychex** shows what Paychex has that differs for just that person.
+
 **On a profile** you'll also find **Notes**, uploaded **Certificates / ID / Files**, and their **Job History** and **Timesheet History**. If they applied on the website, **Applied on website** shows the date: click it to open their application and résumé in JotForm (you need to be signed in to JotForm). **Texts** is their answer to the text-message question. **Applied with: …** under Phone or Email means their application has a different one; click it to use that instead.
 
 **Adding many at once:** **⇪ Import from CSV** lets you paste rows copied from a spreadsheet.
@@ -399,7 +401,8 @@ Once time is on an invoice, it shows **🔒 Billed** on Timekeeping and can't be
 - Anyone without a **Payroll ID**, or not marked Employee or Contractor, is **left out**. Before the file downloads you get a list of them with their hours and pay. Enter those people in Paychex by hand, or fix them in AOS and export again.
 - If a Paychex pay code is missing in **Maintenance → Payroll Export**, the file isn't created and the message says what to fill in.
 
-**Sync from Paychex** (admins): crew can update their own phone, email and address in Paychex, and new hires get their Payroll ID there. Click **🔄 Sync from Paychex** on the Payroll page to bring that into AOS.
+**Sync from Paychex** (admins): crew can update their own phone, email and address in Paychex, and new hires get their Payroll ID there. AOS keeps a **copy of Paychex**, refreshed automatically every **Monday night**, and each refresh applies contact updates, status, new hires and clear new Payroll IDs on its own. **🔄 Sync from Paychex** on the Payroll page shows what's left for you to decide. **Paychex as of …** shows how fresh the copy is; **Refresh now** reads Paychex again (about 30 seconds) and applies its changes, handy just before a payroll export.
+- **sent to Paychex …, waiting** (amber, on payroll runs and crew/timekeeping screens): AOS sent them to Paychex and Paychex emailed the invite. They're left out of the Paychex file until they finish setup; their Payroll ID is then filled in automatically.
 - You get a preview first. Apart from clear new Payroll IDs (below), nothing changes until you click **Apply**. Untick anything you don't want.
 - **Contact updates:** Paychex's phone, email or address replaces what AOS has. A blank in Paychex never wipes out an AOS value.
 - **New Payroll IDs:** a new Paychex worker who matches one AOS person with no Payroll ID gets the ID on that existing record.
@@ -423,13 +426,13 @@ Time that's in a payroll run is locked on Timekeeping. To change it, the run mus
 
 **Who:** Admins.
 
-**What it's for:** getting new crew set up in Paychex before payday. The page lists everyone on a confirmed crew assignment or a timesheet from 30 days back to 30 days ahead who has no **Payroll ID**. Without one they're left out of the Paychex file. People with hours are at the top.
+**What it's for:** getting new crew set up in Paychex before payday. The page lists everyone on a confirmed crew assignment or a timesheet from 30 days back to 30 days ahead who has no **Payroll ID**. Without one they're left out of the Paychex file. The list is in date order: whoever has waited longest to be paid is on top, and people only booked for future jobs are at the bottom. Each row shows the first and last date worked.
 
 - **Email / Phone:** type straight into the box; it saves when you click away. Blanks are outlined in red. **Applied with: …** under a box means their website application has a different one; click it to use that instead.
 - Click a person's name to open their profile.
 - **Employee / Contractor:** click to switch between W-2 and 1099.
 - **AOS duplicates:** other AOS records that look like the same person (same email, same phone, or the same or a very similar name). **Merge** opens both side by side; pick the one to keep. Everything (crew assignments, timesheets, payroll entries) moves to it and the other record is deleted, with a backup kept. If the two records have different names, emails or phones, choose which one to keep under **Name to use**, **Email to use** and **Phone to use**; a blank is filled in from the other record automatically. **Not same** stops flagging that pair.
-- **Paychex column:** everyone is looked up in Paychex as soon as the page opens. It says **Checking…** for about 30 seconds, then shows every Paychex worker who might be them, or **Not in Paychex**. Paychex has its own duplicates, so there can be more than one. **Use ID** puts that worker's Payroll ID on the AOS record, and the person drops off the list. Nothing in Paychex changes. **Check Paychex** and **Refresh** look everyone up again.
+- **Paychex column:** everyone is checked against AOS's copy of Paychex as soon as the page opens (**Paychex as of …** at the top shows how fresh it is). It shows every Paychex worker who might be them, or **Not in Paychex**. Paychex has its own duplicates, so there can be more than one. **Use ID** puts that worker's Payroll ID on the AOS record, and the person drops off the list. Nothing in Paychex changes. **Refresh** reloads the list; **Refresh now** reads Paychex again (about 30 seconds).
 - **Linked from Paychex (automatic):** when the match is **clear**, the Payroll ID is filled in during the check with no click, the person drops off the list, and the green **Linked from Paychex** line at the top shows who. Sync from Paychex on the Payroll page uses the same rule. A match is clear only when all of these are true:
 1. Paychex has **exactly one** worker who could be this person, and that worker already has a **Payroll ID**.
 2. The match is on **email**, **phone**, the worker AOS sent to Paychex, or the **exact name** (nicknames count, like Mike / Michael). A "similar name" (a typo apart) never counts.
@@ -440,7 +443,7 @@ Time that's in a payroll run is locked on Timekeeping. To change it, the run mus
 Anything less certain is never linked automatically. It's shown for a person to decide. Every automatic link is logged with the record as it was before, so it can be undone.
 - **Send to Paychex:** adds the person to Paychex, and Paychex emails them an invite to finish their own setup (SSN, address, tax forms, direct deposit). It needs an email, and it stays greyed out until that person's Paychex check is back. Check the name, email and Employee/Contractor in the confirm box first, because that's what Paychex gets. If Paychex already seems to have them, you're shown who and asked before anything is sent.
 - **Send selected:** tick several people (the top box ticks everyone who can be sent) and send them together. Anyone Paychex may already have is skipped and listed afterwards, to check and send one at a time.
-- After a send the row shows **Sent**. Once they finish onboarding and Paychex gives them a Payroll ID, click **Check Paychex** and **Use ID**.
+- After a send the row shows **Sent … · waiting**. Paychex has emailed them; once they finish setting up, their Payroll ID is filled in automatically and they drop off the list (AOS looks them up in Paychex directly, at most once an hour).
 
 ## Health Check {#health}
 
