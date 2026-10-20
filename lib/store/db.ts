@@ -974,6 +974,41 @@ export function upsertEmployee(input: EmployeeRecord): Promise<{ error: unknown 
   return sync("employees", employeeToRow(row, false));
 }
 
+/** Update just these columns (Onboarding screen) — never a full-row upsert
+ *  from a possibly stale cache copy. Keeps the cache entry in step. */
+export async function patchEmployeeFields(
+  employeeKey: string,
+  patch: { email?: string; phone?: string; employmentType?: "Employee" | "Contractor" },
+): Promise<{ error: unknown | null }> {
+  const row: Record<string, unknown> = {};
+  if (patch.email !== undefined) row.email = patch.email.trim() || null;
+  if (patch.phone !== undefined) row.phone = patch.phone.trim() || null;
+  if (patch.employmentType !== undefined) row.employment_type = patch.employmentType;
+  const { error } = await supabase.from("employees").update(row).eq("employee_key", employeeKey);
+  if (error) return { error };
+  _cache.employees = _cache.employees.map((e) => e.employeeKey !== employeeKey ? e : {
+    ...e,
+    ...(patch.email !== undefined ? { email: patch.email.trim() } : {}),
+    ...(patch.phone !== undefined ? { phone: patch.phone.trim() } : {}),
+    ...(patch.employmentType !== undefined
+      ? { employmentType: patch.employmentType, type: patch.employmentType === "Employee" ? "staff" as const : "contractor" as const }
+      : {}),
+  });
+  return { error: null };
+}
+
+/** Merge two employee records with the merge_employee DB function (admins
+ *  only; moves all history, backs up and deletes the duplicate), then drop
+ *  the duplicate from the cache and reload the kept record. */
+export async function mergeEmployees(dupKey: string, keepKey: string): Promise<{ error: string | null; result?: any }> {
+  const { data, error } = await supabase.rpc("merge_employee", { p_dup: dupKey, p_keep: keepKey });
+  if (error) return { error: error.message };
+  _cache.employees = _cache.employees.filter((e) => e.employeeKey !== dupKey);
+  const { data: kept } = await supabase.from("employees").select("*").eq("employee_key", keepKey).maybeSingle();
+  if (kept) _cache.employees = [..._cache.employees.filter((e) => e.employeeKey !== keepKey), rowToEmployee(kept)];
+  return { error: null, result: data };
+}
+
 export function markEmployeeDeleted(employeeKey: string) {
   if (!_cache.deletedEmployeeKeys.includes(employeeKey)) _cache.deletedEmployeeKeys.push(employeeKey);
   _cache.employees = _cache.employees.filter((e) => e.employeeKey !== employeeKey);
