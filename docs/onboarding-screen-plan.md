@@ -1,4 +1,4 @@
-# Payroll Setup screen: plan (backlog #120)
+# Onboarding screen: plan (backlog #120)
 
 **Status:** plan only, nothing built. Written 2026-10-20 from John's design; John is reviewing it with Connor before any build.
 
@@ -18,7 +18,7 @@ The window is not tied to payroll runs (John, 10/20). A person drops off the lis
 
 ## The screen
 
-A new page, **Payroll Setup**, under Payroll, for admins and the payroll role. Each person gets one row:
+A new page, **Onboarding**, under Payroll, for admins and the payroll role. Each person gets one row:
 
 | Column | Notes |
 |---|---|

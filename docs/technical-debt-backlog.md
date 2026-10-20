@@ -3123,9 +3123,9 @@ Two ways in: a **batch run** from Connor's marked-up CSV (X = keep, NO = skip th
 
 ---
 
-## #120 — Payroll Setup screen: crew on jobs with no Payroll ID → fix, merge, onboard to Paychex (added 2026-10-20)
+## #120 — Onboarding screen: crew on jobs with no Payroll ID → fix, merge, onboard to Paychex (added 2026-10-20)
 
-**Plan:** `docs/payroll-setup-screen-plan.md`. Plan only, not built. John is reviewing it with Connor.
+**Plan:** `docs/onboarding-screen-plan.md`. Plan only, not built. John is reviewing it with Connor.
 
 **What:** one page (under Payroll) listing everyone on a confirmed crew assignment or timesheet in a **rolling 30-days-back / 30-days-ahead window** who has no Payroll ID. Each row shows inline email/phone (blanks highlighted) and an Employee/Contractor toggle, flags possible duplicates with a **Merge** button (calls the existing `merge_employee`; reverses the 10/13 "no merge button" decision), offers **Use this ID** when a matching Paychex worker is found, and has **Send to Paychex**, which creates an in-progress worker so Paychex emails the self-onboarding invite. **Send requires an email** (John, 10/20).
 
