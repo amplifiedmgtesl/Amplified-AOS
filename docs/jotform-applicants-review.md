@@ -30,7 +30,7 @@ Typecheck is clean, and all 262 tests pass. The tests cover the matching and fil
 8. **Names typed in all-lower or all-upper are tidied** ("chandler escota" → "Chandler Escota"). Mixed case is left as typed.
 9. **The webhook answers 404 when the secret is wrong or unset.** It answers 400 for any form other than 260385023196052.
 10. **A submission that failed with an error can be retried** (by the webhook or the load). Everything else is handled once.
-12. **The load page is temporary** (John OK'd 10/20). The session can't bulk-read or bulk-write employees, so the one-time load runs from the hidden admin page. Delete `/onboarding/applications`, `components/shared/applications-load.tsx` and `app/api/jotform/load` in the release after the prod load.
+12. **The load page is temporary** (John OK'd 10/20). The session can't bulk-read or bulk-write employees, so the one-time load runs from the hidden admin page. Delete `/onboarding/applications`, `components/shared/applications-load.tsx` and `app/api/jotform/load` in the release after the prod load. **Done in v2.10.1 (10/20)** after the prod load (85 new / 262 / 158 / 101 / 5).
 11. **Misspelled email domains** (gamil.com etc.) are loaded and noted in the log and report, as the plan says.
 
 ## Needed from John before testing

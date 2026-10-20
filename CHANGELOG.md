@@ -4,6 +4,9 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 20 — v2.10.1
+- Removed the one-time **Load website applications** page. All past applications are now in the Employee list, and new ones arrive on their own as people apply.
+
 ### October 20 — v2.10.0
 - **People who apply on the website now go straight into the Employee list.** When someone sends the Employee Application on amplifiedesl.com, AOS first looks for them, by email, then phone, then exact name, because a crew lead may already have added them. If they're found, only blanks are filled in; nothing already in AOS is overwritten. If they're new, they're added as a **Contractor**. That way the right person is there to pick when you book a crew, with their email ready for Paychex.
 - **Applied with: …** under an email or phone means their application has a different one from what's in AOS. Click it to use that instead. It shows on the **Onboarding** page and on the person's profile.
