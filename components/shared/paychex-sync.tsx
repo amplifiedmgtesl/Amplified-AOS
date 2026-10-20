@@ -2,14 +2,17 @@
 
 // "Sync from Paychex" (backlog #117). Admin-only panel on the Payroll page:
 // reads active Paychex workers through /api/paychex/sync, shows what would
-// change, and applies only the ticked rows. Names, W-2/1099 differences and
-// anything ambiguous are listed for a person to handle — never changed here.
+// change, and applies only the ticked rows. Clear new-Payroll-ID matches are
+// linked as soon as the preview loads (same rule as Onboarding, 2026-10-20).
+// Names, W-2/1099 differences and anything ambiguous are listed for a person
+// to handle — never changed here.
 
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import type { SyncChange, SyncReport, FieldChange } from "@/lib/paychex/sync-plan";
 
-type Preview = { changes: SyncChange[]; reports: SyncReport[]; activeWorkers: number; fetchedAt: string };
+type AutoLinked = { employeeKey: string; name: string; payrollId: number; paychexName: string };
+type Preview = { changes: SyncChange[]; reports: SyncReport[]; activeWorkers: number; fetchedAt: string; autoLinked?: AutoLinked[] };
 type ApplyResult = { applied: number; failed: { id: string; error: string }[]; skipped: number };
 
 const LABEL: Record<FieldChange["field"], string> = {
@@ -149,6 +152,13 @@ export default function PaychexSync() {
             <small>{preview.activeWorkers} active in Paychex · {preview.changes.length} change{preview.changes.length === 1 ? "" : "s"} · {preview.reports.length} to check by hand</small>
           </p>
 
+          {(preview.autoLinked?.length ?? 0) > 0 && (
+            <div style={{ marginTop: 12, fontSize: 13 }} title="Clear matches — linked automatically, the same rule as the Onboarding page">
+              <span className="pill pill-green">Linked from Paychex</span>{" "}
+              {preview.autoLinked!.map((a) => `${a.name} #${a.payrollId}`).join(", ")}
+            </div>
+          )}
+
           {section("Updates from Paychex", groups.update, ["Employee", "Payroll ID", "Changes"], (c) => {
             const u = c as Extract<SyncChange, { kind: "update" }>;
             return [u.name, `#${u.payrollId}`, <Fields key="f" fields={u.fields} />];
@@ -186,7 +196,7 @@ export default function PaychexSync() {
               <button onClick={apply} disabled={!picked.size}>Apply {picked.size} change{picked.size === 1 ? "" : "s"}</button>
             </div>
           )}
-          {preview.changes.length === 0 && <p>AOS already matches Paychex.</p>}
+          {preview.changes.length === 0 && !preview.autoLinked?.length && <p>AOS already matches Paychex.</p>}
         </>
       )}
       {busy === "apply" && <p>Applying…</p>}

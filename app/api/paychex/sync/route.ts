@@ -1,7 +1,11 @@
 /**
  * app/api/paychex/sync/route.ts — "Sync from Paychex" (backlog #117).
  *
- * GET  → preview: what Paychex would change in AOS. Changes nothing.
+ * GET  → preview: what Paychex would change in AOS. The one exception:
+ *        new-Payroll-ID links that are CLEAR matches (the same rule the
+ *        Onboarding page uses, clearMatch in lib/onboarding/plan.ts) are
+ *        applied straight away and returned as `autoLinked` (John,
+ *        2026-10-20). Everything else waits for Apply.
  * POST → { ids: string[] } apply the ticked changes. The plan is rebuilt
  *        from fresh Paychex + AOS data and only matching ids are applied,
  *        so the browser can never send arbitrary employee edits.
@@ -13,7 +17,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { fetchPaychexWorkers, PaychexConfigError } from "@/lib/paychex/api";
-import { planPaychexSync, type AosEmployee, type SyncChange, type FieldChange } from "@/lib/paychex/sync-plan";
+import { planPaychexSync, type AosEmployee, type PaychexWorker, type SyncChange, type FieldChange } from "@/lib/paychex/sync-plan";
+import { clearMatch, findDuplicates, paychexMatches } from "@/lib/onboarding/plan";
+import { loadLiveEmployees, loadNotSame } from "@/lib/onboarding/server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -57,7 +63,26 @@ async function loadEmployees(): Promise<{ live: AosEmployee[]; reservedIds: Set<
 
 async function buildPlan() {
   const [{ active, all }, { live, reservedIds }] = await Promise.all([fetchPaychexWorkers(), loadEmployees()]);
-  return planPaychexSync(active, live, reservedIds, all);
+  return { plan: planPaychexSync(active, live, reservedIds, all), active, all, reservedIds };
+}
+
+/** The proposed links that are clear matches under the Onboarding rule. */
+async function clearLinks(changes: SyncChange[], active: PaychexWorker[], all: PaychexWorker[], reservedIds: Set<number>) {
+  const links = changes.filter((c): c is Extract<SyncChange, { kind: "link" }> => c.kind === "link");
+  if (!links.length) return [];
+  const [onb, notSame] = await Promise.all([loadLiveEmployees(), loadNotSame()]);
+  const byKey = new Map(onb.map((e) => [e.employeeKey, e]));
+  const byId = new Map(all.map((w) => [w.workerId, w]));
+  for (const w of active) byId.set(w.workerId, w);
+  const workers = [...byId.values()];
+  const taken = new Set<number>(reservedIds);
+  for (const e of onb) if (e.payrollId != null) taken.add(e.payrollId);
+  return links.filter((c) => {
+    const person = byKey.get(c.employeeKey);
+    if (!person) return false;
+    const m = clearMatch(person, paychexMatches(person, workers), (id) => byId.get(id), findDuplicates(person, onb, notSame), taken);
+    return m?.payrollId === c.payrollId;
+  });
 }
 
 function errorResponse(e: unknown) {
@@ -66,10 +91,24 @@ function errorResponse(e: unknown) {
 }
 
 export async function GET(req: NextRequest) {
-  if (!(await requireAdmin(req))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = await requireAdmin(req);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const plan = await buildPlan();
-    return NextResponse.json({ ...plan, fetchedAt: new Date().toISOString() });
+    const { plan, active, all, reservedIds } = await buildPlan();
+    const auto = await clearLinks(plan.changes, active, all, reservedIds);
+    const runId = `pxs-auto-${Date.now()}`;
+    const autoLinked: { employeeKey: string; name: string; payrollId: number; paychexName: string }[] = [];
+    const done = new Set<string>();
+    for (let i = 0; i < auto.length; i++) {
+      const r = await applyOne(auto[i], runId, userId, i);
+      if (r.ok) {
+        done.add(auto[i].id);
+        autoLinked.push({ employeeKey: auto[i].employeeKey, name: auto[i].name, payrollId: auto[i].payrollId, paychexName: auto[i].paychexName });
+      }
+    }
+    return NextResponse.json({
+      ...plan, changes: plan.changes.filter((c) => !done.has(c.id)), autoLinked, fetchedAt: new Date().toISOString(),
+    });
   } catch (e) {
     return errorResponse(e);
   }
@@ -159,7 +198,7 @@ export async function POST(req: NextRequest) {
   if (ids.length === 0) return NextResponse.json({ error: "Nothing selected." }, { status: 400 });
 
   try {
-    const plan = await buildPlan();
+    const { plan } = await buildPlan();
     const wanted = new Set(ids);
     const selected = plan.changes.filter((c) => wanted.has(c.id));
     const runId = `pxs-${Date.now()}`;

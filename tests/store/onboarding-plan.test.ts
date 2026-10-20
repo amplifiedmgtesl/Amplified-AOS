@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildOnboardingRows,
   canSend,
+  clearMatch,
   defaultKeep,
   duplicateReason,
   mergeConflicts,
@@ -190,5 +191,41 @@ describe("mergeOverrides", () => {
       .toEqual({ fullName: "Michael Lynch", firstName: "Michael", lastName: "Lynch" });
     expect(mergeOverrides(keep, other, { phone: "o" })).toEqual({ phone: "222" });
     expect(mergeOverrides(keep, other, {})).toEqual({});
+  });
+});
+
+describe("clearMatch", () => {
+  const person = emp("a", "Jason Phelps", { email: "jp@x.com" });
+  const w = (id: string, extra: Partial<PaychexWorker> = {}) => px(id, "Jason", "Phelps", { employeeId: "458", ...extra });
+  const run = (p: OnbEmployee, workers: PaychexWorker[], dups: any[] = [], taken = new Set<number>()) =>
+    clearMatch(p, paychexMatches(p, workers), (id) => workers.find((x) => x.workerId === id), dups, taken);
+
+  it("links a single email match", () => {
+    expect(run(person, [w("W1", { email: "JP@x.com" })])?.payrollId).toBe(458);
+  });
+  it("links a single exact-name match when contact info doesn't contradict", () => {
+    expect(run(person, [w("W1")])?.payrollId).toBe(458);
+  });
+  it("not when name-only and the contact info disagrees", () => {
+    expect(run(emp("a", "Jason Phelps", { email: "jp@x.com", phone: "5025551212" }),
+      [w("W1", { email: "other@y.com", phone: "6145550000" })])).toBeNull();
+  });
+  it("not when Paychex has two possible matches", () => {
+    expect(run(person, [w("W1"), px("W2", "Jason", "Phelps", { employeeId: "999" })])).toBeNull();
+  });
+  it("not for a similar-name match", () => {
+    expect(run(emp("a", "Jason Phelp"), [w("W1")])).toBeNull();
+  });
+  it("not when AOS duplicates are flagged, or the ID is already taken, or no ID yet", () => {
+    expect(run(person, [w("W1")], [{ employeeKey: "b" }])).toBeNull();
+    expect(run(person, [w("W1")], [], new Set([458]))).toBeNull();
+    expect(run(person, [w("W1", { employeeId: "" })])).toBeNull();
+  });
+  it("not for a name-only match with an inactive or terminated worker", () => {
+    expect(run(person, [w("W1", { status: "INACTIVE" })])).toBeNull();
+    expect(run(person, [w("W1", { status: "TERMINATED" })])).toBeNull();
+  });
+  it("an email match still links an inactive worker", () => {
+    expect(run(person, [w("W1", { status: "INACTIVE", email: "jp@x.com" })])?.payrollId).toBe(458);
   });
 });

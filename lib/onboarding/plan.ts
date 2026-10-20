@@ -258,3 +258,42 @@ export function mergeOverrides(
   if (picks.phone === other.employeeKey) o.phone = other.phone.trim();
   return o;
 }
+
+// ── Clear matches: linked without anyone clicking (John, 2026-10-20) ────────
+//
+// Used by the Onboarding page (on open) and by Sync from Paychex, so the two
+// can't drift apart. A person's Paychex match is clear when ALL of:
+//   • the person has no Payroll ID and no AOS duplicates flagged
+//     (otherwise the ID might belong on the other record — merge first);
+//   • Paychex has exactly one possible match, and it has a Payroll ID;
+//   • it matched on the worker AOS sent, email, phone, or the exact name
+//     (a "similar name" typo match never counts);
+//   • a name-only match is with an ACTIVE worker (Paychex only gives us
+//     contact info for active workers) and isn't contradicted: if both
+//     sides have contact info, some of it agrees. An inactive name-only
+//     match (Evelyn Adams #206, prod dry run 10/20) waits for a person;
+//   • no other AOS record (deleted ones included) holds that Payroll ID.
+
+const CLEAR_REASONS = new Set(["Sent from AOS", "Same email", "Same phone", "Same name"]);
+
+export function clearMatch(
+  person: OnbEmployee,
+  matches: PaychexMatch[],
+  worker: (workerId: string) => PaychexWorker | undefined,
+  aosDuplicates: DupMatch[],
+  takenIds: Set<number>,
+): PaychexMatch | null {
+  if (person.payrollId != null || aosDuplicates.length || matches.length !== 1) return null;
+  const m = matches[0];
+  if (m.payrollId == null || !CLEAR_REASONS.has(m.reason) || takenIds.has(m.payrollId)) return null;
+  if (m.reason === "Same name") {
+    if (m.status !== "ACTIVE") return null;
+    const w = worker(m.workerId);
+    const aosEmail = cleanEmail(person.email), aosPhone = digits10(person.phone);
+    const pxEmail = cleanEmail(w?.email ?? ""), pxPhone = digits10(w?.phone ?? "");
+    const comparable = (aosEmail && pxEmail) || (aosPhone && pxPhone);
+    const agrees = (aosEmail && aosEmail === pxEmail) || (aosPhone && aosPhone === pxPhone);
+    if (comparable && !agrees) return null;
+  }
+  return m;
+}

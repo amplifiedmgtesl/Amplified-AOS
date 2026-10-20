@@ -4,6 +4,11 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 20 — v2.9.0
+- **Payroll IDs are now filled in automatically when the match in Paychex is clear.** On the **Onboarding** page this happens as soon as the page opens; the person drops off the list and a green **Linked from Paychex** line shows who was linked. **🔄 Sync from Paychex** on the Payroll page does the same when its preview loads. Everything else in the sync still waits for you to tick it and click **Apply**.
+- A match counts as clear only when Paychex has exactly one possible worker for the person and it already has a Payroll ID; it matched on email, phone, or the exact name (a name-only match must be an active Paychex worker whose contact details don't disagree); the person has no possible duplicates in AOS; and no other record already has that Payroll ID. Anything less certain is still shown for you to decide with **Use ID**.
+- Every automatic link is logged with the record as it was before, so it can be undone.
+
 ### October 20 — v2.8.2
 - **Merge** on the Onboarding page now lets you choose the **name**, **email** and **phone** to keep when the two records have different ones. Under the two records you'll see each value that differs, with the kept record's already selected; pick the other one if it's right. If one record is blank, the other record's value is filled in automatically as before. All crew assignments, timesheets and payroll entries still move to the record you keep.
 
