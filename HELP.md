@@ -72,7 +72,9 @@ Jobs appear on the calendar when **Show in app calendar** is set to **Yes** on t
 
 **What it's for:** the directory of everyone who works for us.
 
-**Finding someone.** Search by name, phone or email, or filter by **City**, **State**, **Status** or **Employment Type**. Click a name to open their profile.
+**Finding someone.** Search by name, phone or email, or filter by **City**, **State**, **Status**, **Employment Type** or **Applied Online** (people who applied through the website, or those who didn't). Click a column heading to sort by it; click it again to reverse. Click a name to open their profile.
+
+**Website applications land here automatically.** When someone applies on the website, AOS looks for them first by email, then phone, then exact name, because a crew lead may already have added them. If they're found, only blanks are filled in; nothing already in AOS is overwritten. If they're new, they're added as a **Contractor**.
 
 **Adding someone**
 
@@ -86,7 +88,7 @@ Jobs appear on the calendar when **Show in app calendar** is set to **Yes** on t
 
 **Terminated people** don't appear when you pick someone for a crew or timesheet row. If you really need one, use the 🔍 search and tick **Include terminated**. A terminated person already on a job still shows there by name. Status is kept in step with Paychex by **Sync from Paychex**.
 
-**On a profile** you'll also find **Notes**, uploaded **Certificates / ID / Files**, and their **Job History** and **Timesheet History**.
+**On a profile** you'll also find **Notes**, uploaded **Certificates / ID / Files**, and their **Job History** and **Timesheet History**. If they applied on the website, **Applied on website** shows the date: click it to open their application and résumé in JotForm (you need to be signed in to JotForm). **Texts** is their answer to the text-message question. **Applied with: …** under Phone or Email means their application has a different one; click it to use that instead.
 
 **Adding many at once:** **⇪ Import from CSV** lets you paste rows copied from a spreadsheet.
 
@@ -421,7 +423,8 @@ Time that's in a payroll run is locked on Timekeeping. To change it, the run mus
 
 **What it's for:** getting new crew set up in Paychex before payday. The page lists everyone on a confirmed crew assignment or a timesheet from 30 days back to 30 days ahead who has no **Payroll ID**. Without one they're left out of the Paychex file. People with hours are at the top.
 
-- **Email / Phone:** type straight into the box; it saves when you click away. Blanks are outlined in red.
+- **Email / Phone:** type straight into the box; it saves when you click away. Blanks are outlined in red. **Applied with: …** under a box means their website application has a different one; click it to use that instead.
+- Click a person's name to open their profile.
 - **Employee / Contractor:** click to switch between W-2 and 1099.
 - **AOS duplicates:** other AOS records that look like the same person (same email, same phone, or the same or a very similar name). **Merge** opens both side by side; pick the one to keep. Everything (crew assignments, timesheets, payroll entries) moves to it and the other record is deleted, with a backup kept. If the two records have different names, emails or phones, choose which one to keep under **Name to use**, **Email to use** and **Phone to use**; a blank is filled in from the other record automatically. **Not same** stops flagging that pair.
 - **Paychex column:** everyone is looked up in Paychex as soon as the page opens. It says **Checking…** for about 30 seconds, then shows every Paychex worker who might be them, or **Not in Paychex**. Paychex has its own duplicates, so there can be more than one. **Use ID** puts that worker's Payroll ID on the AOS record, and the person drops off the list. Nothing in Paychex changes. **Check Paychex** and **Refresh** look everyone up again.
