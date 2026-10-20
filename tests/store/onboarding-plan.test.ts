@@ -4,11 +4,14 @@ import {
   canSend,
   defaultKeep,
   duplicateReason,
+  mergeConflicts,
+  mergeOverrides,
   pairKey,
   paychexMatches,
   splitForPaychex,
   windowRange,
   type Activity,
+  type MergeSide,
   type OnbEmployee,
 } from "@/lib/onboarding/plan";
 import type { PaychexWorker } from "@/lib/paychex/sync-plan";
@@ -159,5 +162,33 @@ describe("similarName (2026-10-20 false positives)", () => {
     expect(duplicateReason(emp("1", "Jeffery Eckel"), emp("2", "Jeffrey Eckel"))?.reason).toBe("Same name");
     expect(duplicateReason(emp("1", "DLauren Honore"), emp("2", "Lauren Honore"))?.reason).toBe("Similar name");
     expect(duplicateReason(emp("1", "Cameron Pasley"), emp("2", "Camran Paisley"))).not.toBeNull();
+  });
+});
+
+const side = (k: string, full: string, extra: Partial<MergeSide> = {}): MergeSide => {
+  const [first, ...rest] = full.split(" ");
+  return { employeeKey: k, fullName: full, firstName: first, lastName: rest.join(" "), email: "", phone: "", ...extra };
+};
+
+describe("mergeConflicts", () => {
+  it("lists name, email and phone only when both have different values", () => {
+    const a = side("a", "Mike Lynch", { email: "m@x.com", phone: "(502) 555-1212" });
+    const b = side("b", "Michael Lynch", { email: "M@X.com", phone: "502-555-1212" });
+    expect(mergeConflicts(a, b)).toEqual(["name"]);
+    expect(mergeConflicts(a, side("c", "Mike  lynch", { email: "other@x.com", phone: "5025559999" }))).toEqual(["email", "phone"]);
+  });
+  it("ignores blanks (the merge fills those already)", () => {
+    expect(mergeConflicts(side("a", "Ann Lee"), side("b", "Ann Lee", { email: "a@x.com" }))).toEqual([]);
+  });
+});
+
+describe("mergeOverrides", () => {
+  const keep = side("k", "Mike Lynch", { email: "keep@x.com", phone: "111" });
+  const other = side("o", "Michael Lynch", { email: "other@x.com", phone: "222" });
+  it("writes the other record's values only where picked", () => {
+    expect(mergeOverrides(keep, other, { name: "o", email: "k" }))
+      .toEqual({ fullName: "Michael Lynch", firstName: "Michael", lastName: "Lynch" });
+    expect(mergeOverrides(keep, other, { phone: "o" })).toEqual({ phone: "222" });
+    expect(mergeOverrides(keep, other, {})).toEqual({});
   });
 });

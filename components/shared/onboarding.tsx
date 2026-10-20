@@ -10,7 +10,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { mergeEmployees, patchEmployeeFields } from "@/lib/store/db";
-import { canSend, defaultKeep, type DupMatch, type OnboardingRow, type PaychexMatch } from "@/lib/onboarding/plan";
+import {
+  canSend, defaultKeep, mergeConflicts, mergeOverrides,
+  type DupMatch, type MergeField, type MergeSide, type OnboardingRow, type PaychexMatch,
+} from "@/lib/onboarding/plan";
 import type { SendOutcome } from "@/lib/onboarding/send";
 
 // The send API takes at most 15 people per request.
@@ -62,20 +65,35 @@ function EditCell({ value, placeholder, onSave }: { value: string; placeholder: 
 
 type MergePick = { row: OnboardingRow; dup: DupMatch };
 
+const FIELD_LABEL: Record<MergeField, string> = { name: "Name", email: "Email", phone: "Phone" };
+
 function MergeDialog({ pick, onClose, onDone }: { pick: MergePick; onClose: () => void; onDone: () => void }) {
   const { row, dup } = pick;
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const [sides, setSides] = useState<Record<string, MergeSide> | null>(null);
   const [keep, setKeep] = useState<string>("");
+  // For each field where the two records differ, whose value to use.
+  const [picks, setPicks] = useState<Partial<Record<MergeField, string>>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
+      const keys = [row.employeeKey, dup.employeeKey];
       const c: Record<string, number> = {};
-      for (const k of [row.employeeKey, dup.employeeKey]) {
+      for (const k of keys) {
         const { count } = await supabase.from("timesheet_entries").select("id", { count: "exact", head: true }).eq("employee_key", k);
         c[k] = count ?? 0;
       }
+      const { data, error } = await supabase.from("employees")
+        .select("employee_key, full_name, first_name, last_name, email, phone").in("employee_key", keys);
+      if (error) { setError(error.message); return; }
+      const sd: Record<string, MergeSide> = {};
+      for (const r of data ?? []) {
+        sd[r.employee_key] = { employeeKey: r.employee_key, fullName: r.full_name ?? "", firstName: r.first_name ?? "",
+          lastName: r.last_name ?? "", email: r.email ?? "", phone: r.phone ?? "" };
+      }
+      setSides(sd);
       setCounts(c);
       setKeep(defaultKeep(
         { employeeKey: row.employeeKey, payrollId: row.payrollId, entries: c[row.employeeKey] },
@@ -84,13 +102,25 @@ function MergeDialog({ pick, onClose, onDone }: { pick: MergePick; onClose: () =
     })();
   }, [row, dup]);
 
-  const side = (key: string, name: string, payrollId: number | null, email: string, phone: string) => (
-    <label className="card" style={{ flex: 1, cursor: "pointer", outline: keep === key ? "2px solid var(--gold-dark)" : undefined }}>
-      <input type="radio" name="keep" checked={keep === key} onChange={() => setKeep(key)} /> <b>Keep</b>
-      <div style={{ marginTop: 8 }}><b>{name}</b></div>
-      <div className="muted" style={{ fontSize: 13 }}>
+  const otherKey = keep === row.employeeKey ? dup.employeeKey : row.employeeKey;
+  const conflicts = sides && sides[row.employeeKey] && sides[dup.employeeKey]
+    ? mergeConflicts(sides[row.employeeKey], sides[dup.employeeKey]) : [];
+  // Default every choice to the kept record whenever the kept record changes.
+  useEffect(() => { setPicks({}); }, [keep]);
+  const chosen = (f: MergeField) => picks[f] ?? keep;
+  const valueOf = (k: string, f: MergeField) => {
+    const s = sides?.[k];
+    if (!s) return "";
+    return f === "name" ? (s.fullName || `${s.firstName} ${s.lastName}`).trim() : f === "email" ? s.email : s.phone;
+  };
+
+  const side = (key: string, payrollId: number | null) => (
+    <label className="card" style={{ flex: 1, minWidth: 0, cursor: "pointer", outline: keep === key ? "2px solid var(--gold-dark)" : undefined }}>
+      <input type="radio" name="keep" checked={keep === key} onChange={() => setKeep(key)} /> <b>Keep this record</b>
+      <div style={{ marginTop: 8, overflowWrap: "anywhere" }}><b>{valueOf(key, "name") || key}</b></div>
+      <div className="muted" style={{ fontSize: 13, overflowWrap: "anywhere" }}>
         {payrollId != null ? `Payroll ID ${payrollId}` : "No Payroll ID"}<br />
-        {email || "no email"} · {phone || "no phone"}<br />
+        {valueOf(key, "email") || "no email"} · {valueOf(key, "phone") || "no phone"}<br />
         {counts ? `${counts[key]} timesheet entries` : "…"}<br />
         <small>{key}</small>
       </div>
@@ -98,11 +128,16 @@ function MergeDialog({ pick, onClose, onDone }: { pick: MergePick; onClose: () =
   );
 
   async function run() {
-    const dupKey = keep === row.employeeKey ? dup.employeeKey : row.employeeKey;
+    if (!sides) return;
     setBusy(true); setError(null);
-    const { error } = await mergeEmployees(dupKey, keep);
+    const { error } = await mergeEmployees(otherKey, keep);
+    if (error) { setBusy(false); setError(error); return; }
+    const o = mergeOverrides(sides[keep], sides[otherKey], picks);
+    if (Object.keys(o).length) {
+      const { error: pErr } = await patchEmployeeFields(keep, o);
+      if (pErr) alert(`Merged, but couldn't set the chosen ${Object.keys(o).join(", ")}: ${(pErr as any)?.message ?? pErr}. Fix it on the employee record.`);
+    }
     setBusy(false);
-    if (error) { setError(error); return; }
     onDone();
   }
 
@@ -110,14 +145,29 @@ function MergeDialog({ pick, onClose, onDone }: { pick: MergePick; onClose: () =
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-panel" style={{ width: "min(640px,95vw)" }} onClick={(e) => e.stopPropagation()}>
         <h3 style={{ marginTop: 0 }}>Merge records</h3>
-        <div className="action-row" style={{ gap: 12, alignItems: "stretch" }}>
-          {side(row.employeeKey, row.name, row.payrollId, row.email, row.phone)}
-          {side(dup.employeeKey, dup.name, dup.payrollId, dup.email, dup.phone)}
+        <div className="action-row" style={{ gap: 12, alignItems: "stretch", flexWrap: "wrap" }}>
+          {side(row.employeeKey, row.payrollId)}
+          {side(dup.employeeKey, dup.payrollId)}
         </div>
+        {keep && conflicts.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            {conflicts.map((f) => (
+              <div key={f} style={{ marginBottom: 10 }}>
+                <b>{FIELD_LABEL[f]} to use</b>
+                {[keep, otherKey].map((k) => (
+                  <label key={k} style={{ display: "block", fontSize: 14, overflowWrap: "anywhere", cursor: "pointer" }}>
+                    <input type="radio" name={`pick-${f}`} checked={chosen(f) === k}
+                      onChange={() => setPicks((p) => ({ ...p, [f]: k }))} /> {valueOf(k, f)}
+                  </label>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
         {error && <div style={{ color: "#b00", marginTop: 8 }}>{error}</div>}
         <div className="action-row" style={{ justifyContent: "flex-end", marginTop: 16 }}>
           <button className="secondary" onClick={onClose} disabled={busy}>Cancel</button>
-          <button onClick={run} disabled={busy || !keep || !counts}
+          <button onClick={run} disabled={busy || !keep || !counts || !sides}
             title="Moves all crew assignments, timesheets and payroll entries to the kept record, then deletes the other one (a backup is kept)">
             {busy ? "Merging…" : "Merge"}
           </button>
