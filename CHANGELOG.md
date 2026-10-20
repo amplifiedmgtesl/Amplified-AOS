@@ -4,6 +4,10 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 20 — v2.8.1
+- The **Onboarding** page now fits a normal laptop screen without scrolling sideways. Each person's details are grouped into fewer, narrower columns; on a small screen only the table scrolls, not the whole page.
+- Paychex is now checked automatically as soon as you open Onboarding. The Paychex column shows **Checking…** for about 30 seconds and then the results. **Send to Paychex** and the tick boxes stay greyed out until that person has been checked, so nobody can be sent before you've seen whether Paychex already has them.
+
 ### October 20 — v2.8.0
 - New **🪪 Onboarding** page (admins only). It lists everyone on a confirmed crew assignment or a timesheet from the last 30 days through the next 30 days who has no **Payroll ID**. Those are the people who would be left out of the Paychex payroll file. People with hours are at the top.
 - Fill in a missing **email** or **phone** right on the list (blanks are outlined in red), and click **Employee / Contractor** to switch someone between W-2 and 1099.
