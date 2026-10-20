@@ -21,6 +21,7 @@ describe("looksLike", () => {
     expect(looksLike("shelbey", "Shelby Bowman")).toBe(true);
     expect(looksLike("Mike Jones", "Michael Jones")).toBe(true);
     expect(looksLike("mike", "Michael Jones")).toBe(true);
+    expect(looksLike("dow", "Sally Doe")).toBe(true);
     expect(looksLike("Bowman Shelby", "Shelby Bowman")).toBe(true);
     expect(looksLike("Chris Smith", "Christopher Smith")).toBe(true);
   });

@@ -50,7 +50,7 @@ function wordScore(typed: string, word: string): number | null {
 export function closeness(typed: string, fullName: string): number | null {
   const t = words(typed), n = words(fullName);
   if (!t.length || !n.length || t.length > n.length) return null;
-  if (t.join("").length < 4) return null;          // too little to go on
+  if (t.join("").length < 3) return null;          // too little to go on ("dow" for Doe is enough)
   const used = new Set<number>();
   let total = 0;
   for (const w of t) {
