@@ -4,6 +4,11 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 20 — v2.11.0
+- **Fewer duplicate employees.** When you search for a person (Timekeeping, **+ Add Crew Member**, crew screens), a new **Did you mean:** list under the results shows people whose name *sounds* like what you typed: a misspelling ("bowmen" finds Bowman), a nickname ("Mike" finds Michael) or first and last name swapped. It shows even when there are exact matches, because "Branden" may really be the Brandon you meant. If nothing matches, **+ Create employee** becomes **None of these — create**, so picking the existing person comes first.
+- People who are set up in Paychex (they have a Payroll ID) show a green **Payroll ✓** next to their name in the search, so you can tell the real record from a duplicate.
+- The search list now fits on the screen and scrolls on its own, instead of running off the bottom of the window.
+
 ### October 20 — v2.10.1
 - Removed the one-time **Load website applications** page. All past applications are now in the Employee list, and new ones arrive on their own as people apply.
 

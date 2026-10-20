@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useUserRole } from "@/lib/auth/use-user-role";
+import { similarNames } from "@/lib/employees/similar-names";
 
 export type PickerEmployee = {
   employeeKey: string;
@@ -16,7 +17,14 @@ export type PickerEmployee = {
   /** Employee Status. "Terminated" people are left out of search results
    *  (still loaded, so a terminated person already on a row shows by name). */
   status?: string;
+  /** Has a Payroll ID (in Paychex). Only the yes/no is kept and shown,
+   *  not the number: crew leads use this picker too. */
+  inPayroll?: boolean;
 };
+
+/** Small green mark next to a name: this record is the one in payroll. */
+const PayrollMark = ({ e }: { e: PickerEmployee }) =>
+  e.inPayroll ? <span className="pill pill-green" title="Has a Payroll ID (set up in Paychex)" style={{ marginLeft: 6, fontSize: 10, padding: "1px 6px", fontWeight: 600 }}>Payroll ✓</span> : null;
 
 const isTerminated = (e: PickerEmployee) => (e.status ?? "").trim().toLowerCase() === "terminated";
 
@@ -66,7 +74,7 @@ async function loadAllEmployees(): Promise<PickerEmployee[]> {
     while (true) {
       const { data, error } = await supabase
         .from("employees")
-        .select("employee_key, full_name, first_name, last_name, email, phone, city, state, status")
+        .select("employee_key, full_name, first_name, last_name, email, phone, city, state, status, rippling_employee_id")
         .eq("is_deleted", false)
         .order("full_name")
         .range(start, start + PAGE - 1);
@@ -87,6 +95,7 @@ async function loadAllEmployees(): Promise<PickerEmployee[]> {
       city: r.city ?? "",
       state: r.state ?? "",
       status: r.status ?? "",
+      inPayroll: r.rippling_employee_id != null,
     }));
     // Wake up any LazyEmployeePicker cells that fell through to the full
     // picker while the cache was loading, so they can drop back to the
@@ -224,6 +233,23 @@ export function EmployeePicker({
   const RESULT_CAP = 50;
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
+  // Fit the dropdown in the space left below the input, so it never runs
+  // off the bottom of the window (inside a dialog, the part off screen
+  // can't be scrolled to: the wheel moved the page behind, John 10/20).
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [listMax, setListMax] = useState(360);
+  useEffect(() => {
+    if (!open) return;
+    const fit = () => {
+      const r = boxRef.current?.getBoundingClientRect();
+      if (r) setListMax(Math.max(160, Math.min(360, window.innerHeight - r.bottom - 12)));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    window.addEventListener("scroll", fit, true);
+    return () => { window.removeEventListener("resize", fit); window.removeEventListener("scroll", fit, true); };
+  }, [open]);
+
   // Inline picker filters by NAME only — keeps the dropdown simple. For
   // wider search (city / phone / email / etc.) the user clicks the 🔍
   // button to open EmployeeSearchModal.
@@ -258,6 +284,31 @@ export function EmployeePicker({
     return scored.slice(0, RESULT_CAP).map((s) => s.e);
   }, [employees, query]);
 
+  // People whose name sounds close (typo, nickname, first/last swapped),
+  // shown under the exact matches. Always, not only when the search finds
+  // nothing: typing "Branden" finds a Branden, but the operator may have
+  // meant a Brandon (Shelby Bowman / John, 2026-10-20).
+  const similar = useMemo(() => {
+    if (!employees || !query.trim()) return [];
+    const shown = new Set(results.map((e) => e.employeeKey));
+    return similarNames(query, employees.filter((e) => !isTerminated(e) && !shown.has(e.employeeKey)));
+  }, [employees, query, results]);
+
+  const similarRow = (e: PickerEmployee) => (
+    <div
+      key={e.employeeKey}
+      onMouseDown={() => { onSelect(e); setQuery(""); setOpen(false); }}
+      style={{ padding: "6px 8px", marginTop: 4, cursor: "pointer", border: "1px solid #f0e9e0", borderRadius: 6, color: "#222" }}
+      onMouseEnter={(ev) => { (ev.currentTarget as HTMLElement).style.background = "#fbf6ee"; }}
+      onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = ""; }}
+    >
+      <div style={{ fontWeight: 600, fontSize: 13 }}>{e.fullName}<PayrollMark e={e} /></div>
+      <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
+        {[e.email, e.phone, [e.city, e.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ")}
+      </div>
+    </div>
+  );
+
   const totalMatches = useMemo(() => {
     if (!employees) return 0;
     const pool = employees.filter((e) => !isTerminated(e));
@@ -276,7 +327,7 @@ export function EmployeePicker({
   const showFallbackTile = !linked && !!fallbackName && !open;
 
   return (
-    <div style={{ position: "relative", minWidth: 200 }}>
+    <div ref={boxRef} style={{ position: "relative", minWidth: 200 }}>
       {linked && !open && (
         <div
           onClick={() => { if (!disabled) { setOpen(true); void ensureLoaded(); } }}
@@ -380,7 +431,8 @@ export function EmployeePicker({
           borderRadius: 8,
           boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
           minWidth: 320,
-          maxHeight: 360,
+          maxHeight: listMax,
+          overscrollBehavior: "contain",
           overflowY: "auto",
         }}>
           {loading && (
@@ -388,15 +440,19 @@ export function EmployeePicker({
           )}
           {!loading && results.length === 0 && (
             <div style={{ padding: 12, fontSize: 12, color: "#888" }}>
-              {query ? `No employees match "${query}".` : "No employees found."}
+              {similar.length > 0 ? "Did you mean:" : query ? `No employees match "${query}".` : "No employees found."}
+              {similar.map(similarRow)}
               {onCreateInline && query.trim().length >= 2 && (
                 <div
                   onMouseDown={(e) => { e.preventDefault(); void handleInlineCreate(); }}
                   style={{
                     marginTop: 8,
                     padding: "8px 10px",
-                    background: "var(--accent, #2563eb)",
-                    color: "#fff",
+                    // With close matches above, creating new is the
+                    // second choice, not the big blue button.
+                    background: similar.length ? "#fff" : "var(--accent, #2563eb)",
+                    color: similar.length ? "var(--accent, #2563eb)" : "#fff",
+                    border: similar.length ? "1px solid var(--accent, #2563eb)" : "none",
                     borderRadius: 6,
                     cursor: creating ? "wait" : "pointer",
                     fontSize: 12,
@@ -405,7 +461,7 @@ export function EmployeePicker({
                   }}
                   title="Create a new employee with this name and link the row to them."
                 >
-                  {creating ? "Creating…" : `+ Create employee "${query.trim()}"`}
+                  {creating ? "Creating…" : similar.length ? `None of these — create "${query.trim()}"` : `+ Create employee "${query.trim()}"`}
                   <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2, opacity: 0.9 }}>
                     Adds them to the Employee Directory as a contractor. Edit details later from Maintenance.
                   </div>
@@ -430,13 +486,19 @@ export function EmployeePicker({
               onMouseEnter={(ev) => { (ev.currentTarget as HTMLElement).style.background = "#fbf6ee"; }}
               onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = ""; }}
             >
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{e.fullName}</div>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{e.fullName}<PayrollMark e={e} /></div>
               <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
                 {[e.email, e.phone, [e.city, e.state].filter(Boolean).join(", ")]
                   .filter(Boolean).join(" · ")}
               </div>
             </div>
           ))}
+          {!loading && results.length > 0 && similar.length > 0 && (
+            <div style={{ padding: "8px 12px", fontSize: 12, color: "#888" }}>
+              Did you mean:
+              {similar.map(similarRow)}
+            </div>
+          )}
           {!loading && employees && employees.length > 0 && (
             <div style={{
               padding: "8px 12px",
@@ -737,7 +799,7 @@ function EmployeeSearchModal({
                     onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = ""; }}
                   >
                     <td style={{ padding: "8px 8px 8px 0", fontWeight: 600 }}>
-                      {e.fullName}
+                      {e.fullName}<PayrollMark e={e} />
                       {isTerminated(e) && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 500, color: "#a00" }}>terminated</span>}
                     </td>
                     <td style={{ padding: "8px 8px 8px 0", color: "#444" }}>{e.email || "—"}</td>

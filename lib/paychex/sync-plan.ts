@@ -108,6 +108,12 @@ const NICK: Record<string, string> = {
   liz: "elizabeth", beth: "elizabeth", jen: "jennifer", jenny: "jennifer", abby: "abigail", abbey: "abigail",
 };
 
+/** A first name with common short forms folded ("mike" → "michael"). */
+export function fullFirstName(word: string): string {
+  const w = (word ?? "").toLowerCase();
+  return NICK[w] ?? w;
+}
+
 /** First 3 letters of the first name + the whole last name. Catches
  *  Chris/Christopher and lower-case entries; middle initials ignored. */
 export function nameKey(name: string): string {
