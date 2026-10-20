@@ -132,28 +132,36 @@ export default function Onboarding() {
   const [error, setError] = useState<string | null>(null);
   const [px, setPx] = useState<Record<string, PaychexMatch[]> | null>(null);
   const [pxBusy, setPxBusy] = useState(false);
+  const [pxFailed, setPxFailed] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [merge, setMerge] = useState<MergePick | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
+
+  // Paychex is checked every time the list loads: nobody can be sent until
+  // their row has been looked up (John, 2026-10-20).
+  const checkPaychex = useCallback(async (keys: string[]) => {
+    if (!keys.length) { setPx({}); return; }
+    setPxBusy(true); setPxFailed(false);
+    const r = await api("/api/onboarding/paychex", "POST", { keys });
+    setPxBusy(false);
+    if (!r.ok) { setPxFailed(true); setError(r.json?.error ?? `HTTP ${r.status}`); return; }
+    setPx(r.json.matches);
+  }, []);
 
   const load = useCallback(async () => {
     setError(null);
     const r = await api("/api/onboarding");
     if (!r.ok) { setError(r.json?.error ?? `HTTP ${r.status}`); return; }
     setRows(r.json.rows);
-  }, []);
+    setPx(null);
+    checkPaychex((r.json.rows as OnboardingRow[]).map((x) => x.employeeKey));
+  }, [checkPaychex]);
 
   useEffect(() => { load(); }, [load]);
 
-  async function checkPaychex() {
-    if (!rows?.length) return;
-    setPxBusy(true); setError(null);
-    const r = await api("/api/onboarding/paychex", "POST", { keys: rows.map((x) => x.employeeKey) });
-    setPxBusy(false);
-    if (!r.ok) { setError(r.json?.error ?? `HTTP ${r.status}`); return; }
-    setPx(r.json.matches);
-  }
+  /** Can be sent: email etc. (canSend) AND looked up in Paychex this visit. */
+  const ready = (row: OnboardingRow) => canSend(row) && px?.[row.employeeKey] !== undefined;
 
   const update = (key: string, patch: Partial<OnboardingRow>) =>
     setRows((rs) => rs?.map((x) => (x.employeeKey === key ? { ...x, ...patch } : x)) ?? rs);
@@ -244,7 +252,7 @@ export default function Onboarding() {
   }
 
   async function sendSelected() {
-    const list = (rows ?? []).filter((x) => picked.has(x.employeeKey) && canSend(x));
+    const list = (rows ?? []).filter((x) => picked.has(x.employeeKey) && ready(x));
     if (!list.length) return;
     if (!confirm(`Send ${list.length} to Paychex?\n\n${list.map((x) => `• ${x.name} — ${x.email} — ${typeLabel(x.employmentType)}`).join("\n")}\n\nPaychex will email each of them an onboarding invite. Anyone Paychex may already have is skipped.`)) return;
     setBatchBusy(true);
@@ -266,7 +274,14 @@ export default function Onboarding() {
       ? <div><span className="pill pill-green">Sent {fmtDate(row.paychexInvitedAt.slice(0, 10))}</span></div>
       : null;
     const matches = px?.[row.employeeKey];
-    if (!matches) return sent ?? <span className="muted">—</span>;
+    if (!matches) {
+      return (
+        <>
+          {sent}
+          <span className="muted">{pxBusy ? "Checking…" : pxFailed ? "Couldn't check" : "—"}</span>
+        </>
+      );
+    }
     if (!matches.length) return sent ?? <span className="muted">Not in Paychex</span>;
     return (
       <>
@@ -287,7 +302,7 @@ export default function Onboarding() {
   if (error && !rows) return <div className="card"><div style={{ color: "#b00" }}>{error}</div></div>;
   if (!rows) return <div className="card"><div className="muted">Loading…</div></div>;
 
-  const sendable = rows.filter(canSend);
+  const sendable = rows.filter(ready);
   const allPicked = sendable.length > 0 && sendable.every((x) => picked.has(x.employeeKey));
   const togglePick = (k: string) => setPicked((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
@@ -300,7 +315,7 @@ export default function Onboarding() {
             {batchBusy ? "Sending…" : `Send selected (${sendable.filter((x) => picked.has(x.employeeKey)).length})`}
           </button>
           <button className="secondary" onClick={load}>Refresh</button>
-          <button onClick={checkPaychex} disabled={pxBusy || !rows.length} title="Look each person up in Paychex">
+          <button onClick={() => checkPaychex(rows.map((x) => x.employeeKey))} disabled={pxBusy || !rows.length} title="Look each person up in Paychex">
             {pxBusy ? "Checking Paychex…" : "Check Paychex"}
           </button>
         </span>
@@ -329,7 +344,7 @@ export default function Onboarding() {
             {rows.map((row) => (
               <tr key={row.employeeKey}>
                 <td>
-                  <input type="checkbox" checked={picked.has(row.employeeKey)} disabled={!canSend(row)}
+                  <input type="checkbox" checked={picked.has(row.employeeKey)} disabled={!ready(row)}
                     onChange={() => togglePick(row.employeeKey)} />
                 </td>
                 <td style={{ overflowWrap: "anywhere" }}>
@@ -363,8 +378,11 @@ export default function Onboarding() {
                 <td>
                   <button
                     style={{ ...SMALL, whiteSpace: "normal" }}
-                    disabled={!canSend(row) || busyKey === row.employeeKey || batchBusy}
-                    title={row.paychexWorkerId ? "Already sent" : canSend(row) ? "Create in Paychex and email the onboarding invite" : "Needs an email"}
+                    disabled={!ready(row) || busyKey === row.employeeKey || batchBusy}
+                    title={row.paychexWorkerId ? "Already sent"
+                      : !canSend(row) ? "Needs an email"
+                      : !ready(row) ? "Waiting for the Paychex check"
+                      : "Create in Paychex and email the onboarding invite"}
                     onClick={() => send(row)}
                   >
                     {busyKey === row.employeeKey ? "…" : "Send to Paychex"}
