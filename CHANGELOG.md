@@ -4,6 +4,9 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 20 — v2.8.2
+- **Merge** on the Onboarding page now lets you choose the **name**, **email** and **phone** to keep when the two records have different ones. Under the two records you'll see each value that differs, with the kept record's already selected; pick the other one if it's right. If one record is blank, the other record's value is filled in automatically as before. All crew assignments, timesheets and payroll entries still move to the record you keep.
+
 ### October 20 — v2.8.1
 - The **Onboarding** page now fits a normal laptop screen without scrolling sideways. Each person's details are grouped into fewer, narrower columns; on a small screen only the table scrolls, not the whole page.
 - Paychex is now checked automatically as soon as you open Onboarding. The Paychex column shows **Checking…** for about 30 seconds and then the results. **Send to Paychex** and the tick boxes stay greyed out until that person has been checked, so nobody can be sent before you've seen whether Paychex already has them.
