@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import { similarNames } from "@/lib/employees/similar-names";
@@ -233,6 +233,23 @@ export function EmployeePicker({
   const RESULT_CAP = 50;
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
+  // Fit the dropdown in the space left below the input, so it never runs
+  // off the bottom of the window (inside a dialog, the part off screen
+  // can't be scrolled to: the wheel moved the page behind, John 10/20).
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [listMax, setListMax] = useState(360);
+  useEffect(() => {
+    if (!open) return;
+    const fit = () => {
+      const r = boxRef.current?.getBoundingClientRect();
+      if (r) setListMax(Math.max(160, Math.min(360, window.innerHeight - r.bottom - 12)));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    window.addEventListener("scroll", fit, true);
+    return () => { window.removeEventListener("resize", fit); window.removeEventListener("scroll", fit, true); };
+  }, [open]);
+
   // Inline picker filters by NAME only — keeps the dropdown simple. For
   // wider search (city / phone / email / etc.) the user clicks the 🔍
   // button to open EmployeeSearchModal.
@@ -310,7 +327,7 @@ export function EmployeePicker({
   const showFallbackTile = !linked && !!fallbackName && !open;
 
   return (
-    <div style={{ position: "relative", minWidth: 200 }}>
+    <div ref={boxRef} style={{ position: "relative", minWidth: 200 }}>
       {linked && !open && (
         <div
           onClick={() => { if (!disabled) { setOpen(true); void ensureLoaded(); } }}
@@ -414,7 +431,8 @@ export function EmployeePicker({
           borderRadius: 8,
           boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
           minWidth: 320,
-          maxHeight: 360,
+          maxHeight: listMax,
+          overscrollBehavior: "contain",
           overflowY: "auto",
         }}>
           {loading && (
