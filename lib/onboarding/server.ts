@@ -122,7 +122,7 @@ async function loadActivity(today: string): Promise<Activity[]> {
   return out;
 }
 
-async function loadNotSame(): Promise<Set<string>> {
+export async function loadNotSame(): Promise<Set<string>> {
   const rows = await pagedSelect((a, b) => supabaseAdmin.from("employee_not_duplicate")
     .select("key_a, key_b").order("key_a").range(a, b));
   return new Set(rows.map((r) => pairKey(r.key_a, r.key_b)));
@@ -132,4 +132,13 @@ export async function loadOnboardingRows(): Promise<{ today: string; rows: Onboa
   const today = todayLocal();
   const [all, activity, notSame] = await Promise.all([loadLiveEmployees(), loadActivity(today), loadNotSame()]);
   return { today, rows: buildOnboardingRows(today, all, activity, notSame) };
+}
+
+/** Every Payroll ID on any employee record, deleted ones included (the
+ *  unique constraint covers them too). */
+export async function loadTakenPayrollIds(): Promise<Set<number>> {
+  const rows = await pagedSelect((a, b) => supabaseAdmin.from("employees")
+    .select("employee_key, rippling_employee_id").not("rippling_employee_id", "is", null)
+    .order("employee_key").range(a, b));
+  return new Set(rows.map((r) => Number(r.rippling_employee_id)));
 }

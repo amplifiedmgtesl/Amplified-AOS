@@ -183,6 +183,8 @@ export default function Onboarding() {
   const [px, setPx] = useState<Record<string, PaychexMatch[]> | null>(null);
   const [pxBusy, setPxBusy] = useState(false);
   const [pxFailed, setPxFailed] = useState(false);
+  // Clear matches the check linked by itself this visit.
+  const [autoLinked, setAutoLinked] = useState<{ employeeKey: string; name: string; payrollId: number }[]>([]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [merge, setMerge] = useState<MergePick | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -197,6 +199,12 @@ export default function Onboarding() {
     setPxBusy(false);
     if (!r.ok) { setPxFailed(true); setError(r.json?.error ?? `HTTP ${r.status}`); return; }
     setPx(r.json.matches);
+    const linked: { employeeKey: string; name: string; payrollId: number }[] = r.json.linked ?? [];
+    if (linked.length) {
+      const gone = new Set(linked.map((x) => x.employeeKey));
+      setRows((rs) => rs?.filter((x) => !gone.has(x.employeeKey)) ?? rs);
+      setAutoLinked((prev) => [...prev, ...linked]);
+    }
   }, []);
 
   const load = useCallback(async () => {
@@ -371,6 +379,12 @@ export default function Onboarding() {
         </span>
       </div>
       {error && <div style={{ color: "#b00", marginTop: 8 }}>{error}</div>}
+      {autoLinked.length > 0 && (
+        <div style={{ marginTop: 8, fontSize: 13 }} title="Clear matches in Paychex — their Payroll ID was filled in automatically">
+          <span className="pill pill-green">Linked from Paychex</span>{" "}
+          {autoLinked.map((x) => `${x.name} #${x.payrollId}`).join(", ")}
+        </div>
+      )}
       <div style={{ marginTop: 12, overflowX: "auto", maxWidth: "100%" }}>
         <table style={{ tableLayout: "fixed", width: "100%", minWidth: 640 }}>
           <colgroup>
