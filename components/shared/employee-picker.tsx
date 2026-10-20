@@ -17,7 +17,14 @@ export type PickerEmployee = {
   /** Employee Status. "Terminated" people are left out of search results
    *  (still loaded, so a terminated person already on a row shows by name). */
   status?: string;
+  /** Has a Payroll ID (in Paychex). Only the yes/no is kept and shown,
+   *  not the number: crew leads use this picker too. */
+  inPayroll?: boolean;
 };
+
+/** Small green mark next to a name: this record is the one in payroll. */
+const PayrollMark = ({ e }: { e: PickerEmployee }) =>
+  e.inPayroll ? <span className="pill pill-green" title="Has a Payroll ID (set up in Paychex)" style={{ marginLeft: 6, fontSize: 10, padding: "1px 6px", fontWeight: 600 }}>Payroll ✓</span> : null;
 
 const isTerminated = (e: PickerEmployee) => (e.status ?? "").trim().toLowerCase() === "terminated";
 
@@ -67,7 +74,7 @@ async function loadAllEmployees(): Promise<PickerEmployee[]> {
     while (true) {
       const { data, error } = await supabase
         .from("employees")
-        .select("employee_key, full_name, first_name, last_name, email, phone, city, state, status")
+        .select("employee_key, full_name, first_name, last_name, email, phone, city, state, status, rippling_employee_id")
         .eq("is_deleted", false)
         .order("full_name")
         .range(start, start + PAGE - 1);
@@ -88,6 +95,7 @@ async function loadAllEmployees(): Promise<PickerEmployee[]> {
       city: r.city ?? "",
       state: r.state ?? "",
       status: r.status ?? "",
+      inPayroll: r.rippling_employee_id != null,
     }));
     // Wake up any LazyEmployeePicker cells that fell through to the full
     // picker while the cache was loading, so they can drop back to the
@@ -277,7 +285,7 @@ export function EmployeePicker({
       onMouseEnter={(ev) => { (ev.currentTarget as HTMLElement).style.background = "#fbf6ee"; }}
       onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = ""; }}
     >
-      <div style={{ fontWeight: 600, fontSize: 13 }}>{e.fullName}</div>
+      <div style={{ fontWeight: 600, fontSize: 13 }}>{e.fullName}<PayrollMark e={e} /></div>
       <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
         {[e.email, e.phone, [e.city, e.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ")}
       </div>
@@ -460,7 +468,7 @@ export function EmployeePicker({
               onMouseEnter={(ev) => { (ev.currentTarget as HTMLElement).style.background = "#fbf6ee"; }}
               onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = ""; }}
             >
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{e.fullName}</div>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{e.fullName}<PayrollMark e={e} /></div>
               <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
                 {[e.email, e.phone, [e.city, e.state].filter(Boolean).join(", ")]
                   .filter(Boolean).join(" · ")}
@@ -773,7 +781,7 @@ function EmployeeSearchModal({
                     onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = ""; }}
                   >
                     <td style={{ padding: "8px 8px 8px 0", fontWeight: 600 }}>
-                      {e.fullName}
+                      {e.fullName}<PayrollMark e={e} />
                       {isTerminated(e) && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 500, color: "#a00" }}>terminated</span>}
                     </td>
                     <td style={{ padding: "8px 8px 8px 0", color: "#444" }}>{e.email || "—"}</td>
