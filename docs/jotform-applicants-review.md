@@ -1,10 +1,10 @@
 # Website applicants (#121): build review with John
 
-Built 2026-10-21 in unattended mode on `feature/jotform-applicants` (off `origin/main`). Plan: `docs/jotform-applicants-plan.md` on `docs/backlog-121-jotform-applicants`.
+Built 2026-10-20 in unattended mode on `feature/jotform-applicants` (off `origin/main`). Plan: `docs/jotform-applicants-plan.md` on `docs/backlog-121-jotform-applicants`.
 
 ## What's built
 
-- **Migration `20261021a_jotform_applicants.sql`**, applied to **dev only**:
+- **Migration `20261020b_jotform_applicants.sql`**, applied to **dev only**:
   - new employee columns `applied_at`, `jotform_submission_id`, `sms_consent`, `sms_consent_at`, `application_contact`;
   - table `jotform_application_log`, unique by submission ID;
   - `merge_employee` now carries the newer application and SMS answer onto the kept record (see judgement call 6).
@@ -30,7 +30,7 @@ Typecheck is clean, and all 262 tests pass. The tests cover the matching and fil
 8. **Names typed in all-lower or all-upper are tidied** ("chandler escota" → "Chandler Escota"). Mixed case is left as typed.
 9. **The webhook answers 404 when the secret is wrong or unset.** It answers 400 for any form other than 260385023196052.
 10. **A submission that failed with an error can be retried** (by the webhook or the load). Everything else is handled once.
-12. **The load page is temporary** (John OK'd 10/21). The session can't bulk-read or bulk-write employees, so the one-time load runs from the hidden admin page. Delete `/onboarding/applications`, `components/shared/applications-load.tsx` and `app/api/jotform/load` in the release after the prod load.
+12. **The load page is temporary** (John OK'd 10/20). The session can't bulk-read or bulk-write employees, so the one-time load runs from the hidden admin page. Delete `/onboarding/applications`, `components/shared/applications-load.tsx` and `app/api/jotform/load` in the release after the prod load.
 11. **Misspelled email domains** (gamil.com etc.) are loaded and noted in the log and report, as the plan says.
 
 ## Needed from John before testing
@@ -46,7 +46,7 @@ Typecheck is clean, and all 262 tests pass. The tests cover the matching and fil
 
 ## Help text (HELP.md lives on dev: add when merging back)
 
-**Employees section:** change "Finding someone" to also say: "Click a column heading to sort by it; click it again to reverse." (The Employee Key column was removed from the list on 10/21, and so was the Name Sort box; the key still shows on the profile.) Then add:
+**Employees section:** change "Finding someone" to also say: "Click a column heading to sort by it; click it again to reverse." (The Employee Key column was removed from the list on 10/20, and so was the Name Sort box; the key still shows on the profile.) Then add:
 
 > **Applied Online** shows only the people who applied through the website (or only those who didn't). A profile shows **Applied on website** with the date. Click it to open their application and résumé in JotForm (you need to be signed in to JotForm). **Texts** is their answer to the text-message question.
 >

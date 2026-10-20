@@ -1,4 +1,4 @@
--- 20261021a_jotform_applicants.sql — website applicants into the Employee
+-- 20261020b_jotform_applicants.sql — website applicants into the Employee
 -- list (backlog #121, plan docs/jotform-applicants-plan.md).
 --
 -- 1. employees.applied_at / jotform_submission_id: the person's latest
@@ -176,7 +176,7 @@ BEGIN
     pay_dt_rate     = coalesce(k.pay_dt_rate, v_dup.pay_dt_rate),
     employment_type = CASE WHEN 'Employee' IN (k.employment_type, v_dup.employment_type)
                            THEN 'Employee' ELSE k.employment_type END,
-    -- Website application (20261021a): the newer one wins.
+    -- Website application (20261020b): the newer one wins.
     applied_at            = CASE WHEN v_dup.applied_at > coalesce(k.applied_at, '-infinity') THEN v_dup.applied_at ELSE k.applied_at END,
     jotform_submission_id = CASE WHEN v_dup.applied_at > coalesce(k.applied_at, '-infinity') THEN v_dup.jotform_submission_id ELSE k.jotform_submission_id END,
     application_contact   = CASE WHEN v_dup.applied_at > coalesce(k.applied_at, '-infinity') THEN v_dup.application_contact ELSE k.application_contact END,

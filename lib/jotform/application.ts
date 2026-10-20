@@ -1,4 +1,4 @@
-// Website applicants into the Employee list (backlog #121, 2026-10-21).
+// Website applicants into the Employee list (backlog #121, 2026-10-20).
 //
 // Pure: turns one JotForm "Employee Application Form" submission (webhook
 // post or a row of the CSV export) into what should happen to the Employee
