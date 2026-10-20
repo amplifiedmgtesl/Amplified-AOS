@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { fetchPaychexWorker, PaychexConfigError } from "@/lib/paychex/api";
-import { loadSnapshot, lookupWorkers, saveWorker } from "@/lib/paychex/snapshot";
+import { loadSnapshot, lookupWorkers, needsLiveRead, saveWorker } from "@/lib/paychex/snapshot";
 import { clearMatch, findDuplicates, paychexMatches, type PaychexMatch } from "@/lib/onboarding/plan";
 import { loadLiveEmployees, loadNotSame, loadTakenPayrollIds, requireAdmin, toOnbEmployee } from "@/lib/onboarding/server";
 import { linkPaychexId } from "@/lib/onboarding/link";
@@ -42,8 +42,9 @@ export async function POST(req: NextRequest) {
     const byId = new Map(lookupWorkers(snap).map((w) => [w.workerId, w]));
     // People AOS sent and still waiting for a Payroll ID: one live call each,
     // by worker ID, so a finished onboarding links without a full refresh.
+    // At most once an hour per person, however often the page is opened.
     for (const p of people) {
-      if (p.paychexWorkerId && p.payrollId == null) {
+      if (p.paychexWorkerId && p.payrollId == null && needsLiveRead(snap, p.paychexWorkerId)) {
         const w = await fetchPaychexWorker(p.paychexWorkerId);
         if (w) { byId.set(w.workerId, w); await saveWorker(w, true); }
       }

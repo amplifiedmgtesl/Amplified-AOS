@@ -18,7 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchPaychexWorker, PaychexConfigError } from "@/lib/paychex/api";
 import { planPaychexSync } from "@/lib/paychex/sync-plan";
-import { loadSnapshot, lookupWorkers, saveWorker } from "@/lib/paychex/snapshot";
+import { loadSnapshot, lookupWorkers, needsLiveRead, saveWorker } from "@/lib/paychex/snapshot";
 import { clearMatch, findDuplicates, paychexMatches } from "@/lib/onboarding/plan";
 import { loadEmployee, loadLiveEmployees, loadNotSame, loadTakenPayrollIds, requireAdmin, toOnbEmployee } from "@/lib/onboarding/server";
 import { linkPaychexId } from "@/lib/onboarding/link";
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
     const snap = await loadSnapshot();
     if (!snap.at) return NextResponse.json({ mode: "onboard", duplicates, matches: [], linked: null, sentAt: person.paychexInvitedAt, snapshotAt: null });
     const byId = new Map(lookupWorkers(snap).map((w) => [w.workerId, w]));
-    if (person.paychexWorkerId) {
+    if (person.paychexWorkerId && needsLiveRead(snap, person.paychexWorkerId)) {
       const w = await fetchPaychexWorker(person.paychexWorkerId);
       if (w) { byId.set(w.workerId, w); await saveWorker(w, true); }
     }

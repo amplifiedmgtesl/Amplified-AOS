@@ -61,7 +61,16 @@ export type Snapshot = {
   active: PaychexWorker[];
   /** When the copy was last refreshed in full; null = never. */
   at: string | null;
+  /** When each worker's row was last read from Paychex (by worker ID). */
+  readAt: Map<string, string>;
 };
+
+/** A waiting person (sent, no Payroll ID yet) is re-read from Paychex only
+ *  when their row is over an hour old, however often screens open (John). */
+export function needsLiveRead(s: Snapshot, workerId: string): boolean {
+  const at = s.readAt.get(workerId);
+  return !at || Date.now() - new Date(at).getTime() > SEND_MAX_AGE_MS;
+}
 
 export async function snapshotAt(): Promise<string | null> {
   const { data, error } = await supabaseAdmin.from("paychex_snapshot_runs").select("finished_at")
@@ -80,7 +89,7 @@ export async function loadSnapshot(): Promise<Snapshot> {
   }
   const all = rows.map(fromRow);
   const active = rows.filter((r) => r.status === "ACTIVE" && r.contact_read).map(fromRow);
-  return { all, active, at: await snapshotAt() };
+  return { all, active, at: await snapshotAt(), readAt: new Map(rows.map((r) => [r.worker_id, r.refreshed_at])) };
 }
 
 /** Workers for a look-alike check: active ones carry contact info. */
