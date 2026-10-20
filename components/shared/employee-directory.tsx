@@ -137,7 +137,7 @@ export default function EmployeeDirectory({
         </div>
 
         <div className="grid4">
-          <div><small>Search</small><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Name, key, phone, email..." /></div>
+          <div><small>Search</small><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Name, phone, email..." /></div>
           <div><small>City</small><select value={cityFilter} onChange={(e)=>setCityFilter(e.target.value)}><option value="">All cities</option>{cities.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>State</small><select value={stateFilter} onChange={(e)=>setStateFilter(e.target.value)}><option value="">All states</option>{states.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>Status</small><select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)}><option value="">All status</option>{statuses.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
@@ -171,16 +171,15 @@ export default function EmployeeDirectory({
           <table>
             <thead>
               <tr>
-                <th>Employee Key</th><th>Full Name</th><th>First Name</th><th>Last Name</th><th>Phone</th><th>Email</th>
+                <th>Full Name</th><th>First Name</th><th>Last Name</th><th>Phone</th><th>Email</th>
                 <th>City</th><th>State</th><th>Status</th><th>Employment Type</th><th>Action</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <tr><td colSpan={11} className="muted">No employees match.</td></tr>
+                <tr><td colSpan={10} className="muted">No employees match.</td></tr>
               ) : filtered.map((e) => (
                 <tr key={e.employeeKey}>
-                  <td>{e.employeeKey}</td>
                   <td>
                     <Link href={profileHref(e.employeeKey)} style={{ color: "#2c4d73", textDecoration: "underline", fontWeight: 600 }}>
                       {e.fullName || "—"}
