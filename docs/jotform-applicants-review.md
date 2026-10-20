@@ -46,7 +46,7 @@ Typecheck is clean, and all 262 tests pass. The tests cover the matching and fil
 
 ## Help text (HELP.md lives on dev: add when merging back)
 
-**Employees section:** after "Finding someone", add:
+**Employees section:** change "Finding someone" to also say: "Click a column heading to sort by it; click it again to reverse." (The Employee Key column was removed from the list on 10/21, and so was the Name Sort box; the key still shows on the profile.) Then add:
 
 > **Applied Online** shows only the people who applied through the website (or only those who didn't). A profile shows **Applied on website** with the date. Click it to open their application and résumé in JotForm (you need to be signed in to JotForm). **Texts** is their answer to the text-message question.
 >

@@ -25,6 +25,20 @@ function activeEmployees() {
  * or the crew-leader app (/lead/employees). `hideBill` is forwarded by the lead
  * page; this list shows no billing columns, but the flag is kept for symmetry.
  */
+type SortCol = "fullName" | "firstName" | "lastName" | "phone" | "email" | "city" | "state" | "status" | "employmentType";
+
+const COLUMNS: { key: SortCol; label: string; value: (e: EmployeeRecord) => string }[] = [
+  { key: "fullName", label: "Full Name", value: (e) => e.fullName || "" },
+  { key: "firstName", label: "First Name", value: (e) => e.firstName || "" },
+  { key: "lastName", label: "Last Name", value: (e) => e.lastName || "" },
+  { key: "phone", label: "Phone", value: (e) => e.phone || "" },
+  { key: "email", label: "Email", value: (e) => e.email || "" },
+  { key: "city", label: "City", value: (e) => e.city || "" },
+  { key: "state", label: "State", value: (e) => e.stateCode || e.state || "" },
+  { key: "status", label: "Status", value: (e) => e.status || "" },
+  { key: "employmentType", label: "Employment Type", value: (e) => e.employmentType || "" },
+];
+
 export default function EmployeeDirectory({
   basePath = "/employee-directory",
   hideBill: _hideBill = false,
@@ -38,7 +52,9 @@ export default function EmployeeDirectory({
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [appliedFilter, setAppliedFilter] = useState("");
-  const [sortAZ, setSortAZ] = useState<"A-Z"|"Z-A">("A-Z");
+  // Click a column heading to sort by it; click again to reverse.
+  const [sortCol, setSortCol] = useState<SortCol>("fullName");
+  const [sortAsc, setSortAsc] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
   const [csvText, setCsvText] = useState("");
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -61,13 +77,17 @@ export default function EmployeeDirectory({
         && (!appliedFilter || (appliedFilter === "yes" ? !!e.appliedAt : !e.appliedAt))
 ;
     });
+    const val = COLUMNS.find((c) => c.key === sortCol)!.value;
     rows.sort((a,b) => {
-      const av = (a.fullName || "").toLowerCase();
-      const bv = (b.fullName || "").toLowerCase();
-      return sortAZ === "A-Z" ? av.localeCompare(bv) : bv.localeCompare(av);
+      const av = val(a).trim().toLowerCase(), bv = val(b).trim().toLowerCase();
+      // Blanks go last either way.
+      if (!av !== !bv) return av ? -1 : 1;
+      const c = av.localeCompare(bv, undefined, { numeric: true })
+        || (a.fullName || "").toLowerCase().localeCompare((b.fullName || "").toLowerCase());
+      return sortAsc ? c : -c;
     });
     return rows;
-  }, [query, stateFilter, cityFilter, statusFilter, typeFilter, appliedFilter, sortAZ, employees]);
+  }, [query, stateFilter, cityFilter, statusFilter, typeFilter, appliedFilter, sortCol, sortAsc, employees]);
 
   function profileHref(key: string) {
     return `${basePath}/${encodeURIComponent(key)}`;
@@ -143,7 +163,6 @@ export default function EmployeeDirectory({
           <div><small>Status</small><select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)}><option value="">All status</option>{statuses.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>Employment Type</small><select value={typeFilter} onChange={(e)=>setTypeFilter(e.target.value)}><option value="">All types</option>{types.map((s)=><option key={s} value={s}>{s}</option>)}<option value="__blank__">— Not set —</option></select></div>
           <div><small title="Applied through the website application form">Applied Online</small><select value={appliedFilter} onChange={(e)=>setAppliedFilter(e.target.value)}><option value="">Everyone</option><option value="yes">Applied</option><option value="no">Didn't apply</option></select></div>
-          <div><small>Name Sort</small><select value={sortAZ} onChange={(e)=>setSortAZ(e.target.value as "A-Z"|"Z-A")}><option value="A-Z">A-Z</option><option value="Z-A">Z-A</option></select></div>
         </div>
       </div>
 
@@ -171,8 +190,13 @@ export default function EmployeeDirectory({
           <table>
             <thead>
               <tr>
-                <th>Full Name</th><th>First Name</th><th>Last Name</th><th>Phone</th><th>Email</th>
-                <th>City</th><th>State</th><th>Status</th><th>Employment Type</th><th>Action</th>
+                {COLUMNS.map((c) => (
+                  <th key={c.key} style={{ cursor: "pointer", whiteSpace: "nowrap", userSelect: "none" }} title="Click to sort"
+                    onClick={() => { if (sortCol === c.key) setSortAsc(!sortAsc); else { setSortCol(c.key); setSortAsc(true); } }}>
+                    {c.label}{sortCol === c.key ? (sortAsc ? " ▲" : " ▼") : ""}
+                  </th>
+                ))}
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
