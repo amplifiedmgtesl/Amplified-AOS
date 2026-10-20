@@ -1,8 +1,9 @@
 "use client";
 
 // "Sync from Paychex" (backlog #117). Admin-only panel on the Payroll page:
-// reads active Paychex workers through /api/paychex/sync, shows what would
-// change, and applies only the ticked rows. Clear new-Payroll-ID matches are
+// reads the copy of Paychex kept in AOS through /api/paychex/sync (refreshed
+// Monday night or by Refresh now, which already applies what Paychex is the
+// source of truth for), shows what's left, and applies only the ticked rows. Clear new-Payroll-ID matches are
 // linked as soon as the preview loads (same rule as Onboarding, 2026-10-20).
 // Names, W-2/1099 differences and anything ambiguous are listed for a person
 // to handle — never changed here.
@@ -10,6 +11,7 @@
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import type { SyncChange, SyncReport, FieldChange } from "@/lib/paychex/sync-plan";
+import PaychexAsOf from "@/components/shared/paychex-as-of";
 
 type AutoLinked = { employeeKey: string; name: string; payrollId: number; paychexName: string };
 type Preview = { changes: SyncChange[]; reports: SyncReport[]; activeWorkers: number; fetchedAt: string; autoLinked?: AutoLinked[] };
@@ -120,7 +122,7 @@ export default function PaychexSync() {
 
   if (!open) {
     return (
-      <button className="secondary" onClick={load} title="Read active workers from Paychex and preview updates to AOS employee records">
+      <button className="secondary" onClick={load} title="What Paychex has that AOS doesn't, from the copy of Paychex refreshed every Monday night">
         🔄 Sync from Paychex
       </button>
     );
@@ -131,12 +133,12 @@ export default function PaychexSync() {
       <div className="action-row" style={{ justifyContent: "space-between" }}>
         <h3 className="section-title" style={{ margin: 0 }}>Sync from Paychex</h3>
         <span>
-          <button className="secondary" onClick={load} disabled={!!busy}>Refresh</button>{" "}
+          <PaychexAsOf at={preview?.fetchedAt} onRefreshed={load} />{" "}
           <button className="secondary" onClick={() => setOpen(false)} disabled={busy === "apply"}>Close</button>
         </span>
       </div>
 
-      {busy === "load" && <p>Reading Paychex…</p>}
+      {busy === "load" && <p>Loading…</p>}
       {error && <p style={{ color: "#a00" }}>{error}</p>}
 
       {result && (

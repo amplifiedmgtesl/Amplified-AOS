@@ -1,5 +1,6 @@
 "use client";
 
+import { sentWaiting } from "@/components/shared/payroll-readiness-flag";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -893,6 +894,17 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                       const empKey = g.rows[0]?.employeeKey;
                       const ripp = empKey ? ripplingIdByEmpKey.get(empKey) : null;
                       if (ripp == null) {
+                        const waiting = sentWaiting((runEmployees ?? loadEmployees()).find((e) => e.employeeKey === empKey));
+                        if (waiting) {
+                          return (
+                            <span
+                              style={{ marginLeft: 8, color: "#a0620a", fontWeight: "normal", fontSize: 12, fontStyle: "italic" }}
+                              title="Paychex emailed them an invite. Their Payroll ID comes once they finish setting up; until then they're left out of the Paychex file."
+                            >
+                              {waiting}
+                            </span>
+                          );
+                        }
                         return (
                           <span
                             style={{ marginLeft: 8, color: "#c0392b", fontWeight: "normal", fontSize: 12, fontStyle: "italic" }}

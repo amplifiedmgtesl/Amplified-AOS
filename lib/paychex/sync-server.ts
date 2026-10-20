@@ -8,7 +8,9 @@
  */
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import type { AosEmployee, FieldChange, SyncChange } from "./sync-plan";
+import type { AosEmployee, FieldChange, PaychexWorker, SyncChange } from "./sync-plan";
+import { clearMatch, findDuplicates, paychexMatches } from "@/lib/onboarding/plan";
+import { loadLiveEmployees, loadNotSame } from "@/lib/onboarding/server";
 
 const EMP_COLS = "employee_key, full_name, first_name, last_name, payroll_name, status, rippling_employee_id, employment_type, phone, email, address, city, state_code, zip, is_deleted";
 
@@ -51,7 +53,7 @@ function patchFor(fields: FieldChange[]): Record<string, string> {
   return patch;
 }
 
-export async function applyOne(c: SyncChange, runId: string, userId: string, seq: number) {
+export async function applyOne(c: SyncChange, runId: string, userId: string | null, seq: number) {
   let before: any = null;
   let after: Record<string, unknown> = {};
   let employeeKey: string | null = null;
@@ -109,5 +111,25 @@ export async function applyOne(c: SyncChange, runId: string, userId: string, seq
     });
     return { id: c.id, ok: false as const, error: msg };
   }
+}
+
+
+/** The proposed links that are clear matches under the Onboarding rule. */
+export async function clearLinks(changes: SyncChange[], active: PaychexWorker[], all: PaychexWorker[], reservedIds: Set<number>) {
+  const links = changes.filter((c): c is Extract<SyncChange, { kind: "link" }> => c.kind === "link");
+  if (!links.length) return [];
+  const [onb, notSame] = await Promise.all([loadLiveEmployees(), loadNotSame()]);
+  const byKey = new Map(onb.map((e) => [e.employeeKey, e]));
+  const byId = new Map(all.map((w) => [w.workerId, w]));
+  for (const w of active) byId.set(w.workerId, w);
+  const workers = [...byId.values()];
+  const taken = new Set<number>(reservedIds);
+  for (const e of onb) if (e.payrollId != null) taken.add(e.payrollId);
+  return links.filter((c) => {
+    const person = byKey.get(c.employeeKey);
+    if (!person) return false;
+    const m = clearMatch(person, paychexMatches(person, workers), (id) => byId.get(id), findDuplicates(person, onb, notSame), taken);
+    return m?.payrollId === c.payrollId;
+  });
 }
 

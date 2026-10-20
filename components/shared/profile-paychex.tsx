@@ -18,6 +18,7 @@ import type { SendOutcome } from "@/lib/onboarding/send";
 import type { FieldChange, SyncChange, SyncReport } from "@/lib/paychex/sync-plan";
 import type { EmployeeRecord } from "@/lib/store/types";
 import { MergeDialog, type MergePick } from "@/components/shared/onboarding";
+import PaychexAsOf, { fmtWhen } from "@/components/shared/paychex-as-of";
 
 async function api(path: string, method: "GET" | "POST" = "GET", body?: unknown) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -44,6 +45,8 @@ type Data = {
   matches?: PaychexMatch[];
   linked?: { payrollId: number; paychexName: string } | null;
   sentAt?: string | null;
+  /** When the copy of Paychex was taken (null = never). */
+  snapshotAt?: string | null;
   inPaychex?: boolean;
   changes?: SyncChange[];
   reports?: SyncReport[];
@@ -141,6 +144,7 @@ export default function ProfilePaychex({ employee }: { employee: EmployeeRecord 
   const blocked = payrollId != null ? "Already has a Payroll ID"
     : checking || !data ? "Checking Paychex…"
     : error ? "Couldn't check Paychex"
+    : !data.snapshotAt ? "No copy of Paychex yet: click Refresh now"
     : sent ? "Already sent"
     : !canSend({ email: employee.email ?? "", payrollId, paychexWorkerId: null }) ? "Needs an email"
     : dups.length ? "Merge or mark Not same on the possible duplicates first"
@@ -149,7 +153,10 @@ export default function ProfilePaychex({ employee }: { employee: EmployeeRecord 
 
   return (
     <div style={{ marginTop: 16 }}>
-      <h3 className="section-title" style={{ marginBottom: 8 }}>Paychex</h3>
+      <div className="action-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+        <h3 className="section-title" style={{ margin: 0 }}>Paychex</h3>
+        {(payrollId == null || data?.changes) && <PaychexAsOf at={data?.snapshotAt} onRefreshed={() => load(payrollId != null)} />}
+      </div>
       {error && <div style={{ color: "#b00", fontSize: 13, marginBottom: 8 }}>{error}</div>}
       {data?.linked && (
         <div style={ITEM}><span className="pill pill-green">Linked from Paychex</span> Payroll ID {data.linked.payrollId} ({data.linked.paychexName})</div>
@@ -183,8 +190,14 @@ export default function ProfilePaychex({ employee }: { employee: EmployeeRecord 
               ))}
             </div>
           )}
-          {sent && <div style={ITEM}><span className="pill pill-green">Sent {String(data?.sentAt).slice(0, 10)}</span></div>}
-          {data && !matches.length && !sent && !error && <div className="muted" style={ITEM}>Not in Paychex</div>}
+          {sent && (
+            <div style={ITEM}>
+              <span className="pill pill-green" title="Paychex emailed them an invite. Their Payroll ID comes once they finish setting up.">
+                Sent to Paychex {fmtWhen(String(data?.sentAt))} · waiting for them
+              </span>
+            </div>
+          )}
+          {data?.snapshotAt && !matches.length && !sent && !error && <div className="muted" style={ITEM}>Not in Paychex</div>}
           <button disabled={!!blocked || busy} title={blocked || "Create in Paychex and email them the onboarding invite"} onClick={addToPaychex}>
             {busy ? "…" : checking ? "Checking Paychex…" : "Add to Paychex"}
           </button>

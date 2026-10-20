@@ -1496,6 +1496,8 @@ function rowToEmployee(r: any): EmployeeRecord {
     appliedAt: r.applied_at ? String(r.applied_at).slice(0, 10) : undefined,
     jotformSubmissionId: r.jotform_submission_id ?? undefined,
     smsConsent: r.sms_consent ?? null,
+    paychexWorkerId: r.paychex_worker_id ?? undefined,
+    paychexInvitedAt: r.paychex_invited_at ?? undefined,
     applicationContact: r.application_contact ?? null,
   };
 }

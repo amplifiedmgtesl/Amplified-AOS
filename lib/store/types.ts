@@ -644,6 +644,10 @@ export type EmployeeRecord = {
   appliedAt?: string;
   jotformSubmissionId?: string;
   smsConsent?: boolean | null;
+  /** Sent to Paychex by AOS (Onboarding / profile). With no Payroll ID yet,
+   *  it means Paychex emailed the invite and they're finishing setup. */
+  paychexWorkerId?: string;
+  paychexInvitedAt?: string;
   /** What they typed on that application (email, phone, address). */
   applicationContact?: { email?: string; phone?: string; address?: string } | null;
 };

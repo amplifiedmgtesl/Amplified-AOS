@@ -1,6 +1,7 @@
 /**
  * app/api/onboarding/paychex/route.ts — the Paychex check on the Onboarding
- * screen (backlog #120). Runs every time the page opens.
+ * screen (backlog #120). Runs every time the page opens, against the Paychex
+ * copy in AOS rather than Paychex itself (docs/paychex-snapshot-plan.md).
  *
  * POST { keys: string[] } → for each of these AOS people, every Paychex
  * worker who looks like them (email, phone, name, or the worker AOS sent).
@@ -11,7 +12,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { fetchPaychexWorker, fetchPaychexWorkers, PaychexConfigError } from "@/lib/paychex/api";
+import { fetchPaychexWorker, PaychexConfigError } from "@/lib/paychex/api";
+import { loadSnapshot, lookupWorkers, saveWorker } from "@/lib/paychex/snapshot";
 import { clearMatch, findDuplicates, paychexMatches, type PaychexMatch } from "@/lib/onboarding/plan";
 import { loadLiveEmployees, loadNotSame, loadTakenPayrollIds, requireAdmin, toOnbEmployee } from "@/lib/onboarding/server";
 import { linkPaychexId } from "@/lib/onboarding/link";
@@ -32,17 +34,18 @@ export async function POST(req: NextRequest) {
       if (error) throw new Error(error.message);
       people.push(...(data ?? []).map(toOnbEmployee));
     }
-    const [{ active, all }, live, notSame, taken] = await Promise.all([
-      fetchPaychexWorkers(), loadLiveEmployees(), loadNotSame(), loadTakenPayrollIds(),
+    // The Paychex copy in AOS, not Paychex (docs/paychex-snapshot-plan.md).
+    const [snap, live, notSame, taken] = await Promise.all([
+      loadSnapshot(), loadLiveEmployees(), loadNotSame(), loadTakenPayrollIds(),
     ]);
-    // Active workers carry contact info; use those copies where we have them.
-    const byId = new Map(all.map((w) => [w.workerId, w]));
-    for (const w of active) byId.set(w.workerId, w);
-    // Workers AOS sent may still be in progress and missing from the list.
+    if (!snap.at) return NextResponse.json({ error: "No copy of Paychex yet. Click Refresh now." }, { status: 409 });
+    const byId = new Map(lookupWorkers(snap).map((w) => [w.workerId, w]));
+    // People AOS sent and still waiting for a Payroll ID: one live call each,
+    // by worker ID, so a finished onboarding links without a full refresh.
     for (const p of people) {
-      if (p.paychexWorkerId && !byId.has(p.paychexWorkerId)) {
+      if (p.paychexWorkerId && p.payrollId == null) {
         const w = await fetchPaychexWorker(p.paychexWorkerId);
-        if (w) byId.set(w.workerId, w);
+        if (w) { byId.set(w.workerId, w); await saveWorker(w, true); }
       }
     }
     const workers = [...byId.values()];
@@ -63,7 +66,7 @@ export async function POST(req: NextRequest) {
       }
       matches[p.employeeKey] = m;
     }
-    return NextResponse.json({ matches, linked, checkedAt: new Date().toISOString() });
+    return NextResponse.json({ matches, linked, checkedAt: snap.at });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json({ error: msg }, { status: e instanceof PaychexConfigError ? 503 : 500 });

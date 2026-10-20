@@ -9,7 +9,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { fetchPaychexWorkers, PaychexConfigError } from "@/lib/paychex/api";
+import { PaychexConfigError } from "@/lib/paychex/api";
+import { loadSnapshot, lookupWorkers, refreshSnapshotData, SEND_MAX_AGE_MS, snapshotAt } from "@/lib/paychex/snapshot";
 import { requireAdmin } from "@/lib/onboarding/server";
 import { LIVE_SEND, sendOne, type SendOutcome } from "@/lib/onboarding/send";
 
@@ -34,10 +35,12 @@ export async function POST(req: NextRequest) {
   try {
     let workers = null;
     if (!skipCheck) {
-      const { active, all } = await fetchPaychexWorkers();
-      const byId = new Map(all.map((w) => [w.workerId, w]));
-      for (const w of active) byId.set(w.workerId, w);
-      workers = [...byId.values()];
+      // The look-alike check reads the Paychex copy in AOS. If it's over an
+      // hour old (someone went to lunch mid-onboarding), Paychex is re-read
+      // first; within the hour the copy is trusted (John, 2026-10-20).
+      const at = await snapshotAt();
+      if (!at || Date.now() - new Date(at).getTime() > SEND_MAX_AGE_MS) await refreshSnapshotData(userId);
+      workers = lookupWorkers(await loadSnapshot());
     }
     const results: SendOutcome[] = [];
     for (const k of keys) results.push(await sendOne(k, userId, workers));

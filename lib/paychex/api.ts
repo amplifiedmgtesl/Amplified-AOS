@@ -108,16 +108,9 @@ async function listWorkers(token: string): Promise<PaychexWorker[]> {
   return all;
 }
 
-/** Every Paychex worker, names/IDs/status only: about 10 calls, no contact
- *  info. The employee profile uses this, then reads contact info only for
- *  the one or few workers it needs (2026-10-20). */
-export async function fetchPaychexWorkerList(): Promise<PaychexWorker[]> {
-  return listWorkers(await getToken());
-}
-
 /** Every Paychex worker (names/IDs only), plus the ACTIVE ones with contact
- *  info. One call per active worker for the contact info (~470), so this is
- *  for the Onboarding page and Sync from Paychex, not per-person screens. */
+ *  info. One call per active worker for the contact info (~143 on 10/20), so
+ *  screens read the copy in AOS instead (lib/paychex/snapshot.ts). */
 export async function fetchPaychexWorkers(): Promise<{ active: PaychexWorker[]; all: PaychexWorker[] }> {
   const token = await getToken();
   const all = await listWorkers(token);

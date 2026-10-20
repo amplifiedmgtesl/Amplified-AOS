@@ -15,6 +15,7 @@
  * admin has seen the matches and chosen to send anyway (single sends only).
  */
 
+import { saveWorker } from "@/lib/paychex/snapshot";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { createPaychexWorker, newWorkerBody, type NewWorker } from "@/lib/paychex/api";
 import type { PaychexWorker } from "@/lib/paychex/sync-plan";
@@ -81,11 +82,11 @@ export async function sendOne(employeeKey: string, userId: string, workers: Payc
     result = await createPaychexWorker(worker);
   } catch (err) {
     // We don't know whether Paychex created the worker. Keep the claim so
-    // nobody re-sends blind; Check Paychex will find it by name/email.
+    // nobody re-sends blind; Refresh now will find it by name/email.
     const msg = err instanceof Error ? err.message : "Unknown error";
     await log({ sent_by: userId, employee_key: employeeKey, dry_run: false, request, ok: false, error: `No reply from Paychex: ${msg}` });
     return { employeeKey, name, kind: "error", unknown: true,
-      error: "No reply from Paychex — it may or may not have been created. Use Check Paychex before doing anything else." };
+      error: "No reply from Paychex — it may or may not have been created. Click Refresh now on the Onboarding page before doing anything else." };
   }
 
   if (!result.ok) {
@@ -98,6 +99,7 @@ export async function sendOne(employeeKey: string, userId: string, workers: Payc
   }
 
   const w = result.worker;
+  await saveWorker(w, false);   // into the Paychex copy, so the next check sees them
   const patch: Record<string, unknown> = { paychex_worker_id: w.workerId };
   const pid = w.employeeId && Number.isFinite(Number(w.employeeId)) ? Number(w.employeeId) : null;
   if (pid != null) {

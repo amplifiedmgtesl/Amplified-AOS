@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/paychex/snapshot", "schedule": "0 3 * * 2" }
+  ]
+}
