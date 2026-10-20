@@ -49,7 +49,7 @@ Sort with the most urgent first: has unpaid hours, then soonest upcoming job. Ke
 
 1. **Found in Paychex** (works today, read-only API): reuse the matching from **Sync from Paychex** (`lib/paychex/sync-plan.ts`, v2.7.0). If a Paychex worker clearly matches this person, show "Found #123" with a **Use this ID** button, which sets the Payroll ID and pulls contact info, following the sync's rules (Paychex wins, and blanks never overwrite). Unclear matches are shown but not offered as one-click.
 2. **Send to Paychex** (needs Paychex write access, see below): for people who aren't in Paychex.
-   - **Disabled until the row has an EMAIL** (John, 10/20: without one the self-serve invite can't go out, which defeats the purpose). A phone number alone doesn't count. The Employee/Contractor type must also be confirmed, because every new record defaults to Contractor.
+   - **Disabled until the row has an EMAIL** (John, 10/20: without one the self-serve invite can't go out, which defeats the purpose). A phone number alone doesn't count. Email is the only gate. Connor presses the button himself, so checking the name, email and Employee/Contractor type before sending is his call (John, 10/20). The send-confirm dialog shows all three.
    - Calls `POST /companies/{companyId}/workers` with given name, family name, `workerType` (`EMPLOYEE` / `INDEPENDENT_CONTRACTOR`) and a `communications` object holding the email (sent as PERSONAL), plus the mobile phone if we have it.
    - **The invite only goes out if the email is in that first call.** It can't be added later to trigger it, which is why the button requires an email.
    - Paychex returns a `workerId` and the worker starts as **IN_PROGRESS**. The person finishes SSN, address, tax forms and direct deposit themselves in Flex. Some pay setup may still be needed in Flex, depending on the company's configuration.
@@ -69,11 +69,11 @@ Sort with the most urgent first: has unpaid hours, then soonest upcoming job. Ke
 - The system-wide Health page (#119). Its "crew with no Payroll ID" check should **link to this screen** instead of building its own list.
 - Sending payroll through the API (#118).
 
-## Questions for Connor
+## Decided (John, 10/20)
 
-1. Does he want the invite email to go to every new person, or only once he has confirmed W-2 vs 1099?
-2. Who collects the missing emails (no one can be onboarded without one) for the 89 people: Connor, crew chiefs, or the timesheet/kiosk at sign-in?
-3. Is anything still needed in Flex after a person completes self-onboarding, such as pay rate, pay component or work location, before they can be paid?
+1. **Accuracy is Connor's call.** Sending is manual, one person at a time, and the screen adds no extra approval step beyond requiring an email.
+2. **Collecting missing emails is outside AOS's scope.** The screen shows the blanks, and that's all.
+3. **Setup left to do in Flex after onboarding is outside AOS's scope.** AOS's job ends once the worker is created and the Payroll ID is linked back.
 
 ## Build order (when approved)
 
