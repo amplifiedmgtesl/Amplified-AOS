@@ -1,5 +1,6 @@
 {
   "crons": [
-    { "path": "/api/paychex/snapshot", "schedule": "0 3 * * 2" }
+    { "path": "/api/paychex/snapshot?step=pull", "schedule": "0 3 * * 2" },
+    { "path": "/api/paychex/snapshot?step=process", "schedule": "30 3 * * 2" }
   ]
 }

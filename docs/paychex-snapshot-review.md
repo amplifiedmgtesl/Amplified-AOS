@@ -6,7 +6,8 @@ Built 2026-10-20 (unattended) on `feature/profile-paychex`, off main. Plan: `doc
 
 - **Migration `20261020c_paychex_snapshot.sql`** (applied to dev only): table `paychex_workers` (the copy), table `paychex_snapshot_runs` (each refresh and what it did), and function `fill_paychex_worker_ids()`.
 - **`lib/paychex/snapshot.ts`:** reads and saves the copy. `refreshSnapshot()` is the full refresh with automatic changes; `refreshSnapshotData()` saves the copy only (used by Send).
-- **`/api/paychex/snapshot`:** GET for the weekly schedule (`vercel.json`, `0 3 * * 2` UTC), POST for **Refresh now** (admins).
+- **Two steps (John, 10/20):** **pull** reads Paychex and saves the copy (reads only, always completes); **process** applies the changes from the copy (no Paychex calls).
+- **`/api/paychex/snapshot?step=pull|process`:** GET for the weekly schedule (`vercel.json`: pull `0 3 * * 2` UTC, process `30 3 * * 2`), POST for **Refresh now** (admins), which runs pull then process.
 - **Reading the copy instead of Paychex:**
   - Onboarding's check: no Paychex calls, except **one per person AOS sent who's still waiting** (by worker ID);
   - Sync from Paychex (Payroll page);
@@ -28,8 +29,8 @@ Tests: 268 pass, typecheck clean. The DB writes, the refresh and the pages haven
 
 1. **Auto-applied on each refresh:** contact/status updates, new hires, clear links and worker IDs. **Held:** unclear links, plus changing or clearing a Payroll ID (`reid` / `clear`). New hires are only proposed by the sync when there's no possible AOS match (a similar name is held), so adding them automatically is safe.
 2. **Send's over-an-hour check saves the copy but applies nothing.** Applying changes inside a send could run past Vercel's 60 seconds. The Monday refresh and **Refresh now** do the applying.
-3. **Refresh stops applying at 45 s from the start;** any rest goes to the next run, and the run log records how many were left. The first refresh should have little to apply (sync was 0 diffs on 10/14).
-4. **Schedule `0 3 * * 2` UTC:** Monday 11 pm Eastern in daylight time, 10 pm in winter. Vercel cron runs in UTC with no time zone setting.
+3. **Process stops applying at 45 s;** any rest goes to the next run, and the run log records how many were left. The first run should have little to apply (sync was 0 diffs on 10/14). Process is its own step, so this never affects the pull.
+4. **Schedule: pull `0 3 * * 2` UTC, process `30 3 * * 2`.** That's Monday 11 pm / 11:30 pm Eastern in daylight time, 10 pm / 10:30 pm in winter. Vercel cron runs in UTC with no time zone setting.
 5. **Needs `CRON_SECRET` in Vercel (Production).** Without it, the weekly run is refused (401) and only Refresh now works.
 6. **Onboarding's Check Paychex button became "Refresh now":** a re-check against the copy would show nothing new.
 7. **Before the first refresh there's no copy:** Onboarding shows "No copy of Paychex yet"; **Add to Paychex** is greyed out with "click Refresh now"; Sync from Paychex says to click Refresh now.

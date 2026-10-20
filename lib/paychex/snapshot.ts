@@ -5,12 +5,14 @@
  * Reading Paychex live costs ~155 calls: the worker list (~10, 50 a page)
  * plus contact info for each active worker (~143). Paychex has no search
  * and no "changed since", so screens read this copy instead:
- *   • refreshSnapshot(): Monday night, and "Refresh now". Saves the copy and
- *     applies what Paychex is the source of truth for (contact info,
- *     status, new hires, clear Payroll ID links, worker IDs). Anything
- *     unclear is left for Sync from Paychex.
- *   • refreshSnapshotData(): saves the copy only. Send to Paychex uses it
- *     when the copy is over an hour old.
+ *   • pullSnapshot(): reads Paychex and saves the copy. Monday night, Refresh
+ *     now, and Send to Paychex when the copy is over an hour old.
+ *   • processSnapshot(): 30 minutes after the Monday pull (and right after
+ *     Refresh now), applies what Paychex is the source of truth for (contact
+ *     info, status, new hires, clear Payroll ID links) from the copy.
+ *     Anything unclear is left for Sync from Paychex.
+ * Two steps (John, 10/20) so the pull always completes, whatever happens
+ * when the changes are applied.
  */
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -21,8 +23,8 @@ import { applyOne, clearLinks, loadEmployees } from "./sync-server";
 /** Send to Paychex re-reads Paychex first when the copy is older than this. */
 export const SEND_MAX_AGE_MS = 60 * 60 * 1000;
 
-// Applying stops this long after the run started (reading Paychex takes
-// ~20-30 s), so a run fits in Vercel's 60 seconds. What's left shows under
+// Applying stops this long after processing started, so a run fits in
+// Vercel's 60 seconds. What's left shows under
 // Sync from Paychex and is picked up by the next run.
 const APPLY_BUDGET_MS = 45_000;
 
@@ -63,7 +65,7 @@ export type Snapshot = {
 
 export async function snapshotAt(): Promise<string | null> {
   const { data, error } = await supabaseAdmin.from("paychex_snapshot_runs").select("finished_at")
-    .eq("ok", true).order("finished_at", { ascending: false }).limit(1).maybeSingle();
+    .eq("ok", true).neq("trigger", "process").order("finished_at", { ascending: false }).limit(1).maybeSingle();
   if (error) throw new Error(error.message);
   return data?.finished_at ?? null;
 }
@@ -116,17 +118,37 @@ async function finishRun(id: number, patch: Record<string, unknown>) {
   await supabaseAdmin.from("paychex_snapshot_runs").update({ finished_at: new Date().toISOString(), ...patch }).eq("id", id);
 }
 
-export type RefreshSummary = {
-  workers: number; active: number; workerIdsFilled: number;
+export type ProcessSummary = {
   applied: { update: number; create: number; link: number }; failed: number; held: number; leftForNextRun: number;
 };
 
-/** Full refresh: save the copy, then apply the automatic changes. */
-export async function refreshSnapshot(trigger: "schedule" | "manual", runBy: string | null): Promise<RefreshSummary> {
+/** Step 1: read Paychex in full and save the copy (~20-30 s, reads only, so
+ *  it always finishes). Weekly schedule, Refresh now, and Send to Paychex
+ *  when the copy is over an hour old. Also fills missing worker IDs. */
+export async function pullSnapshot(trigger: "schedule" | "manual" | "send", runBy: string | null): Promise<{ workers: number; active: number; workerIdsFilled: number }> {
   const runId = await startRun(trigger, runBy);
   try {
-    const started = Date.now();
     const { active, all, workerIdsFilled } = await readAndSave();
+    const out = { workers: all.length, active: active.length, workerIdsFilled };
+    await finishRun(runId, { ok: true, workers: all.length, active: active.length, summary: { step: "pull", workerIdsFilled } });
+    return out;
+  } catch (e) {
+    await finishRun(runId, { ok: false, error: e instanceof Error ? e.message : String(e) });
+    throw e;
+  }
+}
+
+/** Step 2: apply what Paychex is the source of truth for, from the saved
+ *  copy (no Paychex calls). Runs 30 minutes after the weekly pull, and right
+ *  after Refresh now. Stops cleanly at the time budget; the next run picks
+ *  up the rest. Anything unclear is left for Sync from Paychex. */
+export async function processSnapshot(runBy: string | null): Promise<ProcessSummary> {
+  const runId = await startRun("process", runBy);
+  try {
+    const started = Date.now();
+    const snap = await loadSnapshot();
+    if (!snap.at) throw new Error("No copy of Paychex yet. Click Refresh now.");
+    const { active, all } = snap;
     const { live, reservedIds } = await loadEmployees();
     const plan = planPaychexSync(active, live, reservedIds, all);
     const clear = new Set((await clearLinks(plan.changes, active, all, reservedIds)).map((c) => c.id));
@@ -139,24 +161,11 @@ export async function refreshSnapshot(trigger: "schedule" | "manual", runBy: str
       const r = await applyOne(c, logRun, runBy, done);
       if (r.ok) applied[c.kind as keyof typeof applied]++; else failed++;
     }
-    const summary: RefreshSummary = {
-      workers: all.length, active: active.length, workerIdsFilled, applied, failed,
-      held: plan.changes.length - auto.length + plan.reports.length, leftForNextRun: auto.length - done,
+    const summary: ProcessSummary = {
+      applied, failed, held: plan.changes.length - auto.length + plan.reports.length, leftForNextRun: auto.length - done,
     };
-    await finishRun(runId, { ok: true, workers: all.length, active: active.length, summary });
+    await finishRun(runId, { ok: true, summary: { step: "process", ...summary } });
     return summary;
-  } catch (e) {
-    await finishRun(runId, { ok: false, error: e instanceof Error ? e.message : String(e) });
-    throw e;
-  }
-}
-
-/** Save the copy only (Send to Paychex, when the copy is over an hour old). */
-export async function refreshSnapshotData(runBy: string | null): Promise<void> {
-  const runId = await startRun("send", runBy);
-  try {
-    const { active, all, workerIdsFilled } = await readAndSave();
-    await finishRun(runId, { ok: true, workers: all.length, active: active.length, summary: { dataOnly: true, workerIdsFilled } });
   } catch (e) {
     await finishRun(runId, { ok: false, error: e instanceof Error ? e.message : String(e) });
     throw e;

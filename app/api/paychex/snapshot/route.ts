@@ -1,18 +1,19 @@
 /**
- * app/api/paychex/snapshot/route.ts — refresh the Paychex copy in AOS
- * (docs/paychex-snapshot-plan.md).
+ * app/api/paychex/snapshot/route.ts — refresh the Paychex copy in AOS, in two
+ * steps (docs/paychex-snapshot-plan.md, John 10/20):
+ *   ?step=pull     read Paychex (~155 calls, ~20-30 s) and save the copy;
+ *   ?step=process  apply what Paychex is the source of truth for, from the
+ *                  copy (no Paychex calls).
  *
- * GET  → Vercel's weekly schedule (vercel.json: Monday ~11 pm Eastern).
- *        Vercel sends "Authorization: Bearer <CRON_SECRET>"; refused when
- *        CRON_SECRET isn't set.
- * POST → "Refresh now" (admins).
- * Both read Paychex in full (~155 calls), save the copy and apply what
- * Paychex is the source of truth for. See lib/paychex/snapshot.ts.
+ * GET  → Vercel's weekly schedule (vercel.json: pull Monday ~11 pm Eastern,
+ *        process 30 minutes later). Vercel sends "Authorization: Bearer
+ *        <CRON_SECRET>"; refused when CRON_SECRET isn't set.
+ * POST → "Refresh now" (admins): the page calls pull, then process.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { PaychexConfigError } from "@/lib/paychex/api";
-import { refreshSnapshot } from "@/lib/paychex/snapshot";
+import { processSnapshot, pullSnapshot } from "@/lib/paychex/snapshot";
 import { requireAdmin } from "@/lib/onboarding/server";
 
 export const dynamic = "force-dynamic";
@@ -23,13 +24,19 @@ function errorResponse(e: unknown) {
   return NextResponse.json({ error: msg }, { status: e instanceof PaychexConfigError ? 503 : 500 });
 }
 
+async function run(step: string | null, trigger: "schedule" | "manual", runBy: string | null) {
+  if (step === "pull") return NextResponse.json(await pullSnapshot(trigger, runBy));
+  if (step === "process") return NextResponse.json(await processSnapshot(runBy));
+  return NextResponse.json({ error: "step must be pull or process" }, { status: 400 });
+}
+
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET ?? "";
   if (secret.length < 16 || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
-    return NextResponse.json(await refreshSnapshot("schedule", null));
+    return await run(req.nextUrl.searchParams.get("step"), "schedule", null);
   } catch (e) {
     return errorResponse(e);
   }
@@ -39,7 +46,7 @@ export async function POST(req: NextRequest) {
   const userId = await requireAdmin(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    return NextResponse.json(await refreshSnapshot("manual", userId));
+    return await run(req.nextUrl.searchParams.get("step"), "manual", userId);
   } catch (e) {
     return errorResponse(e);
   }

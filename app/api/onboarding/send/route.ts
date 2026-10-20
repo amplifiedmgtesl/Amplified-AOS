@@ -10,7 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { PaychexConfigError } from "@/lib/paychex/api";
-import { loadSnapshot, lookupWorkers, refreshSnapshotData, SEND_MAX_AGE_MS, snapshotAt } from "@/lib/paychex/snapshot";
+import { loadSnapshot, lookupWorkers, pullSnapshot, SEND_MAX_AGE_MS, snapshotAt } from "@/lib/paychex/snapshot";
 import { requireAdmin } from "@/lib/onboarding/server";
 import { LIVE_SEND, sendOne, type SendOutcome } from "@/lib/onboarding/send";
 
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       // hour old (someone went to lunch mid-onboarding), Paychex is re-read
       // first; within the hour the copy is trusted (John, 2026-10-20).
       const at = await snapshotAt();
-      if (!at || Date.now() - new Date(at).getTime() > SEND_MAX_AGE_MS) await refreshSnapshotData(userId);
+      if (!at || Date.now() - new Date(at).getTime() > SEND_MAX_AGE_MS) await pullSnapshot("send", userId);
       workers = lookupWorkers(await loadSnapshot());
     }
     const results: SendOutcome[] = [];
