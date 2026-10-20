@@ -259,13 +259,30 @@ export function EmployeePicker({
     return scored.slice(0, RESULT_CAP).map((s) => s.e);
   }, [employees, query]);
 
-  // Search found nothing: people whose name is close (typo, nickname,
-  // first/last swapped), so the operator picks them instead of creating a
-  // duplicate (Shelby Bowman, 2026-10-20).
+  // People whose name sounds close (typo, nickname, first/last swapped),
+  // shown under the exact matches. Always, not only when the search finds
+  // nothing: typing "Branden" finds a Branden, but the operator may have
+  // meant a Brandon (Shelby Bowman / John, 2026-10-20).
   const similar = useMemo(() => {
-    if (!employees || results.length > 0) return [];
-    return similarNames(query, employees.filter((e) => !isTerminated(e)));
-  }, [employees, query, results.length]);
+    if (!employees || !query.trim()) return [];
+    const shown = new Set(results.map((e) => e.employeeKey));
+    return similarNames(query, employees.filter((e) => !isTerminated(e) && !shown.has(e.employeeKey)));
+  }, [employees, query, results]);
+
+  const similarRow = (e: PickerEmployee) => (
+    <div
+      key={e.employeeKey}
+      onMouseDown={() => { onSelect(e); setQuery(""); setOpen(false); }}
+      style={{ padding: "6px 8px", marginTop: 4, cursor: "pointer", border: "1px solid #f0e9e0", borderRadius: 6, color: "#222" }}
+      onMouseEnter={(ev) => { (ev.currentTarget as HTMLElement).style.background = "#fbf6ee"; }}
+      onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = ""; }}
+    >
+      <div style={{ fontWeight: 600, fontSize: 13 }}>{e.fullName}</div>
+      <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
+        {[e.email, e.phone, [e.city, e.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ")}
+      </div>
+    </div>
+  );
 
   const totalMatches = useMemo(() => {
     if (!employees) return 0;
@@ -398,20 +415,7 @@ export function EmployeePicker({
           {!loading && results.length === 0 && (
             <div style={{ padding: 12, fontSize: 12, color: "#888" }}>
               {similar.length > 0 ? "Did you mean:" : query ? `No employees match "${query}".` : "No employees found."}
-              {similar.map((e) => (
-                <div
-                  key={e.employeeKey}
-                  onMouseDown={() => { onSelect(e); setQuery(""); setOpen(false); }}
-                  style={{ padding: "6px 8px", marginTop: 4, cursor: "pointer", border: "1px solid #f0e9e0", borderRadius: 6, color: "#222" }}
-                  onMouseEnter={(ev) => { (ev.currentTarget as HTMLElement).style.background = "#fbf6ee"; }}
-                  onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = ""; }}
-                >
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{e.fullName}</div>
-                  <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
-                    {[e.email, e.phone, [e.city, e.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ")}
-                  </div>
-                </div>
-              ))}
+              {similar.map(similarRow)}
               {onCreateInline && query.trim().length >= 2 && (
                 <div
                   onMouseDown={(e) => { e.preventDefault(); void handleInlineCreate(); }}
@@ -463,6 +467,12 @@ export function EmployeePicker({
               </div>
             </div>
           ))}
+          {!loading && results.length > 0 && similar.length > 0 && (
+            <div style={{ padding: "8px 12px", fontSize: 12, color: "#888" }}>
+              Did you mean:
+              {similar.map(similarRow)}
+            </div>
+          )}
           {!loading && employees && employees.length > 0 && (
             <div style={{
               padding: "8px 12px",
