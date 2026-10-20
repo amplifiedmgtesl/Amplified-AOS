@@ -4,6 +4,14 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 20 — v2.8.0
+- New **🪪 Onboarding** page (admins only). It lists everyone on a confirmed crew assignment or a timesheet from the last 30 days through the next 30 days who has no **Payroll ID**. Those are the people who would be left out of the Paychex payroll file. People with hours are at the top.
+- Fill in a missing **email** or **phone** right on the list (blanks are outlined in red), and click **Employee / Contractor** to switch someone between W-2 and 1099.
+- **AOS duplicates:** if another employee record looks like the same person (same email, same phone, or the same or a very similar name), it's shown next to them. **Merge** moves all their crew assignments, timesheets and payroll entries onto the record you keep, then deletes the other one (a backup is kept). **Not same** stops flagging that pair.
+- **Check Paychex** looks everyone up in Paychex and shows every Paychex worker who might be them. Paychex has its own duplicates, so there can be more than one. **Use ID** puts that Payroll ID on the AOS record.
+- **Send to Paychex** adds a new person to Paychex and Paychex emails them an invite to finish their own setup (SSN, address, tax forms, direct deposit). It needs an email first. If Paychex already seems to have the person, you're shown who before anything is sent. After a send the row shows **Sent** until Paychex gives them a Payroll ID; then use **Check Paychex** and **Use ID** to link it.
+- **Send several at once:** tick the people to send (the box at the top ticks everyone who can be sent) and click **Send selected**. You confirm the whole list once. Anyone Paychex may already have is skipped and listed afterwards, so they can be checked and sent one at a time.
+
 ### October 14 — v2.7.0
 - New **🔄 Sync from Paychex** button on the Payroll page (admins only). Paychex is now the source of truth for each person's Payroll ID, phone, email and address, and crew can update their own details in Paychex. The button reads Paychex and shows what would change in AOS before anything happens. Untick anything you don't want, then click **Apply**.
 - What the sync can do: update contact info, give someone the Payroll ID Paychex has for them, add new Paychex hires to AOS, and fix an AOS Payroll ID that doesn't exist in Paychex. A blank in Paychex never wipes out what AOS has. Every change is logged with the record as it was before.

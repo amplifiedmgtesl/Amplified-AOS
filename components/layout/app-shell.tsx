@@ -32,6 +32,7 @@ const nav = [
   ["/timekeeping", "⏱️", "Timekeeping"],
   ["/timekeeping/review", "✅", "Timesheet Review"],
   ["/payroll", "💰", "Payroll"],
+  ["/onboarding", "🪪", "Onboarding"],
   ["/job-costing", "📈", "Job Costing"],
   ["/employee-directory", "👥", "Employees"],
   ["/maintenance", "⚙️", "Maintenance"],
@@ -211,7 +212,9 @@ export function AppShell({
     ? nav.filter(([href]) =>
         href === "/master-calendar" || href === "/clients" || href === "/job-requests"
         || href === "/timekeeping" || href === "/timekeeping/review" || href === "/employee-directory")
-    : nav;
+    : userRole === "admin"
+    ? nav
+    : nav.filter(([href]) => href !== "/onboarding"); // its API is admin-only
   const brandSub = userRole === "payroll" ? "Payroll" : userRole === "coordinator" ? "Coordination" : "Operations Suite";
 
   // The collapsed (icon-only) rail is a desktop affordance. On mobile the

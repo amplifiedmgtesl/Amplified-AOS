@@ -116,7 +116,7 @@ export function nameKey(name: string): string {
   return `${(NICK[t[0]] ?? t[0]).slice(0, 3)} ${t[t.length - 1]}`;
 }
 
-function levenshtein(a: string, b: string): number {
+export function levenshtein(a: string, b: string): number {
   const dp = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {
     let prev = dp[0]; dp[0] = i;
