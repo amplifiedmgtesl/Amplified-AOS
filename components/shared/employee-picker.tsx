@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useUserRole } from "@/lib/auth/use-user-role";
+import { similarNames } from "@/lib/employees/similar-names";
 
 export type PickerEmployee = {
   employeeKey: string;
@@ -258,6 +259,14 @@ export function EmployeePicker({
     return scored.slice(0, RESULT_CAP).map((s) => s.e);
   }, [employees, query]);
 
+  // Search found nothing: people whose name is close (typo, nickname,
+  // first/last swapped), so the operator picks them instead of creating a
+  // duplicate (Shelby Bowman, 2026-10-20).
+  const similar = useMemo(() => {
+    if (!employees || results.length > 0) return [];
+    return similarNames(query, employees.filter((e) => !isTerminated(e)));
+  }, [employees, query, results.length]);
+
   const totalMatches = useMemo(() => {
     if (!employees) return 0;
     const pool = employees.filter((e) => !isTerminated(e));
@@ -388,15 +397,32 @@ export function EmployeePicker({
           )}
           {!loading && results.length === 0 && (
             <div style={{ padding: 12, fontSize: 12, color: "#888" }}>
-              {query ? `No employees match "${query}".` : "No employees found."}
+              {similar.length > 0 ? "Did you mean:" : query ? `No employees match "${query}".` : "No employees found."}
+              {similar.map((e) => (
+                <div
+                  key={e.employeeKey}
+                  onMouseDown={() => { onSelect(e); setQuery(""); setOpen(false); }}
+                  style={{ padding: "6px 8px", marginTop: 4, cursor: "pointer", border: "1px solid #f0e9e0", borderRadius: 6, color: "#222" }}
+                  onMouseEnter={(ev) => { (ev.currentTarget as HTMLElement).style.background = "#fbf6ee"; }}
+                  onMouseLeave={(ev) => { (ev.currentTarget as HTMLElement).style.background = ""; }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{e.fullName}</div>
+                  <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
+                    {[e.email, e.phone, [e.city, e.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ")}
+                  </div>
+                </div>
+              ))}
               {onCreateInline && query.trim().length >= 2 && (
                 <div
                   onMouseDown={(e) => { e.preventDefault(); void handleInlineCreate(); }}
                   style={{
                     marginTop: 8,
                     padding: "8px 10px",
-                    background: "var(--accent, #2563eb)",
-                    color: "#fff",
+                    // With close matches above, creating new is the
+                    // second choice, not the big blue button.
+                    background: similar.length ? "#fff" : "var(--accent, #2563eb)",
+                    color: similar.length ? "var(--accent, #2563eb)" : "#fff",
+                    border: similar.length ? "1px solid var(--accent, #2563eb)" : "none",
                     borderRadius: 6,
                     cursor: creating ? "wait" : "pointer",
                     fontSize: 12,
@@ -405,7 +431,7 @@ export function EmployeePicker({
                   }}
                   title="Create a new employee with this name and link the row to them."
                 >
-                  {creating ? "Creating…" : `+ Create employee "${query.trim()}"`}
+                  {creating ? "Creating…" : similar.length ? `None of these — create "${query.trim()}"` : `+ Create employee "${query.trim()}"`}
                   <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2, opacity: 0.9 }}>
                     Adds them to the Employee Directory as a contractor. Edit details later from Maintenance.
                   </div>
