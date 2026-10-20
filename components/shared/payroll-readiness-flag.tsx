@@ -17,12 +17,30 @@ export function payrollGap(
   return null;
 }
 
+/** "sent to Paychex Oct 20, waiting": no Payroll ID yet, but AOS sent them
+ *  and Paychex emailed the invite (2026-10-20). */
+export function sentWaiting(emp: { ripplingEmployeeId?: number | null; paychexInvitedAt?: string } | undefined): string | null {
+  if (!emp || emp.ripplingEmployeeId != null || !emp.paychexInvitedAt) return null;
+  const d = new Date(emp.paychexInvitedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `sent to Paychex ${d}, waiting`;
+}
+
 export function PayrollReadinessFlag({ employeeKey }: { employeeKey?: string | null }) {
-  const gap = useMemo(() => {
-    if (!employeeKey) return null;
-    return payrollGap(loadEmployees().find((e) => e.employeeKey === employeeKey));
-  }, [employeeKey]);
+  const emp = useMemo(
+    () => (employeeKey ? loadEmployees().find((e) => e.employeeKey === employeeKey) : undefined),
+    [employeeKey],
+  );
+  const gap = payrollGap(emp);
   if (!gap) return null;
+  const waiting = sentWaiting(emp);
+  if (waiting) {
+    return (
+      <span className="hide-print" title="Paychex emailed them an invite. Their Payroll ID comes once they finish setting up; until then they're left out of the Paychex file."
+        style={{ marginLeft: 6, color: "#a0620a", fontSize: 11, fontStyle: "italic", whiteSpace: "nowrap" }}>
+        {waiting}
+      </span>
+    );
+  }
   return (
     <span
       className="hide-print"

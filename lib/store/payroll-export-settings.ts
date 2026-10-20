@@ -81,7 +81,7 @@ export async function loadEmployeesForExport(employeeKeys: string[]): Promise<Em
   for (let i = 0; i < ids.length; i += 200) {
     const { data, error } = await supabase
       .from("employees")
-      .select("employee_key, full_name, first_name, last_name, rippling_employee_id, employment_type")
+      .select("employee_key, full_name, first_name, last_name, rippling_employee_id, employment_type, paychex_invited_at")
       .in("employee_key", ids.slice(i, i + 200));
     if (error) throw new Error(`Couldn't load employees: ${error.message}`);
     for (const r of data ?? []) {
@@ -93,6 +93,7 @@ export async function loadEmployeesForExport(employeeKeys: string[]): Promise<Em
         employmentType: r.employment_type ?? undefined,
         type: r.employment_type === "Employee" ? "staff" : "contractor",
         ripplingEmployeeId: r.rippling_employee_id == null ? null : Number(r.rippling_employee_id),
+        paychexInvitedAt: r.paychex_invited_at ?? undefined,
       });
     }
   }

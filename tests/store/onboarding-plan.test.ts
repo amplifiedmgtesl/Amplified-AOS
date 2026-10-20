@@ -36,6 +36,7 @@ describe("buildOnboardingRows", () => {
     emp("b", "Bob Paid", { payrollId: 12 }),
     emp("c", "Cal Ahead"),
     emp("d", "Dee Old"),
+    emp("e", "Eve Early"),
   ];
   const act: Activity[] = [
     { employeeKey: "a", date: "2026-10-10", kind: "time", jobName: "LBFT", hours: 8 },
@@ -43,22 +44,25 @@ describe("buildOnboardingRows", () => {
     { employeeKey: "a", date: "2026-10-25", kind: "crew", jobName: "WARE", hours: 0 },
     { employeeKey: "b", date: "2026-10-12", kind: "time", jobName: "LBFT", hours: 8 },
     { employeeKey: "c", date: "2026-11-02", kind: "crew", jobName: "WARE", hours: 0 },
+    { employeeKey: "e", date: "2026-09-28", kind: "time", jobName: "EARLY", hours: 6 },
     { employeeKey: "d", date: "2026-08-01", kind: "time", jobName: "OLD", hours: 8 },
   ];
   const rows = buildOnboardingRows(TODAY, all, act, new Set());
 
   it("lists only no-ID people active in the window", () => {
-    expect(rows.map((r) => r.employeeKey)).toEqual(["a", "c"]);
+    expect(rows.map((r) => r.employeeKey)).toEqual(["e", "a", "c"]);
   });
   it("sums timesheet hours and finds last worked / next booked", () => {
-    const a = rows[0];
+    const a = rows[1];
     expect(a.hours).toBe(12.5);
+    expect(a.firstWorked).toEqual({ date: "2026-10-10", jobName: "LBFT" });
     expect(a.lastWorked).toEqual({ date: "2026-10-12", jobName: "LOUIS" });
     expect(a.nextBooked).toEqual({ date: "2026-10-25", jobName: "WARE" });
   });
-  it("booked-only people have no hours and sort after people with hours", () => {
-    expect(rows[1].hours).toBe(0);
-    expect(rows[1].lastWorked).toBeNull();
+  it("oldest job date first; booked-only people at the bottom", () => {
+    expect(rows[0].firstWorked?.date).toBe("2026-09-28");
+    expect(rows[2].hours).toBe(0);
+    expect(rows[2].lastWorked).toBeNull();
   });
 });
 

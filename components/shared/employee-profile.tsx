@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { appliedDifferences, EMPLOYEE_APPLICATION_FORM_ID } from "@/lib/jotform/application";
+import ProfilePaychex from "@/components/shared/profile-paychex";
 import {
   deleteEmployee,
   loadDeletedEmployeeKeys,
@@ -286,6 +287,10 @@ export default function EmployeeProfile({
             )}
           </div>
         </div>
+
+        {/* Paychex: Add to Paychex / Sync from Paychex, duplicates. Admins
+            only, so no Paychex call is made for anyone else. */}
+        {viewerRole === "admin" && <ProfilePaychex key={activeEmployee.employeeKey} employee={activeEmployee} />}
 
         {/* ─── Pay Rate Override (admin-only) ──────────────────────────
             These values override the rate-card default for this employee

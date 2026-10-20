@@ -15,6 +15,7 @@ import {
   type DupMatch, type MergeField, type MergeSide, type OnboardingRow, type PaychexMatch,
 } from "@/lib/onboarding/plan";
 import type { SendOutcome } from "@/lib/onboarding/send";
+import PaychexAsOf from "@/components/shared/paychex-as-of";
 import { appliedDifferences } from "@/lib/jotform/application";
 
 // The send API takes at most 15 people per request.
@@ -81,11 +82,12 @@ function Applied({ row, field, onUse }: {
   );
 }
 
-type MergePick = { row: OnboardingRow; dup: DupMatch };
+export type MergePick = { row: Pick<OnboardingRow, "employeeKey" | "payrollId">; dup: DupMatch };
 
 const FIELD_LABEL: Record<MergeField, string> = { name: "Name", email: "Email", phone: "Phone" };
 
-function MergeDialog({ pick, onClose, onDone }: { pick: MergePick; onClose: () => void; onDone: () => void }) {
+/** Also used on the employee profile; onDone gets the key of the kept record. */
+export function MergeDialog({ pick, onClose, onDone }: { pick: MergePick; onClose: () => void; onDone: (keptKey: string) => void }) {
   const { row, dup } = pick;
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [sides, setSides] = useState<Record<string, MergeSide> | null>(null);
@@ -156,7 +158,7 @@ function MergeDialog({ pick, onClose, onDone }: { pick: MergePick; onClose: () =
       if (pErr) alert(`Merged, but couldn't set the chosen ${Object.keys(o).join(", ")}: ${(pErr as any)?.message ?? pErr}. Fix it on the employee record.`);
     }
     setBusy(false);
-    onDone();
+    onDone(keep);
   }
 
   return (
@@ -201,6 +203,8 @@ export default function Onboarding() {
   const [px, setPx] = useState<Record<string, PaychexMatch[]> | null>(null);
   const [pxBusy, setPxBusy] = useState(false);
   const [pxFailed, setPxFailed] = useState(false);
+  // When the copy of Paychex the check used was taken.
+  const [pxAt, setPxAt] = useState<string | null>(null);
   // Clear matches the check linked by itself this visit.
   const [autoLinked, setAutoLinked] = useState<{ employeeKey: string; name: string; payrollId: number }[]>([]);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -217,6 +221,7 @@ export default function Onboarding() {
     setPxBusy(false);
     if (!r.ok) { setPxFailed(true); setError(r.json?.error ?? `HTTP ${r.status}`); return; }
     setPx(r.json.matches);
+    setPxAt(r.json.checkedAt ?? null);
     const linked: { employeeKey: string; name: string; payrollId: number }[] = r.json.linked ?? [];
     if (linked.length) {
       const gone = new Set(linked.map((x) => x.employeeKey));
@@ -227,6 +232,8 @@ export default function Onboarding() {
 
   const load = useCallback(async () => {
     setError(null);
+    // Finish anything the last Paychex refresh left undone (usually nothing).
+    await api("/api/paychex/snapshot?step=catchup", "POST");
     const r = await api("/api/onboarding");
     if (!r.ok) { setError(r.json?.error ?? `HTTP ${r.status}`); return; }
     setRows(r.json.rows);
@@ -347,7 +354,7 @@ export default function Onboarding() {
 
   function paychexCell(row: OnboardingRow) {
     const sent = row.paychexInvitedAt
-      ? <div><span className="pill pill-green">Sent {fmtDate(row.paychexInvitedAt.slice(0, 10))}</span></div>
+      ? <div><span className="pill pill-green" title="Paychex emailed them an invite. Their Payroll ID comes once they finish setting up.">Sent {fmtDate(row.paychexInvitedAt.slice(0, 10))} · waiting</span></div>
       : null;
     const matches = px?.[row.employeeKey];
     if (!matches) {
@@ -391,9 +398,7 @@ export default function Onboarding() {
             {batchBusy ? "Sending…" : `Send selected (${sendable.filter((x) => picked.has(x.employeeKey)).length})`}
           </button>
           <button className="secondary" onClick={load}>Refresh</button>
-          <button onClick={() => checkPaychex(rows.map((x) => x.employeeKey))} disabled={pxBusy || !rows.length} title="Look each person up in Paychex">
-            {pxBusy ? "Checking Paychex…" : "Check Paychex"}
-          </button>
+          <PaychexAsOf at={pxAt} onRefreshed={() => checkPaychex(rows.map((x) => x.employeeKey))} />
         </span>
       </div>
       {error && <div style={{ color: "#b00", marginTop: 8 }}>{error}</div>}
@@ -433,7 +438,13 @@ export default function Onboarding() {
                   <Link href={`/employee-directory/${encodeURIComponent(row.employeeKey)}`} title="Open their profile"
                     style={{ color: "#2c4d73", textDecoration: "underline", fontWeight: 600 }}>{row.name}</Link>
                   <div className="muted" style={{ fontSize: 12, margin: "2px 0 6px" }}>
-                    {row.lastWorked && <div>{fmtDate(row.lastWorked.date)} · {row.lastWorked.jobName}{row.hours ? ` · ${row.hours} hrs` : ""}</div>}
+                    {row.firstWorked && (
+                      <div>
+                        {fmtDate(row.firstWorked.date)} · {row.firstWorked.jobName}
+                        {row.lastWorked && row.lastWorked.date !== row.firstWorked.date ? ` to ${fmtDate(row.lastWorked.date)}` : ""}
+                        {row.hours ? ` · ${row.hours} hrs` : ""}
+                      </div>
+                    )}
                     {row.nextBooked && <div>Next {fmtDate(row.nextBooked.date)} · {row.nextBooked.jobName}</div>}
                   </div>
                   <button className="secondary" style={SMALL} disabled={busyKey === row.employeeKey} onClick={() => toggleType(row)}

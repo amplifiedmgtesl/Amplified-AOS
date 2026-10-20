@@ -464,3 +464,11 @@ export function planPaychexSync(
 
   return { changes, reports, activeWorkers: active.length };
 }
+
+/** What a Paychex snapshot refresh applies without asking (John, 10/20):
+ *  Paychex is the source of truth for contact info, status and new hires,
+ *  and clear Payroll ID links are safe. Everything else (unclear links,
+ *  changing or clearing a Payroll ID) waits for a person. */
+export function automaticChanges(changes: SyncChange[], clearLinkIds: Set<string>): SyncChange[] {
+  return changes.filter((c) => c.kind === "update" || c.kind === "create" || (c.kind === "link" && clearLinkIds.has(c.id)));
+}

@@ -1,6 +1,8 @@
 /**
  * app/api/paychex/sync/route.ts — "Sync from Paychex" (backlog #117).
  *
+ * Reads the Paychex copy in AOS (lib/paychex/snapshot.ts), not Paychex.
+ *
  * GET  → preview: what Paychex would change in AOS. The one exception:
  *        new-Payroll-ID links that are CLEAR matches (the same rule the
  *        Onboarding page uses, clearMatch in lib/onboarding/plan.ts) are
@@ -16,10 +18,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { fetchPaychexWorkers, PaychexConfigError } from "@/lib/paychex/api";
-import { planPaychexSync, type AosEmployee, type PaychexWorker, type SyncChange, type FieldChange } from "@/lib/paychex/sync-plan";
-import { clearMatch, findDuplicates, paychexMatches } from "@/lib/onboarding/plan";
-import { loadLiveEmployees, loadNotSame } from "@/lib/onboarding/server";
+import { PaychexConfigError } from "@/lib/paychex/api";
+import { planPaychexSync } from "@/lib/paychex/sync-plan";
+import { loadSnapshot } from "@/lib/paychex/snapshot";
+import { applyOne, clearLinks, loadEmployees } from "@/lib/paychex/sync-server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -33,56 +35,15 @@ async function requireAdmin(req: NextRequest): Promise<string | null> {
   return profile?.role === "admin" ? user.id : null;
 }
 
-const EMP_COLS = "employee_key, full_name, first_name, last_name, payroll_name, status, rippling_employee_id, employment_type, phone, email, address, city, state_code, zip, is_deleted";
-
-/** All employees, paged — PostgREST caps a select at 1,000 rows. */
-async function loadEmployees(): Promise<{ live: AosEmployee[]; reservedIds: Set<number> }> {
-  const rows: any[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await supabaseAdmin.from("employees").select(EMP_COLS)
-      .order("employee_key").range(from, from + 999);
-    if (error) throw new Error(error.message);
-    rows.push(...(data ?? []));
-    if (!data || data.length < 1000) break;
-  }
-  const live: AosEmployee[] = [];
-  const reservedIds = new Set<number>();
-  for (const r of rows) {
-    const payrollId = r.rippling_employee_id == null ? null : Number(r.rippling_employee_id);
-    if (r.is_deleted) { if (payrollId != null) reservedIds.add(payrollId); continue; }
-    live.push({
-      employeeKey: r.employee_key, fullName: r.full_name ?? "", firstName: r.first_name ?? "", lastName: r.last_name ?? "",
-      payrollName: r.payroll_name ?? "",
-      status: r.status ?? "",
-      payrollId, employmentType: r.employment_type ?? "", phone: r.phone ?? "", email: r.email ?? "",
-      address: r.address ?? "", city: r.city ?? "", stateCode: r.state_code ?? "", zip: r.zip ?? "",
-    });
-  }
-  return { live, reservedIds };
-}
-
+/** The plan, from the Paychex copy in AOS (no Paychex calls). The copy is
+ *  refreshed Monday night and by "Refresh now"; each refresh already applies
+ *  what Paychex is the source of truth for, so this mostly lists what's
+ *  left for a person to decide. */
 async function buildPlan() {
-  const [{ active, all }, { live, reservedIds }] = await Promise.all([fetchPaychexWorkers(), loadEmployees()]);
-  return { plan: planPaychexSync(active, live, reservedIds, all), active, all, reservedIds };
-}
-
-/** The proposed links that are clear matches under the Onboarding rule. */
-async function clearLinks(changes: SyncChange[], active: PaychexWorker[], all: PaychexWorker[], reservedIds: Set<number>) {
-  const links = changes.filter((c): c is Extract<SyncChange, { kind: "link" }> => c.kind === "link");
-  if (!links.length) return [];
-  const [onb, notSame] = await Promise.all([loadLiveEmployees(), loadNotSame()]);
-  const byKey = new Map(onb.map((e) => [e.employeeKey, e]));
-  const byId = new Map(all.map((w) => [w.workerId, w]));
-  for (const w of active) byId.set(w.workerId, w);
-  const workers = [...byId.values()];
-  const taken = new Set<number>(reservedIds);
-  for (const e of onb) if (e.payrollId != null) taken.add(e.payrollId);
-  return links.filter((c) => {
-    const person = byKey.get(c.employeeKey);
-    if (!person) return false;
-    const m = clearMatch(person, paychexMatches(person, workers), (id) => byId.get(id), findDuplicates(person, onb, notSame), taken);
-    return m?.payrollId === c.payrollId;
-  });
+  const [snap, { live, reservedIds }] = await Promise.all([loadSnapshot(), loadEmployees()]);
+  if (!snap.at) throw new Error("No copy of Paychex yet. Click Refresh now.");
+  const { active, all } = snap;
+  return { plan: planPaychexSync(active, live, reservedIds, all), active, all, reservedIds, snapshotAt: snap.at };
 }
 
 function errorResponse(e: unknown) {
@@ -94,7 +55,7 @@ export async function GET(req: NextRequest) {
   const userId = await requireAdmin(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
-    const { plan, active, all, reservedIds } = await buildPlan();
+    const { plan, active, all, reservedIds, snapshotAt } = await buildPlan();
     const auto = await clearLinks(plan.changes, active, all, reservedIds);
     const runId = `pxs-auto-${Date.now()}`;
     const autoLinked: { employeeKey: string; name: string; payrollId: number; paychexName: string }[] = [];
@@ -107,83 +68,10 @@ export async function GET(req: NextRequest) {
       }
     }
     return NextResponse.json({
-      ...plan, changes: plan.changes.filter((c) => !done.has(c.id)), autoLinked, fetchedAt: new Date().toISOString(),
+      ...plan, changes: plan.changes.filter((c) => !done.has(c.id)), autoLinked, fetchedAt: snapshotAt,
     });
   } catch (e) {
     return errorResponse(e);
-  }
-}
-
-const COLUMN: Record<FieldChange["field"], string> = {
-  status: "status", payrollName: "payroll_name", phone: "phone", email: "email", address: "address", city: "city", stateCode: "state_code", zip: "zip",
-};
-
-function patchFor(fields: FieldChange[]): Record<string, string> {
-  const patch: Record<string, string> = {};
-  for (const f of fields) {
-    patch[COLUMN[f.field]] = f.to;
-    if (f.field === "stateCode") patch.state = f.to;   // keep the two state columns in step
-  }
-  return patch;
-}
-
-async function applyOne(c: SyncChange, runId: string, userId: string, seq: number) {
-  let before: any = null;
-  let after: Record<string, unknown> = {};
-  let employeeKey: string | null = null;
-  try {
-    if (c.kind === "create") {
-      employeeKey = `emp-${Date.now() + seq}`;
-      after = {
-        employee_key: employeeKey, full_name: c.name, first_name: c.firstName, last_name: c.lastName,
-        employment_type: c.employmentType, rippling_employee_id: c.payrollId, status: c.contact.status || "Active",
-        source: "paychex-sync", hire_date: c.hireDate, is_deleted: false, payroll_name: c.contact.payrollName || null,
-        phone: c.contact.phone || null, email: c.contact.email || null, address: c.contact.address || null,
-        city: c.contact.city || null, state_code: c.contact.stateCode || null, state: c.contact.stateCode || null,
-        zip: c.contact.zip || null,
-      };
-      const { error } = await supabaseAdmin.from("employees").insert(after);
-      if (error) throw new Error(error.message);
-    } else if (c.kind === "reid" || c.kind === "clear") {
-      // Swap or blank a Payroll ID Paychex doesn't have. Only lands if the
-      // record still holds the old number.
-      employeeKey = c.employeeKey;
-      const fromId = c.kind === "reid" ? c.fromPayrollId : c.payrollId;
-      const { data, error: readErr } = await supabaseAdmin.from("employees").select("*").eq("employee_key", c.employeeKey).single();
-      if (readErr) throw new Error(readErr.message);
-      before = data;
-      after = { rippling_employee_id: c.kind === "reid" ? c.payrollId : null };
-      const { data: updated, error } = await supabaseAdmin.from("employees").update(after)
-        .eq("employee_key", c.employeeKey).eq("rippling_employee_id", fromId).select("employee_key");
-      if (error) throw new Error(error.message);
-      if (!updated?.length) throw new Error("Record changed since the preview — run the sync again.");
-    } else {
-      employeeKey = c.employeeKey;
-      const { data, error: readErr } = await supabaseAdmin.from("employees").select("*").eq("employee_key", c.employeeKey).single();
-      if (readErr) throw new Error(readErr.message);
-      before = data;
-      after = patchFor(c.fields);
-      let q = supabaseAdmin.from("employees").update(
-        c.kind === "link" ? { ...after, rippling_employee_id: c.payrollId } : after,
-      ).eq("employee_key", c.employeeKey);
-      // A link only lands on a record that still has no Payroll ID.
-      if (c.kind === "link") { after = { ...after, rippling_employee_id: c.payrollId }; q = q.is("rippling_employee_id", null); }
-      const { data: updated, error } = await q.select("employee_key");
-      if (error) throw new Error(error.message);
-      if (!updated?.length) throw new Error("Record changed since the preview — run the sync again.");
-    }
-    await supabaseAdmin.from("paychex_sync_log").insert({
-      run_id: runId, run_by: userId, change_id: c.id, kind: c.kind, employee_key: employeeKey,
-      payroll_id: c.payrollId, before, after, ok: true,
-    });
-    return { id: c.id, ok: true as const };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Unknown error";
-    await supabaseAdmin.from("paychex_sync_log").insert({
-      run_id: runId, run_by: userId, change_id: c.id, kind: c.kind, employee_key: employeeKey,
-      payroll_id: c.payrollId, before, after, ok: false, error: msg,
-    });
-    return { id: c.id, ok: false as const, error: msg };
   }
 }
 

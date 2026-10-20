@@ -96,11 +96,8 @@ async function addContact(token: string, w: PaychexWorker): Promise<void> {
   }
 }
 
-/** Every Paychex worker (names/IDs only), plus the ACTIVE ones with contact info. */
-export async function fetchPaychexWorkers(): Promise<{ active: PaychexWorker[]; all: PaychexWorker[] }> {
-  const token = await getToken();
+async function listWorkers(token: string): Promise<PaychexWorker[]> {
   const companyId = await companyIdFor(token);
-
   const all: PaychexWorker[] = [];
   for (let offset = 0; ; offset += PAGE) {
     const page = await get(token, `/companies/${encodeURIComponent(companyId)}/workers?offset=${offset}&limit=${PAGE}`);
@@ -108,6 +105,15 @@ export async function fetchPaychexWorkers(): Promise<{ active: PaychexWorker[]; 
     for (const r of rows) all.push(toWorker(r));
     if (rows.length < PAGE) break;
   }
+  return all;
+}
+
+/** Every Paychex worker (names/IDs only), plus the ACTIVE ones with contact
+ *  info. One call per active worker for the contact info (~143 on 10/20), so
+ *  screens read the copy in AOS instead (lib/paychex/snapshot.ts). */
+export async function fetchPaychexWorkers(): Promise<{ active: PaychexWorker[]; all: PaychexWorker[] }> {
+  const token = await getToken();
+  const all = await listWorkers(token);
   const active = all.filter((w) => w.status === "ACTIVE");
 
   let i = 0;

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  automaticChanges,
   planPaychexSync,
   splitPaychexName,
   nameKey,
@@ -295,3 +296,17 @@ describe("planPaychexSync", () => {
   });
 });
 
+
+describe("automaticChanges", () => {
+  const changes = [
+    { id: "update:a", kind: "update", employeeKey: "a", payrollId: 1, name: "A", fields: [] },
+    { id: "create:2", kind: "create", payrollId: 2, name: "B", firstName: "B", lastName: "X", employmentType: "Contractor", hireDate: null, contact: {} },
+    { id: "link:c:3", kind: "link", employeeKey: "c", payrollId: 3, name: "C", paychexName: "C", matchedOn: "email", fields: [] },
+    { id: "link:d:4", kind: "link", employeeKey: "d", payrollId: 4, name: "D", paychexName: "D", matchedOn: "name", fields: [] },
+    { id: "reid:e", kind: "reid", employeeKey: "e", payrollId: 5, fromPayrollId: 6, name: "E", paychexName: "E", paychexStatus: "ACTIVE" },
+    { id: "clear:f", kind: "clear", employeeKey: "f", payrollId: 7, name: "F" },
+  ] as any[];
+  it("applies contact/status updates, new hires and clear links only", () => {
+    expect(automaticChanges(changes, new Set(["link:c:3"])).map((c) => c.id)).toEqual(["update:a", "create:2", "link:c:3"]);
+  });
+});

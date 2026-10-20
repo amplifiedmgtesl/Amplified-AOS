@@ -48,6 +48,8 @@ export type DupMatch = {
 };
 
 export type OnboardingRow = OnbEmployee & {
+  /** Earliest day worked in the window: the oldest pay owed. */
+  firstWorked: { date: string; jobName: string } | null;
   lastWorked: { date: string; jobName: string } | null;
   nextBooked: { date: string; jobName: string } | null;
   hours: number;
@@ -143,12 +145,15 @@ export function buildOnboardingRows(
     if (!e || e.payrollId != null) continue;
     let row = acc.get(e.employeeKey);
     if (!row) {
-      row = { ...e, lastWorked: null, nextBooked: null, hours: 0, duplicates: [] };
+      row = { ...e, firstWorked: null, lastWorked: null, nextBooked: null, hours: 0, duplicates: [] };
       acc.set(e.employeeKey, row);
     }
     if (a.kind === "time") row.hours += a.hours || 0;
     const item = { date: a.date, jobName: a.jobName };
-    if (a.date <= today) { if (!row.lastWorked || a.date > row.lastWorked.date) row.lastWorked = item; }
+    if (a.date <= today) {
+      if (!row.lastWorked || a.date > row.lastWorked.date) row.lastWorked = item;
+      if (!row.firstWorked || a.date < row.firstWorked.date) row.firstWorked = item;
+    }
     else if (!row.nextBooked || a.date < row.nextBooked.date) row.nextBooked = item;
   }
   const rows = [...acc.values()];
@@ -156,12 +161,12 @@ export function buildOnboardingRows(
     r.hours = Math.round(r.hours * 100) / 100;
     r.duplicates = findDuplicates(r, all, notSame);
   }
-  // People with hours first (they're waiting to be paid), most recent on top;
-  // then people only booked ahead, soonest first.
+  // Oldest job date first: whoever has waited longest to be paid is on top;
+  // people only booked ahead go to the bottom, soonest first (John, 10/20).
+  const sortDate = (r: OnboardingRow) => r.firstWorked?.date ?? r.nextBooked?.date ?? "9999";
   return rows.sort((a, b) =>
-    Number(b.hours > 0) - Number(a.hours > 0)
-    || (b.lastWorked?.date ?? "").localeCompare(a.lastWorked?.date ?? "")
-    || (a.nextBooked?.date ?? "9999").localeCompare(b.nextBooked?.date ?? "9999")
+    sortDate(a).localeCompare(sortDate(b))
+    || (a.firstWorked ?? a.nextBooked)?.jobName.localeCompare((b.firstWorked ?? b.nextBooked)?.jobName ?? "") || 0
     || a.name.localeCompare(b.name));
 }
 
