@@ -8,10 +8,17 @@ describe("looksLike", () => {
     expect(looksLike("Bowman Shelby", "Shelby Bowman")).toBe(true);
     expect(looksLike("Chris Smith", "Christopher Smith")).toBe(true);
   });
+  it("works on one word too", () => {
+    expect(looksLike("bowmen", "Shelby Bowman")).toBe(true);
+    expect(looksLike("shelbey", "Shelby Bowman")).toBe(true);
+    expect(looksLike("mike", "Michael Jones")).toBe(true);
+  });
   it("doesn't match different people", () => {
     expect(looksLike("Aaron Smith", "Falon Smith")).toBe(false);
     expect(looksLike("Shelby Bowman", "Shane Bowman")).toBe(false);
-    expect(looksLike("Shelby", "Shelby Bowman")).toBe(false);
+    expect(looksLike("bowmen", "Shelby Brown")).toBe(false);
+    expect(looksLike("jonas", "Mary Smith")).toBe(false);
+    expect(looksLike("ab", "Abby Bowman")).toBe(false);
   });
 });
 
@@ -21,6 +28,6 @@ describe("similarNames", () => {
     expect(similarNames("Shelby Bowmen", people)).toEqual([{ fullName: "Shelby Bowman" }]);
     expect(similarNames("Mike Jones", people)).toEqual([{ fullName: "Michael Jones" }]);
     expect(similarNames("Totally New", people)).toEqual([]);
-    expect(similarNames("Shelby", people)).toEqual([]);
+    expect(similarNames("Shel", people)).toEqual([{ fullName: "Shelby Bowman" }]);
   });
 });
