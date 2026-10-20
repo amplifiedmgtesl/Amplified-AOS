@@ -25,6 +25,8 @@ export type OnbEmployee = {
   status: string;
   paychexWorkerId: string | null;
   paychexInvitedAt: string | null;
+  /** What they typed on their website application (backlog #121). */
+  applicationContact?: { email?: string; phone?: string } | null;
 };
 
 export type Activity = {

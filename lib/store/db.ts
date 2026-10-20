@@ -1524,6 +1524,10 @@ function rowToEmployee(r: any): EmployeeRecord {
     payOtRate:  r.pay_ot_rate  == null ? null : Number(r.pay_ot_rate),
     payDtRate:  r.pay_dt_rate  == null ? null : Number(r.pay_dt_rate),
     ripplingEmployeeId: r.rippling_employee_id == null ? null : Number(r.rippling_employee_id),
+    appliedAt: r.applied_at ? String(r.applied_at).slice(0, 10) : undefined,
+    jotformSubmissionId: r.jotform_submission_id ?? undefined,
+    smsConsent: r.sms_consent ?? null,
+    applicationContact: r.application_contact ?? null,
   };
 }
 
