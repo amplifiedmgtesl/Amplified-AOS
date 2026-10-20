@@ -33,6 +33,10 @@ const fmtDate = (ymd: string) => {
 };
 
 const MISSING: React.CSSProperties = { borderColor: "#d9534f", background: "#fff5f5" };
+// Compact buttons so the table fits a normal laptop window.
+const SMALL: React.CSSProperties = { padding: "4px 8px", fontSize: 12, borderRadius: 8 };
+// One person's match, with its buttons under it — wraps instead of widening the table.
+const MATCH: React.CSSProperties = { fontSize: 13, marginBottom: 6, overflowWrap: "anywhere" };
 
 function EditCell({ value, placeholder, onSave }: { value: string; placeholder: string; onSave: (v: string) => Promise<boolean> }) {
   const [v, setV] = useState(value);
@@ -43,7 +47,7 @@ function EditCell({ value, placeholder, onSave }: { value: string; placeholder: 
       value={v}
       placeholder={placeholder}
       disabled={saving}
-      style={{ minWidth: 170, ...(v.trim() ? {} : MISSING) }}
+      style={{ width: "100%", minWidth: 0, boxSizing: "border-box", ...(v.trim() ? {} : MISSING) }}
       onChange={(e) => setV(e.target.value)}
       onBlur={async () => {
         if (v.trim() === value.trim()) return;
@@ -268,11 +272,11 @@ export default function Onboarding() {
       <>
         {sent}
         {matches.map((m) => (
-          <div key={m.workerId} style={{ fontSize: 13, whiteSpace: "nowrap" }}>
-            {m.name}{m.payrollId != null ? ` #${m.payrollId}` : ""}{" "}
-            <span className="muted">· {m.status.toLowerCase()} · {m.reason}</span>{" "}
+          <div key={m.workerId} style={MATCH}>
+            {m.name}{m.payrollId != null ? ` #${m.payrollId}` : ""}
+            <div className="muted" style={{ fontSize: 12 }}>{m.status.toLowerCase()} · {m.reason}</div>
             {m.payrollId != null && (
-              <button className="secondary" disabled={busyKey === row.employeeKey} onClick={() => useId(row, m)}>Use ID</button>
+              <button className="secondary" style={SMALL} disabled={busyKey === row.employeeKey} onClick={() => useId(row, m)}>Use ID</button>
             )}
           </div>
         ))}
@@ -289,29 +293,36 @@ export default function Onboarding() {
 
   return (
     <div className="card">
-      <div className="action-row" style={{ justifyContent: "space-between" }}>
+      <div className="action-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <h3 style={{ margin: 0 }}>{rows.length} without a Payroll ID</h3>
-        <span>
+        <span style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           <button onClick={sendSelected} disabled={batchBusy || !sendable.some((x) => picked.has(x.employeeKey))}>
             {batchBusy ? "Sending…" : `Send selected (${sendable.filter((x) => picked.has(x.employeeKey)).length})`}
-          </button>{" "}
-          <button className="secondary" onClick={load}>Refresh</button>{" "}
+          </button>
+          <button className="secondary" onClick={load}>Refresh</button>
           <button onClick={checkPaychex} disabled={pxBusy || !rows.length} title="Look each person up in Paychex">
             {pxBusy ? "Checking Paychex…" : "Check Paychex"}
           </button>
         </span>
       </div>
       {error && <div style={{ color: "#b00", marginTop: 8 }}>{error}</div>}
-      <div className="table-scroll" style={{ marginTop: 12 }}>
-        <table>
+      <div style={{ marginTop: 12, overflowX: "auto", maxWidth: "100%" }}>
+        <table style={{ tableLayout: "fixed", width: "100%", minWidth: 640 }}>
+          <colgroup>
+            <col style={{ width: 32 }} />
+            <col style={{ width: "21%" }} />
+            <col style={{ width: "24%" }} />
+            <col style={{ width: "22%" }} />
+            <col style={{ width: "21%" }} />
+            <col style={{ width: 96 }} />
+          </colgroup>
           <thead>
             <tr>
-              <th style={{ width: 32 }}>
+              <th>
                 <input type="checkbox" checked={allPicked} disabled={!sendable.length} title="Select everyone who can be sent"
                   onChange={() => setPicked(allPicked ? new Set() : new Set(sendable.map((x) => x.employeeKey)))} />
               </th>
-              <th>Name</th><th>Email</th><th>Phone</th><th>Type</th><th>Worked</th><th>Hours</th>
-              <th>AOS duplicates</th><th>Paychex</th><th />
+              <th>Person</th><th>Email / Phone</th><th>AOS duplicates</th><th>Paychex</th><th />
             </tr>
           </thead>
           <tbody>
@@ -321,26 +332,29 @@ export default function Onboarding() {
                   <input type="checkbox" checked={picked.has(row.employeeKey)} disabled={!canSend(row)}
                     onChange={() => togglePick(row.employeeKey)} />
                 </td>
-                <td><Link href={`/employee-directory/${encodeURIComponent(row.employeeKey)}`}>{row.name}</Link></td>
-                <td><EditCell value={row.email} placeholder="email" onSave={(v) => saveField(row, "email", v)} /></td>
-                <td><EditCell value={row.phone} placeholder="phone" onSave={(v) => saveField(row, "phone", v)} /></td>
-                <td>
-                  <button className="secondary" disabled={busyKey === row.employeeKey} onClick={() => toggleType(row)}
+                <td style={{ overflowWrap: "anywhere" }}>
+                  <Link href={`/employee-directory/${encodeURIComponent(row.employeeKey)}`}><b>{row.name}</b></Link>
+                  <div className="muted" style={{ fontSize: 12, margin: "2px 0 6px" }}>
+                    {row.lastWorked && <div>{fmtDate(row.lastWorked.date)} · {row.lastWorked.jobName}{row.hours ? ` · ${row.hours} hrs` : ""}</div>}
+                    {row.nextBooked && <div>Next {fmtDate(row.nextBooked.date)} · {row.nextBooked.jobName}</div>}
+                  </div>
+                  <button className="secondary" style={SMALL} disabled={busyKey === row.employeeKey} onClick={() => toggleType(row)}
                     title="Click to switch Employee (W-2) / Contractor (1099)">
                     {row.employmentType === "Employee" ? "Employee" : "Contractor"}
                   </button>
                 </td>
-                <td style={{ fontSize: 13, whiteSpace: "nowrap" }}>
-                  {row.lastWorked && <div>{fmtDate(row.lastWorked.date)} · {row.lastWorked.jobName}</div>}
-                  {row.nextBooked && <div className="muted">Next {fmtDate(row.nextBooked.date)} · {row.nextBooked.jobName}</div>}
+                <td>
+                  <EditCell value={row.email} placeholder="email" onSave={(v) => saveField(row, "email", v)} />
+                  <div style={{ height: 6 }} />
+                  <EditCell value={row.phone} placeholder="phone" onSave={(v) => saveField(row, "phone", v)} />
                 </td>
-                <td>{row.hours || ""}</td>
                 <td>
                   {row.duplicates.slice(0, 3).map((d) => (
-                    <div key={d.employeeKey} style={{ fontSize: 13, whiteSpace: "nowrap", opacity: d.strong ? 1 : 0.75 }}>
-                      {d.name}{d.payrollId != null ? ` #${d.payrollId}` : ""} <span className="muted">· {d.reason}</span>{" "}
-                      <button className="secondary" onClick={() => setMerge({ row, dup: d })}>Merge</button>{" "}
-                      <button className="secondary" onClick={() => notSame(row, d)} title="Not the same person — stop flagging this pair">Not same</button>
+                    <div key={d.employeeKey} style={{ ...MATCH, opacity: d.strong ? 1 : 0.75 }}>
+                      {d.name}{d.payrollId != null ? ` #${d.payrollId}` : ""}
+                      <div className="muted" style={{ fontSize: 12 }}>{d.reason}</div>
+                      <button className="secondary" style={SMALL} onClick={() => setMerge({ row, dup: d })}>Merge</button>{" "}
+                      <button className="secondary" style={SMALL} onClick={() => notSame(row, d)} title="Not the same person — stop flagging this pair">Not same</button>
                     </div>
                   ))}
                   {row.duplicates.length > 3 && <small className="muted">+{row.duplicates.length - 3} more</small>}
@@ -348,6 +362,7 @@ export default function Onboarding() {
                 <td>{paychexCell(row)}</td>
                 <td>
                   <button
+                    style={{ ...SMALL, whiteSpace: "normal" }}
                     disabled={!canSend(row) || busyKey === row.employeeKey || batchBusy}
                     title={row.paychexWorkerId ? "Already sent" : canSend(row) ? "Create in Paychex and email the onboarding invite" : "Needs an email"}
                     onClick={() => send(row)}
