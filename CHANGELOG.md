@@ -4,6 +4,13 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 20 — v2.12.0
+- **AOS now keeps a copy of Paychex** and refreshes it every **Monday night**, instead of reading Paychex every time a page opens. Onboarding, Sync from Paychex and employee profiles open faster and no longer use up Paychex lookups. **Paychex as of …** shows how fresh the copy is; **Refresh now** reads Paychex again (about 30 seconds).
+- **Each refresh applies Paychex's changes on its own:** email, phone, address and status, new hires, and Payroll IDs that clearly match. Anything unclear (for example, one Paychex person who could be two AOS records) still waits under **🔄 Sync from Paychex** on the Payroll page for you to decide.
+- **Sent and waiting:** after **Send to Paychex**, the person shows **Sent … · waiting** on Onboarding and their profile, and **sent to Paychex …, waiting** (in amber) on payroll runs and crew/timekeeping screens, until they finish setting up in Paychex. Their Payroll ID is then filled in automatically.
+- **Employee profiles have a Paychex section** (admins). Without a Payroll ID: possible duplicates (**Merge** / **Not same**), possible Paychex matches (**Use ID**), and **Add to Paychex**, which stays greyed out until there's nothing left to sort out; hover over it to see why. With a Payroll ID: **Sync from Paychex** for just that person.
+- **Onboarding is now in date order:** the person who has waited longest to be paid is on top, and people only booked for future jobs are at the bottom. Each row shows the first and last date worked.
+
 ### October 20 — v2.11.1
 - **Did you mean:** now works from 3 letters, so short last names are caught too ("dow" finds Doe).
 
