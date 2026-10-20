@@ -3120,3 +3120,15 @@ Two ways in: a **batch run** from Connor's marked-up CSV (X = keep, NO = skip th
 - [ ] Update Help (`HELP.md`) with the new page.
 
 **Notes:** reuse `lib/job-health/runner.ts` (`runHealthChecks`) and the registry; the payroll-readiness check already has the Payroll ID / Employee-vs-Contractor rules. Watch performance: running every check for ~4 weeks of jobs may need batching or a server route.
+
+---
+
+## #120 — Payroll Setup screen: crew on jobs with no Payroll ID → fix, merge, onboard to Paychex (added 2026-10-20)
+
+**Plan:** `docs/payroll-setup-screen-plan.md`. Plan only, not built. John is reviewing it with Connor.
+
+**What:** one page (under Payroll) listing everyone on a confirmed crew assignment or timesheet in a **rolling 30-days-back / 30-days-ahead window** who has no Payroll ID. Each row shows inline email/phone (blanks highlighted) and an Employee/Contractor toggle, flags possible duplicates with a **Merge** button (calls the existing `merge_employee`; reverses the 10/13 "no merge button" decision), offers **Use this ID** when a matching Paychex worker is found, and has **Send to Paychex**, which creates an in-progress worker so Paychex emails the self-onboarding invite. **Send requires an email** (John, 10/20).
+
+**Prod 2026-10-20:** 99 people in the window, 89 with no email or phone, 0 from upcoming crew.
+
+**Prereqs:** merge `feature/employee-merge` into dev (the `20261013a` migration is live in both DBs but not in the repo); Paychex worker write access (Send only).
