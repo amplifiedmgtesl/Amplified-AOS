@@ -148,3 +148,16 @@ describe("splitForPaychex", () => {
     expect(splitForPaychex("", "", "Mary Ann Smith")).toEqual({ given: "Mary Ann", family: "Smith" });
   });
 });
+
+describe("similarName (2026-10-20 false positives)", () => {
+  it("Aaron Smith is not Falon or Javon Smith", () => {
+    expect(duplicateReason(emp("1", "Aaron J Smith"), emp("2", "Falon Smith"))).toBeNull();
+    expect(duplicateReason(emp("1", "Aaron J Smith"), emp("2", "Javon Smith"))).toBeNull();
+  });
+  it("still catches a one-letter typo and DLauren/Lauren", () => {
+    expect(duplicateReason(emp("1", "Justin Alen"), emp("2", "Justin Allen"))?.reason).toBe("Similar name");
+    expect(duplicateReason(emp("1", "Jeffery Eckel"), emp("2", "Jeffrey Eckel"))?.reason).toBe("Same name");
+    expect(duplicateReason(emp("1", "DLauren Honore"), emp("2", "Lauren Honore"))?.reason).toBe("Similar name");
+    expect(duplicateReason(emp("1", "Cameron Pasley"), emp("2", "Camran Paisley"))).not.toBeNull();
+  });
+});

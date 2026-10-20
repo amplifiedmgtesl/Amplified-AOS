@@ -13,7 +13,7 @@
 //   • Jr/Sr/II differs: possible only (father and son)
 // Pairs Connor has marked "not the same person" are skipped.
 
-import { digits10, looseNameMatch, nameKey, splitPaychexName, type PaychexWorker } from "@/lib/paychex/sync-plan";
+import { digits10, levenshtein, nameKey, splitPaychexName, type PaychexWorker } from "@/lib/paychex/sync-plan";
 
 export type OnbEmployee = {
   employeeKey: string;
@@ -71,6 +71,29 @@ const SUFFIX = /\b(jr|sr|ii|iii|iv)\b\.?/i;
 const suffixOf = (name: string) => (name.match(SUFFIX)?.[1] ?? "").toLowerCase();
 const firstOf = (name: string) => nameKey(name).split(" ")[0] ?? "";
 const cleanEmail = (s: string) => (s ?? "").trim().toLowerCase();
+const nameParts = (name: string) => {
+  const t = (name ?? "").toLowerCase().replace(/[^a-z\s]/g, " ").split(/\s+/).filter((x) => x && !SUFFIX.test(x));
+  return { first: t[0] ?? "", last: t.length > 1 ? t[t.length - 1] : "" };
+};
+
+/** A typo apart, but stricter than the sync's looseNameMatch, which let
+ *  "Aaron Smith" meet "Falon Smith" and "Javon Smith" (2026-10-20 test).
+ *  Same last name: first names start with the same letter and are one
+ *  letter apart (two for long names), or one is inside the other.
+ *  Same first three letters: last names one letter apart. */
+export function similarName(a: string, b: string): boolean {
+  const x = nameParts(a), y = nameParts(b);
+  if (!x.first || !x.last || !y.first || !y.last) return false;
+  if (x.last === y.last) {
+    if (x.first === y.first) return true;
+    if (x.first.includes(y.first) || y.first.includes(x.first)) return true;
+    const allowed = Math.min(x.first.length, y.first.length) >= 6 ? 2 : 1;
+    return x.first[0] === y.first[0] && levenshtein(x.first, y.first) <= allowed;
+  }
+  // Cameron Pasley / Camran Paisley (one person, 10/12): first names share
+  // their first three letters, last names one letter apart.
+  return x.first.slice(0, 3) === y.first.slice(0, 3) && x.last[0] === y.last[0] && levenshtein(x.last, y.last) <= 1;
+}
 
 /** Why `b` looks like the same person as `a`, or null. */
 export function duplicateReason(a: OnbEmployee, b: OnbEmployee): { reason: string; strong: boolean } | null {
@@ -82,9 +105,9 @@ export function duplicateReason(a: OnbEmployee, b: OnbEmployee): { reason: strin
 
   let hit: { reason: string; strong: boolean } | null = null;
   if (ea && ea === eb) hit = { reason: "Same email", strong: true };
-  else if (pa && pa === pb && (firstOk || looseNameMatch(a.name, b.name))) hit = { reason: "Same phone", strong: true };
+  else if (pa && pa === pb && (firstOk || similarName(a.name, b.name))) hit = { reason: "Same phone", strong: true };
   else if (ka.includes(" ") && ka === kb) hit = { reason: "Same name", strong: true };
-  else if (looseNameMatch(a.name, b.name)) hit = { reason: "Similar name", strong: false };
+  else if (similarName(a.name, b.name)) hit = { reason: "Similar name", strong: false };
   else if (pa && pa === pb) hit = { reason: "Same phone, different name", strong: false };
   if (!hit) return null;
   if (!sameSuffix) return { reason: `${hit.reason} (Jr/Sr differs)`, strong: false };
@@ -184,7 +207,7 @@ export function paychexMatches(e: OnbEmployee, workers: PaychexWorker[]): Payche
     else if (email && cleanEmail(w.email) === email) reason = "Same email";
     else if (phone && digits10(w.phone) === phone) reason = "Same phone";
     else if (key.includes(" ") && nameKey(name) === key) reason = "Same name";
-    else if (looseNameMatch(e.name, name)) reason = "Similar name";
+    else if (similarName(e.name, name)) reason = "Similar name";
     if (!reason) continue;
     const id = Number(w.employeeId);
     out.push({ workerId: w.workerId, payrollId: w.employeeId && Number.isFinite(id) ? id : null, name, status: w.status, workerType: w.workerType, reason });
