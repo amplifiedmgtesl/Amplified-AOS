@@ -639,6 +639,11 @@ export type EmployeeRecord = {
    *  Surfaced on the payroll-run CSV export so Rippling can match each
    *  row to its employee record. Most employees won't have one. */
   ripplingEmployeeId?: number | null;
+  /** Latest website application (backlog #121). Read-only here: written by
+   *  the JotForm webhook / one-time load, never by employeeToRow. */
+  appliedAt?: string;
+  jotformSubmissionId?: string;
+  smsConsent?: boolean | null;
 };
 
 

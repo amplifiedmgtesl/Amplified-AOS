@@ -37,6 +37,7 @@ export default function EmployeeDirectory({
   const [cityFilter, setCityFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [appliedFilter, setAppliedFilter] = useState("");
   const [sortAZ, setSortAZ] = useState<"A-Z"|"Z-A">("A-Z");
   const [refreshKey, setRefreshKey] = useState(0);
   const [csvText, setCsvText] = useState("");
@@ -57,6 +58,7 @@ export default function EmployeeDirectory({
         && (!cityFilter || (e.city || "") === cityFilter)
         && (!statusFilter || (e.status || "") === statusFilter)
         && (!typeFilter || (typeFilter === "__blank__" ? !e.employmentType : (e.employmentType || "") === typeFilter))
+        && (!appliedFilter || (appliedFilter === "yes" ? !!e.appliedAt : !e.appliedAt))
 ;
     });
     rows.sort((a,b) => {
@@ -65,7 +67,7 @@ export default function EmployeeDirectory({
       return sortAZ === "A-Z" ? av.localeCompare(bv) : bv.localeCompare(av);
     });
     return rows;
-  }, [query, stateFilter, cityFilter, statusFilter, typeFilter, sortAZ, employees]);
+  }, [query, stateFilter, cityFilter, statusFilter, typeFilter, appliedFilter, sortAZ, employees]);
 
   function profileHref(key: string) {
     return `${basePath}/${encodeURIComponent(key)}`;
@@ -140,6 +142,7 @@ export default function EmployeeDirectory({
           <div><small>State</small><select value={stateFilter} onChange={(e)=>setStateFilter(e.target.value)}><option value="">All states</option>{states.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>Status</small><select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)}><option value="">All status</option>{statuses.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>Employment Type</small><select value={typeFilter} onChange={(e)=>setTypeFilter(e.target.value)}><option value="">All types</option>{types.map((s)=><option key={s} value={s}>{s}</option>)}<option value="__blank__">— Not set —</option></select></div>
+          <div><small title="Applied through the website application form">Applied Online</small><select value={appliedFilter} onChange={(e)=>setAppliedFilter(e.target.value)}><option value="">Everyone</option><option value="yes">Applied</option><option value="no">Didn't apply</option></select></div>
           <div><small>Name Sort</small><select value={sortAZ} onChange={(e)=>setSortAZ(e.target.value as "A-Z"|"Z-A")}><option value="A-Z">A-Z</option><option value="Z-A">Z-A</option></select></div>
         </div>
       </div>

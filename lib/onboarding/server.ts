@@ -22,7 +22,7 @@ export function todayLocal(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
 }
 
-const EMP_COLS = "employee_key, full_name, first_name, last_name, email, phone, employment_type, rippling_employee_id, status, paychex_worker_id, paychex_invited_at, is_deleted";
+const EMP_COLS = "employee_key, full_name, first_name, last_name, email, phone, employment_type, rippling_employee_id, status, paychex_worker_id, paychex_invited_at, application_contact, is_deleted";
 
 export function toOnbEmployee(r: any): OnbEmployee {
   return {
@@ -35,6 +35,7 @@ export function toOnbEmployee(r: any): OnbEmployee {
     status: r.status ?? "",
     paychexWorkerId: r.paychex_worker_id ?? null,
     paychexInvitedAt: r.paychex_invited_at ?? null,
+    applicationContact: r.application_contact ?? null,
   };
 }
 

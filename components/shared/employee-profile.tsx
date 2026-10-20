@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { EMPLOYEE_APPLICATION_FORM_ID } from "@/lib/jotform/application";
 import {
   deleteEmployee,
   loadDeletedEmployeeKeys,
@@ -248,6 +249,19 @@ export default function EmployeeProfile({
                 placeholder="(none)"
               />
             </div>
+            {activeEmployee.appliedAt && (
+              <div>
+                <small title="Their latest application on the website (JotForm). The link opens it, with the résumé, for anyone signed in to JotForm.">Applied on website</small>
+                <div style={{ padding: "6px 0" }}>
+                  {activeEmployee.jotformSubmissionId
+                    ? <a href={`https://www.jotform.com/inbox/${EMPLOYEE_APPLICATION_FORM_ID}/${activeEmployee.jotformSubmissionId}`} target="_blank" rel="noreferrer">{activeEmployee.appliedAt}</a>
+                    : activeEmployee.appliedAt}
+                  {activeEmployee.smsConsent != null && (
+                    <span className="muted" title="Their answer to the text-message question on the application"> · Texts: {activeEmployee.smsConsent ? "Yes" : "No"}</span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

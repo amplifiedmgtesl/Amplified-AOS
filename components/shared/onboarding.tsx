@@ -15,6 +15,7 @@ import {
   type DupMatch, type MergeField, type MergeSide, type OnboardingRow, type PaychexMatch,
 } from "@/lib/onboarding/plan";
 import type { SendOutcome } from "@/lib/onboarding/send";
+import { appliedDifferences } from "@/lib/jotform/application";
 
 // The send API takes at most 15 people per request.
 const CHUNK = 15;
@@ -60,6 +61,23 @@ function EditCell({ value, placeholder, onSave }: { value: string; placeholder: 
       }}
       onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
     />
+  );
+}
+
+/** Their website application has a different email/phone than AOS:
+ *  show it, one click to use it (backlog #121). */
+function Applied({ row, field, onUse }: {
+  row: OnboardingRow; field: "email" | "phone";
+  onUse: (row: OnboardingRow, field: "email" | "phone", value: string) => Promise<boolean>;
+}) {
+  const value = appliedDifferences(row, row.applicationContact)[field];
+  if (!value) return null;
+  return (
+    <button type="button" title="From their website application. Click to use it instead."
+      style={{ display: "block", background: "none", border: 0, padding: "2px 0 0", fontSize: 12, color: "var(--accent, #2563eb)", cursor: "pointer", textAlign: "left", overflowWrap: "anywhere" }}
+      onClick={() => onUse(row, field, value)}>
+      Applied with: {value}
+    </button>
   );
 }
 
@@ -424,8 +442,10 @@ export default function Onboarding() {
                 </td>
                 <td>
                   <EditCell value={row.email} placeholder="email" onSave={(v) => saveField(row, "email", v)} />
+                  <Applied row={row} field="email" onUse={saveField} />
                   <div style={{ height: 6 }} />
                   <EditCell value={row.phone} placeholder="phone" onSave={(v) => saveField(row, "phone", v)} />
+                  <Applied row={row} field="phone" onUse={saveField} />
                 </td>
                 <td>
                   {row.duplicates.slice(0, 3).map((d) => (
