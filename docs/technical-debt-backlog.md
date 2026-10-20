@@ -3132,3 +3132,13 @@ Two ways in: a **batch run** from Connor's marked-up CSV (X = keep, NO = skip th
 **Prod 2026-10-20:** 99 people in the window, 89 with no email or phone, 0 from upcoming crew.
 
 **Prereqs:** merge `feature/employee-merge` into dev (the `20261013a` migration is live in both DBs but not in the repo); Paychex worker write access (Send only).
+
+---
+
+## #121 — Website applicants into the Employee list (JotForm webhook + one-time load) (added 2026-10-20)
+
+**Plan:** `docs/jotform-applicants-plan.md`. Plan only, waiting for John's OK.
+
+**What:** each Employee Application submitted on amplifiedesl.com (a JotForm form) comes into AOS through a **webhook** (no API key, because the JotForm account also holds bank and SSN forms). It's matched to an existing Employee first (email → phone → exact name), so people a crew lead already added get their blanks filled, not a duplicate. Otherwise a new Contractor record is created, with source "Website application". Junk is skipped, nothing AOS already has is overwritten, and everything is logged. Plus a one-time load of the 611 past submissions from John's CSV export (514 people, 72 new, 44 of the 99 on the Onboarding list get an email).
+
+**Open decision:** whether to store the SMS-consent answer.
