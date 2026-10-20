@@ -81,11 +81,12 @@ function Applied({ row, field, onUse }: {
   );
 }
 
-type MergePick = { row: OnboardingRow; dup: DupMatch };
+export type MergePick = { row: Pick<OnboardingRow, "employeeKey" | "payrollId">; dup: DupMatch };
 
 const FIELD_LABEL: Record<MergeField, string> = { name: "Name", email: "Email", phone: "Phone" };
 
-function MergeDialog({ pick, onClose, onDone }: { pick: MergePick; onClose: () => void; onDone: () => void }) {
+/** Also used on the employee profile; onDone gets the key of the kept record. */
+export function MergeDialog({ pick, onClose, onDone }: { pick: MergePick; onClose: () => void; onDone: (keptKey: string) => void }) {
   const { row, dup } = pick;
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [sides, setSides] = useState<Record<string, MergeSide> | null>(null);
@@ -156,7 +157,7 @@ function MergeDialog({ pick, onClose, onDone }: { pick: MergePick; onClose: () =
       if (pErr) alert(`Merged, but couldn't set the chosen ${Object.keys(o).join(", ")}: ${(pErr as any)?.message ?? pErr}. Fix it on the employee record.`);
     }
     setBusy(false);
-    onDone();
+    onDone(keep);
   }
 
   return (

@@ -96,11 +96,8 @@ async function addContact(token: string, w: PaychexWorker): Promise<void> {
   }
 }
 
-/** Every Paychex worker (names/IDs only), plus the ACTIVE ones with contact info. */
-export async function fetchPaychexWorkers(): Promise<{ active: PaychexWorker[]; all: PaychexWorker[] }> {
-  const token = await getToken();
+async function listWorkers(token: string): Promise<PaychexWorker[]> {
   const companyId = await companyIdFor(token);
-
   const all: PaychexWorker[] = [];
   for (let offset = 0; ; offset += PAGE) {
     const page = await get(token, `/companies/${encodeURIComponent(companyId)}/workers?offset=${offset}&limit=${PAGE}`);
@@ -108,6 +105,22 @@ export async function fetchPaychexWorkers(): Promise<{ active: PaychexWorker[]; 
     for (const r of rows) all.push(toWorker(r));
     if (rows.length < PAGE) break;
   }
+  return all;
+}
+
+/** Every Paychex worker, names/IDs/status only: about 10 calls, no contact
+ *  info. The employee profile uses this, then reads contact info only for
+ *  the one or few workers it needs (2026-10-20). */
+export async function fetchPaychexWorkerList(): Promise<PaychexWorker[]> {
+  return listWorkers(await getToken());
+}
+
+/** Every Paychex worker (names/IDs only), plus the ACTIVE ones with contact
+ *  info. One call per active worker for the contact info (~470), so this is
+ *  for the Onboarding page and Sync from Paychex, not per-person screens. */
+export async function fetchPaychexWorkers(): Promise<{ active: PaychexWorker[]; all: PaychexWorker[] }> {
+  const token = await getToken();
+  const all = await listWorkers(token);
   const active = all.filter((w) => w.status === "ACTIVE");
 
   let i = 0;
