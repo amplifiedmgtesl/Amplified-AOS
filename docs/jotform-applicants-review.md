@@ -55,3 +55,6 @@ Typecheck is clean, and all 262 tests pass. The tests cover the matching and fil
 **Onboarding section:** after the Email / Phone bullet, add:
 
 > - **Applied with: …** under the email or phone means their website application has a different one. Click it to use that instead.
+> - Click a person's name to open their profile.
+
+**Employees section, profile paragraph:** add "**Applied with: …** under Phone or Email means their website application has a different one; click it to use that instead."

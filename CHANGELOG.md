@@ -6,7 +6,8 @@ What changed and when. Newest entries at the top.
 
 ### October 20 — v2.10.0
 - **People who apply on the website now go straight into the Employee list.** When someone sends the Employee Application on amplifiedesl.com, AOS first looks for them, by email, then phone, then exact name, because a crew lead may already have added them. If they're found, only blanks are filled in; nothing already in AOS is overwritten. If they're new, they're added as a **Contractor**. That way the right person is there to pick when you book a crew, with their email ready for Paychex.
-- On the **Onboarding** page, **Applied with: …** under an email or phone means their application has a different one. Click it to use that instead.
+- **Applied with: …** under an email or phone means their application has a different one from what's in AOS. Click it to use that instead. It shows on the **Onboarding** page and on the person's profile.
+- On the **Onboarding** page, each person's name is now underlined like a link: click it to open their profile.
 - An employee's profile shows **Applied on website** with the date (it opens their application and résumé in JotForm if you're signed in there) and their answer to the text-message question.
 - **Employees list:** a new **Applied Online** filter. Click any column heading to sort by it; click it again to reverse. The Employee Key column is gone from the list (it's still on each profile).
 - Past applications are loaded once from JotForm's export, by an admin.

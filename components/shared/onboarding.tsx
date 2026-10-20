@@ -430,7 +430,8 @@ export default function Onboarding() {
                     onChange={() => togglePick(row.employeeKey)} />
                 </td>
                 <td style={{ overflowWrap: "anywhere" }}>
-                  <Link href={`/employee-directory/${encodeURIComponent(row.employeeKey)}`}><b>{row.name}</b></Link>
+                  <Link href={`/employee-directory/${encodeURIComponent(row.employeeKey)}`} title="Open their profile"
+                    style={{ color: "#2c4d73", textDecoration: "underline", fontWeight: 600 }}>{row.name}</Link>
                   <div className="muted" style={{ fontSize: 12, margin: "2px 0 6px" }}>
                     {row.lastWorked && <div>{fmtDate(row.lastWorked.date)} · {row.lastWorked.jobName}{row.hours ? ` · ${row.hours} hrs` : ""}</div>}
                     {row.nextBooked && <div>Next {fmtDate(row.nextBooked.date)} · {row.nextBooked.jobName}</div>}

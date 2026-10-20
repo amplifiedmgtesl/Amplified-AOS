@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { EMPLOYEE_APPLICATION_FORM_ID } from "@/lib/jotform/application";
+import { appliedDifferences, EMPLOYEE_APPLICATION_FORM_ID } from "@/lib/jotform/application";
 import {
   deleteEmployee,
   loadDeletedEmployeeKeys,
@@ -22,6 +22,12 @@ import {
 import { US_STATES } from "@/lib/constants";
 import type { EmployeeRecord } from "@/lib/store/types";
 import { useRouter } from "next/navigation";
+
+// "Applied with: …" under Phone / Email, same look as on Onboarding.
+const APPLIED_NOTE: React.CSSProperties = {
+  display: "block", background: "none", border: 0, padding: "2px 0 0", fontSize: 12,
+  color: "var(--accent, #2563eb)", cursor: "pointer", textAlign: "left", overflowWrap: "anywhere",
+};
 
 function activeEmployees() {
   const deleted = new Set(loadDeletedEmployeeKeys());
@@ -179,6 +185,10 @@ export default function EmployeeProfile({
     );
   }
 
+  // Where their website application has a different email/phone (#121).
+  const appliedDiff = appliedDifferences(
+    { email: activeEmployee.email || "", phone: activeEmployee.phone || "" }, activeEmployee.applicationContact);
+
   return (
     <div className="grid">
       <div className="action-row hide-print" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -207,8 +217,20 @@ export default function EmployeeProfile({
             <div><small>Full Name</small><input value={activeEmployee.fullName} onChange={(e)=>updateActiveField("fullName", e.target.value)} /></div>
             <div><small>First Name</small><input value={activeEmployee.firstName} onChange={(e)=>updateActiveField("firstName", e.target.value)} /></div>
             <div><small>Last Name</small><input value={activeEmployee.lastName} onChange={(e)=>updateActiveField("lastName", e.target.value)} /></div>
-            <div><small>Phone</small><input value={activeEmployee.phone || ""} onChange={(e)=>updateActiveField("phone", e.target.value)} /></div>
-            <div><small>Email</small><input value={activeEmployee.email || ""} onChange={(e)=>updateActiveField("email", e.target.value)} /></div>
+            <div><small>Phone</small><input value={activeEmployee.phone || ""} onChange={(e)=>updateActiveField("phone", e.target.value)} />
+              {appliedDiff.phone && (
+                <button type="button" title="From their website application. Click to use it instead."
+                  style={APPLIED_NOTE} onClick={() => updateActiveField("phone", appliedDiff.phone!)}>
+                  Applied with: {appliedDiff.phone}
+                </button>
+              )}</div>
+            <div><small>Email</small><input value={activeEmployee.email || ""} onChange={(e)=>updateActiveField("email", e.target.value)} />
+              {appliedDiff.email && (
+                <button type="button" title="From their website application. Click to use it instead."
+                  style={APPLIED_NOTE} onClick={() => updateActiveField("email", appliedDiff.email!)}>
+                  Applied with: {appliedDiff.email}
+                </button>
+              )}</div>
             <div style={{ gridColumn: "1 / -1" }}><small>Address</small><input value={activeEmployee.address || ""} onChange={(e)=>updateActiveField("address", e.target.value)} placeholder="Street address (and apt/suite if applicable)" /></div>
             <div><small>City</small><input value={activeEmployee.city || ""} onChange={(e)=>updateActiveField("city", e.target.value)} /></div>
             <div><small>State</small><select value={activeEmployee.stateCode || ""} onChange={(e)=>updateActiveField("stateCode", e.target.value)}><option value="">— Select —</option>{US_STATES.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>

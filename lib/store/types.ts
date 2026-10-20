@@ -644,6 +644,8 @@ export type EmployeeRecord = {
   appliedAt?: string;
   jotformSubmissionId?: string;
   smsConsent?: boolean | null;
+  /** What they typed on that application (email, phone, address). */
+  applicationContact?: { email?: string; phone?: string; address?: string } | null;
 };
 
 
