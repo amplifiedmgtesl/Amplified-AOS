@@ -9,11 +9,12 @@
 //   • same email, or same phone with a compatible first name: strong
 //   • same first-3-letters + last name (nicknames folded): strong
 //   • a typo or two apart: possible
+//   • sounds alike (Soundex, at most 2 letters off): possible (10/21)
 //   • same phone, different first name (family share phones): possible
 //   • Jr/Sr/II differs: possible only (father and son)
 // Pairs Connor has marked "not the same person" are skipped.
 
-import { digits10, levenshtein, nameKey, splitPaychexName, type PaychexWorker } from "@/lib/paychex/sync-plan";
+import { digits10, levenshtein, nameKey, soundsAlikeName, splitPaychexName, type PaychexWorker } from "@/lib/paychex/sync-plan";
 
 export type OnbEmployee = {
   employeeKey: string;
@@ -112,6 +113,7 @@ export function duplicateReason(a: OnbEmployee, b: OnbEmployee): { reason: strin
   else if (pa && pa === pb && (firstOk || similarName(a.name, b.name))) hit = { reason: "Same phone", strong: true };
   else if (ka.includes(" ") && ka === kb) hit = { reason: "Same name", strong: true };
   else if (similarName(a.name, b.name)) hit = { reason: "Similar name", strong: false };
+  else if (soundsAlikeName(a.name, b.name)) hit = { reason: "Sounds alike", strong: false };
   else if (pa && pa === pb) hit = { reason: "Same phone, different name", strong: false };
   if (!hit) return null;
   if (!sameSuffix) return { reason: `${hit.reason} (Jr/Sr differs)`, strong: false };
@@ -215,11 +217,12 @@ export function paychexMatches(e: OnbEmployee, workers: PaychexWorker[]): Payche
     else if (phone && digits10(w.phone) === phone) reason = "Same phone";
     else if (key.includes(" ") && nameKey(name) === key) reason = "Same name";
     else if (similarName(e.name, name)) reason = "Similar name";
+    else if (soundsAlikeName(e.name, name)) reason = "Sounds alike";
     if (!reason) continue;
     const id = Number(w.employeeId);
     out.push({ workerId: w.workerId, payrollId: w.employeeId && Number.isFinite(id) ? id : null, name, status: w.status, workerType: w.workerType, reason });
   }
-  const rank = ["Sent from AOS", "Same email", "Same phone", "Same name", "Similar name"];
+  const rank = ["Sent from AOS", "Same email", "Same phone", "Same name", "Similar name", "Sounds alike"];
   return out.sort((a, b) => rank.indexOf(a.reason) - rank.indexOf(b.reason) || Number(b.status === "ACTIVE") - Number(a.status === "ACTIVE"));
 }
 

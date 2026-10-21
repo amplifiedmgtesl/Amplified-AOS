@@ -122,6 +122,44 @@ export function nameKey(name: string): string {
   return `${(NICK[t[0]] ?? t[0]).slice(0, 3)} ${t[t.length - 1]}`;
 }
 
+const CODES: Record<string, string> = {
+  b: "1", f: "1", p: "1", v: "1",
+  c: "2", g: "2", j: "2", k: "2", q: "2", s: "2", x: "2", z: "2",
+  d: "3", t: "3", l: "4", m: "5", n: "5", r: "6",
+};
+
+/** American Soundex: first letter + 3 digits ("Bowman" → B550). */
+export function soundex(word: string): string {
+  const w = (word ?? "").toLowerCase().replace(/[^a-z]/g, "");
+  if (!w) return "";
+  let out = w[0].toUpperCase();
+  let last = CODES[w[0]] ?? "";
+  for (let i = 1; i < w.length && out.length < 4; i++) {
+    const c = w[i];
+    const code = CODES[c] ?? "";
+    if (code && code !== last) out += code;
+    if (c !== "h" && c !== "w") last = code;   // h/w don't separate equal codes
+  }
+  return out.padEnd(4, "0");
+}
+
+/** Do two full names sound like the same person (2026-10-21)? First names
+ *  the same, a nickname, one inside the other, or sounding the same; last
+ *  names sounding the same (Soundex) and at most 2 letters apart. First and
+ *  last swapped counts too. "Amber Slicht" / "Amber Schlicht" yes; "Aaron
+ *  Smith" / "Falon Smith" no. Only ever a suggestion, never a clear match. */
+export function soundsAlikeName(a: string, b: string): boolean {
+  const x = tokens(a), y = tokens(b);
+  if (x.length < 2 || y.length < 2) return false;
+  const close = (p: string, q: string, isFirst: boolean) => {
+    if (p === q) return true;
+    if (isFirst && (fullFirstName(p) === fullFirstName(q) || (p.length >= 3 && q.length >= 3 && (p.startsWith(q) || q.startsWith(p))))) return true;
+    return p[0] === q[0] && soundex(p) === soundex(q) && levenshtein(p, q) <= 2;
+  };
+  const fx = x[0], lx = x[x.length - 1], fy = y[0], ly = y[y.length - 1];
+  return (close(fx, fy, true) && close(lx, ly, false)) || (close(fx, ly, true) && close(lx, fy, false));
+}
+
 export function levenshtein(a: string, b: string): number {
   const dp = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) {
@@ -367,7 +405,11 @@ export function planPaychexSync(
           ". Same person under two Paychex IDs, or a different person? Not added." });
       continue;
     }
-    const near = employees.filter((e) => looseNameMatch(e.fullName || `${e.firstName} ${e.lastName}`, pxName));
+    // A typo apart, or sounding the same (Amber Slicht / Schlicht, 10/21).
+    const near = employees.filter((e) => {
+      const n = e.fullName || `${e.firstName} ${e.lastName}`;
+      return looseNameMatch(n, pxName) || soundsAlikeName(n, pxName);
+    });
     if (near.length) {
       reports.push({ kind: "ambiguous", payrollId,
         message: `#${payrollId} ${pxName} is new in Paychex. Close to ` +
