@@ -82,11 +82,11 @@ export async function sendOne(employeeKey: string, userId: string, workers: Payc
     result = await createPaychexWorker(worker);
   } catch (err) {
     // We don't know whether Paychex created the worker. Keep the claim so
-    // nobody re-sends blind; Refresh now will find it by name/email.
+    // nobody re-sends blind; Update from Paychex will find it by name/email.
     const msg = err instanceof Error ? err.message : "Unknown error";
     await log({ sent_by: userId, employee_key: employeeKey, dry_run: false, request, ok: false, error: `No reply from Paychex: ${msg}` });
     return { employeeKey, name, kind: "error", unknown: true,
-      error: "No reply from Paychex — it may or may not have been created. Click Refresh now on the Onboarding page before doing anything else." };
+      error: "No reply from Paychex — it may or may not have been created. Click Update from Paychex on the Onboarding page before doing anything else." };
   }
 
   if (!result.ok) {

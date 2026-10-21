@@ -1,6 +1,6 @@
 "use client";
 
-// "Paychex as of <when> · Refresh now" (docs/paychex-snapshot-plan.md).
+// "Paychex as of <when> · Update from Paychex" (docs/paychex-snapshot-plan.md).
 // Screens read a copy of Paychex kept in AOS; this shows how old it is and
 // re-reads Paychex on request (~155 calls, about 30 seconds). Admins only.
 
@@ -34,7 +34,7 @@ export default function PaychexAsOf({ at, onRefreshed }: { at: string | null | u
       </span>
       <button className="secondary" style={{ padding: "4px 8px", fontSize: 12, borderRadius: 8 }} disabled={!!busy} onClick={refresh}
         title="Read Paychex again now (about 30 seconds) and apply its changes">
-        Refresh now
+        Update from Paychex
       </button>
     </span>
   );

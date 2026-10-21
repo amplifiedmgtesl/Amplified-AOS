@@ -8,7 +8,7 @@
  * GET  → Vercel's weekly schedule (vercel.json: pull Monday ~11 pm Eastern,
  *        process 30 minutes later). Vercel sends "Authorization: Bearer
  *        <CRON_SECRET>"; refused when CRON_SECRET isn't set.
- * POST → "Refresh now" (admins): the page calls pull, then process.
+ * POST → "Update from Paychex" (admins): the page calls pull, then process.
  *        ?step=catchup: Onboarding and Payroll call this when they open; it
  *        processes only if the last refresh left work undone.
  */

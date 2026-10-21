@@ -8,7 +8,7 @@
  *   • pullSnapshot(): reads Paychex and saves the copy. Monday night, Refresh
  *     now, and Send to Paychex when the copy is over an hour old.
  *   • processSnapshot(): 30 minutes after the Monday pull (and right after
- *     Refresh now), applies what Paychex is the source of truth for (contact
+ *     Update from Paychex), applies what Paychex is the source of truth for (contact
  *     info, status, new hires, clear Payroll ID links) from the copy.
  *     Anything unclear is left for Sync from Paychex.
  * Two steps (John, 10/20) so the pull always completes, whatever happens
@@ -132,7 +132,7 @@ export type ProcessSummary = {
 };
 
 /** Step 1: read Paychex in full and save the copy (~20-30 s, reads only, so
- *  it always finishes). Weekly schedule, Refresh now, and Send to Paychex
+ *  it always finishes). Weekly schedule, Update from Paychex, and Send to Paychex
  *  when the copy is over an hour old. Also fills missing worker IDs. */
 export async function pullSnapshot(trigger: "schedule" | "manual" | "send", runBy: string | null): Promise<{ workers: number; active: number; workerIdsFilled: number }> {
   const runId = await startRun(trigger, runBy);
@@ -149,14 +149,14 @@ export async function pullSnapshot(trigger: "schedule" | "manual" | "send", runB
 
 /** Step 2: apply what Paychex is the source of truth for, from the saved
  *  copy (no Paychex calls). Runs 30 minutes after the weekly pull, and right
- *  after Refresh now. Stops cleanly at the time budget; the next run picks
+ *  after Update from Paychex. Stops cleanly at the time budget; the next run picks
  *  up the rest. Anything unclear is left for Sync from Paychex. */
 export async function processSnapshot(runBy: string | null): Promise<ProcessSummary> {
   const runId = await startRun("process", runBy);
   try {
     const started = Date.now();
     const snap = await loadSnapshot();
-    if (!snap.at) throw new Error("No copy of Paychex yet. Click Refresh now.");
+    if (!snap.at) throw new Error("No copy of Paychex yet. Click Update from Paychex.");
     const { active, all } = snap;
     const { live, reservedIds } = await loadEmployees();
     const plan = planPaychexSync(active, live, reservedIds, all);

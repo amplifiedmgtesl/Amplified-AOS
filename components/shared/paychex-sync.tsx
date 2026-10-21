@@ -2,7 +2,7 @@
 
 // "Sync from Paychex" (backlog #117). Admin-only panel on the Payroll page:
 // reads the copy of Paychex kept in AOS through /api/paychex/sync (refreshed
-// Monday night or by Refresh now, which already applies what Paychex is the
+// Monday night or by Update from Paychex, which already applies what Paychex is the
 // source of truth for), shows what's left, and applies only the ticked rows. Clear new-Payroll-ID matches are
 // linked as soon as the preview loads (same rule as Onboarding, 2026-10-20).
 // Names, W-2/1099 differences and anything ambiguous are listed for a person

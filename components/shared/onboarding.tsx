@@ -397,7 +397,7 @@ export default function Onboarding() {
           <button onClick={sendSelected} disabled={batchBusy || !sendable.some((x) => picked.has(x.employeeKey))}>
             {batchBusy ? "Sending…" : `Send selected (${sendable.filter((x) => picked.has(x.employeeKey)).length})`}
           </button>
-          <button className="secondary" onClick={load}>Refresh</button>
+          <button className="secondary" onClick={load} title="Re-read who is on a job without a Payroll ID. Doesn't contact Paychex.">Reload list</button>
           <PaychexAsOf at={pxAt} onRefreshed={() => checkPaychex(rows.map((x) => x.employeeKey))} />
         </span>
       </div>

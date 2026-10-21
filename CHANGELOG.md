@@ -4,6 +4,9 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 21 — v2.12.1
+- Clearer button names on **Onboarding**: **Reload list** re-reads who's on a job without a Payroll ID, and **Update from Paychex** (was "Refresh now") reads Paychex again and applies its changes. **Update from Paychex** is the same on the Payroll page and employee profiles.
+
 ### October 20 — v2.12.0
 - **AOS now keeps a copy of Paychex** and refreshes it every **Monday night**, instead of reading Paychex every time a page opens. Onboarding, Sync from Paychex and employee profiles open faster and no longer use up Paychex lookups. **Paychex as of …** shows how fresh the copy is; **Refresh now** reads Paychex again (about 30 seconds).
 - **Each refresh applies Paychex's changes on its own:** email, phone, address and status, new hires, and Payroll IDs that clearly match. Anything unclear (for example, one Paychex person who could be two AOS records) still waits under **🔄 Sync from Paychex** on the Payroll page for you to decide.

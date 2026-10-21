@@ -36,12 +36,12 @@ async function requireAdmin(req: NextRequest): Promise<string | null> {
 }
 
 /** The plan, from the Paychex copy in AOS (no Paychex calls). The copy is
- *  refreshed Monday night and by "Refresh now"; each refresh already applies
+ *  refreshed Monday night and by "Update from Paychex"; each refresh already applies
  *  what Paychex is the source of truth for, so this mostly lists what's
  *  left for a person to decide. */
 async function buildPlan() {
   const [snap, { live, reservedIds }] = await Promise.all([loadSnapshot(), loadEmployees()]);
-  if (!snap.at) throw new Error("No copy of Paychex yet. Click Refresh now.");
+  if (!snap.at) throw new Error("No copy of Paychex yet. Click Update from Paychex.");
   const { active, all } = snap;
   return { plan: planPaychexSync(active, live, reservedIds, all), active, all, reservedIds, snapshotAt: snap.at };
 }

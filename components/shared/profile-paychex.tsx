@@ -144,7 +144,7 @@ export default function ProfilePaychex({ employee }: { employee: EmployeeRecord 
   const blocked = payrollId != null ? "Already has a Payroll ID"
     : checking || !data ? "Checking Paychex…"
     : error ? "Couldn't check Paychex"
-    : !data.snapshotAt ? "No copy of Paychex yet: click Refresh now"
+    : !data.snapshotAt ? "No copy of Paychex yet: click Update from Paychex"
     : sent ? "Already sent"
     : !canSend({ email: employee.email ?? "", payrollId, paychexWorkerId: null }) ? "Needs an email"
     : dups.length ? "Merge or mark Not same on the possible duplicates first"
