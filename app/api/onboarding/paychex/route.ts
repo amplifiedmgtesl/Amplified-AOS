@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     const [snap, live, notSame, taken] = await Promise.all([
       loadSnapshot(), loadLiveEmployees(), loadNotSame(), loadTakenPayrollIds(),
     ]);
-    if (!snap.at) return NextResponse.json({ error: "No copy of Paychex yet. Click Refresh now." }, { status: 409 });
+    if (!snap.at) return NextResponse.json({ error: "No copy of Paychex yet. Click Update from Paychex." }, { status: 409 });
     const byId = new Map(lookupWorkers(snap).map((w) => [w.workerId, w]));
     // People AOS sent and still waiting for a Payroll ID: one live call each,
     // by worker ID, so a finished onboarding links without a full refresh.
