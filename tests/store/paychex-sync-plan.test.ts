@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   automaticChanges,
+  soundsAlikeName,
   planPaychexSync,
   splitPaychexName,
   nameKey,
@@ -308,5 +309,31 @@ describe("automaticChanges", () => {
   ] as any[];
   it("applies contact/status updates, new hires and clear links only", () => {
     expect(automaticChanges(changes, new Set(["link:c:3"])).map((c) => c.id)).toEqual(["update:a", "create:2", "link:c:3"]);
+  });
+});
+
+describe("soundsAlikeName", () => {
+  it("same-sounding names a couple of letters apart", () => {
+    expect(soundsAlikeName("Amber Slicht", "Amber Schlicht")).toBe(true);
+    expect(soundsAlikeName("Shelby Bowmen", "Shelby Bowman")).toBe(true);
+    expect(soundsAlikeName("Mike Jonas", "Michael Jones")).toBe(true);
+    expect(soundsAlikeName("Schlicht Amber", "Amber Slicht")).toBe(true);
+  });
+  it("different people stay apart", () => {
+    expect(soundsAlikeName("Aaron Smith", "Falon Smith")).toBe(false);
+    expect(soundsAlikeName("Shelby Bowman", "Shelby Bower")).toBe(false);
+    expect(soundsAlikeName("Chance Williams", "Corey Williams")).toBe(false);
+    expect(soundsAlikeName("Amber", "Amber Slicht")).toBe(false);
+  });
+});
+
+describe("planPaychexSync: sound-alike new hire", () => {
+  it("is held for a person, not added", () => {
+    const plan = planPaychexSync(
+      [px({ employeeId: "900", firstName: "Amber", lastName: "Schlicht", status: "ACTIVE" })],
+      [aos({ employeeKey: "emp-1", fullName: "Amber Slicht", firstName: "Amber", lastName: "Slicht", payrollId: 12 })],
+    );
+    expect(plan.changes.filter((c) => c.kind === "create")).toEqual([]);
+    expect(plan.reports.some((r) => r.message.includes("Amber Slicht"))).toBe(true);
   });
 });

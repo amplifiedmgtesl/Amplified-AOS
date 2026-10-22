@@ -4,6 +4,11 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 22 — v2.13.0
+- **Duplicates that are spelled differently are now caught.** The same "sounds like" matching as the employee search now runs when AOS looks for duplicates and Paychex matches. Two records whose names sound the same and are only a letter or two apart (for example *Amber Slicht* and *Amber Schlicht*) show as **Sounds alike** under **AOS duplicates** on Onboarding and on the employee profile, ready to **Merge** or mark **Not same**.
+- A Paychex worker whose name sounds like the person shows as a possible match with **Use ID**. It's never linked automatically; only a matching email, phone or exact name does that.
+- **Sync from Paychex** no longer adds a new Paychex hire whose name sounds like someone already in AOS. It holds them under **To check by hand** so nobody ends up in AOS twice.
+
 ### October 21 — v2.12.1
 - Clearer button names on **Onboarding**: **Reload list** re-reads who's on a job without a Payroll ID, and **Update from Paychex** (was "Refresh now") reads Paychex again and applies its changes. **Update from Paychex** is the same on the Payroll page and employee profiles.
 

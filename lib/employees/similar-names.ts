@@ -9,30 +9,11 @@
 // same nickname, or SOUNDS the same (Soundex) and is at most 2 letters off.
 // Sound has to agree, so "bowmen" finds Bowman but not Bower or Bowles.
 
-import { fullFirstName, levenshtein } from "@/lib/paychex/sync-plan";
+import { fullFirstName, levenshtein, soundex } from "@/lib/paychex/sync-plan";
+
+export { soundex };
 
 const words = (s: string) => (s ?? "").toLowerCase().replace(/[^a-z\s'-]/g, " ").replace(/['-]/g, "").split(/\s+/).filter(Boolean);
-
-const CODES: Record<string, string> = {
-  b: "1", f: "1", p: "1", v: "1",
-  c: "2", g: "2", j: "2", k: "2", q: "2", s: "2", x: "2", z: "2",
-  d: "3", t: "3", l: "4", m: "5", n: "5", r: "6",
-};
-
-/** American Soundex: first letter + 3 digits ("Bowman" → B550). */
-export function soundex(word: string): string {
-  const w = (word ?? "").toLowerCase().replace(/[^a-z]/g, "");
-  if (!w) return "";
-  let out = w[0].toUpperCase();
-  let last = CODES[w[0]] ?? "";
-  for (let i = 1; i < w.length && out.length < 4; i++) {
-    const c = w[i];
-    const code = CODES[c] ?? "";
-    if (code && code !== last) out += code;
-    if (c !== "h" && c !== "w") last = code;   // h/w don't separate equal codes
-  }
-  return out.padEnd(4, "0");
-}
 
 /** How close a typed word is to one word of a name: 0 = starts it,
  *  1 = same nickname, 2+ = sounds the same (plus letters off), null = no. */

@@ -233,3 +233,15 @@ describe("clearMatch", () => {
     expect(run(person, [w("W1", { status: "INACTIVE", email: "jp@x.com" })])?.payrollId).toBe(458);
   });
 });
+
+describe("sounds alike (10/21)", () => {
+  it("flags a possible duplicate, never strong", () => {
+    expect(duplicateReason(emp("1", "Amber Slicht"), emp("2", "Amber Schlicht"))).toEqual({ reason: "Sounds alike", strong: false });
+  });
+  it("lists a Paychex worker who sounds alike, but never links them automatically", () => {
+    const person = emp("a", "Amber Slicht");
+    const m = paychexMatches(person, [px("W1", "Amber", "Schlicht", { employeeId: "77", status: "ACTIVE" })]);
+    expect(m.map((x) => x.reason)).toEqual(["Sounds alike"]);
+    expect(clearMatch(person, m, () => undefined, [], new Set())).toBeNull();
+  });
+});
