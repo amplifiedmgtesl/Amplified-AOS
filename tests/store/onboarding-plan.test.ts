@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildApplicantRows,
   buildOnboardingRows,
   canSend,
   clearMatch,
@@ -243,5 +244,30 @@ describe("sounds alike (10/21)", () => {
     const m = paychexMatches(person, [px("W1", "Amber", "Schlicht", { employeeId: "77", status: "ACTIVE" })]);
     expect(m.map((x) => x.reason)).toEqual(["Sounds alike"]);
     expect(clearMatch(person, m, () => undefined, [], new Set())).toBeNull();
+  });
+});
+
+describe("buildApplicantRows", () => {
+  const all = [
+    emp("a", "Ann Applied", { appliedAt: "2026-10-19" }),
+    emp("b", "Bob Booked", { appliedAt: "2026-10-18" }),
+    emp("c", "Cal Paid", { appliedAt: "2026-10-18", payrollId: 7 }),
+    emp("d", "Dee Edge", { appliedAt: "2026-09-20" }),
+    emp("e", "Eve Stale", { appliedAt: "2026-09-19" }),
+    emp("f", "Fay Never"),
+    emp("g", "Gus Sametime", { appliedAt: "2026-10-19" }),
+    emp("h", "Ann Applied", { payrollId: 40 }),
+  ];
+  const rows = buildApplicantRows(TODAY, all, new Set(["b"]), new Set());
+
+  it("applied in the last 30 days, no Payroll ID, not already listed", () => {
+    expect(rows.map((r) => r.employeeKey).sort()).toEqual(["a", "d", "g"]);
+  });
+  it("newest application first, then by name", () => {
+    expect(rows.map((r) => r.employeeKey)).toEqual(["a", "g", "d"]);
+  });
+  it("finds duplicates; no job dates", () => {
+    expect(rows[0].duplicates.map((d) => d.employeeKey)).toEqual(["h"]);
+    expect(rows[0].firstWorked).toBeNull();
   });
 });

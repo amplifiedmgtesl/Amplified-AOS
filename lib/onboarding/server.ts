@@ -6,7 +6,7 @@
 
 import type { NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { buildOnboardingRows, pairKey, windowRange, type Activity, type OnbEmployee, type OnboardingRow } from "./plan";
+import { buildApplicantRows, buildOnboardingRows, pairKey, windowRange, type Activity, type OnbEmployee, type OnboardingRow } from "./plan";
 
 export async function requireAdmin(req: NextRequest): Promise<string | null> {
   const token = req.headers.get("authorization")?.replace("Bearer ", "");
@@ -22,7 +22,7 @@ export function todayLocal(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
 }
 
-const EMP_COLS = "employee_key, full_name, first_name, last_name, email, phone, employment_type, rippling_employee_id, status, paychex_worker_id, paychex_invited_at, application_contact, is_deleted";
+const EMP_COLS = "employee_key, full_name, first_name, last_name, email, phone, employment_type, rippling_employee_id, status, paychex_worker_id, paychex_invited_at, application_contact, applied_at, is_deleted";
 
 export function toOnbEmployee(r: any): OnbEmployee {
   return {
@@ -36,6 +36,8 @@ export function toOnbEmployee(r: any): OnbEmployee {
     paychexWorkerId: r.paychex_worker_id ?? null,
     paychexInvitedAt: r.paychex_invited_at ?? null,
     applicationContact: r.application_contact ?? null,
+    // Stored as the local day at noon UTC (lib/jotform), so the date part is the day.
+    appliedAt: r.applied_at ? String(r.applied_at).slice(0, 10) : null,
   };
 }
 
@@ -129,10 +131,34 @@ export async function loadNotSame(): Promise<Set<string>> {
   return new Set(rows.map((r) => pairKey(r.key_a, r.key_b)));
 }
 
-export async function loadOnboardingRows(): Promise<{ today: string; rows: OnboardingRow[] }> {
+/** What each person applied for, from their latest logged application. */
+async function loadPositions(keys: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const seen = new Set<string>();
+  for (const ids of chunks(keys)) {
+    const { data, error } = await supabaseAdmin.from("jotform_application_log")
+      .select("employee_key, application, submitted_at").in("employee_key", ids)
+      .order("submitted_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    for (const r of data ?? []) {
+      if (seen.has(r.employee_key)) continue;
+      seen.add(r.employee_key);
+      const pos = String((r.application as any)?.position ?? "").trim();
+      if (pos) out.set(r.employee_key, pos);
+    }
+  }
+  return out;
+}
+
+export async function loadOnboardingRows(): Promise<{ today: string; rows: OnboardingRow[]; applicants: OnboardingRow[] }> {
   const today = todayLocal();
   const [all, activity, notSame] = await Promise.all([loadLiveEmployees(), loadActivity(today), loadNotSame()]);
-  return { today, rows: buildOnboardingRows(today, all, activity, notSame) };
+  const rows = buildOnboardingRows(today, all, activity, notSame);
+  const listed = new Set(rows.map((r) => r.employeeKey));
+  const applicants = buildApplicantRows(today, all, listed, notSame);
+  const positions = await loadPositions(applicants.map((r) => r.employeeKey));
+  for (const r of applicants) r.appliedPosition = positions.get(r.employeeKey) ?? "";
+  return { today, rows, applicants };
 }
 
 /** Every Payroll ID on any employee record, deleted ones included (the
