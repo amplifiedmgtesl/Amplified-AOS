@@ -1510,3 +1510,9 @@ Four items captured from John on 2026-07-14. Each starts on its own branch off `
 - Read-only keep/remove report first (never bulk-delete blind), then a guarded cleanup — respecting the freeze/lock rules (approved / invoice-bound / payroll-locked rows must not be deleted; see `deleteTimesheetEntries()` safety + the freeze-trigger denylist entry).
 - Add a dedup guard on `(employee_key, work_date, shift_id)` across all add paths so the mess doesn't recur.
 - Define what "reset" means operationally: per-job re-import? clear-and-reload from a signed sheet? Clarify with Connor. Coordinate with the planned-vs-actual redesign so a reset doesn't wipe planned crew assignments.
+
+---
+
+## #122 — Onboarding: new applicants section (added 2026-10-23)
+
+Connor expected website applicants on Onboarding; it only lists people on a job (#120). Add an "Applicants" section: applied in the last 30 days, no Payroll ID, not already in the top list. Plan: `docs/onboarding-applicants-plan.md`.
