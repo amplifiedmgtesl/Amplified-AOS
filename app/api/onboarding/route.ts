@@ -3,7 +3,9 @@
  *
  * GET → everyone on a confirmed crew assignment or timesheet from 30 days
  *       back to 30 days ahead with no Payroll ID, each with possible AOS
- *       duplicates. Admins only. Changes nothing.
+ *       duplicates; plus `applicants`: website applicants from the last 30
+ *       days with no Payroll ID who aren't on a job (#122). Admins only.
+ *       Changes nothing.
  */
 
 import { NextRequest, NextResponse } from "next/server";

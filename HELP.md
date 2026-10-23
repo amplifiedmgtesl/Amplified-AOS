@@ -444,6 +444,7 @@ Anything less certain is never linked automatically. It's shown for a person to 
 - **Send to Paychex:** adds the person to Paychex, and Paychex emails them an invite to finish their own setup (SSN, address, tax forms, direct deposit). It needs an email, and it stays greyed out until that person's Paychex check is back. Check the name, email and Employee/Contractor in the confirm box first, because that's what Paychex gets. If Paychex already seems to have them, you're shown who and asked before anything is sent.
 - **Send selected:** tick several people (the top box ticks everyone who can be sent) and send them together. Anyone Paychex may already have is skipped and listed afterwards, to check and send one at a time.
 - After a send the row shows **Sent … · waiting**. Paychex has emailed them; once they finish setting up, their Payroll ID is filled in automatically and they drop off the list (AOS looks them up in Paychex directly, at most once an hour).
+- **Applicants · no job yet:** below the main list, everyone who applied on the website in the last 30 days and has no Payroll ID, newest first, with the date they applied and the position they asked for. Everything above works the same here, including **Send to Paychex** before they're booked. Its top box ticks only applicants. Once booked on a crew they move up to the main list; after 30 days without a job or a Payroll ID they leave this page but stay in the Employee list.
 
 ## Health Check {#health}
 

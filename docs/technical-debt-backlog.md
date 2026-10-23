@@ -3144,3 +3144,9 @@ Two ways in: a **batch run** from Connor's marked-up CSV (X = keep, NO = skip th
 **What:** each Employee Application submitted on amplifiedesl.com (a JotForm form) comes into AOS through a **webhook** (no API key, because the JotForm account also holds bank and SSN forms). It's matched to an existing Employee first (email → phone → exact name), so people a crew lead already added get their blanks filled, not a duplicate. Otherwise a new Contractor record is created, with source "Website application". Junk is skipped, nothing AOS already has is overwritten, and everything is logged. Plus a one-time load of the 611 past submissions from John's CSV export (514 people, 72 new, 44 of the 99 on the Onboarding list get an email).
 
 **SMS-consent answer:** stored (John, 10/20).
+
+---
+
+## #122 — Onboarding: new applicants section (added 2026-10-23)
+
+Connor expected website applicants on Onboarding; it only lists people on a job (#120). Add an "Applicants" section: applied in the last 30 days, no Payroll ID, not already in the top list. Plan: `docs/onboarding-applicants-plan.md`.

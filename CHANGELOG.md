@@ -4,6 +4,11 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 23 — v2.14.0
+- **Website applicants now show on Onboarding.** A new **Applicants · no job yet** list below the main one shows everyone who applied on the website in the last 30 days and has no Payroll ID, newest first, with the date they applied and the position they asked for. You can fix their email or phone, switch Employee/Contractor, merge duplicates, use a Paychex match, or **Send to Paychex** before they're booked.
+- Once an applicant is booked on a crew they move up to the main list; once they have a Payroll ID they leave the page. After 30 days without either they drop off Onboarding, but they stay in the Employee list.
+- Each list has its own select-all box, so selecting everyone in the main list doesn't pick applicants too. **Send selected** sends whoever is ticked in either list.
+
 ### October 22 — v2.13.0
 - **Duplicates that are spelled differently are now caught.** The same "sounds like" matching as the employee search now runs when AOS looks for duplicates and Paychex matches. Two records whose names sound the same and are only a letter or two apart (for example *Amber Slicht* and *Amber Schlicht*) show as **Sounds alike** under **AOS duplicates** on Onboarding and on the employee profile, ready to **Merge** or mark **Not same**.
 - A Paychex worker whose name sounds like the person shows as a possible match with **Use ID**. It's never linked automatically; only a matching email, phone or exact name does that.

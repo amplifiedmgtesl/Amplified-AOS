@@ -28,6 +28,8 @@ export type OnbEmployee = {
   paychexInvitedAt: string | null;
   /** What they typed on their website application (backlog #121). */
   applicationContact?: { email?: string; phone?: string } | null;
+  /** YYYY-MM-DD of their latest website application, if any. */
+  appliedAt?: string | null;
 };
 
 export type Activity = {
@@ -55,7 +57,12 @@ export type OnboardingRow = OnbEmployee & {
   nextBooked: { date: string; jobName: string } | null;
   hours: number;
   duplicates: DupMatch[];
+  /** Applicants section: the position they typed on the application. */
+  appliedPosition?: string;
 };
+
+/** How far back the Applicants section looks (John, 10/23). */
+export const APPLICANT_DAYS = 30;
 
 export function addDays(ymd: string, n: number): string {
   const d = new Date(`${ymd}T12:00:00Z`);
@@ -170,6 +177,25 @@ export function buildOnboardingRows(
     sortDate(a).localeCompare(sortDate(b))
     || (a.firstWorked ?? a.nextBooked)?.jobName.localeCompare((b.firstWorked ?? b.nextBooked)?.jobName ?? "") || 0
     || a.name.localeCompare(b.name));
+}
+
+/** Applicants section (backlog #122): applied on the website in the last
+ *  30 days, no Payroll ID, and not already in the top list (`listed`).
+ *  Newest application first. The server fills in appliedPosition. */
+export function buildApplicantRows(
+  today: string,
+  all: OnbEmployee[],
+  listed: Set<string>,
+  notSame: Set<string>,
+): OnboardingRow[] {
+  const from = addDays(today, -APPLICANT_DAYS);
+  const rows: OnboardingRow[] = all
+    .filter((e) => e.appliedAt && e.appliedAt >= from && e.payrollId == null && !listed.has(e.employeeKey))
+    .map((e) => ({
+      ...e, firstWorked: null, lastWorked: null, nextBooked: null, hours: 0,
+      duplicates: findDuplicates(e, all, notSame), appliedPosition: "",
+    }));
+  return rows.sort((a, b) => (b.appliedAt ?? "").localeCompare(a.appliedAt ?? "") || a.name.localeCompare(b.name));
 }
 
 /** Which record to keep by default when merging: the one with the Payroll ID,
