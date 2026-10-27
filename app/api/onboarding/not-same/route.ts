@@ -2,17 +2,17 @@
  * app/api/onboarding/not-same/route.ts — "Not the same person" (backlog #120).
  *
  * POST { a, b } → remember that these two employee records are different
- * people, so the possible-duplicate flag stops showing. Admins only.
+ * people, so the possible-duplicate flag stops showing. Admins and Onboarding users.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { requireAdmin } from "@/lib/onboarding/server";
+import { requireOnboarding } from "@/lib/onboarding/server";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const userId = await requireAdmin(req);
+  const userId = await requireOnboarding(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const a = typeof body?.a === "string" ? body.a : "";

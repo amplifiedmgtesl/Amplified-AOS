@@ -745,6 +745,8 @@ export type Profile = {
   employeeKey: string | null;
   fullName: string;
   email: string;
+  /** Onboarding screen whatever the role (profiles.can_onboard). */
+  canOnboard?: boolean;
   // contact info (phone, address, city, state) lives on the employee record
 };
 

@@ -17,6 +17,17 @@ export async function requireAdmin(req: NextRequest): Promise<string | null> {
   return profile?.role === "admin" ? user.id : null;
 }
 
+/** Admins, plus anyone Connor ticked "Onboarding" for on their user
+ *  (profiles.can_onboard, 2026-10-27), whatever their role. */
+export async function requireOnboarding(req: NextRequest): Promise<string | null> {
+  const token = req.headers.get("authorization")?.replace("Bearer ", "");
+  if (!token) return null;
+  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !user) return null;
+  const { data: profile } = await supabaseAdmin.from("profiles").select("*").eq("id", user.id).single();
+  return profile?.role === "admin" || profile?.can_onboard === true ? user.id : null;
+}
+
 /** Today in Amplified's time zone, YYYY-MM-DD. */
 export function todayLocal(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());

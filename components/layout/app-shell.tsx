@@ -56,6 +56,8 @@ export function AppShell({
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState<boolean>(true);
   const [userRole, setUserRole] = useState<string | null>(null);
+  // Ticked for Onboarding on their user (Connor, 2026-10-27).
+  const [canOnboard, setCanOnboard] = useState<boolean>(false);
   // Mobile drawer: on phones the sidebar slides in over the content instead
   // of stacking above it. `isMobile` drives which affordances render; both
   // default to a desktop-safe value so SSR and first client paint agree.
@@ -80,10 +82,12 @@ export function AppShell({
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("*") // not a column list: works before and after 20261027a
         .eq("id", user.id)
         .single();
       if (cancelled) return;
+      // Onboarding is open to any role ticked for it on their user.
+      const onboardingOk = profile?.can_onboard === true && pathname?.startsWith("/onboarding");
 
       if (profile?.role === "crew_leader") {
         window.location.href = "/lead/timekeeping";
@@ -105,7 +109,8 @@ export function AppShell({
       if (profile?.role === "payroll") {
         const allowed = pathname?.startsWith("/payroll")
           || pathname?.startsWith("/employee-directory")
-          || pathname?.startsWith("/job-requests");
+          || pathname?.startsWith("/job-requests")
+          || onboardingOk;
         if (!allowed) {
           window.location.href = "/payroll";
           return;
@@ -126,7 +131,8 @@ export function AppShell({
           || pathname?.startsWith("/job-requests")
           || pathname?.startsWith("/timekeeping")
           || pathname?.startsWith("/employee-directory")
-          || pathname?.startsWith("/changelog");
+          || pathname?.startsWith("/changelog")
+          || onboardingOk;
         if (!allowed) {
           window.location.href = "/job-requests";
           return;
@@ -134,6 +140,7 @@ export function AppShell({
       }
 
       setUserRole(profile?.role ?? null);
+      setCanOnboard(profile?.can_onboard === true);
       setAuthChecking(false);
     }
     guard();
@@ -195,16 +202,17 @@ export function AppShell({
     );
   }
 
+  const onb = (href: string) => canOnboard && href === "/onboarding";
   const visibleNav = userRole === "payroll"
     ? nav.filter(([href]) =>
-        href === "/payroll" || href === "/employee-directory" || href === "/job-requests")
+        href === "/payroll" || href === "/employee-directory" || href === "/job-requests" || onb(href))
     : userRole === "coordinator"
     ? nav.filter(([href]) =>
         href === "/master-calendar" || href === "/clients" || href === "/job-requests"
-        || href === "/timekeeping" || href === "/timekeeping/review" || href === "/employee-directory")
+        || href === "/timekeeping" || href === "/timekeeping/review" || href === "/employee-directory" || onb(href))
     : userRole === "admin"
     ? nav
-    : nav.filter(([href]) => href !== "/onboarding"); // its API is admin-only
+    : nav.filter(([href]) => href !== "/onboarding" || onb(href)); // its API is admins + ticked users
   const brandSub = userRole === "payroll" ? "Payroll" : userRole === "coordinator" ? "Coordination" : "Operations Suite";
 
   // The collapsed (icon-only) rail is a desktop affordance. On mobile the

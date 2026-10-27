@@ -5,8 +5,9 @@
 // Payroll ID. Fix email/phone and Employee/Contractor here, merge AOS
 // duplicates, link an existing Paychex worker, or send a new one to
 // Paychex so Paychex emails them the self-onboarding invite.
-// Below them, website applicants from the last 30 days with no Payroll ID
-// who aren't on a job yet (backlog #122), with the same tools.
+// Website applicants from the last 30 days with no Payroll ID who aren't on
+// a job yet (backlog #122) are in the same list, after the people on a job.
+// Filters, CSV export and Onboarding access per user: Connor, 2026-10-27.
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -19,6 +20,10 @@ import {
 import type { SendOutcome } from "@/lib/onboarding/send";
 import PaychexAsOf from "@/components/shared/paychex-as-of";
 import { appliedDifferences } from "@/lib/jotform/application";
+import { useUserRole } from "@/lib/auth/use-user-role";
+import {
+  matchesFilters, NO_FILTERS, onboardingCsv, onboardingCsvFilename, type OnbFilters,
+} from "@/lib/onboarding/filters";
 
 // The send API takes at most 15 people per request.
 const CHUNK = 15;
@@ -214,6 +219,11 @@ export default function Onboarding() {
   const [merge, setMerge] = useState<MergePick | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
+  const [today, setToday] = useState("");
+  const [filters, setFilters] = useState<OnbFilters>(NO_FILTERS);
+  // Merging deletes a record, so it stays admin-only (merge_employee checks
+  // too); people ticked for Onboarding get everything else.
+  const isAdmin = useUserRole() === "admin";
 
   // Paychex is checked every time the list loads: nobody can be sent until
   // their row has been looked up (John, 2026-10-20).
@@ -243,6 +253,7 @@ export default function Onboarding() {
     const apps: OnboardingRow[] = r.json.applicants ?? [];
     setRows(r.json.rows);
     setApplicants(apps);
+    setToday(r.json.today ?? "");
     setPx(null);
     checkPaychex([...(r.json.rows as OnboardingRow[]), ...apps].map((x) => x.employeeKey));
   }, [checkPaychex]);
@@ -349,7 +360,8 @@ export default function Onboarding() {
   }
 
   async function sendSelected() {
-    const list = [...(rows ?? []), ...applicants].filter((x) => picked.has(x.employeeKey) && ready(x));
+    // Only people the filters show: a tick hidden by a filter isn't sent.
+    const list = shown.filter((x) => picked.has(x.employeeKey) && ready(x));
     if (!list.length) return;
     if (!confirm(`Send ${list.length} to Paychex?\n\n${list.map((x) => `• ${x.name} — ${x.email} — ${typeLabel(x.employmentType)}`).join("\n")}\n\nPaychex will email each of them an onboarding invite. Anyone Paychex may already have is skipped.`)) return;
     setBatchBusy(true);
@@ -399,8 +411,33 @@ export default function Onboarding() {
   if (error && !rows) return <div className="card"><div style={{ color: "#b00" }}>{error}</div></div>;
   if (!rows) return <div className="card"><div className="muted">Loading…</div></div>;
 
-  const sendable = [...rows, ...applicants].filter(ready);
+  // One list (Connor, 10/27): people on a job first, oldest pay owed on top,
+  // then applicants, newest first. "On a job" is a filter now.
+  const everyone = [...rows, ...applicants];
+  const shown = everyone.filter((x) => matchesFilters(x, filters, px?.[x.employeeKey], today));
+  const sendable = shown.filter(ready);
+  const pickedCount = sendable.filter((x) => picked.has(x.employeeKey)).length;
   const togglePick = (k: string) => setPicked((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const allPicked = sendable.length > 0 && sendable.every((x) => picked.has(x.employeeKey));
+  const pickAll = () => setPicked((s) => {
+    const n = new Set(s);
+    for (const x of sendable) allPicked ? n.delete(x.employeeKey) : n.add(x.employeeKey);
+    return n;
+  });
+  const setF = <K extends keyof OnbFilters>(k: K, v: OnbFilters[K]) => setFilters((f) => ({ ...f, [k]: v }));
+  const filtered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS);
+
+  function exportCsv() {
+    const blob = new Blob([onboardingCsv(shown, px)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = onboardingCsvFilename(today);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
 
   const renderRow = (row: OnboardingRow) => (
     <tr key={row.employeeKey}>
@@ -441,7 +478,7 @@ export default function Onboarding() {
           <div key={d.employeeKey} style={{ ...MATCH, opacity: d.strong ? 1 : 0.75 }}>
             {d.name}{d.payrollId != null ? ` #${d.payrollId}` : ""}
             <div className="muted" style={{ fontSize: 12 }}>{d.reason}</div>
-            <button className="secondary" style={SMALL} onClick={() => setMerge({ row, dup: d })}>Merge</button>{" "}
+            {isAdmin && <><button className="secondary" style={SMALL} onClick={() => setMerge({ row, dup: d })}>Merge</button>{" "}</>}
             <button className="secondary" style={SMALL} onClick={() => notSame(row, d)} title="Not the same person — stop flagging this pair">Not same</button>
           </div>
         ))}
@@ -464,16 +501,49 @@ export default function Onboarding() {
     </tr>
   );
 
-  // Select-all covers its own section only, so the top list can't pick applicants.
-  const table = (list: OnboardingRow[]) => {
-    const can = list.filter(ready);
-    const all = can.length > 0 && can.every((x) => picked.has(x.employeeKey));
-    const setAll = () => setPicked((s) => {
-      const n = new Set(s);
-      for (const x of can) all ? n.delete(x.employeeKey) : n.add(x.employeeKey);
-      return n;
-    });
-    return (
+  return (
+    <div className="card">
+      <div className="action-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <h3 style={{ margin: 0 }}>{filtered ? `${shown.length} of ${everyone.length}` : everyone.length} without a Payroll ID</h3>
+        <span style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          <button onClick={sendSelected} disabled={batchBusy || !pickedCount}>
+            {batchBusy ? "Sending…" : `Send selected (${pickedCount})`}
+          </button>
+          <button className="secondary" onClick={exportCsv} disabled={!shown.length} title="Download the people shown as a spreadsheet (CSV)">Export CSV</button>
+          <button className="secondary" onClick={load} title="Re-read who is on a job or applied without a Payroll ID. Doesn't contact Paychex.">Reload list</button>
+          <PaychexAsOf at={pxAt} onRefreshed={() => checkPaychex(everyone.map((x) => x.employeeKey))} />
+        </span>
+      </div>
+      <div className="grid4" style={{ marginTop: 12 }}>
+        <div><small>Search</small><input value={filters.search} onChange={(e) => setF("search", e.target.value)} placeholder="Name, email, phone, job…" /></div>
+        <div><small title="On a confirmed crew day or timesheet from 30 days back to 30 days ahead">Job</small>
+          <select value={filters.job} onChange={(e) => setF("job", e.target.value as OnbFilters["job"])}>
+            <option value="">Everyone</option><option value="on">On a job</option><option value="off">Not on a job (applied)</option>
+          </select></div>
+        <div><small title="Last day worked, or the day they applied if not on a job">When</small>
+          <select value={filters.when} onChange={(e) => setF("when", e.target.value as OnbFilters["when"])}>
+            <option value="">Any time</option><option value="past7">Last 7 days</option><option value="past14">Last 14 days</option>
+            <option value="past30">Last 30 days</option><option value="ahead">Booked ahead</option>
+          </select></div>
+        <div><small>Missing info</small>
+          <select value={filters.missing} onChange={(e) => setF("missing", e.target.value as OnbFilters["missing"])}>
+            <option value="">Any</option><option value="either">Missing email or phone</option><option value="email">No email</option>
+            <option value="phone">No phone</option><option value="none">Has both</option>
+          </select></div>
+        <div><small>Paychex</small>
+          <select value={filters.paychex} onChange={(e) => setF("paychex", e.target.value as OnbFilters["paychex"])}>
+            <option value="">Any</option><option value="notSent">Not sent</option><option value="waiting">Sent, waiting</option>
+            <option value="found">Possible match in Paychex</option><option value="notFound">Not in Paychex</option>
+          </select></div>
+        {filtered && <div style={{ alignSelf: "end" }}><button className="secondary" style={SMALL} onClick={() => setFilters(NO_FILTERS)}>Clear filters</button></div>}
+      </div>
+      {error && <div style={{ color: "#b00", marginTop: 8 }}>{error}</div>}
+      {autoLinked.length > 0 && (
+        <div style={{ marginTop: 8, fontSize: 13 }} title="Clear matches in Paychex — their Payroll ID was filled in automatically">
+          <span className="pill pill-green">Linked from Paychex</span>{" "}
+          {autoLinked.map((x) => `${x.name} #${x.payrollId}`).join(", ")}
+        </div>
+      )}
       <div style={{ marginTop: 12, overflowX: "auto", maxWidth: "100%" }}>
         <table style={{ tableLayout: "fixed", width: "100%", minWidth: 640 }}>
           <colgroup>
@@ -487,41 +557,17 @@ export default function Onboarding() {
           <thead>
             <tr>
               <th>
-                <input type="checkbox" checked={all} disabled={!can.length} title="Select everyone here who can be sent" onChange={setAll} />
+                <input type="checkbox" checked={allPicked} disabled={!sendable.length} title="Select everyone shown who can be sent" onChange={pickAll} />
               </th>
               <th>Person</th><th>Email / Phone</th><th>AOS duplicates</th><th>Paychex</th><th />
             </tr>
           </thead>
-          <tbody>{list.map(renderRow)}</tbody>
+          <tbody>
+            {shown.length ? shown.map(renderRow)
+              : <tr><td colSpan={6} className="muted">{everyone.length ? "Nobody matches these filters." : "Everyone working has a Payroll ID."}</td></tr>}
+          </tbody>
         </table>
       </div>
-    );
-  };
-
-  return (
-    <div className="card">
-      <div className="action-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <h3 style={{ margin: 0 }}>{rows.length} without a Payroll ID</h3>
-        <span style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          <button onClick={sendSelected} disabled={batchBusy || !sendable.some((x) => picked.has(x.employeeKey))}>
-            {batchBusy ? "Sending…" : `Send selected (${sendable.filter((x) => picked.has(x.employeeKey)).length})`}
-          </button>
-          <button className="secondary" onClick={load} title="Re-read who is on a job or applied without a Payroll ID. Doesn't contact Paychex.">Reload list</button>
-          <PaychexAsOf at={pxAt} onRefreshed={() => checkPaychex([...rows, ...applicants].map((x) => x.employeeKey))} />
-        </span>
-      </div>
-      {error && <div style={{ color: "#b00", marginTop: 8 }}>{error}</div>}
-      {autoLinked.length > 0 && (
-        <div style={{ marginTop: 8, fontSize: 13 }} title="Clear matches in Paychex — their Payroll ID was filled in automatically">
-          <span className="pill pill-green">Linked from Paychex</span>{" "}
-          {autoLinked.map((x) => `${x.name} #${x.payrollId}`).join(", ")}
-        </div>
-      )}
-      {table(rows)}
-      <h3 style={{ margin: "24px 0 0" }} title="Applied on the website in the last 30 days, no Payroll ID, not on a job yet. They move up once booked.">
-        {applicants.length} applicants · no job yet
-      </h3>
-      {applicants.length > 0 && table(applicants)}
       {merge && <MergeDialog pick={merge} onClose={() => setMerge(null)} onDone={() => { setMerge(null); load(); }} />}
     </div>
   );

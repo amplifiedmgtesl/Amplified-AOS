@@ -39,6 +39,13 @@ const COLUMNS: { key: SortCol; label: string; value: (e: EmployeeRecord) => stri
   { key: "employmentType", label: "Employment Type", value: (e) => e.employmentType || "" },
 ];
 
+/** Paychex filter (Connor, 2026-10-27): has a Payroll ID / sent from AOS and
+ *  still setting up / neither. */
+function paychexState(e: EmployeeRecord): "id" | "waiting" | "none" {
+  if (e.ripplingEmployeeId != null) return "id";
+  return e.paychexWorkerId || e.paychexInvitedAt ? "waiting" : "none";
+}
+
 export default function EmployeeDirectory({
   basePath = "/employee-directory",
   hideBill: _hideBill = false,
@@ -52,6 +59,7 @@ export default function EmployeeDirectory({
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [appliedFilter, setAppliedFilter] = useState("");
+  const [paychexFilter, setPaychexFilter] = useState("");
   // Click a column heading to sort by it; click again to reverse.
   const [sortCol, setSortCol] = useState<SortCol>("fullName");
   const [sortAsc, setSortAsc] = useState(true);
@@ -75,6 +83,7 @@ export default function EmployeeDirectory({
         && (!statusFilter || (e.status || "") === statusFilter)
         && (!typeFilter || (typeFilter === "__blank__" ? !e.employmentType : (e.employmentType || "") === typeFilter))
         && (!appliedFilter || (appliedFilter === "yes" ? !!e.appliedAt : !e.appliedAt))
+        && (!paychexFilter || paychexState(e) === paychexFilter)
 ;
     });
     const val = COLUMNS.find((c) => c.key === sortCol)!.value;
@@ -87,7 +96,7 @@ export default function EmployeeDirectory({
       return sortAsc ? c : -c;
     });
     return rows;
-  }, [query, stateFilter, cityFilter, statusFilter, typeFilter, appliedFilter, sortCol, sortAsc, employees]);
+  }, [query, stateFilter, cityFilter, statusFilter, typeFilter, appliedFilter, paychexFilter, sortCol, sortAsc, employees]);
 
   function profileHref(key: string) {
     return `${basePath}/${encodeURIComponent(key)}`;
@@ -163,6 +172,7 @@ export default function EmployeeDirectory({
           <div><small>Status</small><select value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value)}><option value="">All status</option>{statuses.map((s)=><option key={s} value={s}>{s}</option>)}</select></div>
           <div><small>Employment Type</small><select value={typeFilter} onChange={(e)=>setTypeFilter(e.target.value)}><option value="">All types</option>{types.map((s)=><option key={s} value={s}>{s}</option>)}<option value="__blank__">— Not set —</option></select></div>
           <div><small title="Applied through the website application form">Applied Online</small><select value={appliedFilter} onChange={(e)=>setAppliedFilter(e.target.value)}><option value="">Everyone</option><option value="yes">Applied</option><option value="no">Didn't apply</option></select></div>
+          <div><small title="Payroll ID from Paychex, or sent from AOS and still setting up">Paychex</small><select value={paychexFilter} onChange={(e)=>setPaychexFilter(e.target.value)}><option value="">Everyone</option><option value="id">Has Payroll ID</option><option value="waiting">Sent, waiting</option><option value="none">No Payroll ID, not sent</option></select></div>
         </div>
       </div>
 

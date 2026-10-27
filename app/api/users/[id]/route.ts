@@ -40,7 +40,7 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { email, password, role, fullName, employeeKey } = body;
+  const { email, password, role, fullName, employeeKey, canOnboard } = body;
 
   // Update auth user (only if email or password provided)
   if (email || password) {
@@ -60,6 +60,7 @@ export async function PATCH(
   if (fullName !== undefined) profileUpdate.full_name = fullName;
   if (employeeKey !== undefined) profileUpdate.employee_key = employeeKey || null;
   if (email !== undefined) profileUpdate.email = email;
+  if (canOnboard !== undefined) profileUpdate.can_onboard = canOnboard === true;
 
   const { error: profileError } = await supabaseAdmin
     .from("profiles")

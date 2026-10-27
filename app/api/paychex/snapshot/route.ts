@@ -8,7 +8,7 @@
  * GET  → Vercel's weekly schedule (vercel.json: pull Monday ~11 pm Eastern,
  *        process 30 minutes later). Vercel sends "Authorization: Bearer
  *        <CRON_SECRET>"; refused when CRON_SECRET isn't set.
- * POST → "Update from Paychex" (admins): the page calls pull, then process.
+ * POST → "Update from Paychex" (admins and Onboarding users): the page calls pull, then process.
  *        ?step=catchup: Onboarding and Payroll call this when they open; it
  *        processes only if the last refresh left work undone.
  */
@@ -16,7 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PaychexConfigError } from "@/lib/paychex/api";
 import { processPending, processSnapshot, pullSnapshot } from "@/lib/paychex/snapshot";
-import { requireAdmin } from "@/lib/onboarding/server";
+import { requireOnboarding } from "@/lib/onboarding/server";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const userId = await requireAdmin(req);
+  const userId = await requireOnboarding(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     return await run(req.nextUrl.searchParams.get("step"), "manual", userId);
