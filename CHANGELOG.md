@@ -4,6 +4,13 @@ What changed and when. Newest entries at the top.
 
 ## October 2026
 
+### October 27 — v2.15.0
+- **Onboarding is one list now.** People on a job and website applicants are together: people on a job first (whoever has waited longest to be paid on top), then applicants, newest first.
+- **Filters at the top of Onboarding:** search, **Job** (on a job / not on a job), **When** (last 7, 14 or 30 days, or booked ahead), **Missing info** (no email, no phone, either) and **Paychex** (not sent, sent and waiting, possible match in Paychex, not in Paychex). **Send selected** and the select-all box only cover the people shown.
+- **Export CSV** on Onboarding downloads the people shown, with their contact info, what's missing, their jobs and where they are with Paychex, ready to send to the coordinators.
+- **Onboarding for chosen users:** in **Maintenance → Users**, tick **Onboarding** on a user to give them the Onboarding screen without making them an admin. They can do everything there except **Merge**, which stays admin-only.
+- **Employees** has a new **Paychex** filter: has a Payroll ID, sent and waiting, or neither.
+
 ### October 23 — v2.14.0
 - **Website applicants now show on Onboarding.** A new **Applicants · no job yet** list below the main one shows everyone who applied on the website in the last 30 days and has no Payroll ID, newest first, with the date they applied and the position they asked for. You can fix their email or phone, switch Employee/Contractor, merge duplicates, use a Paychex match, or **Send to Paychex** before they're booked.
 - Once an applicant is booked on a crew they move up to the main list; once they have a Payroll ID they leave the page. After 30 days without either they drop off Onboarding, but they stay in the Employee list.
