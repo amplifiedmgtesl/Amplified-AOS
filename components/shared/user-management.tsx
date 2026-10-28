@@ -40,6 +40,8 @@ const blankForm = () => ({
   role: "staff",
   fullName: "",
   employeeKey: "",
+  // Onboarding screen for this user whatever their role (Connor, 2026-10-27).
+  canOnboard: false,
 });
 
 type FormState = ReturnType<typeof blankForm>;
@@ -109,6 +111,7 @@ export function UserManagement() {
       role: u.profile?.role ?? "staff",
       fullName: u.profile?.fullName ?? "",
       employeeKey: u.profile?.employeeKey ?? "",
+      canOnboard: u.profile?.canOnboard ?? false,
     });
     setFormError(null);
     setEditingId(u.id);
@@ -241,6 +244,9 @@ export function UserManagement() {
                           : {}}>
                         {u.profile?.role === "crew_leader" ? "Crew Leader" : u.profile?.role === "coordinator" ? "Coordinator" : u.profile?.role === "payroll" ? "Payroll" : (u.profile?.role ?? "staff")}
                       </span>
+                      {u.profile?.canOnboard && u.profile.role !== "admin" && (
+                        <span className="badge" style={{ marginLeft: 4 }} title="Can use the Onboarding screen">+ Onboarding</span>
+                      )}
                     </td>
                     <td>
                       {linkedEmp
@@ -317,6 +323,13 @@ export function UserManagement() {
                   <option value="payroll">Payroll</option>
                   <option value="admin">Admin</option>
                 </select>
+                {/* Crew leaders use their own app, so it can't be offered there. */}
+                <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 13, cursor: "pointer" }}
+                  title={form.role === "admin" ? "Admins always have Onboarding" : form.role === "crew_leader" ? "Crew leaders use their own app, which has no Onboarding screen" : "Let this user use the Onboarding screen"}>
+                  <input type="checkbox" checked={form.role === "admin" || (form.canOnboard && form.role !== "crew_leader")}
+                    disabled={form.role === "admin" || form.role === "crew_leader"}
+                    onChange={(e) => setField("canOnboard", e.target.checked)} style={{ width: "auto" }} /> Onboarding
+                </label>
               </div>
 
               <div>

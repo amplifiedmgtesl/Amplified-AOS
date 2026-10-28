@@ -7,7 +7,7 @@
  * worker who looks like them (email, phone, name, or the worker AOS sent).
  * Clear matches (see clearMatch in lib/onboarding/plan.ts) get their
  * Payroll ID straight away and come back in `linked` — no click needed
- * (John, 2026-10-20). Everything else is only shown. Admins only.
+ * (John, 2026-10-20). Everything else is only shown. Admins and Onboarding users.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -15,14 +15,14 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { fetchPaychexWorker, PaychexConfigError } from "@/lib/paychex/api";
 import { loadSnapshot, lookupWorkers, needsLiveRead, saveWorker } from "@/lib/paychex/snapshot";
 import { clearMatch, findDuplicates, paychexMatches, type PaychexMatch } from "@/lib/onboarding/plan";
-import { loadLiveEmployees, loadNotSame, loadTakenPayrollIds, requireAdmin, toOnbEmployee } from "@/lib/onboarding/server";
+import { loadLiveEmployees, loadNotSame, loadTakenPayrollIds, requireOnboarding, toOnbEmployee } from "@/lib/onboarding/server";
 import { linkPaychexId } from "@/lib/onboarding/link";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  const userId = await requireAdmin(req);
+  const userId = await requireOnboarding(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const keys: string[] = Array.isArray(body?.keys) ? body.keys.filter((k: unknown) => typeof k === "string").slice(0, 500) : [];

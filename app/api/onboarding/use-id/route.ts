@@ -2,18 +2,18 @@
  * app/api/onboarding/use-id/route.ts — "Use ID" (backlog #120).
  *
  * POST { employeeKey, workerId } → re-read that Paychex worker and put its
- * Payroll ID on the AOS record (see lib/onboarding/link.ts). Admins only.
+ * Payroll ID on the AOS record (see lib/onboarding/link.ts). Admins and Onboarding users.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { fetchPaychexWorker, PaychexConfigError } from "@/lib/paychex/api";
-import { requireAdmin } from "@/lib/onboarding/server";
+import { requireOnboarding } from "@/lib/onboarding/server";
 import { linkPaychexId } from "@/lib/onboarding/link";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
-  const userId = await requireAdmin(req);
+  const userId = await requireOnboarding(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const employeeKey = typeof body?.employeeKey === "string" ? body.employeeKey : "";

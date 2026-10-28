@@ -5,13 +5,13 @@
  * Paychex (see lib/onboarding/send.ts). Paychex is read once for the
  * look-alike check. Anyone Paychex may already have comes back as
  * needsConfirm and is NOT sent; ignoreMatches is honoured for a single
- * person only, after the admin has seen the matches. Admins only.
+ * person only, after the admin has seen the matches. Admins and Onboarding users.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { PaychexConfigError } from "@/lib/paychex/api";
 import { loadSnapshot, lookupWorkers, pullSnapshot, SEND_MAX_AGE_MS, snapshotAt } from "@/lib/paychex/snapshot";
-import { requireAdmin } from "@/lib/onboarding/server";
+import { requireOnboarding } from "@/lib/onboarding/server";
 import { LIVE_SEND, sendOne, type SendOutcome } from "@/lib/onboarding/send";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,7 @@ export const maxDuration = 60;
 const MAX_BATCH = 15;
 
 export async function POST(req: NextRequest) {
-  const userId = await requireAdmin(req);
+  const userId = await requireOnboarding(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
   const keys: string[] = Array.isArray(body?.employeeKeys)

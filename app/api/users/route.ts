@@ -64,6 +64,7 @@ export async function GET(req: NextRequest) {
             employeeKey: p.employee_key ?? null,
             fullName: p.full_name ?? "",
             email: p.email ?? "",
+            canOnboard: p.can_onboard === true,
           }
         : null,
     };
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { email, password, role, fullName, employeeKey } = body;
+  const { email, password, role, fullName, employeeKey, canOnboard } = body;
 
   if (!email || !password) {
     return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
@@ -105,6 +106,7 @@ export async function POST(req: NextRequest) {
     employee_key: employeeKey || null,
     full_name: fullName || null,
     email: email,
+    can_onboard: canOnboard === true,
   });
 
   if (profileError) {
