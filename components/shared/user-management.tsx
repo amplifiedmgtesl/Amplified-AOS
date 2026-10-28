@@ -324,11 +324,11 @@ export function UserManagement() {
                   <option value="admin">Admin</option>
                 </select>
                 {/* Crew leaders use their own app, so it can't be offered there. */}
-                <label style={{ display: "block", marginTop: 6, fontSize: 13, cursor: "pointer" }}
+                <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 13, cursor: "pointer" }}
                   title={form.role === "admin" ? "Admins always have Onboarding" : form.role === "crew_leader" ? "Crew leaders use their own app, which has no Onboarding screen" : "Let this user use the Onboarding screen"}>
                   <input type="checkbox" checked={form.role === "admin" || (form.canOnboard && form.role !== "crew_leader")}
                     disabled={form.role === "admin" || form.role === "crew_leader"}
-                    onChange={(e) => setField("canOnboard", e.target.checked)} /> Onboarding
+                    onChange={(e) => setField("canOnboard", e.target.checked)} style={{ width: "auto" }} /> Onboarding
                 </label>
               </div>
 
