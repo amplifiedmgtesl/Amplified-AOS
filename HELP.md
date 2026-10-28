@@ -72,7 +72,7 @@ Jobs appear on the calendar when **Show in app calendar** is set to **Yes** on t
 
 **What it's for:** the directory of everyone who works for us.
 
-**Finding someone.** Search by name, phone or email, or filter by **City**, **State**, **Status**, **Employment Type** or **Applied Online** (people who applied through the website, or those who didn't). Click a column heading to sort by it; click it again to reverse. Click a name to open their profile.
+**Finding someone.** Search by name, phone or email, or filter by **City**, **State**, **Status**, **Employment Type**, **Applied Online** or **Paychex** (has a Payroll ID, sent and waiting, or neither) (people who applied through the website, or those who didn't). Click a column heading to sort by it; click it again to reverse. Click a name to open their profile.
 
 **Website applications land here automatically.** When someone applies on the website, AOS looks for them first by email, then phone, then exact name, because a crew lead may already have added them. If they're found, only blanks are filled in; nothing already in AOS is overwritten. If they're new, they're added as a **Contractor**.
 
@@ -424,10 +424,12 @@ Time that's in a payroll run is locked on Timekeeping. To change it, the run mus
 
 ## Onboarding: new crew into Paychex {#onboarding}
 
-**Who:** Admins.
+**Who:** Admins, and anyone with **Onboarding** ticked on their user (Maintenance → Users). Only admins can **Merge**.
 
-**What it's for:** getting new crew set up in Paychex before payday. The page lists everyone on a confirmed crew assignment or a timesheet from 30 days back to 30 days ahead who has no **Payroll ID**. Without one they're left out of the Paychex file. The list is in date order: whoever has waited longest to be paid is on top, and people only booked for future jobs are at the bottom. Each row shows the first and last date worked.
+**What it's for:** getting new crew set up in Paychex before payday. The page lists everyone on a confirmed crew assignment or a timesheet from 30 days back to 30 days ahead who has no **Payroll ID**. Without one they're left out of the Paychex file. The list is in date order: whoever has waited longest to be paid is on top, and people only booked for future jobs are at the bottom. Each row shows the first and last date worked. Website applicants from the last 30 days with no Payroll ID are in the same list, after the people on a job, newest first, with the date they applied and the position they asked for.
 
+- **Filters** along the top: **Search** (name, email, phone or job), **Job** (on a job, or not on a job yet), **When** (worked in the last 7, 14 or 30 days, or booked ahead; for applicants, the date they applied), **Missing info** (no email, no phone, either, or has both) and **Paychex** (not sent, sent and waiting, a possible match in Paychex, or not in Paychex). **Clear filters** resets them. The count at the top shows how many of the list are shown.
+- **Export CSV:** downloads the people shown, for the coordinators.
 - **Email / Phone:** type straight into the box; it saves when you click away. Blanks are outlined in red. **Applied with: …** under a box means their website application has a different one; click it to use that instead.
 - Click a person's name to open their profile.
 - **Employee / Contractor:** click to switch between W-2 and 1099.
@@ -442,9 +444,8 @@ Time that's in a payroll run is locked on Timekeeping. To change it, the run mus
 
 Anything less certain is never linked automatically. It's shown for a person to decide. Every automatic link is logged with the record as it was before, so it can be undone.
 - **Send to Paychex:** adds the person to Paychex, and Paychex emails them an invite to finish their own setup (SSN, address, tax forms, direct deposit). It needs an email, and it stays greyed out until that person's Paychex check is back. Check the name, email and Employee/Contractor in the confirm box first, because that's what Paychex gets. If Paychex already seems to have them, you're shown who and asked before anything is sent.
-- **Send selected:** tick several people (the top box ticks everyone who can be sent) and send them together. Anyone Paychex may already have is skipped and listed afterwards, to check and send one at a time.
+- **Send selected:** tick several people (the top box ticks everyone shown who can be sent; only people shown are sent) and send them together. Anyone Paychex may already have is skipped and listed afterwards, to check and send one at a time.
 - After a send the row shows **Sent … · waiting**. Paychex has emailed them; once they finish setting up, their Payroll ID is filled in automatically and they drop off the list (AOS looks them up in Paychex directly, at most once an hour).
-- **Applicants · no job yet:** below the main list, everyone who applied on the website in the last 30 days and has no Payroll ID, newest first, with the date they applied and the position they asked for. Everything above works the same here, including **Send to Paychex** before they're booked. Its top box ticks only applicants. Once booked on a crew they move up to the main list; after 30 days without a job or a Payroll ID they leave this page but stay in the Employee list.
 
 ## Health Check {#health}
 
@@ -536,7 +537,7 @@ These are usually for admins to fix.
 
 1. Go to **Maintenance** → **Users** and click **+ Add User**.
 2. Enter their **Full Name**, **Email** and a starting **Password**.
-3. Choose their **Role**: **Admin**, **Coordinator**, **Crew Leader** or **Payroll**.
+3. Choose their **Role**: **Admin**, **Coordinator**, **Crew Leader** or **Payroll**. Tick **Onboarding** to give a coordinator or payroll user the Onboarding screen.
 4. Under **Link to Employee Record**, choose their entry in the employee directory. Crew leaders need this so their time is recorded against them.
 5. Click **Create User**, and give them their email and password.
 
