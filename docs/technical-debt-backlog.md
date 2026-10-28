@@ -3150,3 +3150,21 @@ Two ways in: a **batch run** from Connor's marked-up CSV (X = keep, NO = skip th
 ## #122 — Onboarding: new applicants section (added 2026-10-23)
 
 Connor expected website applicants on Onboarding; it only lists people on a job (#120). Add an "Applicants" section: applied in the last 30 days, no Payroll ID, not already in the top list. Plan: `docs/onboarding-applicants-plan.md`.
+
+---
+
+## #123 — Database security review: who can read and change what (added 2026-10-28)
+
+**Why:** the AOS screens talk to the database directly with the signed-in user's own login, so the screens' admin checks aren't the real lock — the database rules (RLS) are. Found 10/27 while building Onboarding access: `profiles_full_access` grants `ALL` to `anon` + `authenticated` with `true` (verified on dev). Any signed-in user can set their own `role` to admin (or tick their own `can_onboard`) from the browser, bypassing Maintenance → Users. `employees_full_access` is the same. Predates v2.15.0; nobody is known to have used it.
+
+**Scope:** every table, view, function and storage bucket, on dev and prod.
+- List each table's RLS state and policies. Flag `true` policies, anything open to `anon`, and tables with RLS off.
+- Decide per table who may read and who may write (admin / payroll / coordinator / crew leader / server only). Role changes, `can_onboard`, pay rates, Payroll IDs and contact info should be server-only or admin-only.
+- `SECURITY DEFINER` functions: check each one checks the caller (as `merge_employee` does).
+- Storage buckets and any public URLs.
+- Service-role key: only in server routes, never in the browser bundle.
+- Check the kiosk, /lead and amplified-staff still work under the tightened rules.
+
+**Fix first:** `profiles` — no client writes to `role` / `can_onboard` (move to `/api/users`, already admin-checked).
+
+**Done when:** a written table-by-table access list, migrations applied on dev then prod, and a click-through of each role on dev.
