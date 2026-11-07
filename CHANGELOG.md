@@ -2,6 +2,11 @@
 
 What changed and when. Newest entries at the top.
 
+## November 2026
+
+### November 7 — v2.16.0
+- **No Payroll ID check on payroll runs.** If anyone on a run has no Payroll ID, a red **No Payroll ID** line above the entries shows how many people and how much pay that is. Tick it to see only those people. They're left out of the Paychex file, so get them set up in Paychex (or enter them by hand) before you export.
+
 ## October 2026
 
 ### October 27 — v2.15.0

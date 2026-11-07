@@ -329,6 +329,8 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
 
   // Employees on this run, read fresh from the DB (null until loaded / on error).
   const [runEmployees, setRunEmployees] = useState<EmployeeRecord[] | null>(null);
+  // Show only people with no Payroll ID (they're left out of the Paychex file).
+  const [noIdOnly, setNoIdOnly] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -387,6 +389,17 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
     }
     return Array.from(m.values()).sort((a, b) => a.label.localeCompare(b.label));
   }, [entries]);
+
+  // People on this run with no Payroll ID — they won't be in the Paychex file.
+  const missingIdGroups = useMemo(
+    () => grouped.filter((g) => {
+      const k = g.rows[0]?.employeeKey;
+      return !k || ripplingIdByEmpKey.get(k) == null;
+    }),
+    [grouped, ripplingIdByEmpKey],
+  );
+  const missingIdPay = missingIdGroups.reduce(
+    (s, g) => s + g.rows.reduce((t, r) => t + r.totalPay, 0), 0);
 
   if (loading) return <div className="card"><div className="muted">Loading…</div></div>;
   if (!run) return <div className="card"><div className="muted">Run not found.</div><Link href="/payroll">← Back to payroll runs</Link></div>;
@@ -876,13 +889,29 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
 
       {/* Entries (on-screen view, hidden when printing) */}
       <div className="card hide-print">
-        <h3 style={{ marginTop: 0 }}>Included entries</h3>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <h3 style={{ marginTop: 0 }}>Included entries</h3>
+          {missingIdGroups.length > 0 && (
+            <label
+              style={{ fontSize: 13, color: "#c0392b", cursor: "pointer", marginBottom: 8 }}
+              title="People with no Payroll ID are left out of the Paychex file. Tick to show only them."
+            >
+              <input
+                type="checkbox"
+                checked={noIdOnly}
+                onChange={(e) => setNoIdOnly(e.target.checked)}
+                style={{ marginRight: 6 }}
+              />
+              No Payroll ID: {missingIdGroups.length} {missingIdGroups.length === 1 ? "person" : "people"} · ${missingIdPay.toFixed(2)}
+            </label>
+          )}
+        </div>
         {entries.length === 0 ? (
           <div className="muted" style={{ padding: "12px 0" }}>
             {isVoided ? "Run was voided — no entries remain." : "No entries on this run."}
           </div>
         ) : (
-          grouped.map((g) => {
+          (noIdOnly && missingIdGroups.length > 0 ? missingIdGroups : grouped).map((g) => {
             const hrs = g.rows.reduce((s, r) => s + r.payTotalHours, 0);
             const pay = g.rows.reduce((s, r) => s + r.totalPay, 0);
             return (
