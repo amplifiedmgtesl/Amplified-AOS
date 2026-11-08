@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { printWithTitle } from "@/lib/print-with-title";
 import { DEFAULT_RATE_ROWS, type TriggerOption, type RateRow } from "@/lib/rates/defaults";
 import { triggerLabel } from "@/lib/rates/ot-trigger";
-import { positionNames } from "@/lib/store/app-store";
+import { positionNames, getRateCardUsage } from "@/lib/store/app-store";
 import { supabase } from "@/lib/supabase/client";
 import type { Client } from "@/lib/store/types";
 import {
@@ -44,6 +44,8 @@ export default function RateCardEditor() {
   const [profiles, setProfiles] = useState<RateCardProfile[]>([]);
   const [activeProfileId, setActiveProfileIdState] = useState("");
   const [statusMsg, setStatusMsg] = useState("");
+  // Jobs on the loaded card (null = not loaded / no card).
+  const [usage, setUsage] = useState<{ jobs: number; quoted: number } | null>(null);
 
   useEffect(() => {
     setRows(loadRateRows());
@@ -105,6 +107,14 @@ export default function RateCardEditor() {
     if (deepLinkHandled || typeof window === "undefined") return;
     if (clients.length === 0) return; // wait for clients to load
     const params = new URLSearchParams(window.location.search);
+    // /rate-card?open=<id> opens that card (the job page's "Edit rates" link).
+    const openId = params.get("open");
+    if (openId) {
+      if (profiles.some((p) => p.id === openId)) openProfile(openId);
+      window.history.replaceState({}, "", window.location.pathname);
+      setDeepLinkHandled(true);
+      return;
+    }
     if (params.get("new") !== "1") { setDeepLinkHandled(true); return; }
     const wantClientId = params.get("clientId") ?? "";
     const c = wantClientId ? clients.find((x) => x.id === wantClientId) : undefined;
@@ -119,6 +129,14 @@ export default function RateCardEditor() {
     setDeepLinkHandled(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clients.length, deepLinkHandled]);
+
+  useEffect(() => {
+    setUsage(null);
+    if (mode !== "edit" || !activeProfileId) return;
+    let cancelled = false;
+    getRateCardUsage(activeProfileId).then((u) => { if (!cancelled) setUsage(u); });
+    return () => { cancelled = true; };
+  }, [activeProfileId, mode]);
 
   const visibleRows = useMemo(() => rows.filter((r) => r.show), [rows]);
 
@@ -233,6 +251,15 @@ export default function RateCardEditor() {
         refreshProfiles();
         return;
       }
+    }
+    if (activeProfileId && usage && usage.quoted > 0) {
+      const ok = window.confirm(
+        `This rate card is used by ${usage.quoted} quoted job${usage.quoted === 1 ? "" : "s"}. ` +
+        `Saving changes the rates on ${usage.quoted === 1 ? "it" : "all of them"}.\n\n` +
+        `To change rates for one job only, Cancel and use Copy for this job on that job instead.\n\n` +
+        `OK = save anyway.`,
+      );
+      if (!ok) return;
     }
     const now = new Date().toISOString();
     const id = activeProfileId || `ratecard-${Date.now()}`;
@@ -407,6 +434,14 @@ export default function RateCardEditor() {
           </div>
           <div className="action-row" style={{ alignItems: "end" }}>
             <button onClick={saveCurrentProfile} disabled={mode === "none"}>Save Rate Card</button>
+            {usage && usage.jobs > 0 && (
+              <small
+                className="muted"
+                title={`${usage.jobs} job${usage.jobs === 1 ? "" : "s"} use this rate card (${usage.quoted} quoted). Saving changes their rates.`}
+              >
+                Used by {usage.jobs} job{usage.jobs === 1 ? "" : "s"}
+              </small>
+            )}
             <button
               className="secondary"
               onClick={saveAsCopy}

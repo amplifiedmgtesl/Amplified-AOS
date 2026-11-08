@@ -1093,6 +1093,106 @@ export function upsertRateCardProfile(profile: RateCardProfile) {
   syncRateCardProfileRows(profile);
 }
 
+/** Copy a rate card for one job: same bill + pay rates, the job's client,
+ *  and NO effective date (a dated client card can be picked by Auto for every
+ *  unpinned job of that client). Pins the copy to the job when `jobId` is
+ *  given. Awaited end to end so the pin never points at a missing card.
+ *  Returns the new card id, or an error message. */
+export async function copyRateCardForJob(opts: {
+  sourceId: string;
+  clientId: string | null;
+  clientName: string;
+  name: string;
+  jobId?: string;
+}): Promise<{ id: string } | { error: string }> {
+  const [profRes, rowsRes, namesRes] = await Promise.all([
+    supabase.from("rate_card_profiles").select("*").eq("id", opts.sourceId).maybeSingle(),
+    supabase.from("rate_card_profile_rows").select("*").eq("profile_id", opts.sourceId).order("sort_order"),
+    supabase.from("rate_card_profiles").select("name").eq("client_name", opts.clientName),
+  ]);
+  if (profRes.error || !profRes.data) return { error: "Could not read the rate card to copy." };
+  if (rowsRes.error) return { error: "Could not read the rate card's rows." };
+  const src = profRes.data;
+  // Unique name per client (DB constraint: client_id + lower(name) + effective_date).
+  const taken = new Set((namesRes.data ?? []).map((r: any) => String(r.name ?? "").trim().toLowerCase()));
+  let name = opts.name.trim();
+  for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${opts.name.trim()} (${n})`;
+  const id = `ratecard-${Date.now()}`;
+  const now = new Date().toISOString();
+  const { error: insErr } = await supabase.from("rate_card_profiles").insert({
+    id,
+    client_id: opts.clientId,
+    client_name: opts.clientName,
+    name,
+    effective_date: null,
+    rows: src.rows,
+    terms: src.terms,
+    holiday_multiplier: src.holiday_multiplier ?? 2.0,
+    created_at: now,
+    updated_at: now,
+  });
+  if (insErr) {
+    console.error("[db] copyRateCardForJob profile:", insErr);
+    return { error: "Could not create the copy — try again." };
+  }
+  const newRows = (rowsRes.data ?? []).map((r: any, idx: number) => {
+    const { id: _old, profile_id: _p, created_at: _c, updated_at: _u, ...rest } = r;
+    return { ...rest, id: `${id}_${idx}`, profile_id: id };
+  });
+  if (newRows.length > 0) {
+    const { error: rowErr } = await supabase.from("rate_card_profile_rows").insert(newRows);
+    if (rowErr) {
+      console.error("[db] copyRateCardForJob rows:", rowErr);
+      await supabase.from("rate_card_profiles").delete().eq("id", id);
+      return { error: "Could not copy the rate card's rows — try again." };
+    }
+  }
+  const created = rowToRateCardProfile(
+    { ...src, id, client_id: opts.clientId, client_name: opts.clientName, name, effective_date: null, created_at: now, updated_at: now },
+    newRows,
+  );
+  _cache.rateCardProfiles = [..._cache.rateCardProfiles, created].sort(
+    (a, b) => a.clientName.localeCompare(b.clientName),
+  );
+  if (opts.jobId) {
+    const { error: pinErr } = await supabase
+      .from("job_requests")
+      .update({ rate_card_profile_id: id })
+      .eq("id", opts.jobId);
+    if (pinErr) {
+      console.error("[db] copyRateCardForJob pin:", pinErr);
+      return { error: "Copy made, but it couldn't be set on the job — pick it in Rate card and save." };
+    }
+    _cache.jobRequests = _cache.jobRequests.map((j) =>
+      j.id === opts.jobId ? { ...j, rateCardProfileId: id } : j,
+    );
+  }
+  return { id };
+}
+
+/** Jobs using a rate card: pinned to it, or quoted on it. `quoted` counts
+ *  the ones past Lead or with a quote — changing the card changes their rates. */
+export async function getRateCardUsage(profileId: string): Promise<{ jobs: number; quoted: number } | null> {
+  const [jobsRes, quotesRes] = await Promise.all([
+    supabase.from("job_requests").select("id, status").eq("rate_card_profile_id", profileId),
+    supabase.from("quotes").select("job_request_id, linked_job_request_id").eq("rate_card_profile_id", profileId),
+  ]);
+  if (jobsRes.error || quotesRes.error) return null;
+  const all = new Set<string>();
+  const quoted = new Set<string>();
+  for (const j of jobsRes.data ?? []) {
+    all.add(j.id);
+    if (j.status && j.status !== "lead") quoted.add(j.id);
+  }
+  for (const q of quotesRes.data ?? []) {
+    const jid = q.job_request_id ?? q.linked_job_request_id;
+    if (!jid) continue;
+    all.add(jid);
+    quoted.add(jid);
+  }
+  return { jobs: all.size, quoted: quoted.size };
+}
+
 function syncRateCardProfileRows(profile: RateCardProfile) {
   supabase
     .from("rate_card_profile_rows")
