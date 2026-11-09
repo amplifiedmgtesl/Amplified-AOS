@@ -380,11 +380,11 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
 
   // Group entries by employee.
   const grouped = useMemo(() => {
-    const m = new Map<string, { label: string; rows: PayrollRunEntry[] }>();
+    const m = new Map<string, { key: string; label: string; rows: PayrollRunEntry[] }>();
     for (const e of entries) {
       const key = e.employeeKey ?? `__noemp__:${e.email ?? fullName(e)}`;
       let g = m.get(key);
-      if (!g) { g = { label: fullName(e), rows: [] }; m.set(key, g); }
+      if (!g) { g = { key, label: fullName(e), rows: [] }; m.set(key, g); }
       g.rows.push(e);
     }
     return Array.from(m.values()).sort((a, b) => a.label.localeCompare(b.label));
@@ -915,7 +915,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
             const hrs = g.rows.reduce((s, r) => s + r.payTotalHours, 0);
             const pay = g.rows.reduce((s, r) => s + r.totalPay, 0);
             return (
-              <div key={g.label} style={{ marginBottom: 14, border: "1px solid #eee", borderRadius: 6 }}>
+              <div key={g.key} style={{ marginBottom: 14, border: "1px solid #eee", borderRadius: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#f7f7f9", padding: "8px 12px" }}>
                   <strong>
                     {g.label}
