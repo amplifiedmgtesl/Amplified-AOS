@@ -108,6 +108,12 @@ export function deleteTimesheetEntries(ids: string[]): Promise<db.DeleteEntriesR
 // Payroll daily-rules exemption on a whole job (the internal/generic job
 // coordinators log time against). Targeted update — the job form is disabled
 // for non-'lead' jobs, so this can't ride the form's save.
+export function copyRateCardForJob(opts: Parameters<typeof db.copyRateCardForJob>[0]) {
+  return db.copyRateCardForJob(opts);
+}
+export function getRateCardUsage(profileId: string) {
+  return db.getRateCardUsage(profileId);
+}
 export function setJobPayrollExempt(jobId: string, exempt: boolean): Promise<string | null> {
   return db.setJobPayrollExempt(jobId, exempt);
 }

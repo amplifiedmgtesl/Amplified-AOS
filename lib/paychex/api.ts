@@ -13,6 +13,7 @@
  */
 
 import type { PaychexWorker } from "./sync-plan";
+import { planFill, type AosFill, type FillPlan } from "./fill";
 
 const BASE = "https://api.paychex.com";
 const PAGE = 50;          // Paychex rejects limit > 50 with HTTP 400
@@ -196,4 +197,64 @@ export async function createPaychexWorker(w: NewWorker): Promise<CreateResult> {
   const worker = toWorker(raw);
   try { await addContact(token, worker); } catch { /* checked by the caller */ }
   return { ok: true, status: res.status, worker };
+}
+
+async function send(token: string, method: "POST" | "PATCH", path: string, body: unknown): Promise<{ status: number; error: string | null }> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  if (res.ok) return { status: res.status, error: null };
+  const json: any = await res.json().catch(() => null);
+  const msg = json?.errors?.[0]?.description ?? json?.errors?.[0]?.message ?? json?.message;
+  return { status: res.status, error: `${msg ?? "Paychex didn't accept it"} (HTTP ${res.status})` };
+}
+
+export type FillResult = {
+  plan: FillPlan | null;      // null when Paychex has no such worker
+  done: string[];             // fields written (empty on a dry run)
+  errors: string[];
+};
+
+/** Fill BLANKS on a Paychex worker from AOS (lib/paychex/fill.ts decides
+ *  what). live=false only reads and plans. Never changes existing values. */
+export async function fillPaychexWorker(workerId: string, aos: AosFill, live: boolean): Promise<FillResult> {
+  const token = await getToken();
+  const id = encodeURIComponent(workerId);
+  const res = await fetch(`${BASE}/workers/${id}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (res.status === 404) return { plan: null, done: [], errors: ["Paychex has no such worker."] };
+  if (!res.ok) throw new Error(`Paychex request failed (HTTP ${res.status}) for /workers.`);
+  const raw: any = (await res.json())?.content?.[0] ?? {};
+  const comms: any[] = (await get(token, `/workers/${id}/communications`))?.content ?? [];
+  const plan = planFill(aos, {
+    status: raw.currentStatus?.statusType ?? "",
+    hasPhone: comms.some((c) => c.type === "PHONE" || c.type === "MOBILE_PHONE"),
+    hasAddress: comms.some((c) => c.type === "STREET_ADDRESS"),
+    hireDate: raw.hireDate ?? null,
+    exemptionType: raw.exemptionType ?? null,
+    locationId: raw.locationId ?? null,
+    organizationId: raw.organization?.organizationId ?? null,
+  });
+  const done: string[] = [];
+  const errors: string[] = [];
+  if (!live) return { plan, done, errors };
+
+  if (plan.phone) {
+    const r = await send(token, "POST", `/workers/${id}/communications`, plan.phone);
+    r.error ? errors.push(`phone: ${r.error}`) : done.push("phone");
+  }
+  if (plan.address) {
+    const r = await send(token, "POST", `/workers/${id}/communications`, plan.address);
+    r.error ? errors.push(`address: ${r.error}`) : done.push("address");
+  }
+  if (plan.patch) {
+    const r = await send(token, "PATCH", `/workers/${id}`, { workerId, ...plan.patch });
+    r.error ? errors.push(`hire details: ${r.error}`) : done.push(...plan.fills.filter((f) => f !== "phone" && f !== "address"));
+  }
+  return { plan, done, errors };
 }

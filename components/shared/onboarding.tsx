@@ -18,6 +18,8 @@ import {
   type DupMatch, type MergeField, type MergeSide, type OnboardingRow, type PaychexMatch,
 } from "@/lib/onboarding/plan";
 import type { SendOutcome } from "@/lib/onboarding/send";
+import type { FillOutcome } from "@/lib/onboarding/fill";
+import { FILL_LABEL, type FillField } from "@/lib/paychex/fill";
 import PaychexAsOf from "@/components/shared/paychex-as-of";
 import { appliedDifferences } from "@/lib/jotform/application";
 import { useUserRole } from "@/lib/auth/use-user-role";
@@ -219,6 +221,7 @@ export default function Onboarding() {
   const [merge, setMerge] = useState<MergePick | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
+  const [fillBusy, setFillBusy] = useState<string | null>(null);
   const [today, setToday] = useState("");
   const [filters, setFilters] = useState<OnbFilters>(NO_FILTERS);
   // Merging deletes a record, so it stays admin-only (merge_employee checks
@@ -328,6 +331,8 @@ export default function Onboarding() {
     const noEmail = sent.filter((r) => r.kind === "sent" && !r.emailOnFile);
     if (noEmail.length) lines.push(`Paychex shows no email on these, so the invite may not have gone out. Check them in Flex:\n${noEmail.map((r) => `• ${r.name}`).join("\n")}`);
     if (held.length) lines.push(`Not sent — Paychex may already have them. Check the Paychex column and send them one at a time:\n${held.map((r) => `• ${r.name}`).join("\n")}`);
+    const fillErr = sent.filter((r) => r.kind === "sent" && r.fillErrors?.length);
+    if (fillErr.length) lines.push(`Sent, but some details didn't go into Paychex (Fill Paychex blanks can retry):\n${fillErr.map((r) => `• ${r.name}: ${r.kind === "sent" ? r.fillErrors.join("; ") : ""}`).join("\n")}`);
     if (failed.length) lines.push(`Failed:\n${failed.map((r) => `• ${r.name}: ${r.kind === "error" ? r.error : ""}`).join("\n")}`);
     return lines.join("\n\n");
   }
@@ -336,6 +341,42 @@ export default function Onboarding() {
     const r = await api("/api/onboarding/send", "POST", { employeeKeys: keys, ignoreMatches });
     if (!r.ok) { alert(r.json?.error ?? "Send failed"); return null; }
     return r.json.results as SendOutcome[];
+  }
+
+  // Everyone already sent: read Paychex, show what's blank, then fill it.
+  async function runFill(keys: string[], apply: boolean): Promise<FillOutcome[] | null> {
+    const out: FillOutcome[] = [];
+    for (let i = 0; i < keys.length; i += CHUNK) {
+      setFillBusy(`${apply ? "Filling" : "Checking"} ${Math.min(i + CHUNK, keys.length)}/${keys.length}…`);
+      const r = await api("/api/onboarding/fill", "POST", { employeeKeys: keys.slice(i, i + CHUNK), apply });
+      if (!r.ok) { alert(r.json?.error ?? "Paychex check failed"); return null; }
+      out.push(...(r.json.results as FillOutcome[]));
+    }
+    return out;
+  }
+
+  async function fillBlanks() {
+    const list = await api("/api/onboarding/fill");
+    if (!list.ok) { alert(list.json?.error ?? "Couldn't load"); return; }
+    const keys: string[] = list.json.employeeKeys ?? [];
+    if (!keys.length) { alert("Nobody has been sent to Paychex yet."); return; }
+    const preview = await runFill(keys, false);
+    setFillBusy(null);
+    if (!preview) return;
+    const todo = preview.filter((r) => r.fills.length);
+    const count = (f: FillField) => todo.filter((r) => r.fills.includes(f)).length;
+    const lines = (Object.keys(FILL_LABEL) as FillField[]).filter((f) => count(f)).map((f) => `• ${FILL_LABEL[f]}: ${count(f)}`);
+    const errs = preview.filter((r) => r.errors.length);
+    const errText = errs.length ? `\n\nCouldn't check ${errs.length}:\n${errs.map((r) => `• ${r.name}: ${r.errors.join("; ")}`).join("\n")}` : "";
+    if (!todo.length) { alert(`Paychex has nothing blank that AOS can fill (${preview.length} checked).${errText}`); return; }
+    if (!list.json.live) { alert(`Preview only — nothing is written to Paychex here.\n\nBlank in Paychex for ${todo.length} of ${preview.length} people:\n${lines.join("\n")}${errText}`); return; }
+    if (!confirm(`Blank in Paychex for ${todo.length} of ${preview.length} people:\n${lines.join("\n")}\n\nFill these from AOS? Nothing already in Paychex is changed.${errText}`)) return;
+    const done = await runFill(todo.map((r) => r.employeeKey), true);
+    setFillBusy(null);
+    if (!done) return;
+    const failed = done.filter((r) => r.errors.length);
+    alert(`Filled ${done.filter((r) => r.done.length).length} people.` +
+      (failed.length ? `\n\nProblems:\n${failed.map((r) => `• ${r.name}: ${r.errors.join("; ")}`).join("\n")}` : ""));
   }
 
   const typeLabel = (t: string) => (t === "Employee" ? "Employee (W-2)" : "Contractor (1099)");
@@ -509,6 +550,12 @@ export default function Onboarding() {
           <button onClick={sendSelected} disabled={batchBusy || !pickedCount}>
             {batchBusy ? "Sending…" : `Send selected (${pickedCount})`}
           </button>
+          {isAdmin && (
+            <button className="secondary" onClick={fillBlanks} disabled={!!fillBusy}
+              title="For everyone already sent: add the phone, mailing address and hire details AOS has where Paychex is blank">
+              {fillBusy ?? "Fill Paychex blanks"}
+            </button>
+          )}
           <button className="secondary" onClick={exportCsv} disabled={!shown.length} title="Download the people shown as a spreadsheet (CSV)">Export CSV</button>
           <button className="secondary" onClick={load} title="Re-read who is on a job or applied without a Payroll ID. Doesn't contact Paychex.">Reload list</button>
           <PaychexAsOf at={pxAt} onRefreshed={() => checkPaychex(everyone.map((x) => x.employeeKey))} />

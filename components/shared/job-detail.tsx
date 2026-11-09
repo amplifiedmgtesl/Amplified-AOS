@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { upsertJobRequest, deleteJobRequest, loadJobRequests, setJobPayrollExempt, setActiveJob } from "@/lib/store/app-store";
+import { upsertJobRequest, deleteJobRequest, loadJobRequests, setJobPayrollExempt, setActiveJob, copyRateCardForJob } from "@/lib/store/app-store";
 import { createDraftFromJob, pickRateCardForJob, loadJobQuoteState } from "@/lib/store/quotes";
 import { googleCalendarLink } from "@/lib/store/calendar";
 import { timeOptions } from "@/lib/store/timekeeping";
@@ -193,6 +193,10 @@ export default function JobDetail({
   const [openDraftId, setOpenDraftId] = useState<string | null>(null);
   const [latestIssuedId, setLatestIssuedId] = useState<string | null>(null);
   const [applicableRateCardLabel, setApplicableRateCardLabel] = useState<string>("");
+  const [applicableRateCardId, setApplicableRateCardId] = useState<string>("");
+  const [cardCopying, setCardCopying] = useState(false);
+  const [cardCopyMsg, setCardCopyMsg] = useState("");
+  const [copiedCardId, setCopiedCardId] = useState<string | null>(null);
   const [allRateCardProfiles, setAllRateCardProfiles] = useState<Array<{ id: string; name: string; client_name: string | null; effective_date: string | null }>>([]);
 
   useEffect(() => {
@@ -218,6 +222,7 @@ export default function JobDetail({
   }, [editingId, refreshKey]);
 
   useEffect(() => {
+    setApplicableRateCardId("");
     if (!form.clientId || !form.requestDate) { setApplicableRateCardLabel(""); return; }
     let cancelled = false;
     (async () => {
@@ -225,6 +230,7 @@ export default function JobDetail({
         const card = await pickRateCardForJob(form.clientId, form.requestDate);
         if (cancelled) return;
         if (!card) { setApplicableRateCardLabel("(no rate card)"); return; }
+        setApplicableRateCardId(card.id);
         const profileRes = await supabase
           .from("rate_card_profiles")
           .select("name, client_name, effective_date")
@@ -379,8 +385,52 @@ export default function JobDetail({
     setMsg("Opened Google Calendar template — click Save in Google to add the event.");
   }
 
+  // Copy the job's rate card (pinned or Auto) so this job's bill/pay rates can
+  // differ without touching a card other jobs share. Only while the job is a
+  // Lead — after that the rate card is locked.
+  async function copyCardForThisJob() {
+    const sourceId = form.rateCardProfileId || applicableRateCardId;
+    const client = form.clientId ? clientById.get(form.clientId) : undefined;
+    if (!sourceId || !client) return;
+    const source = allRateCardProfiles.find((p) => p.id === sourceId);
+    const label = liveJobNo || form.eventName || "Job";
+    setCardCopying(true);
+    setCardCopyMsg("");
+    const res = await copyRateCardForJob({
+      sourceId,
+      clientId: client.id,
+      clientName: client.name,
+      name: `${label} - ${source?.name ?? "Rate card"}`,
+      jobId: !isNew && editingId ? editingId : undefined,
+    });
+    setCardCopying(false);
+    if ("error" in res) { setCardCopyMsg(res.error); return; }
+    const { data } = await supabase
+      .from("rate_card_profiles")
+      .select("id, name, client_name, effective_date")
+      .eq("id", res.id)
+      .maybeSingle();
+    if (data) setAllRateCardProfiles((list) => [...list, data]);
+    setForm((f) => ({ ...f, rateCardProfileId: res.id }));
+    setCopiedCardId(res.id);
+  }
+
+  // Name of the card a new quote will use: the pin, else what Auto picks.
+  function quoteCardLabel(): string {
+    if (form.rateCardProfileId) {
+      const p = allRateCardProfiles.find((x) => x.id === form.rateCardProfileId);
+      return p ? [p.client_name, p.name].filter(Boolean).join(" — ") : form.rateCardProfileId;
+    }
+    return applicableRateCardLabel || "(no rate card)";
+  }
+
   async function saveAndCreateQuoteNew() {
     if (!validate()) return;
+    if (!confirm(
+      `Quote with rate card "${quoteCardLabel()}"?\n\n` +
+      `Once quoted, the job's rate card can't be changed. If this job's bill or pay rates are different, ` +
+      `Cancel and use Copy for this job first.`,
+    )) return;
     const row = buildRow();
     upsertJobRequest(row);
     try {
@@ -671,6 +721,24 @@ export default function JobDetail({
                 );
               })}
           </select>
+          {!isLocked && form.clientId && (form.rateCardProfileId || applicableRateCardId) && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={copyCardForThisJob}
+              disabled={cardCopying}
+              style={{ fontSize: 12, padding: "2px 8px" }}
+              title="Rates different for this job? Makes a copy of this rate card just for this job and sets it here. Other jobs keep the original."
+            >
+              {cardCopying ? "Copying…" : "Copy for this job"}
+            </button>
+          )}
+          {copiedCardId && form.rateCardProfileId === copiedCardId && (
+            <a href={`/rate-card?open=${encodeURIComponent(copiedCardId)}`} target="_blank" rel="noopener noreferrer">
+              Edit rates
+            </a>
+          )}
+          {cardCopyMsg && <span style={{ color: "#c0392b" }}>{cardCopyMsg}</span>}
         </div>
         )}
 

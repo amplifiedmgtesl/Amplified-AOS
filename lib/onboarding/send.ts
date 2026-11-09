@@ -10,6 +10,10 @@
  * there's no Paychex test account, so a preview send would create a real
  * worker and email a real person.
  *
+ * After a send, the rest of what AOS knows (phone, mailing address, hire
+ * details) is filled in on the new worker — see ./fill.ts. A failed fill
+ * doesn't undo the send; it's reported and the Fill button can retry.
+ *
  * Guards: email required; one send per person (claimed in the DB before
  * calling Paychex); refuses if Paychex already has a look-alike unless the
  * admin has seen the matches and chosen to send anyway (single sends only).
@@ -21,11 +25,12 @@ import { createPaychexWorker, newWorkerBody, type NewWorker } from "@/lib/payche
 import type { PaychexWorker } from "@/lib/paychex/sync-plan";
 import { canSend, paychexMatches, splitForPaychex, type PaychexMatch } from "./plan";
 import { loadEmployee, toOnbEmployee } from "./server";
+import { fillOne } from "./fill";
 
 export const LIVE_SEND = process.env.VERCEL_ENV === "production";
 
 export type SendOutcome =
-  | { employeeKey: string; name: string; kind: "sent"; workerId: string; payrollId: number | null; emailOnFile: boolean }
+  | { employeeKey: string; name: string; kind: "sent"; workerId: string; payrollId: number | null; emailOnFile: boolean; fillErrors: string[] }
   | { employeeKey: string; name: string; kind: "dryRun"; request: unknown }
   | { employeeKey: string; name: string; kind: "needsConfirm"; matches: PaychexMatch[] }
   | { employeeKey: string; name: string; kind: "error"; error: string; unknown?: boolean };
@@ -115,5 +120,7 @@ export async function sendOne(employeeKey: string, userId: string, workers: Payc
     return { employeeKey, name, kind: "error", unknown: true,
       error: `Created in Paychex (worker ${w.workerId}) but AOS couldn't save it: ${saveErr.message}. Don't resend.` };
   }
-  return { employeeKey, name, kind: "sent", workerId: w.workerId, payrollId: (patch.rippling_employee_id as number) ?? null, emailOnFile };
+  const fill = await fillOne({ ...row, paychex_worker_id: w.workerId }, userId, true);
+  return { employeeKey, name, kind: "sent", workerId: w.workerId, payrollId: (patch.rippling_employee_id as number) ?? null, emailOnFile,
+    fillErrors: fill.errors };
 }

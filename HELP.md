@@ -201,6 +201,7 @@ This tab checks the job automatically and lists anything that needs fixing. See 
 
 1. Fill in **Daily Requirements** first. The quote is built from them.
 2. On the job, click **Create Quote** (or **Save + Create Quote** when creating a new job).
+   You're asked to confirm the rate card the quote will use. Once a job is quoted its rate card can't be changed.
 3. In **Edit Quote Draft**, check every line. Click **Save Draft** as you go; drafts can be changed freely.
 4. When it's right, click **Issue Quote**. An issued quote is final and can't be edited.
 5. Use **Print / PDF** to send it to the client.
@@ -208,6 +209,10 @@ This tab checks the job automatically and lists anything that needs fixing. See 
 7. Set the job's **Status** to **Booked**. This isn't done automatically.
 
 **Need to change an issued quote?** Open it and click **Revise**. This makes a new version and keeps the old one for the record.
+
+**Different rates for one job?** While the job is a Lead, click **Copy for this job** next to **Rate card** on the job. AOS copies the card, names it after the job and sets it on the job. Click **Edit rates** to change the bill or pay rates; other jobs keep the original card. Do this before **Create Quote**.
+
+**Used by N jobs** next to **Save Rate Card** shows how many jobs use a card. If any of them are quoted, Save asks first, because it changes their rates too.
 
 **The Quotes list** shows all quotes. Use the drop-down to see drafts, issued or signed quotes, and search by quote #, client or event. New quotes are always started from the job.
 
@@ -393,6 +398,7 @@ Once time is on an invoice, it shows **🔒 Billed** on Timekeeping and can't be
 3. Under **Review entries to include**, check the list.
 4. Set the pay date and click **Create draft run**.
 5. Open the run and check **Included entries**. Add anything missed under **Add more entries**.
+   If anyone on the run has no Payroll ID, a red **No Payroll ID** line above the entries shows how many people and how much pay. Tick it to see only those people.
 6. Click **Finalize**. This works out weekly overtime for W-2 employees and locks the run.
 7. Click **📥 Paychex CSV** to download the import file. The button only works on a finalized run. In Paychex Flex, go to **Payroll Center**, click the arrow next to **Begin** and choose **Import**.
 
@@ -444,8 +450,10 @@ Time that's in a payroll run is locked on Timekeeping. To change it, the run mus
 
 Anything less certain is never linked automatically. It's shown for a person to decide. Every automatic link is logged with the record as it was before, so it can be undone.
 - **Send to Paychex:** adds the person to Paychex, and Paychex emails them an invite to finish their own setup (SSN, address, tax forms, direct deposit). It needs an email, and it stays greyed out until that person's Paychex check is back. Check the name, email and Employee/Contractor in the confirm box first, because that's what Paychex gets. If Paychex already seems to have them, you're shown who and asked before anything is sent.
+  After the worker is created, AOS also fills in Paychex: phone (as a personal phone), mailing address (only when AOS has street, city, state and zip), hire date (the earlier of the day they applied and their first work day), Non-exempt, the location and **2 Production Team**. In Flex you only set **Work state** and click **Finish**.
 - **Send selected:** tick several people (the top box ticks everyone shown who can be sent; only people shown are sent) and send them together. Anyone Paychex may already have is skipped and listed afterwards, to check and send one at a time.
 - After a send the row shows **Sent … · waiting**. Paychex has emailed them; once they finish setting up, their Payroll ID is filled in automatically and they drop off the list (AOS looks them up in Paychex directly, at most once an hour).
+- **Fill Paychex blanks** (admins): for everyone already sent to Paychex, shows what Paychex is missing that AOS has, then fills it when you OK it. It only fills empty fields and never changes anything already in Paychex. Hire details are only filled for people who aren't active yet. It takes a few minutes for everyone.
 
 ## Health Check {#health}
 
