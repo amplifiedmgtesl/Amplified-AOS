@@ -50,12 +50,27 @@ export type FillOutcome = {
   errors: string[];
 };
 
+/** fetch() throws a TypeError when the connection itself fails (no HTTP reply). */
+function isNetworkError(err: unknown): boolean {
+  return err instanceof TypeError;
+}
+
 export async function fillOne(row: any, userId: string, live: boolean): Promise<FillOutcome> {
   const name = (row.full_name || [row.first_name, row.last_name].filter(Boolean).join(" ") || row.employee_key).trim();
   const base = { employeeKey: row.employee_key, name, workerId: row.paychex_worker_id as string };
   let r: FillResult;
   try {
-    r = await fillPaychexWorker(row.paychex_worker_id, await aosFillFor(row), live);
+    const aos = await aosFillFor(row);
+    try {
+      r = await fillPaychexWorker(row.paychex_worker_id, aos, live);
+    } catch (err) {
+      // A dropped connection ("fetch failed") gets one more try after a
+      // second. Safe even mid-write: the retry re-reads Paychex and only
+      // fills what's still blank. HTTP errors aren't retried.
+      if (!isNetworkError(err)) throw err;
+      await new Promise((res) => setTimeout(res, 1000));
+      r = await fillPaychexWorker(row.paychex_worker_id, aos, live);
+    }
   } catch (err) {
     return { ...base, fills: [], missing: [], done: [], errors: [err instanceof Error ? err.message : "Unknown error"] };
   }
