@@ -437,7 +437,7 @@ export default function RateCardEditor() {
             {usage && usage.jobs > 0 && (
               <small
                 className="muted"
-                title={`${usage.jobs} job${usage.jobs === 1 ? "" : "s"} use this rate card (${usage.quoted} quoted). Saving changes their rates.`}
+                title={`${usage.jobs} ${usage.jobs === 1 ? "job uses" : "jobs use"} this rate card (${usage.quoted} quoted). Saving changes their rates.`}
               >
                 Used by {usage.jobs} job{usage.jobs === 1 ? "" : "s"}
               </small>
