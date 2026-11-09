@@ -4,17 +4,18 @@ What changed and when. Newest entries at the top.
 
 ## November 2026
 
-### November 8 — v2.18.0
+### November 9 — v2.18.0
 - **Send to Paychex now sends everything AOS has.** After the worker is created, AOS also fills in their phone (as a personal phone), mailing address, hire date (the earlier of the day they applied and their first work day), Non-exempt, the location and **2 Production Team**. In Flex you only need to set **Work state** and click **Finish**; Paychex doesn't let AOS do those two.
 - **Fill Paychex blanks** button on Onboarding (admins). For everyone already sent to Paychex, it shows what Paychex is missing that AOS has, then fills it when you OK it. It only fills empty fields and never changes anything already in Paychex. Hire details are only filled for people who aren't active yet. An address is only sent when AOS has the street, city, state and zip.
 
-### November 8 — v2.17.0
+### November 9 — v2.17.0
 - **Copy for this job** on the job page, next to **Rate card**, while the job is still a Lead. It copies the job's rate card, names it after the job, and sets it on the job. Click **Edit rates** to change bill or pay rates for this job only. Other jobs keep the original card. The copy has no effective date, so Auto never picks it for the client's other jobs.
 - **Create Quote now asks which rate card** the quote will use. Once a job is quoted its rate card can't be changed, so if the rates are different for this job, Cancel and use **Copy for this job** first.
 - **Rate Card editor shows "Used by N jobs"** next to **Save Rate Card**. If quoted jobs use the card, Save asks before changing their rates.
 
-### November 7 — v2.16.0
+### November 9 — v2.16.0
 - **No Payroll ID check on payroll runs.** If anyone on a run has no Payroll ID, a red **No Payroll ID** line above the entries shows how many people and how much pay that is. Tick it to see only those people. They're left out of the Paychex file, so get them set up in Paychex (or enter them by hand) before you export.
+- Two people with the same name on a run now always show as separate groups.
 
 ## October 2026
 
