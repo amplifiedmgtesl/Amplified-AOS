@@ -4,6 +4,10 @@ What changed and when. Newest entries at the top.
 
 ## November 2026
 
+### November 15 — v2.18.1
+- **Payroll no longer rounds hours up.** Payroll used to round each person's day up to the next whole hour (10.5 hours paid as 11). It now pays the exact hours on the timesheet, the same as the invoice. The 5-hour daily minimum still applies: a 3-hour day still pays 5.
+- Runs that are already finalized are not changed. The draft run for November 20 has been recalculated with exact hours.
+
 ### November 9 — v2.18.0
 - **Send to Paychex now sends everything AOS has.** After the worker is created, AOS also fills in their phone (as a personal phone), mailing address, hire date (the earlier of the day they applied and their first work day), Non-exempt, the location and **2 Production Team**. In Flex you only need to set **Work state** and click **Finish**; Paychex doesn't let AOS do those two.
 - **Fill Paychex blanks** button on Onboarding (admins). For everyone already sent to Paychex, it shows what Paychex is missing that AOS has, then fills it when you OK it. It only fills empty fields and never changes anything already in Paychex. Hire details are only filled for people who aren't active yet. An address is only sent when AOS has the street, city, state and zip.

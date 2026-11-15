@@ -138,8 +138,8 @@ export type PayrollCandidateRow = {
   isHoliday: boolean;
   holidayMultiplier: number | null;
   /** Effective daily-rules exemption: the parent job's flag OR the entry's
-   *  own. When true this row's shift group skips BOTH daily rules (5hr
-   *  minimum and round-up) and pays the exact hours worked. See migration
+   *  own. When true this row's shift group skips the 5hr daily minimum
+   *  and pays the exact hours worked. See migration
    *  20260804a. */
   dailyRulesExempt: boolean;
 };
@@ -375,7 +375,7 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<st
   //
   // Hour buckets: std/ot/dt mirror the BILLED snapshot from the timesheet.
   // pay_* buckets apply Connor's row-local payroll rules at this point
-  // (5hr daily minimum + round up to whole hour). The weekly 40hr spill
+  // (5hr daily minimum). The weekly 40hr spill
   // is NOT applied here — it runs at finalize time so we can see hours
   // from other finalized runs in the same week.
   //
@@ -501,7 +501,7 @@ export async function addEntriesToPayrollRun(
   }
 
   // Same auto-fill pattern as createPayrollRun: resolve pay rates FIRST,
-  // then apply daily rules (5hr min + round up) with rate context so the
+  // then apply daily rules (5hr min) with rate context so the
   // bumps route to the highest-rate row in each (employee, date) group.
   const resolutions = await Promise.all(entries.map((e) => resolvePayRateForEntry({
     employeeKey: e.employeeKey,
@@ -669,16 +669,14 @@ export type DayPayBuckets = {
 };
 
 /** Per-day rules (1–3): take the summed billed buckets for one employee on
- *  one work_date and produce the pay buckets with the 5-hour minimum and
- *  whole-hour round-up applied. The daily OT/DT split coming in from the
- *  timesheet is preserved verbatim (rule 3) — we only inflate pay_std to
- *  satisfy the minimum, then ceil the total. The extra hours always land
- *  in pay_std (never pay_ot or pay_dt).
+ *  one work_date and produce the pay buckets with the 5-hour minimum
+ *  applied. The daily OT/DT split coming in from the timesheet is preserved
+ *  verbatim — we only inflate pay_std to satisfy the minimum. There is no
+ *  round-up to the whole hour (removed 2026-11-15, not Connor's rule).
  *
- *  `dailyRulesExempt` skips BOTH rules and pays the exact hours worked —
+ *  `dailyRulesExempt` skips the minimum and pays the exact hours worked —
  *  used by the internal/generic job and by late arrivals who forfeit the
- *  minimum (migration 20260804a). Connor confirmed 2026-08-04 that the
- *  round-up is waived alongside the minimum, not just the minimum. */
+ *  minimum (migration 20260804a). */
 export function applyDailyPayrollRules(input: {
   stdHours: number;
   otHours: number;
@@ -691,7 +689,7 @@ export function applyDailyPayrollRules(input: {
   const billedTotal = std + ot + dt;
 
   // No-show: zero billed hours means the employee didn't work that day.
-  // Neither the daily minimum nor the round-up applies. Pay = 0.
+  // The daily minimum doesn't apply. Pay = 0.
   if (billedTotal === 0) {
     return { payStdHours: 0, payOtHours: 0, payDtHours: 0, payTotalHours: 0, reasons: [] };
   }
@@ -722,20 +720,9 @@ export function applyDailyPayrollRules(input: {
     reasons.push(`5hr min applied (+${(afterMinTotal - billedTotal).toFixed(2)})`);
   }
 
-  // Rule 2: round UP to next whole hour. Extra extends whichever bucket
-  // the day's hours ended in (DT > OT > std priority). Connor's rule:
-  // the rounded-up extra represents continuation of the last-active
-  // bucket, not phantom std time. Avoids paying $40-std for a half-hour
-  // that was actually a $80-DT half-hour.
-  const beforeCeilTotal = payStd + payOt + payDt;
-  const ceilTotal = Math.ceil(beforeCeilTotal - 1e-9);
-  if (ceilTotal > beforeCeilTotal) {
-    const extra = ceilTotal - beforeCeilTotal;
-    if      (payDt > 1e-9) payDt += extra;
-    else if (payOt > 1e-9) payOt += extra;
-    else                   payStd += extra;
-    reasons.push(`rounded ${beforeCeilTotal.toFixed(2)}→${ceilTotal}`);
-  }
+  // No round-up to the whole hour. Removed 2026-11-15: Connor confirmed it
+  // is not his rule (invoices bill exact hours, so rounding pay up lost
+  // money). Above the 5-hour minimum, pay = the exact hours worked.
 
   // Round to 2 decimals to keep DB numerics clean.
   const r = (n: number) => Math.round(n * 100) / 100;
@@ -851,9 +838,10 @@ export function applyWeeklySpill(rows: WeekHourRow[]): WeeklySpillResult {
  *    (Connor's "99.9% rule": different position usually means different
  *    shift when shift_id wasn't populated)
  *
- *  Within each shift group: computes daily bumps (5hr minimum + round-up),
- *  allocates the bumps to the HIGHEST-PAYING row, and extends the row's
- *  last-active bucket (DT > OT > std).
+ *  Within each shift group: computes the daily bump (5hr minimum only —
+ *  no round-up to the whole hour since 2026-11-15), allocates the bump
+ *  to the HIGHEST-PAYING row, and extends the row's last-active bucket
+ *  (DT > OT > std).
  *
  *  The optional `ratesByRowId` map lets the caller pre-resolve pay rates
  *  per row so the highest-rate selection works. Without it, the bump
@@ -865,8 +853,8 @@ export function applyWeeklySpill(rows: WeekHourRow[]): WeeklySpillResult {
  *  unknown.
  *
  *  Exemptions (migration 20260804a): a row carrying `dailyRulesExempt`
- *  makes its WHOLE shift group exempt — both the 5hr floor and the
- *  round-up are skipped and every row in the group pays its exact hours.
+ *  makes its WHOLE shift group exempt — the 5hr floor is skipped and
+ *  every row in the group pays its exact hours.
  *  Group-level rather than row-level because the rules themselves are
  *  group-level: the floor applies to the shift's summed hours, so there is
  *  no coherent way to waive it for one row and not another. In practice a
@@ -917,10 +905,10 @@ export function applyDailyRulesToCandidates(
       continue;
     }
 
-    // Exempt shift group: pay exactly what was worked. No floor, no
-    // round-up, so there's no bump to allocate and the absorber logic
-    // below is skipped entirely. The reason string is still stamped so
-    // the run detail page explains why these hours look "unrounded".
+    // Exempt shift group: pay exactly what was worked. No floor, so
+    // there's no bump to allocate and the absorber logic below is skipped
+    // entirely. The reason string is still stamped so the run detail page
+    // explains why a short shift wasn't bumped to 5.
     if (list.some((r) => r.dailyRulesExempt)) {
       for (const r of list) {
         out.set(r.timesheetEntryId, {
@@ -928,7 +916,7 @@ export function applyDailyRulesToCandidates(
           payOtHours:  round2(r.otHours),
           payDtHours:  round2(r.dtHours),
           payTotalHours: round2(r.stdHours + r.otHours + r.dtHours),
-          payAdjustmentReason: "5hr min + round-up waived (exempt)",
+          payAdjustmentReason: "5hr min waived (exempt)",
         });
       }
       continue;
@@ -938,8 +926,8 @@ export function applyDailyRulesToCandidates(
     // and that block IS the pay. Actual clock time is not the input —
     // crew on a day-rate job check in and stay on call across the span,
     // used sporadically rather than worked continuously. Set the block
-    // and skip the 5hr minimum and round-up entirely; the day rate
-    // supersedes both (it is already a floor, and already whole hours).
+    // and skip the 5hr minimum entirely; the day rate supersedes it (it is
+    // already a floor).
     //
     // Deliberately AFTER the exempt check: `dailyRulesExempt` is an
     // explicit "pay exactly what was worked" override (late arrivals,
@@ -977,9 +965,10 @@ export function applyDailyRulesToCandidates(
       continue;
     }
 
+    // 5hr minimum only. No round-up to the whole hour (removed
+    // 2026-11-15 — not Connor's rule; invoices bill exact hours).
     const afterMin   = Math.max(billedTotal, PAYROLL_DAILY_MINIMUM_HOURS);
-    const ceilTotal  = Math.ceil(afterMin - 1e-9);
-    const dayExtra   = ceilTotal - billedTotal;
+    const dayExtra   = afterMin - billedTotal;
 
     // Pick the row that absorbs the day's bump: highest pay rate among
     // ROWS THAT WORKED (rowBilled > 0). Zero-hour rows can't absorb the
@@ -1005,7 +994,6 @@ export function applyDailyRulesToCandidates(
       if (maxRate <= 0 && workedRows.length > 1) {
         const reasons: string[] = [];
         if (afterMin > billedTotal) reasons.push("5hr min applied");
-        if (ceilTotal > afterMin)   reasons.push("rounded up to whole hour");
         const reason = reasons.length ? reasons.join("; ") + " (split equally — no rates)" : null;
         const share = dayExtra / workedRows.length;
         for (const r of list) {
@@ -1032,7 +1020,6 @@ export function applyDailyRulesToCandidates(
 
     const reasons: string[] = [];
     if (afterMin > billedTotal) reasons.push("5hr min applied");
-    if (ceilTotal > afterMin)   reasons.push("rounded up to whole hour");
     const reason = reasons.length ? reasons.join("; ") : null;
 
     for (const r of list) {
@@ -1267,10 +1254,37 @@ export async function updatePayrollRunEntryBaseRate(
   if (error) throw error;
 }
 
-/** Re-apply the daily payroll rules (5hr minimum + round-up to next whole
- *  hour) to every entry on a DRAFT run. Groups by (employee_key, work_date)
- *  the same way snapshot does — so daily totals get the floor + ceiling
- *  applied, then allocated back to individual rows proportionally.
+/** Combine a row's existing pay_adjustment_reason with a freshly computed
+ *  daily-rule reason. Daily-rule segments in the old text (5hr min,
+ *  rounding, exempt waiver, day rate) are dropped because the new reason
+ *  replaces them; any other segment (weekly OT spill, notes) is kept.
+ *  Returns null when nothing is left. Pure — tested in
+ *  tests/store/payroll-rules.test.ts. */
+export function mergeDailyRuleReason(
+  existingReason: string | null | undefined,
+  newReason: string | null | undefined,
+): string | null {
+  const isDailyRule = (seg: string) =>
+    /^5hr min/i.test(seg) ||
+    /round/i.test(seg) ||
+    /waived \(exempt\)/i.test(seg) ||
+    /^day rate/i.test(seg);
+  const kept = (existingReason ?? "")
+    .split(";")
+    .map((seg) => seg.trim())
+    .filter((seg) => seg && !isDailyRule(seg));
+  if (newReason && newReason.trim()) kept.push(newReason.trim());
+  return kept.length ? kept.join("; ") : null;
+}
+
+/** Re-apply the daily payroll rule (5hr minimum) to every entry on a
+ *  DRAFT run. Groups by (employee_key, work_date, shift) the same way
+ *  snapshot does — so daily totals get the floor applied, then the bump is
+ *  allocated back to a row.
+ *
+ *  Old daily-rule reasons on the row (e.g. "rounded up to whole hour" from
+ *  before the round-up was removed) are replaced, not kept — see
+ *  mergeDailyRuleReason.
  *
  *  Use case: an existing run was seeded via SQL bypass (e.g. Bruno's data
  *  fix), or the operator added entries before Connor's rules were live.
@@ -1333,8 +1347,8 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
     // must reproduce what this run was built from; re-deriving would let a
     // flag flipped after the snapshot silently change a draft's hours.
     dailyRulesExempt: !!r.payroll_daily_rules_exempt,
-    // Day-rate rows must survive a recompute. Without this the 5hr min /
-    // round-up would overwrite the day-rate block and quietly turn a
+    // Day-rate rows must survive a recompute. Without this the 5hr min
+    // would overwrite the day-rate block and quietly turn a
     // day-rate run back into an hourly one.
     dayRateHours: recomputeDayRates.hoursFor(r.job_id, r.work_date, r.specialty_id),
   }));
@@ -1359,15 +1373,15 @@ export async function recomputeDailyRulesForRun(runId: string): Promise<number> 
       holidayMultiplier: r.holiday_multiplier,
     });
 
-    // Merge the new reason with any pre-existing reason (e.g. weekly OT
-    // spill from a prior finalize that was reopened — though in practice
-    // a reopen would clear OT calc state).
-    const newReason = pay.payAdjustmentReason;
-    const existingReason = r.pay_adjustment_reason as string | null;
-    const mergedReason =
-      newReason && existingReason && !existingReason.includes(newReason)
-        ? `${existingReason}; ${newReason}`
-        : (newReason ?? existingReason);
+    // Replace the old daily-rule reason with the new one, keeping any
+    // other reason (e.g. weekly OT spill from a prior finalize that was
+    // reopened). Before 2026-11-15 this kept the old text whenever the new
+    // reason was empty, so "rounded up to whole hour" would have survived
+    // the round-up's removal.
+    const mergedReason = mergeDailyRuleReason(
+      r.pay_adjustment_reason as string | null,
+      pay.payAdjustmentReason,
+    );
 
     const { error: updErr } = await supabase
       .from("payroll_run_entries")

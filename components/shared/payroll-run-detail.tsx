@@ -529,11 +529,11 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
   async function handleRecomputeDailyRules() {
     if (!isDraft) return;
     if (!confirm(
-      `Re-apply Connor's daily payroll rules to every entry?\n\n` +
-      `• ${PAYROLL_DAILY_MINIMUM_HOURS}-hour daily minimum per (employee, work date)\n` +
-      `• Round up to next whole hour\n` +
+      `Re-apply Connor's daily payroll rule to every entry?\n\n` +
+      `• ${PAYROLL_DAILY_MINIMUM_HOURS}-hour daily minimum per (employee, work date, shift)\n` +
+      `• Hours above the minimum pay exactly as worked (no rounding)\n` +
       `• Extras land in pay_std (OT/DT classifications preserved)\n` +
-      `• Entries flagged exempt skip BOTH rules and keep their exact hours\n\n` +
+      `• Entries flagged exempt skip the minimum and keep their exact hours\n\n` +
       `Use this when entries were added before the rules were live or via a data fix. ` +
       `Total pay recomputes from the existing rates. The weekly OT calc resets.`
     )) return;
@@ -744,7 +744,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                   className="secondary"
                   onClick={handleRecomputeDailyRules}
                   disabled={!!busy || entries.length === 0}
-                  title={`IT-only recovery action. Re-apply the ${PAYROLL_DAILY_MINIMUM_HOURS}-hour daily minimum and whole-hour round-up to every entry. Normal flow already applies these at snapshot time — use only after a SQL data fix bypassed the snapshot path.`}
+                  title={`IT-only recovery action. Re-apply the ${PAYROLL_DAILY_MINIMUM_HOURS}-hour daily minimum to every entry (no rounding). Normal flow already applies it at snapshot time — use only after a SQL data fix bypassed the snapshot path.`}
                 >
                   {busy === "recompute-daily" ? "Applying…" : "📐 Apply daily rules"}
                 </button>
@@ -968,7 +968,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                         <th>Job</th>
                         <th>Position</th>
                         <th>Specialty</th>
-                        <th style={{ textAlign: "right" }} title={`Pay hours after Connor's rules: ${PAYROLL_DAILY_MINIMUM_HOURS}hr daily minimum, round up to next whole hour, weekly ${PAYROLL_WEEKLY_OT_THRESHOLD}hr OT spill (applied at finalize). Hover any cell to see the billed value if different.`}>Std</th>
+                        <th style={{ textAlign: "right" }} title={`Pay hours after Connor's rules: ${PAYROLL_DAILY_MINIMUM_HOURS}hr daily minimum, weekly ${PAYROLL_WEEKLY_OT_THRESHOLD}hr OT spill (applied at finalize). Hover any cell to see the billed value if different.`}>Std</th>
                         <th style={{ textAlign: "right" }}>OT</th>
                         <th style={{ textAlign: "right" }}>DT</th>
                         <th style={{ textAlign: "right" }}>Total</th>
@@ -993,7 +993,7 @@ export default function PayrollRunDetail({ runId }: { runId: string }) {
                         const adjusted = r.payAdjustmentReason ? r.payAdjustmentReason : null;
                         // Per-bucket tooltip. Always shows:
                         //   - "Billed: X.XX" if pay differs from billed
-                        //   - The adjustment reason (5hr min, rounded up, weekly OT) if any
+                        //   - The adjustment reason (5hr min, weekly OT) if any
                         // So every adjusted row's cells explain themselves on hover, even
                         // when the bucket happens to match billed (e.g. Matthew Harris's
                         // 4hr Forklift row didn't bump but shares the shift's adjustment).

@@ -3,6 +3,7 @@ import {
   applyDailyPayrollRules,
   applyWeeklySpill,
   applyDailyRulesToCandidates,
+  mergeDailyRuleReason,
   recomputePayFromBase,
   payWeekStartFor,
   PAYROLL_DAILY_MINIMUM_HOURS,
@@ -63,11 +64,14 @@ describe("applyDailyPayrollRules — the 5-hour minimum", () => {
   });
 });
 
-describe("applyDailyPayrollRules — whole-hour round-up", () => {
-  it("rounds a partial hour up", () => {
-    const r = applyDailyPayrollRules({ stdHours: 7.5, otHours: 0, dtHours: 0 });
-    expect(r.payStdHours).toBe(8);
-    expect(r.reasons.join(" ")).toContain("rounded 7.50→8");
+describe("applyDailyPayrollRules — no whole-hour round-up", () => {
+  // The round-up was removed 2026-11-15: Connor confirmed it is not his
+  // rule. Invoices bill exact hours, so pay must too (above the 5hr floor).
+  it("pays a partial hour exactly (10.5 stays 10.5)", () => {
+    const r = applyDailyPayrollRules({ stdHours: 10.5, otHours: 0, dtHours: 0 });
+    expect(r.payStdHours).toBe(10.5);
+    expect(r.payTotalHours).toBe(10.5);
+    expect(r.reasons).toEqual([]);
   });
 
   it("leaves a whole-hour day alone", () => {
@@ -76,35 +80,30 @@ describe("applyDailyPayrollRules — whole-hour round-up", () => {
     expect(r.reasons).toEqual([]);
   });
 
-  it("extends OT when the day ended in OT", () => {
-    // Connor's rule: the rounded-up remainder continues the last-active
-    // bucket, so a half hour of OT is not paid as cheap straight time.
+  it("pays a partial OT hour exactly", () => {
     const r = applyDailyPayrollRules({ stdHours: 10, otHours: 2.5, dtHours: 0 });
-    expect(r.payStdHours).toBe(10);
-    expect(r.payOtHours).toBe(3);
-    expect(r.payDtHours).toBe(0);
-    expect(r.payTotalHours).toBe(13);
+    expect(r).toMatchObject({ payStdHours: 10, payOtHours: 2.5, payDtHours: 0, payTotalHours: 12.5 });
   });
 
-  it("extends DT when the day ended in DT, in preference to OT", () => {
-    // 10 + 5 + 1.25 = 16.25 -> ceil 17, so 0.75 extra lands on DT.
+  it("pays a partial DT hour exactly", () => {
     const r = applyDailyPayrollRules({ stdHours: 10, otHours: 5, dtHours: 1.25 });
-    expect(r.payStdHours).toBe(10);
-    expect(r.payOtHours).toBe(5);
-    expect(r.payDtHours).toBe(2);
-    expect(r.payTotalHours).toBe(17);
+    expect(r).toMatchObject({ payStdHours: 10, payOtHours: 5, payDtHours: 1.25, payTotalHours: 16.25 });
   });
 
-  it("applies the floor first, then the round-up", () => {
-    // 2.5 -> floor to 5 -> already whole, so no second bump.
+  it("still applies the 5hr floor to a short day", () => {
     const r = applyDailyPayrollRules({ stdHours: 2.5, otHours: 0, dtHours: 0 });
     expect(r.payTotalHours).toBe(5);
   });
 
-  it("does not round up a day that is already whole after the floor", () => {
-    const r = applyDailyPayrollRules({ stdHours: 4, otHours: 0, dtHours: 0 });
-    expect(r.payTotalHours).toBe(5);
-    expect(r.reasons.join(" ")).not.toContain("rounded");
+  it("does not round a day just above the floor (5.5 stays 5.5)", () => {
+    const r = applyDailyPayrollRules({ stdHours: 5.5, otHours: 0, dtHours: 0 });
+    expect(r.payTotalHours).toBe(5.5);
+    expect(r.reasons.join(" ")).not.toContain("round");
+  });
+
+  it("does not round a quarter hour (6.25 stays 6.25)", () => {
+    const r = applyDailyPayrollRules({ stdHours: 6.25, otHours: 0, dtHours: 0 });
+    expect(r.payTotalHours).toBe(6.25);
   });
 
   it("preserves the timesheet's OT/DT split verbatim", () => {
@@ -122,8 +121,7 @@ describe("applyDailyPayrollRules — exemptions", () => {
     expect(r.reasons).toEqual(["daily rules waived (exempt)"]);
   });
 
-  it("waives the round-up too, not just the floor", () => {
-    // Confirmed with Connor 2026-08-04: exemption covers both rules.
+  it("pays a partial hour exactly when exempt", () => {
     const r = applyDailyPayrollRules({
       stdHours: 7.5, otHours: 0, dtHours: 0, dailyRulesExempt: true,
     });
@@ -401,13 +399,32 @@ describe("applyDailyRulesToCandidates — bump allocation", () => {
     expect(out.get("worked")!.payTotalHours).toBe(5);
   });
 
-  it("extends the absorber's last-active bucket", () => {
+  it("extends the absorber's last-active bucket with the 5hr bump", () => {
+    // 1 std + 2 OT = 3 -> floor to 5; the 2hr bump continues OT.
+    const out = applyDailyRulesToCandidates([
+      cand({ timesheetEntryId: "a", stdHours: 1, otHours: 2 }),
+    ]);
+    expect(out.get("a")).toMatchObject({
+      payStdHours: 1, payOtHours: 4, payDtHours: 0, payTotalHours: 5,
+    });
+  });
+
+  it("pays partial hours above the floor exactly (no round-up)", () => {
     const out = applyDailyRulesToCandidates([
       cand({ timesheetEntryId: "a", stdHours: 10, otHours: 2.5 }),
     ]);
     expect(out.get("a")).toMatchObject({
-      payStdHours: 10, payOtHours: 3, payDtHours: 0, payTotalHours: 13,
+      payStdHours: 10, payOtHours: 2.5, payDtHours: 0, payTotalHours: 12.5,
+      payAdjustmentReason: null,
     });
+  });
+
+  it("pays the 10.5-hour example from Connor's report as 10.5", () => {
+    const out = applyDailyRulesToCandidates([
+      cand({ timesheetEntryId: "a", stdHours: 10.5 }),
+    ]);
+    expect(out.get("a")!.payTotalHours).toBe(10.5);
+    expect(out.get("a")!.payAdjustmentReason).toBeNull();
   });
 
   it("pays a no-show group nothing", () => {
@@ -435,10 +452,10 @@ describe("applyDailyRulesToCandidates — exemptions", () => {
       cand({ timesheetEntryId: "a", stdHours: 3, dailyRulesExempt: true }),
     ]);
     expect(out.get("a")!.payTotalHours).toBe(3);
-    expect(out.get("a")!.payAdjustmentReason).toBe("5hr min + round-up waived (exempt)");
+    expect(out.get("a")!.payAdjustmentReason).toBe("5hr min waived (exempt)");
   });
 
-  it("waives the round-up on an exempt shift", () => {
+  it("pays a partial hour exactly on an exempt shift", () => {
     const out = applyDailyRulesToCandidates([
       cand({ timesheetEntryId: "a", stdHours: 7.5, dailyRulesExempt: true }),
     ]);
@@ -526,5 +543,32 @@ describe("recomputePayFromBase", () => {
     });
     // 33.333 * 7.5 = 249.9975 -> 250.00
     expect(r.totalPay).toBe(250);
+  });
+});
+
+describe("mergeDailyRuleReason", () => {
+  it("drops the old round-up reason when the new rules produce none", () => {
+    expect(mergeDailyRuleReason("rounded up to whole hour", null)).toBeNull();
+  });
+
+  it("replaces an old combined daily reason with the new one", () => {
+    expect(mergeDailyRuleReason("5hr min applied; rounded up to whole hour", "5hr min applied"))
+      .toBe("5hr min applied");
+  });
+
+  it("keeps a weekly OT spill note", () => {
+    expect(mergeDailyRuleReason("rounded up to whole hour; +2hr weekly OT spill", null))
+      .toBe("+2hr weekly OT spill");
+  });
+
+  it("drops old exempt and day-rate reasons", () => {
+    expect(mergeDailyRuleReason("5hr min + round-up waived (exempt)", "5hr min waived (exempt)"))
+      .toBe("5hr min waived (exempt)");
+    expect(mergeDailyRuleReason("Day rate — 10 hrs paid (actual 8)", null)).toBeNull();
+  });
+
+  it("returns the new reason when there was none", () => {
+    expect(mergeDailyRuleReason(null, "5hr min applied")).toBe("5hr min applied");
+    expect(mergeDailyRuleReason(null, null)).toBeNull();
   });
 });

@@ -89,9 +89,9 @@ describe("hourly jobs are unchanged (regression)", () => {
     expect(r.payAdjustmentReason).toMatch(/5hr min/);
   });
 
-  it("still rounds up to the whole hour", () => {
+  it("pays partial hours exactly (no round-up since 2026-11-15)", () => {
     const r = get(applyDailyRulesToCandidates([row({ stdHours: 7.25 })]));
-    expect(r.payTotalHours).toBe(8);
+    expect(r.payTotalHours).toBe(7.25);
   });
 
   it("still preserves the OT/DT split from the timesheet", () => {
