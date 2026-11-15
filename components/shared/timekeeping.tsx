@@ -1262,7 +1262,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
             <strong>⚠ No shifts defined on this job.</strong>
             <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
               The Shift dropdown is hidden because there's nothing to pick.
-              Payroll's daily rules (5-hour minimum, round-up) will group by
+              Payroll's 5-hour daily minimum will group by
               position instead of by shift. Multi-shift days
               (morning call + load-out) won't get separate 5-hour minimums.
               Open the job request and set up shifts on the <strong>Shifts</strong> tab
@@ -1907,7 +1907,7 @@ export default function Timekeeping({ hideBillAlways: hideBillAlwaysProp = false
                             }}
                             title={row.payrollRunId
                               ? `Locked by payroll run ${row.payrollRunId} — its hours are already calculated. Void the run to change this.`
-                              : "Worker arrived late and forfeits the 5-hour minimum for this shift. Pays exact hours worked — no minimum, no round-up."}
+                              : "Worker arrived late and forfeits the 5-hour minimum for this shift. Pays exact hours worked — no minimum."}
                           >
                             <input
                               type="checkbox"

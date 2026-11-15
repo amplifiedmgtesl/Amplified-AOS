@@ -761,7 +761,7 @@ export default function JobDetail({
           </label>
           <span className="muted" style={{ fontSize: 11 }}>
             Time booked to this job pays the exact hours worked — no 5-hour
-            floor and no round-up to a whole hour. For internal/office jobs.
+            floor. For internal/office jobs.
           </span>
           {exemptMsg && (
             <span className="badge" style={{ fontSize: 11 }}>{exemptMsg}</span>
@@ -774,7 +774,7 @@ export default function JobDetail({
             <strong>⚠ No shifts defined on this job.</strong>
             <div className="muted" style={{ marginTop: 4, fontSize: 12 }}>
               Timekeeping won't show a shift picker, and payroll's daily rules
-              (5-hour minimum, round-up) will group by position instead of by
+              (5-hour minimum) will group by position instead of by
               shift. That works for simple jobs, but multi-shift days
               (morning call + load-out, etc.) won't get separate 5-hour
               minimums. <strong>Set up shifts on the Shifts tab before

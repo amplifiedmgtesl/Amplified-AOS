@@ -168,7 +168,7 @@ export type TimeEntry = {
   // Payroll daily-rules exemption (migration 20260804a). Set by anyone with
   // timekeeping access when a worker arrives late and forfeits the 5-hour
   // minimum for that shift. ORed with the parent job's flag at payroll
-  // snapshot time; an exempt row pays exact hours (no floor, no round-up).
+  // snapshot time; an exempt row pays exact hours (no floor).
   // Written through setEntryPayrollExempt — NOT through the timesheet
   // autosave, which skips staff-submitted rows.
   payrollDailyRulesExempt?: boolean;
@@ -442,14 +442,14 @@ export type PayrollRunEntry = {
   otHours: number;
   dtHours: number;
   totalHours: number;
-  /** PAY hours — Connor's payroll rules applied (5hr min, round up, weekly
+  /** PAY hours — Connor's payroll rules applied (5hr min, weekly
    *  40hr spill). totalPay is computed from these, not from std/ot/dt. */
   payStdHours: number;
   payOtHours: number;
   payDtHours: number;
   payTotalHours: number;
   /** Human-readable note about which rules adjusted the pay buckets,
-   *  e.g. "5hr min applied; 6.5→7 rounded; +2hr weekly OT spill". */
+   *  e.g. "5hr min applied; +2hr weekly OT spill". */
   payAdjustmentReason?: string;
   stdRate: number;
   otRate: number;
@@ -499,8 +499,8 @@ export type JobRequest = {
   // (effective-date-aware lookup keyed off client_id + request_date).
   rateCardProfileId?: string;
   /** Payroll daily-rules exemption (migration 20260804a). When true, every
-   *  timesheet entry against this job skips the 5-hour minimum AND the
-   *  round-up to a whole hour — it pays exact hours worked. Set on the
+   *  timesheet entry against this job skips the 5-hour minimum — it pays
+   *  exact hours worked. Set on the
    *  internal/generic job coordinators log their own time against. */
   payrollDailyRulesExempt?: boolean;
 };
