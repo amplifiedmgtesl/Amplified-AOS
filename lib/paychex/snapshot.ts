@@ -2,8 +2,8 @@
  * lib/paychex/snapshot.ts — the copy of Paychex kept in AOS
  * (plan: docs/paychex-snapshot-plan.md, John 2026-10-20). SERVER ONLY.
  *
- * Reading Paychex live costs ~155 calls: the worker list (~10, 50 a page)
- * plus contact info for each active worker (~143). Paychex has no search
+ * Reading Paychex live costs ~525 calls (11/24): the worker list (17 pages
+ * of 50) plus contact info for each active worker (507). Paychex has no search
  * and no "changed since", so screens read this copy instead:
  *   • pullSnapshot(): reads Paychex and saves the copy. Monday night, Refresh
  *     now, and Send to Paychex when the copy is over an hour old.
@@ -22,6 +22,27 @@ import { applyOne, clearLinks, loadEmployees } from "./sync-server";
 
 /** Send to Paychex re-reads Paychex first when the copy is older than this. */
 export const SEND_MAX_AGE_MS = 60 * 60 * 1000;
+
+/** Only one read of Paychex at a time (John, 11/24): a second one is refused,
+ *  never queued. A read that hasn't finished counts as running for this long
+ *  (the routes' 300-second limit plus a margin), so one that was cut off
+ *  doesn't block reads for ever. */
+const PULL_RUNNING_MS = 330_000;
+
+export class PaychexBusyError extends Error {
+  constructor() { super("Paychex is already being read. Try again in a minute."); }
+}
+
+/** Is a read of Paychex running now? Optionally only reads started before run `beforeId`. */
+export async function pullRunning(beforeId?: number): Promise<boolean> {
+  let q = supabaseAdmin.from("paychex_snapshot_runs").select("id")
+    .neq("trigger", "process").is("finished_at", null)
+    .gt("started_at", new Date(Date.now() - PULL_RUNNING_MS).toISOString()).limit(1);
+  if (beforeId != null) q = q.lt("id", beforeId);
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+  return (data ?? []).length > 0;
+}
 
 // Applying stops this long after processing started, so a run fits in
 // Vercel's 60 seconds. What's left shows under
@@ -131,11 +152,16 @@ export type ProcessSummary = {
   applied: { update: number; create: number; link: number }; failed: number; held: number; leftForNextRun: number;
 };
 
-/** Step 1: read Paychex in full and save the copy (~20-30 s, reads only, so
- *  it always finishes). Weekly schedule, Update from Paychex, and Send to Paychex
+/** Step 1: read Paychex in full and save the copy (~30-60 s, reads only). Weekly schedule, Update from Paychex, and Send to Paychex
  *  when the copy is over an hour old. Also fills missing worker IDs. */
 export async function pullSnapshot(trigger: "schedule" | "manual" | "send", runBy: string | null): Promise<{ workers: number; active: number; workerIdsFilled: number }> {
   const runId = await startRun(trigger, runBy);
+  // Checked after this run's row exists, so two clicks at the same moment
+  // can't both start: the later one sees the earlier one and stands down.
+  if (await pullRunning(runId)) {
+    await supabaseAdmin.from("paychex_snapshot_runs").delete().eq("id", runId);
+    throw new PaychexBusyError();
+  }
   try {
     const { active, all, workerIdsFilled } = await readAndSave();
     const out = { workers: all.length, active: active.length, workerIdsFilled };

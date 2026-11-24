@@ -10,15 +10,16 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { PaychexConfigError } from "@/lib/paychex/api";
-import { loadSnapshot, lookupWorkers, pullSnapshot, SEND_MAX_AGE_MS, snapshotAt } from "@/lib/paychex/snapshot";
+import { loadSnapshot, lookupWorkers, PaychexBusyError, pullSnapshot, SEND_MAX_AGE_MS, snapshotAt } from "@/lib/paychex/snapshot";
 import { requireOnboarding } from "@/lib/onboarding/server";
 import { LIVE_SEND, sendOne, type SendOutcome } from "@/lib/onboarding/send";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// 300 s: a send may first re-read all of Paychex (~60-70 s by 11/24).
+export const maxDuration = 300;
 
-// Each send is one Paychex call plus a read-back; keep a request well
-// inside the 60-second limit. The screen sends bigger batches in chunks.
+// Each send is one Paychex call plus a read-back. The screen sends bigger
+// batches in chunks.
 const MAX_BATCH = 15;
 
 export async function POST(req: NextRequest) {
@@ -47,6 +48,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ live: LIVE_SEND, results });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
+    // Paychex is being read by someone else and our copy is over an hour old:
+    // nothing was sent; the screen greys Send out until the read finishes.
+    if (err instanceof PaychexBusyError) return NextResponse.json({ error: msg, busy: true }, { status: 409 });
     return NextResponse.json({ error: msg }, { status: err instanceof PaychexConfigError ? 503 : 500 });
   }
 }

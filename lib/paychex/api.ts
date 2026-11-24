@@ -17,15 +17,35 @@ import { planFill, type AosFill, type FillPlan } from "./fill";
 
 const BASE = "https://api.paychex.com";
 const PAGE = 50;          // Paychex rejects limit > 50 with HTTP 400
-const CONCURRENCY = 8;    // parallel contact lookups
+const CONCURRENCY = 8;    // parallel reads (list pages, contact lookups)
 
 export class PaychexConfigError extends Error {}
+
+// A read that drops ("fetch failed") or gets a 429/5xx is tried again, up to
+// 3 tries in all. With ~525 calls per full read (11/24: 824 workers, 507
+// active), one dropped call used to fail the whole read. READS ONLY: writes
+// (create, fill) are never retried, so nothing can be sent twice.
+const TRIES = 3;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function fetchRetry(url: string, init: RequestInit): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      if ((res.status === 429 || res.status >= 500) && attempt < TRIES) { await sleep(1000 * attempt); continue; }
+      return res;
+    } catch (e) {
+      if (attempt >= TRIES) throw e;
+      await sleep(1000 * attempt);
+    }
+  }
+}
 
 async function getToken(): Promise<string> {
   const id = process.env.PAYCHEX_API_KEY;
   const secret = process.env.PAYCHEX_API_SECRET;
   if (!id || !secret) throw new PaychexConfigError("Paychex API keys aren't set on the server (PAYCHEX_API_KEY / PAYCHEX_API_SECRET).");
-  const res = await fetch(`${BASE}/auth/oauth/v2/token`, {
+  const res = await fetchRetry(`${BASE}/auth/oauth/v2/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "client_credentials", client_id: id, client_secret: secret }),
@@ -37,7 +57,7 @@ async function getToken(): Promise<string> {
 }
 
 async function get(token: string, path: string): Promise<any> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetchRetry(`${BASE}${path}`, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     cache: "no-store",
   });
@@ -99,18 +119,38 @@ async function addContact(token: string, w: PaychexWorker): Promise<void> {
 
 async function listWorkers(token: string): Promise<PaychexWorker[]> {
   const companyId = await companyIdFor(token);
-  const all: PaychexWorker[] = [];
-  for (let offset = 0; ; offset += PAGE) {
-    const page = await get(token, `/companies/${encodeURIComponent(companyId)}/workers?offset=${offset}&limit=${PAGE}`);
-    const rows: RawWorker[] = page?.content ?? [];
-    for (const r of rows) all.push(toWorker(r));
-    if (rows.length < PAGE) break;
+  const path = (offset: number) => `/companies/${encodeURIComponent(companyId)}/workers?offset=${offset}&limit=${PAGE}`;
+  // Page 1 says how many workers there are; the rest are read in parallel
+  // (one at a time took ~37 s for 17 pages on 11/24).
+  const first = await get(token, path(0));
+  const pages: RawWorker[][] = [first?.content ?? []];
+  const total = Number(first?.metadata?.pagination?.total ?? 0);
+  if (total > PAGE) {
+    const offsets: number[] = [];
+    for (let o = PAGE; o < total; o += PAGE) offsets.push(o);
+    let i = 0;
+    const rest: RawWorker[][] = new Array(offsets.length);
+    await Promise.all(Array.from({ length: CONCURRENCY }, async () => {
+      while (i < offsets.length) {
+        const n = i++;
+        rest[n] = (await get(token, path(offsets[n])))?.content ?? [];
+      }
+    }));
+    pages.push(...rest);
+  } else if (!first?.metadata?.pagination && pages[0].length === PAGE) {
+    // No total given: fall back to reading page by page.
+    for (let offset = PAGE; ; offset += PAGE) {
+      const rows: RawWorker[] = (await get(token, path(offset)))?.content ?? [];
+      pages.push(rows);
+      if (rows.length < PAGE) break;
+    }
   }
-  return all;
+  return pages.flat().map(toWorker);
 }
 
 /** Every Paychex worker (names/IDs only), plus the ACTIVE ones with contact
- *  info. One call per active worker for the contact info (~143 on 10/20), so
+ *  info. One call per active worker for the contact info (~143 on 10/20,
+ *  507 on 11/24), so
  *  screens read the copy in AOS instead (lib/paychex/snapshot.ts). */
 export async function fetchPaychexWorkers(): Promise<{ active: PaychexWorker[]; all: PaychexWorker[] }> {
   const token = await getToken();
@@ -131,7 +171,7 @@ export async function fetchPaychexWorkers(): Promise<{ active: PaychexWorker[]; 
 /** One worker by Paychex workerId, with contact info. Null if Paychex has no such worker. */
 export async function fetchPaychexWorker(workerId: string): Promise<PaychexWorker | null> {
   const token = await getToken();
-  const res = await fetch(`${BASE}/workers/${encodeURIComponent(workerId)}`, {
+  const res = await fetchRetry(`${BASE}/workers/${encodeURIComponent(workerId)}`, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     cache: "no-store",
   });
@@ -223,7 +263,7 @@ export type FillResult = {
 export async function fillPaychexWorker(workerId: string, aos: AosFill, live: boolean): Promise<FillResult> {
   const token = await getToken();
   const id = encodeURIComponent(workerId);
-  const res = await fetch(`${BASE}/workers/${id}`, {
+  const res = await fetchRetry(`${BASE}/workers/${id}`, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
     cache: "no-store",
   });
