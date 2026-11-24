@@ -20,7 +20,7 @@ import {
 import type { SendOutcome } from "@/lib/onboarding/send";
 import type { FillOutcome } from "@/lib/onboarding/fill";
 import { FILL_LABEL, type FillField } from "@/lib/paychex/fill";
-import PaychexAsOf from "@/components/shared/paychex-as-of";
+import PaychexAsOf, { announcePaychexReading } from "@/components/shared/paychex-as-of";
 import { appliedDifferences } from "@/lib/jotform/application";
 import { useUserRole } from "@/lib/auth/use-user-role";
 import {
@@ -221,6 +221,8 @@ export default function Onboarding() {
   const [merge, setMerge] = useState<MergePick | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
+  // A read of Paychex is running (here or anywhere): Send waits for it (John, 11/24).
+  const [pxReading, setPxReading] = useState(false);
   const [fillBusy, setFillBusy] = useState<string | null>(null);
   const [today, setToday] = useState("");
   const [filters, setFilters] = useState<OnbFilters>(NO_FILTERS);
@@ -339,6 +341,8 @@ export default function Onboarding() {
 
   async function postSend(keys: string[], ignoreMatches = false): Promise<SendOutcome[] | null> {
     const r = await api("/api/onboarding/send", "POST", { employeeKeys: keys, ignoreMatches });
+    // Someone else is reading Paychex: nothing was sent. Grey Send out until it's done.
+    if (r.status === 409 && r.json?.busy) { announcePaychexReading(); alert(r.json.error); return null; }
     if (!r.ok) { alert(r.json?.error ?? "Send failed"); return null; }
     return r.json.results as SendOutcome[];
   }
@@ -529,8 +533,9 @@ export default function Onboarding() {
       <td>
         <button
           style={{ ...SMALL, whiteSpace: "normal" }}
-          disabled={!ready(row) || busyKey === row.employeeKey || batchBusy}
+          disabled={!ready(row) || busyKey === row.employeeKey || batchBusy || pxReading}
           title={row.paychexWorkerId ? "Already sent"
+            : pxReading ? "Paychex is being read — Send comes back when it's done"
             : !canSend(row) ? "Needs an email"
             : !ready(row) ? "Waiting for the Paychex check"
             : "Create in Paychex and email the onboarding invite"}
@@ -547,7 +552,8 @@ export default function Onboarding() {
       <div className="action-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <h3 style={{ margin: 0 }}>{filtered ? `${shown.length} of ${everyone.length}` : everyone.length} without a Payroll ID</h3>
         <span style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          <button onClick={sendSelected} disabled={batchBusy || !pickedCount}>
+          <button onClick={sendSelected} disabled={batchBusy || !pickedCount || pxReading}
+            title={pxReading ? "Paychex is being read — Send comes back when it's done" : undefined}>
             {batchBusy ? "Sending…" : `Send selected (${pickedCount})`}
           </button>
           {isAdmin && (
@@ -558,7 +564,7 @@ export default function Onboarding() {
           )}
           <button className="secondary" onClick={exportCsv} disabled={!shown.length} title="Download the people shown as a spreadsheet (CSV)">Export CSV</button>
           <button className="secondary" onClick={load} title="Re-read who is on a job or applied without a Payroll ID. Doesn't contact Paychex.">Reload list</button>
-          <PaychexAsOf at={pxAt} onRefreshed={() => checkPaychex(everyone.map((x) => x.employeeKey))} />
+          <PaychexAsOf at={pxAt} onRefreshed={() => checkPaychex(everyone.map((x) => x.employeeKey))} onReadingChange={setPxReading} />
         </span>
       </div>
       <div className="grid4" style={{ marginTop: 12 }}>

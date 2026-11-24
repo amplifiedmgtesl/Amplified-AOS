@@ -4,6 +4,10 @@ What changed and when. Newest entries at the top.
 
 ## November 2026
 
+### November 24 — v2.18.2
+- **Fixed: Update from Paychex and Send to Paychex failing ("fetch failed") or never finishing.** Paychex now has over 800 workers, and reading them all took longer than AOS allowed. One dropped call also failed the whole read. Reading Paychex now takes about half the time, retries a call that drops, and has more time to finish.
+- **Only one read of Paychex at a time.** While Paychex is being read (by you, someone else, or the Monday night update), **Update from Paychex** and **Send to Paychex** are greyed out and come back on their own when it's done.
+
 ### November 15 — v2.18.1
 - **Payroll no longer rounds hours up.** Payroll used to round each person's day up to the next whole hour (10.5 hours paid as 11). It now pays the exact hours on the timesheet, the same as the invoice. The 5-hour daily minimum still applies: a 3-hour day still pays 5.
 - Runs that are already finalized are not changed. The draft run for November 20 has been recalculated with exact hours.
